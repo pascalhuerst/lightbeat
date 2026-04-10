@@ -1,6 +1,6 @@
 mod types;
 mod blend;
-mod convert;
+pub mod convert;
 mod gradient;
 pub mod temperature;
 

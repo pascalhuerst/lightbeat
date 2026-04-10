@@ -23,7 +23,8 @@ pub trait NodeWidget: Any {
     fn ui_outputs(&self) -> Vec<UiPortDef>;
 
     /// Draw the custom content area inside the node body.
-    fn show_content(&mut self, ui: &mut Ui);
+    /// `zoom` is the current canvas zoom level for scaling text/UI elements.
+    fn show_content(&mut self, ui: &mut Ui, zoom: f32);
 
     fn min_width(&self) -> f32 { 140.0 }
     fn min_content_height(&self) -> f32 { 0.0 }
@@ -98,8 +99,14 @@ pub const PORT_SPACING: f32 = 22.0;
 pub const PORT_START_Y: f32 = NODE_TITLE_HEIGHT + 14.0;
 pub const NODE_PADDING: f32 = 8.0;
 
+/// Compute port position at zoom=1.
+#[allow(dead_code)]
 pub fn port_pos(node_pos: Pos2, node_width: f32, dir: PortDir, index: usize) -> Pos2 {
-    let y = node_pos.y + PORT_START_Y + index as f32 * PORT_SPACING;
+    port_pos_z(node_pos, node_width, dir, index, 1.0)
+}
+
+pub fn port_pos_z(node_pos: Pos2, node_width: f32, dir: PortDir, index: usize, zoom: f32) -> Pos2 {
+    let y = node_pos.y + PORT_START_Y * zoom + index as f32 * PORT_SPACING * zoom;
     let x = match dir {
         PortDir::Input => node_pos.x,
         PortDir::Output => node_pos.x + node_width,

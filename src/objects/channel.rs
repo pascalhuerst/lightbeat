@@ -69,38 +69,38 @@ pub struct Channel {
 }
 
 impl Channel {
-    pub fn dimmer(name: impl Into<String>, offset: u16) -> Self {
+    pub fn dimmer(name: impl Into<String>) -> Self {
         Self {
             name: name.into(),
             kind: ChannelKind::Dimmer,
-            offset,
+            offset: 0, // auto-assigned by Fixture::recalc_offsets()
             values: vec![0.0],
         }
     }
 
-    pub fn color(name: impl Into<String>, offset: u16, mode: ColorMode) -> Self {
+    pub fn color(name: impl Into<String>, mode: ColorMode) -> Self {
         Self {
             name: name.into(),
             kind: ChannelKind::Color { mode },
-            offset,
+            offset: 0,
             values: vec![0.0, 0.0, 0.0], // always RGB internally
         }
     }
 
-    pub fn pan_tilt(name: impl Into<String>, offset: u16, fine: bool) -> Self {
+    pub fn pan_tilt(name: impl Into<String>, fine: bool) -> Self {
         Self {
             name: name.into(),
             kind: ChannelKind::PanTilt { fine },
-            offset,
+            offset: 0,
             values: vec![0.0, 0.0], // pan, tilt
         }
     }
 
-    pub fn raw(name: impl Into<String>, offset: u16, count: usize) -> Self {
+    pub fn raw(name: impl Into<String>, count: usize) -> Self {
         Self {
             name: name.into(),
             kind: ChannelKind::Raw { count },
-            offset,
+            offset: 0,
             values: vec![0.0; count],
         }
     }

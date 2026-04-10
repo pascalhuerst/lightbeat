@@ -52,10 +52,21 @@ impl Fixture {
         }
     }
 
-    /// Add a channel to this fixture. Returns `&mut Self` for chaining.
-    pub fn add_channel(&mut self, channel: Channel) -> &mut Self {
+    /// Add a channel to this fixture. The channel's offset is auto-assigned
+    /// based on the current footprint. Returns `&mut Self` for chaining.
+    pub fn add_channel(&mut self, mut channel: Channel) -> &mut Self {
+        channel.offset = self.dmx_footprint() as u16;
         self.channels.push(channel);
         self
+    }
+
+    /// Recalculate all channel offsets based on sequential order.
+    pub fn recalc_offsets(&mut self) {
+        let mut offset: u16 = 0;
+        for ch in &mut self.channels {
+            ch.offset = offset;
+            offset += ch.kind.dmx_channel_count() as u16;
+        }
     }
 
     /// Total number of DMX channels this fixture occupies.
@@ -117,9 +128,9 @@ mod tests {
             start_channel: 10,
             ..Default::default()
         });
-        f.add_channel(Channel::dimmer("Dimmer", 0));
-        f.add_channel(Channel::color("Color", 1, ColorMode::Rgb));
-        f.add_channel(Channel::pan_tilt("Pan/Tilt", 4, false));
+        f.add_channel(Channel::dimmer("Dimmer"));
+        f.add_channel(Channel::color("Color", ColorMode::Rgb));
+        f.add_channel(Channel::pan_tilt("Pan/Tilt", false));
         f
     }
 

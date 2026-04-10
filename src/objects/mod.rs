@@ -1,9 +1,9 @@
-mod channel;
-mod fixture;
-mod output;
-mod universe;
+pub mod channel;
+pub mod fixture;
+pub mod output;
+pub mod universe;
 
 pub use channel::{Channel, ChannelKind, ColorMode};
 pub use fixture::Fixture;
-pub use output::{Output, OutputConfig};
+pub use output::OutputConfig;
 pub use universe::DmxUniverse;

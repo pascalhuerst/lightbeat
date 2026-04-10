@@ -46,6 +46,7 @@ struct DrawingConnection {
 /// Entry in the node registry — a named factory for spawning nodes.
 pub struct NodeEntry {
     pub label: &'static str,
+    pub category: &'static str,
     pub factory: Box<dyn Fn(NodeId) -> Box<dyn NodeWidget>>,
 }
 
@@ -72,6 +73,7 @@ pub struct NodeGraph {
     connections: Vec<Connection>,
     drag: DragState,
     pan: Vec2,
+    zoom: f32,
     next_id: u64,
     registry: Vec<NodeEntry>,
     new_nodes: Vec<NewNode>,
@@ -90,6 +92,7 @@ impl NodeGraph {
             connections: Vec::new(),
             drag: DragState::default(),
             pan: Vec2::ZERO,
+            zoom: 1.0,
             next_id: 1,
             registry: Vec::new(),
             new_nodes: Vec::new(),
@@ -107,8 +110,8 @@ impl NodeGraph {
     }
 
     /// Register a node type that can be spawned from the context menu.
-    pub fn register_node(&mut self, label: &'static str, factory: impl Fn(NodeId) -> Box<dyn NodeWidget> + 'static) {
-        self.registry.push(NodeEntry { label, factory: Box::new(factory) });
+    pub fn register_node(&mut self, category: &'static str, label: &'static str, factory: impl Fn(NodeId) -> Box<dyn NodeWidget> + 'static) {
+        self.registry.push(NodeEntry { label, category, factory: Box::new(factory) });
     }
 
     fn alloc_id(&mut self) -> NodeId {
@@ -151,6 +154,16 @@ impl NodeGraph {
             }
         }
         result
+    }
+
+    /// Get all nodes for iteration (e.g. to call show_editor on each).
+    pub fn nodes_mut(&mut self) -> &mut [Box<dyn NodeWidget>] {
+        &mut self.nodes
+    }
+
+    /// Get all nodes as shared references.
+    pub fn all_nodes(&self) -> &[Box<dyn NodeWidget>] {
+        &self.nodes
     }
 
     pub fn node_count(&self) -> usize {
@@ -238,6 +251,23 @@ impl NodeGraph {
         let canvas_rect = response.rect;
         self.canvas_rect = canvas_rect;
 
+        // Zoom with Ctrl+scroll wheel, centered on mouse position.
+        if response.hovered() {
+            let scroll_delta = ui.input(|i| i.smooth_scroll_delta.y);
+            if scroll_delta != 0.0 {
+                let zoom_factor = 1.0 + scroll_delta * 0.002;
+                let new_zoom = (self.zoom * zoom_factor).clamp(0.2, 3.0);
+
+                // Zoom around mouse position.
+                if let Some(mouse) = ui.input(|i| i.pointer.hover_pos()) {
+                    let mc = mouse.to_vec2() - canvas_rect.min.to_vec2();
+                    // Adjust pan so the point under the mouse stays fixed.
+                    self.pan = (self.pan - mc) * (new_zoom / self.zoom) + mc;
+                }
+                self.zoom = new_zoom;
+            }
+        }
+
         // Pan with middle mouse.
         if response.dragged_by(egui::PointerButton::Middle) {
             self.pan += response.drag_delta();
@@ -250,16 +280,17 @@ impl NodeGraph {
             }
         }
 
-        draw_grid(&painter, canvas_rect, self.pan);
+        let z = self.zoom;
+        draw_grid(&painter, canvas_rect, self.pan, z);
 
         let origin = canvas_rect.min.to_vec2() + self.pan;
 
         // -- Draw connections --
         for conn in &self.connections {
             if let (Some(from_pos), Some(from_type), Some(to_pos)) = (
-                port_screen_pos(&self.nodes, &self.states, conn.from, origin),
+                port_screen_pos(&self.nodes, &self.states, conn.from, origin, z),
                 port_type_for(&self.nodes, &self.states, conn.from),
-                port_screen_pos(&self.nodes, &self.states, conn.to, origin),
+                port_screen_pos(&self.nodes, &self.states, conn.to, origin, z),
             ) {
                 draw_bezier(&painter, from_pos, to_pos, from_type.color(), CONNECTION_THICKNESS);
             }
@@ -274,7 +305,7 @@ impl NodeGraph {
             }
         }
 
-        // -- Compute node rects --
+        // -- Compute node rects (with zoom) --
         let node_rects: Vec<Rect> = (0..self.nodes.len())
             .map(|i| {
                 let n = &self.nodes[i];
@@ -288,8 +319,11 @@ impl NodeGraph {
                     .size_override
                     .map(|s| Vec2::new(s.x.max(min_w), s.y.max(min_h)))
                     .unwrap_or(Vec2::new(min_w, min_h));
-                let pos = self.states[i].pos + origin;
-                Rect::from_min_size(pos, size)
+                let pos = Pos2::new(
+                    self.states[i].pos.x * z,
+                    self.states[i].pos.y * z,
+                ) + origin;
+                Rect::from_min_size(pos, size * z)
             })
             .collect();
 
@@ -306,20 +340,32 @@ impl NodeGraph {
                 &outputs,
                 node_rects[i],
                 selected,
+                z,
             );
         }
 
         // -- Draw node content (needs &mut node) --
         for i in 0..self.nodes.len() {
             let rect = node_rects[i];
-            let content_rect = node_content_rect(rect);
+            let content_rect = node_content_rect(rect, z);
             if content_rect.width() > 0.0 && content_rect.height() > 0.0 {
                 let mut content_ui = ui.new_child(
                     egui::UiBuilder::new()
                         .max_rect(content_rect)
                         .layout(egui::Layout::top_down(egui::Align::LEFT)),
                 );
-                self.nodes[i].show_content(&mut content_ui);
+                // Scale text and spacing for zoom.
+                if (z - 1.0).abs() > 0.01 {
+                    let mut style = (**content_ui.style()).clone();
+                    for (_, font_id) in style.text_styles.iter_mut() {
+                        font_id.size *= z;
+                    }
+                    style.spacing.item_spacing *= z;
+                    style.spacing.button_padding *= z;
+                    content_ui.set_style(style);
+                }
+
+                self.nodes[i].show_content(&mut content_ui, z);
             }
         }
 
@@ -491,13 +537,15 @@ impl NodeGraph {
         }
         let menu_pos = self.context_menu_pos.unwrap();
 
-        let entries: Vec<(usize, &'static str)> = self.registry
-            .iter()
-            .enumerate()
-            .map(|(i, e)| (i, e.label))
-            .collect();
+        // Group entries by category.
+        let mut categories: Vec<&'static str> = Vec::new();
+        for e in &self.registry {
+            if !categories.contains(&e.category) {
+                categories.push(e.category);
+            }
+        }
 
-        if entries.is_empty() {
+        if self.registry.is_empty() {
             self.context_menu_pos = None;
             return;
         }
@@ -512,10 +560,17 @@ impl NodeGraph {
                     ui.set_min_width(140.0);
                     ui.label(egui::RichText::new("Add node").strong().size(11.0));
                     ui.separator();
-                    for (idx, label) in &entries {
-                        if ui.button(*label).clicked() {
-                            spawn = Some(*idx);
-                        }
+                    for cat in &categories {
+                        ui.menu_button(*cat, |ui| {
+                            for (idx, entry) in self.registry.iter().enumerate() {
+                                if entry.category == *cat {
+                                    if ui.button(entry.label).clicked() {
+                                        spawn = Some(idx);
+                                        ui.close_menu();
+                                    }
+                                }
+                            }
+                        });
                     }
                 });
             });
@@ -531,7 +586,7 @@ impl NodeGraph {
 
         if let Some(reg_idx) = spawn {
             let id = self.alloc_id();
-            let canvas_pos = menu_pos - canvas_rect.min.to_vec2() - self.pan;
+            let canvas_pos = (menu_pos - canvas_rect.min.to_vec2() - self.pan) / self.zoom;
             let node = (self.registry[reg_idx].factory)(id);
             self.add_node(node, canvas_pos);
             self.context_menu_pos = None;
@@ -581,7 +636,7 @@ impl NodeGraph {
                         continue;
                     }
                     let pos =
-                        port_pos(node_rects[i].min, node_rects[i].width(), target_dir, pi);
+                        port_pos_z(node_rects[i].min, node_rects[i].width(), target_dir, pi, self.zoom);
                     let dist = pos.distance(pointer_pos);
                     if dist < best_dist {
                         best_dist = dist;
@@ -633,8 +688,8 @@ impl NodeGraph {
 
                 let outputs = self.nodes[i].ui_outputs();
                 for (pi, ui_port) in outputs.iter().enumerate() {
-                    let pos = port_pos(rect.min, rect.width(), PortDir::Output, pi);
-                    if pos.distance(pointer_pos) < PORT_RADIUS + 4.0 {
+                    let pos = port_pos_z(rect.min, rect.width(), PortDir::Output, pi, self.zoom);
+                    if pos.distance(pointer_pos) < (PORT_RADIUS + 4.0) * self.zoom {
                         self.drag.drawing_conn = Some(DrawingConnection {
                             from: make_port_id(node_id, PortDir::Output, pi),
                             from_pos: pos,
@@ -650,18 +705,18 @@ impl NodeGraph {
                     .iter()
                     .enumerate()
                     .map(|(pi, up)| {
-                        let pos = port_pos(rect.min, rect.width(), PortDir::Input, pi);
+                        let pos = port_pos_z(rect.min, rect.width(), PortDir::Input, pi, self.zoom);
                         (pi, pos, up.def.port_type)
                     })
                     .collect();
                 for (pi, pos, pt) in input_ports {
-                    if pos.distance(pointer_pos) < PORT_RADIUS + 4.0 {
+                    if pos.distance(pointer_pos) < (PORT_RADIUS + 4.0) * self.zoom {
                         let input_id = make_port_id(node_id, PortDir::Input, pi);
                         if let Some(conn_idx) = self.connections.iter().position(|c| c.to == input_id) {
                             let old_from = self.connections[conn_idx].from;
                             self.remove_connection_to(input_id);
                             if let Some(from_pos) = port_screen_pos_from_rects(
-                                &self.states, node_rects, old_from,
+                                &self.states, node_rects, old_from, self.zoom,
                             ) {
                                 self.drag.drawing_conn = Some(DrawingConnection {
                                     from: old_from,
@@ -698,8 +753,8 @@ impl NodeGraph {
                 let min_h = port_h.max(content_h);
                 let current = self.states[idx].size_override.unwrap_or(Vec2::new(min_w, min_h));
                 let new_size = Vec2::new(
-                    (current.x + drag_delta.x).max(min_w),
-                    (current.y + drag_delta.y).max(min_h),
+                    (current.x + drag_delta.x / self.zoom).max(min_w),
+                    (current.y + drag_delta.y / self.zoom).max(min_h),
                 );
                 self.states[idx].size_override = Some(new_size);
                 ui.ctx().set_cursor_icon(CursorIcon::ResizeNwSe);
@@ -751,7 +806,7 @@ impl NodeGraph {
                     }
                     let title_rect = Rect::from_min_size(
                         node_rects[i].min,
-                        Vec2::new(node_rects[i].width(), NODE_TITLE_HEIGHT),
+                        Vec2::new(node_rects[i].width(), NODE_TITLE_HEIGHT * self.zoom),
                     );
                     if title_rect.contains(pointer_pos) {
                         self.drag.dragging_nodes = true;
@@ -767,7 +822,7 @@ impl NodeGraph {
             if self.drag.dragging_nodes {
                 if primary_down {
                     for &idx in &self.selected_nodes {
-                        self.states[idx].pos += drag_delta;
+                        self.states[idx].pos += drag_delta / self.zoom;
                         if snap_to_grid {
                             self.states[idx].pos.x = (self.states[idx].pos.x / GRID_SPACING).round() * GRID_SPACING;
                             self.states[idx].pos.y = (self.states[idx].pos.y / GRID_SPACING).round() * GRID_SPACING;
@@ -797,8 +852,8 @@ impl NodeGraph {
         for i in 0..self.nodes.len() {
             let rect = node_rects[i];
             for (pi, ui_port) in self.nodes[i].ui_outputs().iter().enumerate() {
-                let pos = port_pos(rect.min, rect.width(), PortDir::Output, pi);
-                if pos.distance(pointer_pos) < PORT_RADIUS + 4.0 {
+                let pos = port_pos_z(rect.min, rect.width(), PortDir::Output, pi, self.zoom);
+                if pos.distance(pointer_pos) < (PORT_RADIUS + 4.0) * self.zoom {
                     ui.ctx().set_cursor_icon(CursorIcon::PointingHand);
                     egui::show_tooltip_at(ui.ctx(), ui.layer_id(), egui::Id::new(("port_tip", i, pi, 1)), pos + egui::vec2(10.0, -10.0), |ui| {
                         ui.label(&ui_port.def.name);
@@ -806,8 +861,8 @@ impl NodeGraph {
                 }
             }
             for (pi, ui_port) in self.nodes[i].ui_inputs().iter().enumerate() {
-                let pos = port_pos(rect.min, rect.width(), PortDir::Input, pi);
-                if pos.distance(pointer_pos) < PORT_RADIUS + 4.0 {
+                let pos = port_pos_z(rect.min, rect.width(), PortDir::Input, pi, self.zoom);
+                if pos.distance(pointer_pos) < (PORT_RADIUS + 4.0) * self.zoom {
                     ui.ctx().set_cursor_icon(CursorIcon::PointingHand);
                     egui::show_tooltip_at(ui.ctx(), ui.layer_id(), egui::Id::new(("port_tip", i, pi, 0)), pos + egui::vec2(10.0, -10.0), |ui| {
                         ui.label(&ui_port.def.name);
@@ -827,16 +882,17 @@ fn port_screen_pos_from_rects(
     states: &[NodeState],
     node_rects: &[Rect],
     port_id: PortId,
+    zoom: f32,
 ) -> Option<Pos2> {
     let idx = states.iter().position(|s| s.id == port_id.node)?;
     let rect = node_rects[idx];
-    Some(port_pos(rect.min, rect.width(), port_id.dir, port_id.index))
+    Some(port_pos_z(rect.min, rect.width(), port_id.dir, port_id.index, zoom))
 }
 
-fn node_content_rect(rect: Rect) -> Rect {
+fn node_content_rect(rect: Rect, zoom: f32) -> Rect {
     Rect::from_min_max(
-        Pos2::new(rect.min.x + PORT_RADIUS + 8.0, rect.min.y + PORT_START_Y),
-        Pos2::new(rect.max.x - PORT_RADIUS - 8.0, rect.max.y - NODE_PADDING),
+        Pos2::new(rect.min.x + (PORT_RADIUS + 8.0) * zoom, rect.min.y + PORT_START_Y * zoom),
+        Pos2::new(rect.max.x - (PORT_RADIUS + 8.0) * zoom, rect.max.y - NODE_PADDING * zoom),
     )
 }
 
@@ -850,6 +906,7 @@ fn draw_node_chrome(
     outputs: &[UiPortDef],
     rect: Rect,
     selected: bool,
+    zoom: f32,
 ) {
     // Shadow
     let shadow_rect = rect.translate(Vec2::new(3.0, 3.0));
@@ -861,7 +918,7 @@ fn draw_node_chrome(
     painter.rect_stroke(rect, NODE_CORNER_RADIUS, border, StrokeKind::Inside);
 
     // Title bar
-    let title_rect = Rect::from_min_size(rect.min, Vec2::new(rect.width(), NODE_TITLE_HEIGHT));
+    let title_rect = Rect::from_min_size(rect.min, Vec2::new(rect.width(), NODE_TITLE_HEIGHT * zoom));
     painter.rect_filled(
         title_rect,
         egui::CornerRadius { nw: NODE_CORNER_RADIUS as u8, ne: NODE_CORNER_RADIUS as u8, sw: 0, se: 0 },
@@ -871,20 +928,20 @@ fn draw_node_chrome(
         title_rect.center(),
         egui::Align2::CENTER_CENTER,
         title,
-        egui::FontId::proportional(13.0),
+        egui::FontId::proportional(13.0 * zoom),
         Color32::WHITE,
     );
 
     // Input ports
     for (i, ui_port) in inputs.iter().enumerate() {
-        let pos = port_pos(rect.min, rect.width(), PortDir::Input, i);
-        draw_port(painter, pos, ui_port);
+        let pos = port_pos_z(rect.min, rect.width(), PortDir::Input, i, zoom);
+        draw_port(painter, pos, ui_port, zoom);
     }
 
     // Output ports
     for (i, ui_port) in outputs.iter().enumerate() {
-        let pos = port_pos(rect.min, rect.width(), PortDir::Output, i);
-        draw_port(painter, pos, ui_port);
+        let pos = port_pos_z(rect.min, rect.width(), PortDir::Output, i, zoom);
+        draw_port(painter, pos, ui_port, zoom);
     }
 
     // Resize handle (small triangle in bottom-right corner)
@@ -903,19 +960,21 @@ fn draw_node_chrome(
     }
 }
 
-fn draw_port(painter: &Painter, pos: Pos2, ui_port: &UiPortDef) {
+fn draw_port(painter: &Painter, pos: Pos2, ui_port: &UiPortDef, zoom: f32) {
     let type_color = ui_port.def.port_type.color();
     let fill = ui_port.fill_color.unwrap_or(type_color);
     let stroke_width = if ui_port.fill_color.is_some() { 3.0 } else { 1.5 };
-    painter.circle_filled(pos, PORT_RADIUS, fill);
-    painter.circle_stroke(pos, PORT_RADIUS, Stroke::new(stroke_width, type_color));
+    let r = PORT_RADIUS * zoom;
+    painter.circle_filled(pos, r, fill);
+    painter.circle_stroke(pos, r, Stroke::new(stroke_width, type_color));
 }
 
-fn draw_grid(painter: &Painter, rect: Rect, pan: Vec2) {
+fn draw_grid(painter: &Painter, rect: Rect, pan: Vec2, zoom: f32) {
     painter.rect_filled(rect, 0.0, Color32::from_rgb(22, 22, 26));
 
-    let offset_x = pan.x.rem_euclid(GRID_SPACING);
-    let offset_y = pan.y.rem_euclid(GRID_SPACING);
+    let spacing = GRID_SPACING * zoom;
+    let offset_x = pan.x.rem_euclid(spacing);
+    let offset_y = pan.y.rem_euclid(spacing);
 
     let mut x = rect.min.x + offset_x;
     while x < rect.max.x {
@@ -923,7 +982,7 @@ fn draw_grid(painter: &Painter, rect: Rect, pan: Vec2) {
             [Pos2::new(x, rect.min.y), Pos2::new(x, rect.max.y)],
             Stroke::new(1.0, GRID_COLOR),
         );
-        x += GRID_SPACING;
+        x += spacing;
     }
     let mut y = rect.min.y + offset_y;
     while y < rect.max.y {
@@ -931,7 +990,7 @@ fn draw_grid(painter: &Painter, rect: Rect, pan: Vec2) {
             [Pos2::new(rect.min.x, y), Pos2::new(rect.max.x, y)],
             Stroke::new(1.0, GRID_COLOR),
         );
-        y += GRID_SPACING;
+        y += spacing;
     }
 }
 
@@ -965,11 +1024,12 @@ fn port_screen_pos(
     states: &[NodeState],
     port_id: PortId,
     origin: Vec2,
+    zoom: f32,
 ) -> Option<Pos2> {
     let idx = states.iter().position(|s| s.id == port_id.node)?;
-    let pos = states[idx].pos + origin;
-    let width = nodes[idx].min_width();
-    Some(port_pos(pos, width, port_id.dir, port_id.index))
+    let pos = Pos2::new(states[idx].pos.x * zoom, states[idx].pos.y * zoom) + origin;
+    let width = nodes[idx].min_width() * zoom;
+    Some(port_pos_z(pos, width, port_id.dir, port_id.index, zoom))
 }
 
 fn port_type_for(

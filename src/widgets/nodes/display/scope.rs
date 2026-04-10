@@ -61,7 +61,7 @@ impl NodeWidget for ScopeWidget {
         }
     }
 
-    fn show_content(&mut self, ui: &mut Ui) {
+    fn show_content(&mut self, ui: &mut Ui, _zoom: f32) {
         let shared = self.shared.lock().unwrap();
         let display = shared.display.as_ref()
             .and_then(|d| d.downcast_ref::<ScopeDisplay>());

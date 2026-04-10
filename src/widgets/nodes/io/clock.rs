@@ -45,7 +45,7 @@ impl NodeWidget for ClockWidget {
 
     fn shared_state(&self) -> &SharedState { &self.shared }
 
-    fn show_content(&mut self, ui: &mut Ui) {
+    fn show_content(&mut self, ui: &mut Ui, zoom: f32) {
         let shared = self.shared.lock().unwrap();
         let display = shared.display.as_ref()
             .and_then(|d| d.downcast_ref::<ClockDisplay>());
@@ -58,7 +58,7 @@ impl NodeWidget for ClockWidget {
         };
         drop(shared);
 
-        let pad = 4.0;
+        let pad = 4.0 * zoom;
 
         ui.horizontal(|ui| {
             let link_color = if num_peers > 0 {
@@ -75,18 +75,18 @@ impl NodeWidget for ClockWidget {
         ui.vertical_centered(|ui| {
             ui.colored_label(
                 Color32::WHITE,
-                egui::RichText::new(format!("{:.1}", tempo)).monospace().size(20.0),
+                egui::RichText::new(format!("{:.1}", tempo)).monospace().size(20.0 * zoom),
             );
             ui.colored_label(
                 Color32::from_gray(100),
-                egui::RichText::new("BPM").monospace().size(9.0),
+                egui::RichText::new("BPM").monospace().size(9.0 * zoom),
             );
         });
 
         ui.add_space(pad);
 
         ui.horizontal(|ui| {
-            let led_radius = 5.0;
+            let led_radius = 5.0 * zoom;
 
             let play_color = if playing {
                 Color32::from_rgb(80, 240, 120)

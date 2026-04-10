@@ -1,7 +1,10 @@
 mod beat_clock;
+mod color;
 mod config;
 mod engine;
+// mod interfaces; // TODO: fix artnet_protocol/sacn API version mismatch
 mod link_controller;
+mod objects;
 mod project;
 mod widgets;
 
@@ -12,17 +15,35 @@ use eframe::egui;
 
 use beat_clock::{BeatClock, BeatPattern, SubscriptionHandle};
 use config::AppConfig;
-use engine::types::{new_shared_state, EngineCommand, NodeId};
+use engine::types::{new_shared_state, EngineCommand, NodeId, PortType};
 use engine::EngineHandle;
+use engine::nodes::display::color_display::ColorDisplayProcessNode;
+use engine::nodes::display::scope::ScopeProcessNode;
 use engine::nodes::io::clock::ClockProcessNode;
+use engine::nodes::io::fixture::FixtureProcessNode;
+use engine::nodes::io::interface::InterfaceProcessNode;
+use engine::nodes::math::compare::{CompareOp, CompareProcessNode};
+use engine::nodes::math::constant::ConstantProcessNode;
+use engine::nodes::math::logic_gate::{LogicOp, LogicGateProcessNode};
+use engine::nodes::math::math_op::{MathOp, MathProcessNode};
+use engine::nodes::math::oscillator::{OscFunc, OscillatorProcessNode};
+use engine::nodes::transport::envelope::EnvelopeProcessNode;
 use engine::nodes::transport::phase_scaler::PhaseScalerProcessNode;
 use engine::nodes::transport::step_sequencer::StepSequencerProcessNode;
-use engine::nodes::display::scope::ScopeProcessNode;
-use widgets::nodes::NodeGraph;
+use widgets::nodes::display::color_display::ColorDisplayWidget;
+use widgets::nodes::display::scope::ScopeWidget;
 use widgets::nodes::io::clock::ClockWidget;
+use widgets::nodes::io::fixture::FixtureWidget;
+use widgets::nodes::io::interface::InterfaceWidget;
+use widgets::nodes::math::compare::CompareWidget;
+use widgets::nodes::math::constant::ConstantWidget;
+use widgets::nodes::math::logic_gate::LogicGateWidget;
+use widgets::nodes::math::math_op::MathWidget;
+use widgets::nodes::math::oscillator::OscillatorWidget;
+use widgets::nodes::transport::envelope::EnvelopeWidget;
 use widgets::nodes::transport::phase_scaler::PhaseScalerWidget;
 use widgets::nodes::transport::step_sequencer::StepSequencerWidget;
-use widgets::nodes::display::scope::ScopeWidget;
+use widgets::nodes::NodeGraph;
 
 struct LightBeatApp {
     graph: NodeGraph,
@@ -33,6 +54,9 @@ struct LightBeatApp {
     project_path: Option<PathBuf>,
     snapshot: Arc<std::sync::Mutex<beat_clock::LinkSnapshot>>,
     quit_requested: bool,
+    show_dmx_monitor: bool,
+    show_fixture_list: bool,
+    dmx_monitor: widgets::dmx_monitor::DmxMonitor,
 }
 
 impl LightBeatApp {
@@ -51,6 +75,9 @@ impl LightBeatApp {
             project_path: None,
             snapshot,
             quit_requested: false,
+            show_dmx_monitor: false,
+            show_fixture_list: false,
+            dmx_monitor: widgets::dmx_monitor::DmxMonitor::new(),
         };
 
         app.register_node_factories();
@@ -78,21 +105,91 @@ impl LightBeatApp {
     }
 
     fn register_node_factories(&mut self) {
-        self.graph.register_node("Clock", |id| {
-            let shared = new_shared_state(0, 3);
-            Box::new(ClockWidget::new(id, shared))
+        // IO
+        self.graph.register_node("IO", "Fixture", |id| {
+            Box::new(FixtureWidget::new(id, new_shared_state(0, 0)))
         });
-        self.graph.register_node("Phase Scaler", |id| {
-            let shared = new_shared_state(1, 1);
-            Box::new(PhaseScalerWidget::new(id, shared))
+        self.graph.register_node("IO", "Interface", |id| {
+            Box::new(InterfaceWidget::new(id, new_shared_state(0, 0)))
         });
-        self.graph.register_node("Step Sequencer", |id| {
-            let shared = new_shared_state(1, 2);
-            Box::new(StepSequencerWidget::new(id, shared))
+        self.graph.register_node("IO", "Clock", |id| {
+            Box::new(ClockWidget::new(id, new_shared_state(0, 3)))
         });
-        self.graph.register_node("Scope", |id| {
-            let shared = new_shared_state(2, 0);
-            Box::new(ScopeWidget::new(id, shared))
+
+        // Transport
+        self.graph.register_node("Transport", "Phase Scaler", |id| {
+            Box::new(PhaseScalerWidget::new(id, new_shared_state(1, 1)))
+        });
+        self.graph.register_node("Transport", "Step Sequencer", |id| {
+            Box::new(StepSequencerWidget::new(id, new_shared_state(1, 2)))
+        });
+        self.graph.register_node("Transport", "ADSR", |id| {
+            Box::new(EnvelopeWidget::new(id, new_shared_state(2, 2)))
+        });
+
+        // Math
+        self.graph.register_node("Math", "Add", |id| {
+            Box::new(MathWidget::new(id, MathOp::Add, new_shared_state(2, 1)))
+        });
+        self.graph.register_node("Math", "Sub", |id| {
+            Box::new(MathWidget::new(id, MathOp::Sub, new_shared_state(2, 1)))
+        });
+        self.graph.register_node("Math", "Mul", |id| {
+            Box::new(MathWidget::new(id, MathOp::Mul, new_shared_state(2, 1)))
+        });
+        self.graph.register_node("Math", "Div", |id| {
+            Box::new(MathWidget::new(id, MathOp::Div, new_shared_state(2, 1)))
+        });
+        self.graph.register_node("Math", "Sin", |id| {
+            Box::new(OscillatorWidget::new(id, OscFunc::Sin, new_shared_state(2, 1)))
+        });
+        self.graph.register_node("Math", "Cos", |id| {
+            Box::new(OscillatorWidget::new(id, OscFunc::Cos, new_shared_state(2, 1)))
+        });
+        self.graph.register_node("Math", "Const Value", |id| {
+            Box::new(ConstantWidget::new(id, PortType::Untyped, new_shared_state(0, 1)))
+        });
+        self.graph.register_node("Math", "Const Logic", |id| {
+            Box::new(ConstantWidget::new(id, PortType::Logic, new_shared_state(0, 1)))
+        });
+        self.graph.register_node("Math", "Const Phase", |id| {
+            Box::new(ConstantWidget::new(id, PortType::Phase, new_shared_state(0, 1)))
+        });
+
+        // Compare
+        self.graph.register_node("Compare", ">=", |id| {
+            Box::new(CompareWidget::new(id, CompareOp::Gte, new_shared_state(2, 1)))
+        });
+        self.graph.register_node("Compare", "<=", |id| {
+            Box::new(CompareWidget::new(id, CompareOp::Lte, new_shared_state(2, 1)))
+        });
+        self.graph.register_node("Compare", "==", |id| {
+            Box::new(CompareWidget::new(id, CompareOp::Eq, new_shared_state(2, 1)))
+        });
+        self.graph.register_node("Compare", "!=", |id| {
+            Box::new(CompareWidget::new(id, CompareOp::Neq, new_shared_state(2, 1)))
+        });
+
+        // Logic
+        self.graph.register_node("Logic", "AND", |id| {
+            Box::new(LogicGateWidget::new(id, LogicOp::And, new_shared_state(2, 1)))
+        });
+        self.graph.register_node("Logic", "OR", |id| {
+            Box::new(LogicGateWidget::new(id, LogicOp::Or, new_shared_state(2, 1)))
+        });
+        self.graph.register_node("Logic", "XOR", |id| {
+            Box::new(LogicGateWidget::new(id, LogicOp::Xor, new_shared_state(2, 1)))
+        });
+        self.graph.register_node("Logic", "NOT", |id| {
+            Box::new(LogicGateWidget::new(id, LogicOp::Not, new_shared_state(1, 1)))
+        });
+
+        // Display
+        self.graph.register_node("Display", "Scope", |id| {
+            Box::new(ScopeWidget::new(id, new_shared_state(2, 0)))
+        });
+        self.graph.register_node("Display", "Color Display", |id| {
+            Box::new(ColorDisplayWidget::new(id, new_shared_state(3, 0)))
         });
     }
 
@@ -124,6 +221,18 @@ impl LightBeatApp {
 
             // Create corresponding engine node.
             match type_name {
+                "Fixture" => {
+                    self.engine.send(EngineCommand::AddNode {
+                        node: Box::new(FixtureProcessNode::new(id)),
+                        shared,
+                    });
+                }
+                "Interface" => {
+                    self.engine.send(EngineCommand::AddNode {
+                        node: Box::new(InterfaceProcessNode::new(id)),
+                        shared,
+                    });
+                }
                 "Clock" => {
                     let engine_node = ClockProcessNode::new(id, Arc::clone(&self.snapshot));
                     let beat_state = engine_node.beat_state.clone();
@@ -151,6 +260,87 @@ impl LightBeatApp {
                 "Scope" => {
                     self.engine.send(EngineCommand::AddNode {
                         node: Box::new(ScopeProcessNode::new(id)),
+                        shared,
+                    });
+                }
+                "ADSR" => {
+                    self.engine.send(EngineCommand::AddNode {
+                        node: Box::new(EnvelopeProcessNode::new(id)),
+                        shared,
+                    });
+                }
+                "Add" | "Sub" | "Mul" | "Div" => {
+                    let op = match type_name {
+                        "Add" => MathOp::Add,
+                        "Sub" => MathOp::Sub,
+                        "Mul" => MathOp::Mul,
+                        "Div" => MathOp::Div,
+                        _ => unreachable!(),
+                    };
+                    self.engine.send(EngineCommand::AddNode {
+                        node: Box::new(MathProcessNode::new(id, op)),
+                        shared,
+                    });
+                }
+                "Color Display" => {
+                    self.engine.send(EngineCommand::AddNode {
+                        node: Box::new(ColorDisplayProcessNode::new(id)),
+                        shared,
+                    });
+                }
+                ">=" | "<=" | "==" | "!=" => {
+                    let op = match type_name {
+                        ">=" => CompareOp::Gte,
+                        "<=" => CompareOp::Lte,
+                        "==" => CompareOp::Eq,
+                        "!=" => CompareOp::Neq,
+                        _ => unreachable!(),
+                    };
+                    self.engine.send(EngineCommand::AddNode {
+                        node: Box::new(CompareProcessNode::new(id, op)),
+                        shared,
+                    });
+                }
+                "AND" | "OR" | "XOR" | "NOT" => {
+                    let op = match type_name {
+                        "AND" => LogicOp::And,
+                        "OR" => LogicOp::Or,
+                        "XOR" => LogicOp::Xor,
+                        "NOT" => LogicOp::Not,
+                        _ => unreachable!(),
+                    };
+                    self.engine.send(EngineCommand::AddNode {
+                        node: Box::new(LogicGateProcessNode::new(id, op)),
+                        shared,
+                    });
+                }
+                "Const Value" => {
+                    self.engine.send(EngineCommand::AddNode {
+                        node: Box::new(ConstantProcessNode::new(id, PortType::Untyped, 0.0)),
+                        shared,
+                    });
+                }
+                "Const Logic" => {
+                    self.engine.send(EngineCommand::AddNode {
+                        node: Box::new(ConstantProcessNode::new(id, PortType::Logic, 0.0)),
+                        shared,
+                    });
+                }
+                "Const Phase" => {
+                    self.engine.send(EngineCommand::AddNode {
+                        node: Box::new(ConstantProcessNode::new(id, PortType::Phase, 0.0)),
+                        shared,
+                    });
+                }
+                "Sin" => {
+                    self.engine.send(EngineCommand::AddNode {
+                        node: Box::new(OscillatorProcessNode::new(id, OscFunc::Sin)),
+                        shared,
+                    });
+                }
+                "Cos" => {
+                    self.engine.send(EngineCommand::AddNode {
+                        node: Box::new(OscillatorProcessNode::new(id, OscFunc::Cos)),
                         shared,
                     });
                 }
@@ -281,8 +471,26 @@ impl eframe::App for LightBeatApp {
                         self.quit_requested = true;
                     }
                 });
+                ui.menu_button("View", |ui| {
+                    if ui.checkbox(&mut self.show_fixture_list, "Fixtures").changed() {
+                        ui.close_menu();
+                    }
+                    if ui.checkbox(&mut self.show_dmx_monitor, "DMX Monitor").changed() {
+                        ui.close_menu();
+                    }
+                });
             });
         });
+
+        // Fixture list (left panel, toggled via View menu).
+        if self.show_fixture_list {
+            egui::SidePanel::left("fixture_list")
+                .default_width(220.0)
+                .resizable(true)
+                .show(ctx, |ui| {
+                    widgets::fixture_list::show_fixture_list(ui, &self.graph);
+                });
+        }
 
         // Inspector panel.
         egui::SidePanel::right("inspector")
@@ -303,12 +511,33 @@ impl eframe::App for LightBeatApp {
                 }
             });
 
+        // DMX Monitor (bottom panel, toggled via View menu).
+        if self.show_dmx_monitor {
+            egui::TopBottomPanel::bottom("dmx_monitor")
+                .default_height(180.0)
+                .resizable(true)
+                .show(ctx, |ui| {
+                    // TODO: wire to actual universe data once objects/interfaces are connected.
+                    let empty = [0u8; 512];
+                    self.dmx_monitor.show(ui, "No output connected", &empty);
+                });
+        }
+
         // Node graph.
         egui::CentralPanel::default().show(ctx, |ui| {
             self.graph.show(ui, self.config.snap_to_grid);
         });
 
         self.wire_new_nodes();
+
+        // Show editor windows for fixture/interface nodes.
+        for node in self.graph.nodes_mut() {
+            if let Some(fixture) = node.as_any_mut().downcast_mut::<FixtureWidget>() {
+                fixture.show_editor(ctx);
+            } else if let Some(iface) = node.as_any_mut().downcast_mut::<InterfaceWidget>() {
+                iface.show_editor(ctx);
+            }
+        }
 
         // Send any pending engine commands from the graph.
         for cmd in self.graph.drain_engine_commands() {

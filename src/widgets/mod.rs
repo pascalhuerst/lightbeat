@@ -1,2 +1,4 @@
+pub mod dmx_monitor;
+pub mod fixture_list;
 pub mod inspector;
 pub mod nodes;
