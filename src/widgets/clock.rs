@@ -1,3 +1,5 @@
+use std::any::Any;
+
 use egui::{self, Color32, Ui};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
@@ -7,28 +9,32 @@ use crate::widgets::nodes::{NodeId, NodeWidget, PortDef, PortType};
 
 const BEAT_FLASH_DURATION_MS: u128 = 80;
 
-pub struct LinkStatusState {
+pub struct ClockState {
     pub tempo: f64,
     pub playing: bool,
     pub num_peers: usize,
     pub last_beat_time: Option<Instant>,
+    /// Number of beats that arrived since last drain.
+    pub pending_beats: u32,
 }
 
-impl LinkStatusState {
+impl ClockState {
     pub fn new() -> Self {
         Self {
             tempo: 0.0,
             playing: false,
             num_peers: 0,
             last_beat_time: None,
+            pending_beats: 0,
         }
     }
 }
 
-impl BeatListener for LinkStatusState {
+impl BeatListener for ClockState {
     fn on_beat(&mut self, info: &BeatInfo) {
         self.tempo = info.tempo;
         self.last_beat_time = Some(Instant::now());
+        self.pending_beats += 1;
     }
 
     fn on_transport_change(&mut self, playing: bool) {
@@ -39,17 +45,17 @@ impl BeatListener for LinkStatusState {
     }
 }
 
-pub struct LinkStatusNode {
+pub struct ClockNode {
     id: NodeId,
-    pub state: Arc<Mutex<LinkStatusState>>,
+    pub state: Arc<Mutex<ClockState>>,
     outputs: Vec<PortDef>,
 }
 
-impl LinkStatusNode {
+impl ClockNode {
     pub fn new(id: NodeId) -> Self {
         Self {
             id,
-            state: Arc::new(Mutex::new(LinkStatusState::new())),
+            state: Arc::new(Mutex::new(ClockState::new())),
             outputs: vec![
                 PortDef::new("beat", PortType::Trigger),
                 PortDef::new("play", PortType::Value),
@@ -58,13 +64,13 @@ impl LinkStatusNode {
     }
 }
 
-impl NodeWidget for LinkStatusNode {
+impl NodeWidget for ClockNode {
     fn node_id(&self) -> NodeId {
         self.id
     }
 
     fn title(&self) -> &str {
-        "Ableton Link"
+        "Clock"
     }
 
     fn inputs(&self) -> &[PortDef] {
@@ -88,7 +94,6 @@ impl NodeWidget for LinkStatusNode {
 
         let pad = 4.0;
 
-        // -- LINK + peers row --
         ui.horizontal(|ui| {
             let link_color = if state.num_peers > 0 {
                 Color32::from_rgb(80, 240, 120)
@@ -96,14 +101,11 @@ impl NodeWidget for LinkStatusNode {
                 Color32::from_gray(100)
             };
             ui.colored_label(link_color, "LINK");
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                ui.colored_label(Color32::from_gray(140), format!("{} peers", state.num_peers));
-            });
+            ui.colored_label(Color32::from_gray(140), format!("{} peers", state.num_peers));
         });
 
         ui.add_space(pad);
 
-        // -- BPM --
         ui.vertical_centered(|ui| {
             ui.colored_label(Color32::WHITE, egui::RichText::new(format!("{:.1}", state.tempo)).monospace().size(20.0));
             ui.colored_label(Color32::from_gray(100), egui::RichText::new("BPM").monospace().size(9.0));
@@ -111,11 +113,9 @@ impl NodeWidget for LinkStatusNode {
 
         ui.add_space(pad);
 
-        // -- Play/Stop LED + Beat flash --
         ui.horizontal(|ui| {
             let led_radius = 5.0;
 
-            // Play LED
             let play_color = if state.playing {
                 Color32::from_rgb(80, 240, 120)
             } else {
@@ -133,7 +133,6 @@ impl NodeWidget for LinkStatusNode {
             );
 
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                // Beat flash LED
                 let beat_on = state.last_beat_time.is_some_and(|t| {
                     t.elapsed().as_millis() < BEAT_FLASH_DURATION_MS
                 });
@@ -149,5 +148,32 @@ impl NodeWidget for LinkStatusNode {
                 beat_painter.circle_filled(beat_resp.rect.center(), led_radius, beat_color);
             });
         });
+    }
+
+    fn drain_trigger_outputs(&mut self) -> Vec<usize> {
+        let mut state = self.state.lock().unwrap();
+        let count = state.pending_beats;
+        state.pending_beats = 0;
+        if count > 0 {
+            // Output port 0 = "beat"
+            vec![0; count as usize]
+        } else {
+            vec![]
+        }
+    }
+
+    fn read_value_output(&self, port_index: usize) -> f32 {
+        match port_index {
+            // Output port 1 = "play"
+            1 => {
+                let state = self.state.lock().unwrap();
+                if state.playing { 1.0 } else { 0.0 }
+            }
+            _ => 0.0,
+        }
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
     }
 }

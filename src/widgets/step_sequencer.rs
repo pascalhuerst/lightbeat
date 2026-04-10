@@ -1,26 +1,35 @@
-use egui::{self, Color32, Rect, Sense, StrokeKind, Ui, Vec2};
-use std::sync::{Arc, Mutex};
+use std::any::Any;
 
-use crate::beat_clock::{BeatInfo, BeatListener};
+use egui::{self, Color32, Rect, Sense, StrokeKind, Ui, Vec2};
+
+use crate::widgets::nodes::{NodeId, NodeWidget, PortDef, PortType};
 
 const DEFAULT_STEPS: usize = 8;
 
-/// Inner state shared between the UI and the beat clock thread.
-pub struct StepSequencerState {
-    /// Value per step, 0.0..=1.0
-    pub values: Vec<f32>,
-    /// Which step is currently active (-1 or wrapping index)
-    pub current_step: usize,
-    /// Whether the sequencer is running
-    pub playing: bool,
+pub struct StepSequencerNode {
+    id: NodeId,
+    values: Vec<f32>,
+    current_step: usize,
+    playing: bool,
+    /// Pending trigger outputs to fire after advancing.
+    pending_triggers: Vec<usize>,
+    inputs: Vec<PortDef>,
+    outputs: Vec<PortDef>,
 }
 
-impl StepSequencerState {
-    pub fn new(num_steps: usize) -> Self {
+impl StepSequencerNode {
+    pub fn new(id: NodeId) -> Self {
         Self {
-            values: vec![0.0; num_steps],
+            id,
+            values: vec![0.0; DEFAULT_STEPS],
             current_step: 0,
             playing: false,
+            pending_triggers: Vec::new(),
+            inputs: vec![PortDef::new("clock", PortType::Trigger)],
+            outputs: vec![
+                PortDef::new("trigger", PortType::Trigger),
+                PortDef::new("value", PortType::Value),
+            ],
         }
     }
 
@@ -30,47 +39,68 @@ impl StepSequencerState {
 
     fn advance(&mut self) {
         self.current_step = (self.current_step + 1) % self.num_steps();
+        self.playing = true;
         let value = self.values[self.current_step];
         println!(
             "step {} -> trigger (value: {:.2})",
             self.current_step, value
         );
+        // Fire trigger output (port 0)
+        self.pending_triggers.push(0);
     }
 }
 
-impl BeatListener for StepSequencerState {
-    fn on_beat(&mut self, _info: &BeatInfo) {
-        self.advance();
+impl NodeWidget for StepSequencerNode {
+    fn node_id(&self) -> NodeId {
+        self.id
     }
 
-    fn on_transport_change(&mut self, playing: bool) {
-        self.playing = playing;
-        if playing {
-            self.current_step = 0;
+    fn title(&self) -> &str {
+        "Step Sequencer"
+    }
+
+    fn inputs(&self) -> &[PortDef] {
+        &self.inputs
+    }
+
+    fn outputs(&self) -> &[PortDef] {
+        &self.outputs
+    }
+
+    fn min_width(&self) -> f32 {
+        260.0
+    }
+
+    fn min_content_height(&self) -> f32 {
+        120.0
+    }
+
+    fn on_trigger_input(&mut self, port_index: usize) {
+        match port_index {
+            // Port 0 = "clock"
+            0 => self.advance(),
+            _ => {}
         }
     }
-}
 
-/// Step sequencer UI widget. Holds an Arc to shared state so the beat
-/// clock thread can advance the step while the UI renders.
-pub struct StepSequencer {
-    pub state: Arc<Mutex<StepSequencerState>>,
-}
+    fn drain_trigger_outputs(&mut self) -> Vec<usize> {
+        std::mem::take(&mut self.pending_triggers)
+    }
 
-impl StepSequencer {
-    pub fn new() -> Self {
-        Self {
-            state: Arc::new(Mutex::new(StepSequencerState::new(DEFAULT_STEPS))),
+    fn read_value_output(&self, port_index: usize) -> f32 {
+        match port_index {
+            // Port 1 = "value" — current step's value
+            1 => self.values[self.current_step],
+            _ => 0.0,
         }
     }
 
-    pub fn show(&self, ui: &mut Ui) {
-        let mut state = self.state.lock().unwrap();
-        let num_steps = state.num_steps();
+    fn show_content(&mut self, ui: &mut Ui) {
+        let num_steps = self.num_steps();
 
         let available_width = ui.available_width();
         let step_width = available_width / num_steps as f32;
-        let height = 200.0;
+        let height = 100.0;
 
         let (response, painter) =
             ui.allocate_painter(Vec2::new(available_width, height), Sense::click_and_drag());
@@ -81,48 +111,37 @@ impl StepSequencer {
         let active_fill = Color32::from_rgb(240, 160, 40);
         let line_color = Color32::from_gray(60);
 
-        // Background
         painter.rect_filled(rect, 2.0, bg_color);
 
-        // Draw each step
         for i in 0..num_steps {
             let x_min = rect.min.x + i as f32 * step_width;
             let x_max = x_min + step_width;
-            let step_rect = Rect::from_min_max(
-                egui::pos2(x_min, rect.min.y),
-                egui::pos2(x_max, rect.max.y),
-            );
 
-            // Filled portion (from bottom)
-            let fill_height = state.values[i] * height;
+            let fill_height = self.values[i] * height;
             let fill_rect = Rect::from_min_max(
                 egui::pos2(x_min, rect.max.y - fill_height),
                 egui::pos2(x_max, rect.max.y),
             );
 
-            let color = if i == state.current_step && state.playing {
+            let color = if i == self.current_step && self.playing {
                 active_fill
             } else {
                 fill_color
             };
             painter.rect_filled(fill_rect, 0.0, color);
 
-            // Divider line (except after last)
             if i < num_steps - 1 {
                 painter.line_segment(
                     [egui::pos2(x_max, rect.min.y), egui::pos2(x_max, rect.max.y)],
                     egui::Stroke::new(1.0, line_color),
                 );
             }
-
         }
 
-        // Outline
         painter.rect_stroke(rect, 2.0, egui::Stroke::new(1.0, line_color), StrokeKind::Inside);
 
-        // Active step highlight border (drawn last so it's on top of everything)
-        if state.playing {
-            let i = state.current_step;
+        if self.playing {
+            let i = self.current_step;
             let x_min = rect.min.x + i as f32 * step_width;
             let x_max = x_min + step_width;
             let step_rect = Rect::from_min_max(
@@ -132,7 +151,6 @@ impl StepSequencer {
             painter.rect_stroke(step_rect, 0.0, egui::Stroke::new(2.0, active_fill), StrokeKind::Inside);
         }
 
-        // Handle drag interaction
         if response.dragged() || response.clicked() {
             if let Some(pos) = response.interact_pointer_pos() {
                 if rect.contains(pos) {
@@ -140,9 +158,13 @@ impl StepSequencer {
                         ((pos.x - rect.min.x) / step_width).floor() as usize;
                     let step_index = step_index.min(num_steps - 1);
                     let value = 1.0 - ((pos.y - rect.min.y) / height).clamp(0.0, 1.0);
-                    state.values[step_index] = value;
+                    self.values[step_index] = value;
                 }
             }
         }
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
     }
 }

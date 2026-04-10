@@ -37,12 +37,29 @@ struct DrawingConnection {
 // NodeGraph
 // ---------------------------------------------------------------------------
 
+/// Entry in the node registry — a named factory for spawning nodes.
+pub struct NodeEntry {
+    pub label: &'static str,
+    pub factory: fn(NodeId) -> Box<dyn NodeWidget>,
+}
+
+/// Freshly spawned node, returned by `drain_new_nodes` so the app
+/// can set up beat-clock subscriptions or other wiring.
+pub struct NewNode {
+    pub index: usize,
+    pub node_id: NodeId,
+}
+
 pub struct NodeGraph {
     nodes: Vec<Box<dyn NodeWidget>>,
     states: Vec<NodeState>,
     connections: Vec<Connection>,
     drag: DragState,
     pan: Vec2,
+    next_id: u64,
+    registry: Vec<NodeEntry>,
+    new_nodes: Vec<NewNode>,
+    context_menu_pos: Option<Pos2>,
 }
 
 impl NodeGraph {
@@ -53,14 +70,44 @@ impl NodeGraph {
             connections: Vec::new(),
             drag: DragState::default(),
             pan: Vec2::ZERO,
+            next_id: 1,
+            registry: Vec::new(),
+            new_nodes: Vec::new(),
+            context_menu_pos: None,
         }
+    }
+
+    /// Register a node type that can be spawned from the context menu.
+    pub fn register_node(&mut self, label: &'static str, factory: fn(NodeId) -> Box<dyn NodeWidget>) {
+        self.registry.push(NodeEntry { label, factory });
+    }
+
+    fn alloc_id(&mut self) -> NodeId {
+        let id = NodeId(self.next_id);
+        self.next_id += 1;
+        id
     }
 
     pub fn add_node(&mut self, node: Box<dyn NodeWidget>, pos: Pos2) -> usize {
         let id = node.node_id();
+        // Keep next_id above any manually-assigned IDs.
+        if id.0 >= self.next_id {
+            self.next_id = id.0 + 1;
+        }
         self.states.push(NodeState::new(id, pos));
         self.nodes.push(node);
         self.nodes.len() - 1
+    }
+
+    /// Drain the list of newly-added nodes (from the context menu).
+    /// Call this each frame to wire up subscriptions.
+    pub fn drain_new_nodes(&mut self) -> Vec<NewNode> {
+        std::mem::take(&mut self.new_nodes)
+    }
+
+    /// Get a mutable reference to a node by index (for wiring up state).
+    pub fn node_mut(&mut self, index: usize) -> &mut dyn NodeWidget {
+        self.nodes[index].as_mut()
     }
 
     pub fn add_connection(&mut self, from: PortId, to: PortId) {
@@ -75,14 +122,23 @@ impl NodeGraph {
     // -----------------------------------------------------------------------
 
     pub fn show(&mut self, ui: &mut Ui) {
+        // Propagate signals through connections before drawing.
+        self.propagate_signals();
+
         let (response, painter) =
             ui.allocate_painter(ui.available_size(), Sense::click_and_drag());
         let canvas_rect = response.rect;
 
-        if response.dragged_by(egui::PointerButton::Middle)
-            || response.dragged_by(egui::PointerButton::Secondary)
-        {
+        // Pan with middle mouse.
+        if response.dragged_by(egui::PointerButton::Middle) {
             self.pan += response.drag_delta();
+        }
+
+        // Right-click opens context menu (only on empty canvas, not on nodes).
+        if response.secondary_clicked() {
+            if let Some(pos) = ui.input(|i| i.pointer.hover_pos()) {
+                self.context_menu_pos = Some(pos);
+            }
         }
 
         draw_grid(&painter, canvas_rect, self.pan);
@@ -143,6 +199,97 @@ impl NodeGraph {
 
         // -- Handle interactions --
         self.handle_interactions(ui, &response, &node_rects);
+
+        // -- Context menu --
+        self.show_context_menu(ui, canvas_rect);
+    }
+
+    fn show_context_menu(&mut self, ui: &mut Ui, canvas_rect: Rect) {
+        if self.context_menu_pos.is_none() {
+            return;
+        }
+        let menu_pos = self.context_menu_pos.unwrap();
+
+        let entries: Vec<(usize, &'static str)> = self.registry
+            .iter()
+            .enumerate()
+            .map(|(i, e)| (i, e.label))
+            .collect();
+
+        if entries.is_empty() {
+            self.context_menu_pos = None;
+            return;
+        }
+
+        let mut spawn: Option<usize> = None;
+
+        let area_resp = egui::Area::new(egui::Id::new("node_ctx_menu"))
+            .fixed_pos(menu_pos)
+            .order(egui::Order::Foreground)
+            .show(ui.ctx(), |ui| {
+                egui::Frame::popup(ui.style()).show(ui, |ui| {
+                    ui.set_min_width(140.0);
+                    ui.label(egui::RichText::new("Add node").strong().size(11.0));
+                    ui.separator();
+                    for (idx, label) in &entries {
+                        if ui.button(*label).clicked() {
+                            spawn = Some(*idx);
+                        }
+                    }
+                });
+            });
+
+        // Close if clicked outside the popup area.
+        let popup_rect = area_resp.response.rect;
+        let clicked_outside = ui.input(|i| {
+            (i.pointer.button_pressed(egui::PointerButton::Primary)
+                || i.pointer.button_pressed(egui::PointerButton::Secondary))
+                && i.pointer.hover_pos().is_some_and(|p| !popup_rect.contains(p))
+        });
+        let esc = ui.input(|i| i.key_pressed(egui::Key::Escape));
+
+        if let Some(reg_idx) = spawn {
+            let id = self.alloc_id();
+            let canvas_pos = menu_pos - canvas_rect.min.to_vec2() - self.pan;
+            let node = (self.registry[reg_idx].factory)(id);
+            let index = self.add_node(node, canvas_pos);
+            self.new_nodes.push(NewNode { index, node_id: id });
+            self.context_menu_pos = None;
+        } else if clicked_outside || esc {
+            self.context_menu_pos = None;
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Signal propagation
+    // -----------------------------------------------------------------------
+
+    fn propagate_signals(&mut self) {
+        // Collect all trigger outputs that fired this frame.
+        // We need to collect first to avoid borrow issues.
+        let mut triggers: Vec<(NodeId, usize)> = Vec::new();
+        for i in 0..self.nodes.len() {
+            let node_id = self.states[i].id;
+            for port_idx in self.nodes[i].drain_trigger_outputs() {
+                triggers.push((node_id, port_idx));
+            }
+        }
+
+        // Route triggers through connections.
+        for (src_node_id, src_port_idx) in triggers {
+            // Find all connections from this output.
+            let targets: Vec<PortId> = self.connections
+                .iter()
+                .filter(|c| c.from.node == src_node_id && c.from.index == src_port_idx && c.from.dir == PortDir::Output)
+                .map(|c| c.to)
+                .collect();
+
+            for target in targets {
+                if let Some(idx) = self.states.iter().position(|s| s.id == target.node) {
+                    self.nodes[idx].on_trigger_input(target.index);
+                }
+            }
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -231,13 +378,33 @@ impl NodeGraph {
                 for (pi, port_def) in self.nodes[i].inputs().iter().enumerate() {
                     let pos = port_pos(rect.min, rect.width(), PortDir::Input, pi);
                     if pos.distance(pointer_pos) < PORT_RADIUS + 4.0 {
-                        self.drag.drawing_conn = Some(DrawingConnection {
-                            from: make_port_id(node_id, PortDir::Input, pi),
-                            from_pos: pos,
-                            from_type: port_def.port_type,
-                            to_pos: pointer_pos,
-                            snap_target: None,
-                        });
+                        let input_id = make_port_id(node_id, PortDir::Input, pi);
+                        // If this input already has a connection, disconnect it
+                        // and start dragging from the original output end.
+                        if let Some(conn_idx) = self.connections.iter().position(|c| c.to == input_id) {
+                            let old_from = self.connections[conn_idx].from;
+                            self.connections.remove(conn_idx);
+                            // Start dragging from the now-disconnected output.
+                            if let Some(from_pos) = port_screen_pos_from_rects(
+                                &self.states, node_rects, old_from,
+                            ) {
+                                self.drag.drawing_conn = Some(DrawingConnection {
+                                    from: old_from,
+                                    from_pos,
+                                    from_type: port_def.port_type,
+                                    to_pos: pointer_pos,
+                                    snap_target: None,
+                                });
+                            }
+                        } else {
+                            self.drag.drawing_conn = Some(DrawingConnection {
+                                from: input_id,
+                                from_pos: pos,
+                                from_type: port_def.port_type,
+                                to_pos: pointer_pos,
+                                snap_target: None,
+                            });
+                        }
                         return;
                     }
                 }
@@ -267,19 +434,25 @@ impl NodeGraph {
             }
         }
 
-        // Hover cursor over ports.
+        // Hover cursor and tooltips over ports.
         for i in 0..self.nodes.len() {
             let rect = node_rects[i];
-            for (pi, _) in self.nodes[i].outputs().iter().enumerate() {
+            for (pi, port_def) in self.nodes[i].outputs().iter().enumerate() {
                 let pos = port_pos(rect.min, rect.width(), PortDir::Output, pi);
                 if pos.distance(pointer_pos) < PORT_RADIUS + 4.0 {
                     ui.ctx().set_cursor_icon(CursorIcon::PointingHand);
+                    egui::show_tooltip_at(ui.ctx(), ui.layer_id(), egui::Id::new(("port_tip", i, pi, 1)), pos + egui::vec2(10.0, -10.0), |ui| {
+                        ui.label(&port_def.name);
+                    });
                 }
             }
-            for (pi, _) in self.nodes[i].inputs().iter().enumerate() {
+            for (pi, port_def) in self.nodes[i].inputs().iter().enumerate() {
                 let pos = port_pos(rect.min, rect.width(), PortDir::Input, pi);
                 if pos.distance(pointer_pos) < PORT_RADIUS + 4.0 {
                     ui.ctx().set_cursor_icon(CursorIcon::PointingHand);
+                    egui::show_tooltip_at(ui.ctx(), ui.layer_id(), egui::Id::new(("port_tip", i, pi, 0)), pos + egui::vec2(10.0, -10.0), |ui| {
+                        ui.label(&port_def.name);
+                    });
                 }
             }
         }
@@ -289,6 +462,17 @@ impl NodeGraph {
 // ---------------------------------------------------------------------------
 // Free functions (no &self needed)
 // ---------------------------------------------------------------------------
+
+/// Get port screen pos using precomputed node rects (for use during interaction handling).
+fn port_screen_pos_from_rects(
+    states: &[NodeState],
+    node_rects: &[Rect],
+    port_id: PortId,
+) -> Option<Pos2> {
+    let idx = states.iter().position(|s| s.id == port_id.node)?;
+    let rect = node_rects[idx];
+    Some(port_pos(rect.min, rect.width(), port_id.dir, port_id.index))
+}
 
 fn node_content_rect(rect: Rect) -> Rect {
     Rect::from_min_max(
@@ -324,32 +508,20 @@ fn draw_node_chrome(painter: &Painter, node: &dyn NodeWidget, rect: Rect) {
     // Input ports
     for (i, port_def) in node.inputs().iter().enumerate() {
         let pos = port_pos(rect.min, rect.width(), PortDir::Input, i);
-        draw_port(painter, pos, port_def, PortDir::Input);
+        draw_port(painter, pos, port_def);
     }
 
     // Output ports
     for (i, port_def) in node.outputs().iter().enumerate() {
         let pos = port_pos(rect.min, rect.width(), PortDir::Output, i);
-        draw_port(painter, pos, port_def, PortDir::Output);
+        draw_port(painter, pos, port_def);
     }
 }
 
-fn draw_port(painter: &Painter, pos: Pos2, def: &PortDef, dir: PortDir) {
+fn draw_port(painter: &Painter, pos: Pos2, def: &PortDef) {
     let color = def.port_type.color();
     painter.circle_filled(pos, PORT_RADIUS, color);
     painter.circle_stroke(pos, PORT_RADIUS, Stroke::new(1.0, color.linear_multiply(0.6)));
-
-    let (anchor, label_x) = match dir {
-        PortDir::Input => (egui::Align2::LEFT_CENTER, pos.x + PORT_RADIUS + 4.0),
-        PortDir::Output => (egui::Align2::RIGHT_CENTER, pos.x - PORT_RADIUS - 4.0),
-    };
-    painter.text(
-        Pos2::new(label_x, pos.y),
-        anchor,
-        &def.name,
-        egui::FontId::proportional(10.0),
-        Color32::from_gray(180),
-    );
 }
 
 fn draw_grid(painter: &Painter, rect: Rect, pan: Vec2) {

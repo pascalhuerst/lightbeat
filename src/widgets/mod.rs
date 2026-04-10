@@ -1,8 +1,6 @@
-mod example;
-mod link_status;
+mod clock;
 pub mod nodes;
 mod step_sequencer;
 
-pub use example::ExampleWidget;
-pub use link_status::LinkStatusNode;
-pub use step_sequencer::StepSequencer;
+pub use clock::ClockNode;
+pub use step_sequencer::StepSequencerNode;

@@ -1,10 +1,12 @@
+use std::any::Any;
+
 use egui::{Pos2, Ui};
 
 use super::types::{PortDef, PortDir, PortId, NodeId};
 
 /// Trait implemented by every node. Provides metadata (title, ports)
 /// and custom content rendering.
-pub trait NodeWidget {
+pub trait NodeWidget: Any {
     fn node_id(&self) -> NodeId;
     fn title(&self) -> &str;
     fn inputs(&self) -> &[PortDef];
@@ -23,6 +25,23 @@ pub trait NodeWidget {
     fn min_content_height(&self) -> f32 {
         0.0
     }
+
+    /// Called when a trigger arrives at an input port.
+    fn on_trigger_input(&mut self, _port_index: usize) {}
+
+    /// Drain any pending trigger outputs that fired since the last call.
+    /// Returns the indices of output ports that fired.
+    fn drain_trigger_outputs(&mut self) -> Vec<usize> {
+        vec![]
+    }
+
+    /// Read a continuous value output (0.0–1.0).
+    fn read_value_output(&self, _port_index: usize) -> f32 {
+        0.0
+    }
+
+    /// Downcast support.
+    fn as_any_mut(&mut self) -> &mut dyn Any;
 }
 
 /// Runtime state the graph editor keeps per node (position, etc.).
