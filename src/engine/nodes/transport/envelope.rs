@@ -14,6 +14,10 @@ enum EnvStage {
 pub struct EnvelopeDisplay {
     pub stage: u8, // 0=idle, 1=attack, 2=decay, 3=sustain, 4=release
     pub envelope_value: f32,
+    pub attack: f32,
+    pub decay: f32,
+    pub sustain: f32,
+    pub release: f32,
 }
 
 pub struct EnvelopeProcessNode {
@@ -168,6 +172,10 @@ impl ProcessNode for EnvelopeProcessNode {
         shared.display = Some(Box::new(EnvelopeDisplay {
             stage,
             envelope_value: self.envelope,
+            attack: self.attack,
+            decay: self.decay,
+            sustain: self.sustain,
+            release: self.release,
         }));
     }
 }

@@ -1,113 +1,158 @@
-use egui::{Color32, Ui};
+use egui::{self, Color32, Ui};
 
-use crate::engine::nodes::io::fixture::FixtureDisplay;
-use crate::objects::channel::ChannelKind;
-use crate::objects::channel::ColorMode;
-use super::nodes::NodeGraph;
+use crate::objects::channel::{Channel, ChannelKind, ColorMode};
+use crate::objects::fixture::{DmxAddress, Fixture};
 
-/// Collected info for displaying a fixture in the list.
-struct FixtureInfo {
-    name: String,
-    address: String,
-    footprint: usize,
-    channels: Vec<ChannelInfo>,
+/// Standalone fixture manager — holds all fixtures, shown in a dedicated window.
+pub struct FixtureManager {
+    pub fixtures: Vec<Fixture>,
+    next_id: u32,
 }
 
-struct ChannelInfo {
-    name: String,
-    kind_label: String,
-    dmx_count: usize,
-}
-
-/// Show the fixture list panel contents.
-///
-/// Iterates all nodes in the graph, finds Fixture nodes, and displays
-/// their name, address, and channel layout.
-pub fn show_fixture_list(ui: &mut Ui, graph: &NodeGraph) {
-    ui.heading("Fixtures");
-    ui.separator();
-
-    let fixtures = collect_fixtures(graph);
-
-    if fixtures.is_empty() {
-        ui.colored_label(Color32::from_gray(120), "No fixtures in project.");
-        ui.label("Add a Fixture node from the context menu.");
-        return;
+impl FixtureManager {
+    pub fn new() -> Self {
+        Self {
+            fixtures: Vec::new(),
+            next_id: 1,
+        }
     }
 
-    egui::ScrollArea::vertical().show(ui, |ui| {
-        for (i, f) in fixtures.iter().enumerate() {
-            ui.push_id(i, |ui| {
-                egui::CollapsingHeader::new(
-                    egui::RichText::new(&f.name).strong(),
-                )
-                .default_open(true)
-                .show(ui, |ui| {
-                    ui.horizontal(|ui| {
-                        ui.colored_label(Color32::from_gray(140), "Address:");
-                        ui.label(&f.address);
-                    });
-                    ui.horizontal(|ui| {
-                        ui.colored_label(Color32::from_gray(140), "Footprint:");
-                        ui.label(format!("{} DMX channels", f.footprint));
-                    });
+    pub fn add_fixture(&mut self, name: impl Into<String>, address: DmxAddress) -> u32 {
+        let id = self.next_id;
+        self.next_id += 1;
+        let mut fixture = Fixture::new(id, name, address);
+        fixture.add_channel(Channel::dimmer("Dimmer"));
+        fixture.add_channel(Channel::color("Color", ColorMode::Rgb));
+        self.fixtures.push(fixture);
+        id
+    }
 
-                    if !f.channels.is_empty() {
+    pub fn remove_fixture(&mut self, id: u32) {
+        self.fixtures.retain(|f| f.id != id);
+    }
+
+    /// Show the fixture list window contents.
+    pub fn show(&mut self, ui: &mut Ui) {
+        ui.heading("Fixtures");
+        ui.separator();
+
+        if self.fixtures.is_empty() {
+            ui.colored_label(Color32::from_gray(120), "No fixtures.");
+        }
+
+        let mut remove_id = None;
+
+        egui::ScrollArea::vertical().show(ui, |ui| {
+            for fixture in &mut self.fixtures {
+                ui.push_id(fixture.id, |ui| {
+                    egui::CollapsingHeader::new(
+                        egui::RichText::new(&fixture.name).strong(),
+                    )
+                    .default_open(false)
+                    .show(ui, |ui| {
+                        // Name
+                        ui.horizontal(|ui| {
+                            ui.label("Name:");
+                            let mut name = fixture.name.clone();
+                            if ui.text_edit_singleline(&mut name).changed() {
+                                fixture.name = name;
+                            }
+                        });
+
+                        // Address
+                        ui.horizontal(|ui| {
+                            ui.label("Address:");
+                            let mut addr = fixture.address.start_channel as i32;
+                            if ui.add(egui::DragValue::new(&mut addr).range(1..=512)).changed() {
+                                fixture.address.start_channel = addr as u16;
+                            }
+                        });
+                        ui.horizontal(|ui| {
+                            ui.label("Universe:");
+                            let mut u = fixture.address.universe as i32;
+                            if ui.add(egui::DragValue::new(&mut u).range(0..=15)).changed() {
+                                fixture.address.universe = u as u8;
+                            }
+                            ui.label("Subnet:");
+                            let mut s = fixture.address.subnet as i32;
+                            if ui.add(egui::DragValue::new(&mut s).range(0..=15)).changed() {
+                                fixture.address.subnet = s as u8;
+                            }
+                            ui.label("Net:");
+                            let mut n = fixture.address.net as i32;
+                            if ui.add(egui::DragValue::new(&mut n).range(0..=127)).changed() {
+                                fixture.address.net = n as u8;
+                            }
+                        });
+
+                        ui.colored_label(
+                            Color32::from_gray(100),
+                            format!("Footprint: {} DMX channels", fixture.dmx_footprint()),
+                        );
+
+                        // Channels
                         ui.add_space(4.0);
-                        for ch in &f.channels {
+                        ui.label(egui::RichText::new("Channels").strong());
+                        for ch in &fixture.channels {
                             ui.horizontal(|ui| {
-                                ui.label("  ");
-                                ui.label(&ch.name);
-                                ui.colored_label(
-                                    Color32::from_gray(100),
-                                    format!("({}, {}ch)", ch.kind_label, ch.dmx_count),
-                                );
+                                ui.label(format!("  {} ({})", ch.name, kind_label(&ch.kind)));
                             });
                         }
-                    }
+
+                        // Add channel buttons
+                        ui.add_space(4.0);
+                        ui.horizontal(|ui| {
+                            if ui.small_button("+ Dimmer").clicked() {
+                                let n = format!("Dimmer {}", fixture.channels.len() + 1);
+                                fixture.add_channel(Channel::dimmer(&n));
+                            }
+                            if ui.small_button("+ RGB").clicked() {
+                                let n = format!("Color {}", fixture.channels.len() + 1);
+                                fixture.add_channel(Channel::color(&n, ColorMode::Rgb));
+                            }
+                            if ui.small_button("+ RGBW").clicked() {
+                                let n = format!("Color {}", fixture.channels.len() + 1);
+                                fixture.add_channel(Channel::color(
+                                    &n,
+                                    ColorMode::Rgbw { white_temperature: 6500 },
+                                ));
+                            }
+                        });
+                        ui.horizontal(|ui| {
+                            if ui.small_button("+ Pan/Tilt").clicked() {
+                                let n = format!("PanTilt {}", fixture.channels.len() + 1);
+                                fixture.add_channel(Channel::pan_tilt(&n, false));
+                            }
+                            if !fixture.channels.is_empty() && ui.small_button("- Remove last").clicked() {
+                                fixture.channels.pop();
+                                fixture.recalc_offsets();
+                            }
+                        });
+
+                        ui.add_space(4.0);
+                        if ui.small_button("Delete fixture").clicked() {
+                            remove_id = Some(fixture.id);
+                        }
+                    });
                 });
-            });
-        }
-    });
-}
+            }
+        });
 
-fn collect_fixtures(graph: &NodeGraph) -> Vec<FixtureInfo> {
-    let mut fixtures = Vec::new();
-
-    for node in graph.all_nodes() {
-        if node.type_name() != "Fixture" {
-            continue;
+        if let Some(id) = remove_id {
+            self.remove_fixture(id);
         }
 
-        let shared = node.shared_state().lock().unwrap();
-        let display = shared
-            .display
-            .as_ref()
-            .and_then(|d| d.downcast_ref::<FixtureDisplay>());
-
-        if let Some(d) = display {
-            let f = &d.fixture;
-            fixtures.push(FixtureInfo {
-                name: f.name.clone(),
-                address: format!(
-                    "{}.{}.{} ch{}",
-                    f.address.net, f.address.subnet, f.address.universe, f.address.start_channel
-                ),
-                footprint: f.dmx_footprint(),
-                channels: f
-                    .channels
-                    .iter()
-                    .map(|ch| ChannelInfo {
-                        name: ch.name.clone(),
-                        kind_label: kind_label(&ch.kind).to_string(),
-                        dmx_count: ch.kind.dmx_channel_count(),
-                    })
-                    .collect(),
-            });
+        ui.separator();
+        if ui.button("Add Fixture").clicked() {
+            let next_addr = self.fixtures.last()
+                .map(|f| f.address.start_channel + f.dmx_footprint() as u16)
+                .unwrap_or(1);
+            self.add_fixture(
+                format!("Fixture {}", self.fixtures.len() + 1),
+                DmxAddress { start_channel: next_addr, ..Default::default() },
+            );
         }
     }
-
-    fixtures
 }
 
 fn kind_label(kind: &ChannelKind) -> &'static str {
@@ -119,9 +164,7 @@ fn kind_label(kind: &ChannelKind) -> &'static str {
             ColorMode::Cmy => "CMY",
             ColorMode::Hs => "H/S",
         },
-        ChannelKind::PanTilt { fine } => {
-            if *fine { "Pan/Tilt 16bit" } else { "Pan/Tilt" }
-        }
+        ChannelKind::PanTilt { fine } => if *fine { "Pan/Tilt 16bit" } else { "Pan/Tilt" },
         ChannelKind::Raw { .. } => "Raw",
     }
 }

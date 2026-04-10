@@ -20,26 +20,24 @@ use engine::EngineHandle;
 use engine::nodes::display::color_display::ColorDisplayProcessNode;
 use engine::nodes::display::scope::ScopeProcessNode;
 use engine::nodes::io::clock::ClockProcessNode;
-use engine::nodes::io::fixture::FixtureProcessNode;
-use engine::nodes::io::interface::InterfaceProcessNode;
 use engine::nodes::math::compare::{CompareOp, CompareProcessNode};
 use engine::nodes::math::constant::ConstantProcessNode;
 use engine::nodes::math::logic_gate::{LogicOp, LogicGateProcessNode};
 use engine::nodes::math::math_op::{MathOp, MathProcessNode};
 use engine::nodes::math::oscillator::{OscFunc, OscillatorProcessNode};
+use engine::nodes::transport::delay::TriggerDelayProcessNode;
 use engine::nodes::transport::envelope::EnvelopeProcessNode;
 use engine::nodes::transport::phase_scaler::PhaseScalerProcessNode;
 use engine::nodes::transport::step_sequencer::StepSequencerProcessNode;
 use widgets::nodes::display::color_display::ColorDisplayWidget;
 use widgets::nodes::display::scope::ScopeWidget;
 use widgets::nodes::io::clock::ClockWidget;
-use widgets::nodes::io::fixture::FixtureWidget;
-use widgets::nodes::io::interface::InterfaceWidget;
 use widgets::nodes::math::compare::CompareWidget;
 use widgets::nodes::math::constant::ConstantWidget;
 use widgets::nodes::math::logic_gate::LogicGateWidget;
 use widgets::nodes::math::math_op::MathWidget;
 use widgets::nodes::math::oscillator::OscillatorWidget;
+use widgets::nodes::transport::delay::TriggerDelayWidget;
 use widgets::nodes::transport::envelope::EnvelopeWidget;
 use widgets::nodes::transport::phase_scaler::PhaseScalerWidget;
 use widgets::nodes::transport::step_sequencer::StepSequencerWidget;
@@ -56,7 +54,10 @@ struct LightBeatApp {
     quit_requested: bool,
     show_dmx_monitor: bool,
     show_fixture_list: bool,
+    show_interface_list: bool,
     dmx_monitor: widgets::dmx_monitor::DmxMonitor,
+    fixture_manager: widgets::fixture_list::FixtureManager,
+    interface_manager: widgets::interface_list::InterfaceManager,
 }
 
 impl LightBeatApp {
@@ -77,7 +78,10 @@ impl LightBeatApp {
             quit_requested: false,
             show_dmx_monitor: false,
             show_fixture_list: false,
+            show_interface_list: false,
             dmx_monitor: widgets::dmx_monitor::DmxMonitor::new(),
+            fixture_manager: widgets::fixture_list::FixtureManager::new(),
+            interface_manager: widgets::interface_list::InterfaceManager::new(),
         };
 
         app.register_node_factories();
@@ -106,12 +110,6 @@ impl LightBeatApp {
 
     fn register_node_factories(&mut self) {
         // IO
-        self.graph.register_node("IO", "Fixture", |id| {
-            Box::new(FixtureWidget::new(id, new_shared_state(0, 0)))
-        });
-        self.graph.register_node("IO", "Interface", |id| {
-            Box::new(InterfaceWidget::new(id, new_shared_state(0, 0)))
-        });
         self.graph.register_node("IO", "Clock", |id| {
             Box::new(ClockWidget::new(id, new_shared_state(0, 3)))
         });
@@ -125,6 +123,9 @@ impl LightBeatApp {
         });
         self.graph.register_node("Transport", "ADSR", |id| {
             Box::new(EnvelopeWidget::new(id, new_shared_state(2, 2)))
+        });
+        self.graph.register_node("Transport", "Trigger Delay", |id| {
+            Box::new(TriggerDelayWidget::new(id, new_shared_state(2, 1)))
         });
 
         // Math
@@ -221,18 +222,6 @@ impl LightBeatApp {
 
             // Create corresponding engine node.
             match type_name {
-                "Fixture" => {
-                    self.engine.send(EngineCommand::AddNode {
-                        node: Box::new(FixtureProcessNode::new(id)),
-                        shared,
-                    });
-                }
-                "Interface" => {
-                    self.engine.send(EngineCommand::AddNode {
-                        node: Box::new(InterfaceProcessNode::new(id)),
-                        shared,
-                    });
-                }
                 "Clock" => {
                     let engine_node = ClockProcessNode::new(id, Arc::clone(&self.snapshot));
                     let beat_state = engine_node.beat_state.clone();
@@ -266,6 +255,12 @@ impl LightBeatApp {
                 "ADSR" => {
                     self.engine.send(EngineCommand::AddNode {
                         node: Box::new(EnvelopeProcessNode::new(id)),
+                        shared,
+                    });
+                }
+                "Trigger Delay" => {
+                    self.engine.send(EngineCommand::AddNode {
+                        node: Box::new(TriggerDelayProcessNode::new(id)),
                         shared,
                     });
                 }
@@ -475,6 +470,9 @@ impl eframe::App for LightBeatApp {
                     if ui.checkbox(&mut self.show_fixture_list, "Fixtures").changed() {
                         ui.close_menu();
                     }
+                    if ui.checkbox(&mut self.show_interface_list, "Interfaces").changed() {
+                        ui.close_menu();
+                    }
                     if ui.checkbox(&mut self.show_dmx_monitor, "DMX Monitor").changed() {
                         ui.close_menu();
                     }
@@ -482,13 +480,23 @@ impl eframe::App for LightBeatApp {
             });
         });
 
-        // Fixture list (left panel, toggled via View menu).
+        // Fixture list window (toggled via View menu).
         if self.show_fixture_list {
-            egui::SidePanel::left("fixture_list")
-                .default_width(220.0)
-                .resizable(true)
+            egui::Window::new("Fixtures")
+                .open(&mut self.show_fixture_list)
+                .default_size([350.0, 400.0])
                 .show(ctx, |ui| {
-                    widgets::fixture_list::show_fixture_list(ui, &self.graph);
+                    self.fixture_manager.show(ui);
+                });
+        }
+
+        // Interface list window (toggled via View menu).
+        if self.show_interface_list {
+            egui::Window::new("Interfaces")
+                .open(&mut self.show_interface_list)
+                .default_size([350.0, 300.0])
+                .show(ctx, |ui| {
+                    self.interface_manager.show(ui);
                 });
         }
 
@@ -529,15 +537,6 @@ impl eframe::App for LightBeatApp {
         });
 
         self.wire_new_nodes();
-
-        // Show editor windows for fixture/interface nodes.
-        for node in self.graph.nodes_mut() {
-            if let Some(fixture) = node.as_any_mut().downcast_mut::<FixtureWidget>() {
-                fixture.show_editor(ctx);
-            } else if let Some(iface) = node.as_any_mut().downcast_mut::<InterfaceWidget>() {
-                iface.show_editor(ctx);
-            }
-        }
 
         // Send any pending engine commands from the graph.
         for cmd in self.graph.drain_engine_commands() {

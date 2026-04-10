@@ -38,6 +38,7 @@ impl MathOp {
 }
 
 /// Display state for the widget to know connected types.
+#[allow(dead_code)]
 pub struct MathDisplay {
     pub connected_types: [Option<PortType>; 2],
     pub output_type: PortType,
