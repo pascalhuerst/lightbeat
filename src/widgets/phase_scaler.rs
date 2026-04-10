@@ -6,7 +6,8 @@ use crate::widgets::nodes::{NodeId, NodeWidget, ParamDef, ParamValue, PortDef, P
 
 pub struct PhaseScalerNode {
     id: NodeId,
-    multiplier: f32,
+    numerator: i64,
+    denominator: i64,
     offset: f32,
     phase_in: f32,
     phase_out: f32,
@@ -18,13 +19,18 @@ impl PhaseScalerNode {
     pub fn new(id: NodeId) -> Self {
         Self {
             id,
-            multiplier: 1.0,
+            numerator: 1,
+            denominator: 1,
             offset: 0.0,
             phase_in: 0.0,
             phase_out: 0.0,
             inputs: vec![PortDef::new("phase", PortType::Phase)],
             outputs: vec![PortDef::new("phase", PortType::Phase)],
         }
+    }
+
+    fn ratio(&self) -> f32 {
+        self.numerator as f32 / self.denominator.max(1) as f32
     }
 }
 
@@ -60,7 +66,7 @@ impl NodeWidget for PhaseScalerNode {
     }
 
     fn process(&mut self) {
-        self.phase_out = (self.phase_in * self.multiplier + self.offset).rem_euclid(1.0);
+        self.phase_out = (self.phase_in * self.ratio() + self.offset).rem_euclid(1.0);
     }
 
     fn read_output(&self, port_index: usize) -> f32 {
@@ -72,13 +78,17 @@ impl NodeWidget for PhaseScalerNode {
 
     fn params(&self) -> Vec<ParamDef> {
         vec![
-            ParamDef::Float {
-                name: "Multiply".into(),
-                value: self.multiplier,
-                min: 0.0,
-                max: 64.0,
-                step: 0.25,
-                unit: "×",
+            ParamDef::Int {
+                name: "Numerator".into(),
+                value: self.numerator,
+                min: 1,
+                max: 64,
+            },
+            ParamDef::Int {
+                name: "Denominator".into(),
+                value: self.denominator,
+                min: 1,
+                max: 64,
             },
             ParamDef::Float {
                 name: "Offset".into(),
@@ -93,14 +103,21 @@ impl NodeWidget for PhaseScalerNode {
 
     fn set_param(&mut self, index: usize, value: ParamValue) {
         match (index, value) {
-            (0, ParamValue::Float(v)) => self.multiplier = v,
-            (1, ParamValue::Float(v)) => self.offset = v,
+            (0, ParamValue::Int(v)) => self.numerator = v.max(1),
+            (1, ParamValue::Int(v)) => self.denominator = v.max(1),
+            (2, ParamValue::Float(v)) => self.offset = v,
             _ => {}
         }
     }
 
     fn show_content(&mut self, ui: &mut Ui) {
-        ui.label(format!("×{:.2}", self.multiplier));
+        if self.denominator == 1 {
+            ui.label(format!("×{}", self.numerator));
+        } else if self.numerator == 1 {
+            ui.label(format!("÷{}", self.denominator));
+        } else {
+            ui.label(format!("{}/{}", self.numerator, self.denominator));
+        }
     }
 
     fn as_any_mut(&mut self) -> &mut dyn Any {

@@ -2,7 +2,7 @@ use std::any::Any;
 
 use egui::{Pos2, Ui};
 
-use super::types::{PortDef, PortDir, PortId, PortType, NodeId};
+use super::types::{NodeId, PortDef, PortDir, PortId, PortType};
 
 // ---------------------------------------------------------------------------
 // Node parameters

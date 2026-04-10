@@ -258,8 +258,37 @@ impl NodeGraph {
         // -- Handle interactions --
         self.handle_interactions(ui, &response, &node_rects);
 
+        // -- Delete selected nodes --
+        if ui.input(|i| i.key_pressed(egui::Key::Delete) || i.key_pressed(egui::Key::Backspace))
+            && !self.selected_nodes.is_empty()
+        {
+            self.delete_selected();
+        }
+
         // -- Context menu --
         self.show_context_menu(ui, canvas_rect);
+    }
+
+    fn delete_selected(&mut self) {
+        // Sort descending so removal indices stay valid.
+        let mut to_remove = self.selected_nodes.clone();
+        to_remove.sort_unstable();
+        to_remove.dedup();
+
+        // Collect node IDs to remove.
+        let removed_ids: Vec<NodeId> = to_remove.iter().map(|&i| self.states[i].id).collect();
+
+        // Remove connections involving these nodes.
+        self.connections
+            .retain(|c| !removed_ids.contains(&c.from.node) && !removed_ids.contains(&c.to.node));
+
+        // Remove nodes in reverse order.
+        for &i in to_remove.iter().rev() {
+            self.nodes.remove(i);
+            self.states.remove(i);
+        }
+
+        self.selected_nodes.clear();
     }
 
     fn show_context_menu(&mut self, ui: &mut Ui, canvas_rect: Rect) {
