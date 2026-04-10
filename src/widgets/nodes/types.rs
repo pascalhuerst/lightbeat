@@ -37,6 +37,9 @@ pub enum PortType {
     Phase,
     /// Generic untyped signal (red). Any range, any purpose.
     Untyped,
+    /// Accepts any signal type (grey). Used for monitoring ports like Scope.
+    /// Adopts the color of the connected signal when wired.
+    Any,
 }
 
 impl PortType {
@@ -45,11 +48,26 @@ impl PortType {
             PortType::Logic => Color32::from_rgb(240, 200, 40),
             PortType::Phase => Color32::from_rgb(180, 100, 220),
             PortType::Untyped => Color32::from_rgb(220, 80, 80),
+            PortType::Any => Color32::from_gray(160),
+        }
+    }
+
+    /// Suggested display range for this signal type.
+    pub fn default_range(&self) -> (f32, f32) {
+        match self {
+            PortType::Logic => (0.0, 1.0),
+            PortType::Phase => (0.0, 1.0),
+            PortType::Untyped => (-1.0, 1.0),
+            PortType::Any => (-1.0, 1.0),
         }
     }
 
     /// Whether an output of this type can connect to an input of `other`.
     pub fn compatible_with(&self, other: &PortType) -> bool {
+        // Any accepts everything.
+        if *self == PortType::Any || *other == PortType::Any {
+            return true;
+        }
         self == other
     }
 }

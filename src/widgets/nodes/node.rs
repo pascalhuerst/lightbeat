@@ -2,7 +2,7 @@ use std::any::Any;
 
 use egui::{Pos2, Ui};
 
-use super::types::{PortDef, PortDir, PortId, NodeId};
+use super::types::{PortDef, PortDir, PortId, PortType, NodeId};
 
 // ---------------------------------------------------------------------------
 // Node parameters
@@ -86,6 +86,12 @@ pub trait NodeWidget: Any {
     fn write_input(&mut self, _port_index: usize, _value: f32) {}
 
     fn process(&mut self) {}
+
+    /// Called when a connection is made to an input port.
+    fn on_connect(&mut self, _input_port: usize, _source_type: PortType) {}
+
+    /// Called when a connection to an input port is removed.
+    fn on_disconnect(&mut self, _input_port: usize) {}
 
     /// Return the node's editable parameters for the inspector.
     fn params(&self) -> Vec<ParamDef> {

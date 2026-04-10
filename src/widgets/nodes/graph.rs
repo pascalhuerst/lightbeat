@@ -21,8 +21,11 @@ const GRID_SPACING: f32 = 30.0;
 
 #[derive(Default)]
 struct DragState {
-    dragging_node: Option<usize>,
+    /// Dragging selected nodes by title bar.
+    dragging_nodes: bool,
     drawing_conn: Option<DrawingConnection>,
+    /// Selection rectangle (canvas-space start pos).
+    selection_rect_start: Option<Pos2>,
 }
 
 struct DrawingConnection {
@@ -60,7 +63,8 @@ pub struct NodeGraph {
     registry: Vec<NodeEntry>,
     new_nodes: Vec<NewNode>,
     context_menu_pos: Option<Pos2>,
-    selected_node: Option<usize>,
+    selected_nodes: Vec<usize>,
+    canvas_rect: Rect,
 }
 
 impl NodeGraph {
@@ -75,7 +79,8 @@ impl NodeGraph {
             registry: Vec::new(),
             new_nodes: Vec::new(),
             context_menu_pos: None,
-            selected_node: None,
+            selected_nodes: Vec::new(),
+            canvas_rect: Rect::NOTHING,
         }
     }
 
@@ -112,20 +117,50 @@ impl NodeGraph {
         self.nodes[index].as_mut()
     }
 
-    /// Get a mutable reference to the selected node, if any.
-    pub fn selected_node_mut(&mut self) -> Option<&mut Box<dyn NodeWidget>> {
-        self.selected_node.and_then(|i| self.nodes.get_mut(i))
+    /// Get the indices of selected nodes.
+    pub fn selected_indices(&self) -> &[usize] {
+        &self.selected_nodes
     }
 
-    /// Title of the selected node, if any.
-    pub fn selected_node_title(&self) -> Option<&str> {
-        self.selected_node.map(|i| self.nodes[i].title())
+    /// Get mutable references to selected nodes (for inspector).
+    /// Returns an iterator of &mut Box<dyn NodeWidget>.
+    pub fn selected_nodes_mut(&mut self) -> Vec<&mut Box<dyn NodeWidget>> {
+        let indices: Vec<usize> = self.selected_nodes.clone();
+        let mut result = Vec::new();
+        for (i, node) in self.nodes.iter_mut().enumerate() {
+            if indices.contains(&i) {
+                result.push(node);
+            }
+        }
+        result
     }
 
     pub fn add_connection(&mut self, from: PortId, to: PortId) {
         let conn = Connection { from, to };
         if !self.connections.contains(&conn) {
             self.connections.push(conn);
+            // Notify target node about the connection.
+            if let (Some(src_idx), Some(dst_idx)) = (
+                self.states.iter().position(|s| s.id == from.node),
+                self.states.iter().position(|s| s.id == to.node),
+            ) {
+                let src_type = self.nodes[src_idx]
+                    .outputs()
+                    .get(from.index)
+                    .map(|p| p.port_type)
+                    .unwrap_or(PortType::Untyped);
+                self.nodes[dst_idx].on_connect(to.index, src_type);
+            }
+        }
+    }
+
+    fn remove_connection_to(&mut self, to: PortId) {
+        let had = self.connections.iter().any(|c| c.to == to);
+        self.connections.retain(|c| c.to != to);
+        if had {
+            if let Some(dst_idx) = self.states.iter().position(|s| s.id == to.node) {
+                self.nodes[dst_idx].on_disconnect(to.index);
+            }
         }
     }
 
@@ -140,6 +175,7 @@ impl NodeGraph {
         let (response, painter) =
             ui.allocate_painter(ui.available_size(), Sense::click_and_drag());
         let canvas_rect = response.rect;
+        self.canvas_rect = canvas_rect;
 
         // Pan with middle mouse.
         if response.dragged_by(egui::PointerButton::Middle) {
@@ -192,7 +228,7 @@ impl NodeGraph {
 
         // -- Draw node chrome (painter-based, immutable) --
         for i in 0..self.nodes.len() {
-            let selected = self.selected_node == Some(i);
+            let selected = self.selected_nodes.contains(&i);
             draw_node_chrome(&painter, self.nodes[i].as_ref(), node_rects[i], selected);
         }
 
@@ -207,6 +243,15 @@ impl NodeGraph {
                         .layout(egui::Layout::top_down(egui::Align::LEFT)),
                 );
                 self.nodes[i].show_content(&mut content_ui);
+            }
+        }
+
+        // -- Draw selection rectangle --
+        if let Some(start) = self.drag.selection_rect_start {
+            if let Some(current) = ui.input(|i| i.pointer.hover_pos()) {
+                let sel_rect = Rect::from_two_pos(start, current);
+                painter.rect_filled(sel_rect, 0.0, Color32::from_rgba_premultiplied(100, 160, 255, 30));
+                painter.rect_stroke(sel_rect, 0.0, Stroke::new(1.0, SELECTED_BORDER), StrokeKind::Inside);
             }
         }
 
@@ -317,7 +362,9 @@ impl NodeGraph {
         let primary_down = ui.input(|i| i.pointer.button_down(egui::PointerButton::Primary));
         let primary_released =
             ui.input(|i| i.pointer.button_released(egui::PointerButton::Primary));
+        let ctrl = ui.input(|i| i.modifiers.ctrl || i.modifiers.command);
         let drag_delta = response.drag_delta();
+        let on_canvas = self.canvas_rect.contains(pointer_pos);
 
         // --- Connection drawing ---
         if let Some(ref mut dc) = self.drag.drawing_conn {
@@ -357,7 +404,7 @@ impl NodeGraph {
                     } else {
                         (target, dc.from)
                     };
-                    self.connections.retain(|c| c.to != to);
+                    self.remove_connection_to(to);
                     self.add_connection(from, to);
                 }
                 self.drag.drawing_conn = None;
@@ -365,8 +412,26 @@ impl NodeGraph {
             return;
         }
 
+        // --- Selection rectangle ---
+        if let Some(start) = self.drag.selection_rect_start {
+            if primary_down {
+                // Update selection based on rectangle.
+                let sel_rect = Rect::from_two_pos(start, pointer_pos);
+                self.selected_nodes.clear();
+                for (i, rect) in node_rects.iter().enumerate() {
+                    if sel_rect.intersects(*rect) {
+                        self.selected_nodes.push(i);
+                    }
+                }
+            }
+            if primary_released {
+                self.drag.selection_rect_start = None;
+            }
+            return;
+        }
+
         // --- Check port clicks to start drawing ---
-        if primary_pressed {
+        if primary_pressed && on_canvas {
             for i in 0..self.nodes.len() {
                 let rect = node_rects[i];
                 let node_id = self.states[i].id;
@@ -384,23 +449,28 @@ impl NodeGraph {
                         return;
                     }
                 }
-                for (pi, port_def) in self.nodes[i].inputs().iter().enumerate() {
-                    let pos = port_pos(rect.min, rect.width(), PortDir::Input, pi);
+                let input_ports: Vec<(usize, Pos2, PortType)> = self.nodes[i]
+                    .inputs()
+                    .iter()
+                    .enumerate()
+                    .map(|(pi, pd)| {
+                        let pos = port_pos(rect.min, rect.width(), PortDir::Input, pi);
+                        (pi, pos, pd.port_type)
+                    })
+                    .collect();
+                for (pi, pos, pt) in input_ports {
                     if pos.distance(pointer_pos) < PORT_RADIUS + 4.0 {
                         let input_id = make_port_id(node_id, PortDir::Input, pi);
-                        // If this input already has a connection, disconnect it
-                        // and start dragging from the original output end.
                         if let Some(conn_idx) = self.connections.iter().position(|c| c.to == input_id) {
                             let old_from = self.connections[conn_idx].from;
-                            self.connections.remove(conn_idx);
-                            // Start dragging from the now-disconnected output.
+                            self.remove_connection_to(input_id);
                             if let Some(from_pos) = port_screen_pos_from_rects(
                                 &self.states, node_rects, old_from,
                             ) {
                                 self.drag.drawing_conn = Some(DrawingConnection {
                                     from: old_from,
                                     from_pos,
-                                    from_type: port_def.port_type,
+                                    from_type: pt,
                                     to_pos: pointer_pos,
                                     snap_target: None,
                                 });
@@ -409,7 +479,7 @@ impl NodeGraph {
                             self.drag.drawing_conn = Some(DrawingConnection {
                                 from: input_id,
                                 from_pos: pos,
-                                from_type: port_def.port_type,
+                                from_type: pt,
                                 to_pos: pointer_pos,
                                 snap_target: None,
                             });
@@ -421,7 +491,7 @@ impl NodeGraph {
         }
 
         // --- Node selection and dragging ---
-        if primary_pressed && self.drag.dragging_node.is_none() {
+        if primary_pressed && on_canvas && !self.drag.dragging_nodes {
             let mut clicked_node = None;
             for i in (0..self.nodes.len()).rev() {
                 if node_rects[i].contains(pointer_pos) {
@@ -431,26 +501,49 @@ impl NodeGraph {
             }
 
             if let Some(i) = clicked_node {
-                self.selected_node = Some(i);
-                // Only drag by title bar.
+                if ctrl {
+                    // Toggle selection.
+                    if let Some(pos) = self.selected_nodes.iter().position(|&x| x == i) {
+                        self.selected_nodes.remove(pos);
+                    } else {
+                        self.selected_nodes.push(i);
+                    }
+                } else if !self.selected_nodes.contains(&i) {
+                    // Replace selection.
+                    self.selected_nodes.clear();
+                    self.selected_nodes.push(i);
+                }
+                // Start dragging if clicking title bar.
                 let title_rect = Rect::from_min_size(
                     node_rects[i].min,
                     Vec2::new(node_rects[i].width(), NODE_TITLE_HEIGHT),
                 );
                 if title_rect.contains(pointer_pos) {
-                    self.drag.dragging_node = Some(i);
+                    self.drag.dragging_nodes = true;
                 }
             } else {
-                self.selected_node = None;
+                // Clicked empty canvas — start selection rectangle or deselect.
+                if !ctrl {
+                    self.selected_nodes.clear();
+                }
+                self.drag.selection_rect_start = Some(pointer_pos);
             }
         }
 
-        if let Some(idx) = self.drag.dragging_node {
+        if self.drag.dragging_nodes {
             if primary_down {
-                self.states[idx].pos += drag_delta;
+                // Move all selected nodes, snap to grid.
+                for &idx in &self.selected_nodes {
+                    self.states[idx].pos += drag_delta;
+                }
                 ui.ctx().set_cursor_icon(CursorIcon::Grabbing);
             } else {
-                self.drag.dragging_node = None;
+                // Snap to grid on release.
+                for &idx in &self.selected_nodes {
+                    self.states[idx].pos.x = (self.states[idx].pos.x / GRID_SPACING).round() * GRID_SPACING;
+                    self.states[idx].pos.y = (self.states[idx].pos.y / GRID_SPACING).round() * GRID_SPACING;
+                }
+                self.drag.dragging_nodes = false;
             }
         }
 

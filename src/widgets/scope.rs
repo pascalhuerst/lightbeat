@@ -19,6 +19,8 @@ pub struct ScopeNode {
     /// Max display value.
     range_max: f32,
     inputs: Vec<PortDef>,
+    /// The type of the currently connected signal (None = disconnected).
+    connected_type: Option<PortType>,
 }
 
 impl ScopeNode {
@@ -31,7 +33,8 @@ impl ScopeNode {
             width_samples: 200,
             range_min: 0.0,
             range_max: 1.0,
-            inputs: vec![PortDef::new("in", PortType::Untyped)],
+            inputs: vec![PortDef::new("in", PortType::Any)],
+            connected_type: None,
         }
     }
 }
@@ -72,6 +75,20 @@ impl NodeWidget for ScopeNode {
         while self.buffer.len() > MAX_SAMPLES {
             self.buffer.pop_front();
         }
+    }
+
+    fn on_connect(&mut self, _input_port: usize, source_type: PortType) {
+        self.connected_type = Some(source_type);
+        let (lo, hi) = source_type.default_range();
+        self.range_min = lo;
+        self.range_max = hi;
+        // Update the displayed port color to match the connected signal.
+        self.inputs[0] = PortDef::new("in", source_type);
+    }
+
+    fn on_disconnect(&mut self, _input_port: usize) {
+        self.connected_type = None;
+        self.inputs[0] = PortDef::new("in", PortType::Any);
     }
 
     fn params(&self) -> Vec<ParamDef> {

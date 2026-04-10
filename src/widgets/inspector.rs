@@ -2,6 +2,90 @@ use egui::Ui;
 
 use super::nodes::{NodeWidget, ParamDef, ParamValue};
 
+/// Find params that are common across all selected nodes (same name, same type).
+fn find_common_params(nodes: &[&Box<dyn NodeWidget>]) -> Vec<(String, ParamDef)> {
+    if nodes.is_empty() {
+        return vec![];
+    }
+    let first_params = nodes[0].params();
+    let mut common = Vec::new();
+
+    for param in &first_params {
+        let name = param.name().to_string();
+        let all_have = nodes[1..].iter().all(|n| {
+            n.params().iter().any(|p| {
+                p.name() == name && std::mem::discriminant(p) == std::mem::discriminant(param)
+            })
+        });
+        if all_have {
+            common.push((name, param.clone()));
+        }
+    }
+    common
+}
+
+/// Inspector for multiple selected nodes — shows and edits common parameters.
+pub fn show_multi_inspector(ui: &mut Ui, mut nodes: Vec<&mut Box<dyn NodeWidget>>) {
+    let common = find_common_params(&nodes.iter().map(|n| &**n).collect::<Vec<&Box<dyn NodeWidget>>>());
+
+    if common.is_empty() {
+        ui.label("No common parameters.");
+        return;
+    }
+
+    ui.label(egui::RichText::new("Common Parameters").strong().size(11.0));
+    ui.add_space(4.0);
+
+    for (name, param) in &common {
+        match param {
+            ParamDef::Float { value, min, max, step, unit, .. } => {
+                let mut v = *value;
+                ui.horizontal(|ui| {
+                    ui.label(name);
+                    let slider = egui::Slider::new(&mut v, *min..=*max)
+                        .step_by(*step as f64)
+                        .suffix(*unit);
+                    if ui.add(slider).changed() {
+                        for node in nodes.iter_mut() {
+                            let idx = node.params().iter().position(|p| p.name() == name);
+                            if let Some(i) = idx {
+                                node.set_param(i, ParamValue::Float(v));
+                            }
+                        }
+                    }
+                });
+            }
+            ParamDef::Int { value, min, max, .. } => {
+                let mut v = *value;
+                ui.horizontal(|ui| {
+                    ui.label(name);
+                    let slider = egui::Slider::new(&mut v, *min..=*max);
+                    if ui.add(slider).changed() {
+                        for node in nodes.iter_mut() {
+                            let idx = node.params().iter().position(|p| p.name() == name);
+                            if let Some(i) = idx {
+                                node.set_param(i, ParamValue::Int(v));
+                            }
+                        }
+                    }
+                });
+            }
+            ParamDef::Bool { value, .. } => {
+                let mut v = *value;
+                if ui.checkbox(&mut v, name).changed() {
+                    for node in nodes.iter_mut() {
+                        let idx = node.params().iter().position(|p| p.name() == name);
+                        if let Some(i) = idx {
+                            node.set_param(i, ParamValue::Bool(v));
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
 /// Draw the inspector panel for a selected node.
 pub fn show_inspector(ui: &mut Ui, node: &mut dyn NodeWidget) {
     ui.heading(node.title());

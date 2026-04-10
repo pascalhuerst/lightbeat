@@ -72,12 +72,20 @@ impl eframe::App for LightBeatApp {
         egui::SidePanel::right("inspector")
             .default_width(250.0)
             .show(ctx, |ui| {
-                if let Some(node) = self.graph.selected_node_mut() {
-                    widgets::inspector::show_inspector(ui, node.as_mut());
-                } else {
+                let selected = self.graph.selected_nodes_mut();
+                if selected.is_empty() {
                     ui.heading("Inspector");
                     ui.separator();
                     ui.label("Select a node to inspect.");
+                } else if selected.len() == 1 {
+                    // Single node — show full inspector.
+                    let node = &mut *selected.into_iter().next().unwrap();
+                    widgets::inspector::show_inspector(ui, node.as_mut());
+                } else {
+                    // Multi-selection — show common params.
+                    ui.heading(format!("{} nodes selected", selected.len()));
+                    ui.separator();
+                    widgets::inspector::show_multi_inspector(ui, selected);
                 }
             });
 
