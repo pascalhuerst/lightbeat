@@ -3,27 +3,47 @@ mod link_controller;
 mod widgets;
 
 use eframe::egui;
-use widgets::ExampleWidget;
+use widgets::{LinkStatus, StepSequencer};
+
+use beat_clock::{BeatClock, BeatPattern, SubscriptionHandle};
 
 struct LightBeatApp {
-    // -- Active widget --
-    // Comment/uncomment to switch which widget is displayed.
-    example: ExampleWidget,
+    sequencer: StepSequencer,
+    link_status: LinkStatus,
+    _beat_clock: BeatClock,
+    _subs: Vec<SubscriptionHandle>,
 }
 
 impl LightBeatApp {
     fn new(_cc: &eframe::CreationContext<'_>) -> Self {
+        let sequencer = StepSequencer::new();
+        let link_status = LinkStatus::new();
+        let beat_clock = BeatClock::new(4.0);
+
+        let subs = vec![
+            beat_clock.subscribe(BeatPattern::every(1), sequencer.state.clone()),
+            beat_clock.subscribe(BeatPattern::every(1), link_status.state.clone()),
+        ];
+
         Self {
-            example: ExampleWidget::new(),
+            sequencer,
+            link_status,
+            _beat_clock: beat_clock,
+            _subs: subs,
         }
     }
 }
 
 impl eframe::App for LightBeatApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        ctx.request_repaint();
+
         egui::CentralPanel::default().show(ctx, |ui| {
-            // -- Switch active widget by commenting/uncommenting --
-            self.example.show(ui);
+            ui.horizontal(|ui| {
+                self.link_status.show(ui);
+            });
+            ui.add_space(8.0);
+            self.sequencer.show(ui);
         });
     }
 }
