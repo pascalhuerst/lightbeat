@@ -94,7 +94,8 @@ pub fn show_inspector(ui: &mut Ui, node: &mut dyn NodeWidget) {
     // Ports info
     if !node.inputs().is_empty() {
         ui.label(egui::RichText::new("Inputs").strong().size(11.0));
-        for port in node.inputs() {
+        for (i, port) in node.inputs().iter().enumerate() {
+            let val = node.read_input(i);
             ui.horizontal(|ui| {
                 let (r, painter) = ui.allocate_painter(
                     egui::Vec2::new(10.0, 10.0),
@@ -102,6 +103,7 @@ pub fn show_inspector(ui: &mut Ui, node: &mut dyn NodeWidget) {
                 );
                 painter.circle_filled(r.rect.center(), 4.0, port.port_type.color());
                 ui.label(&port.name);
+                ui.colored_label(egui::Color32::from_gray(120), format!("{:.2}", val));
             });
         }
         ui.add_space(4.0);
@@ -109,7 +111,8 @@ pub fn show_inspector(ui: &mut Ui, node: &mut dyn NodeWidget) {
 
     if !node.outputs().is_empty() {
         ui.label(egui::RichText::new("Outputs").strong().size(11.0));
-        for port in node.outputs() {
+        for (i, port) in node.outputs().iter().enumerate() {
+            let val = node.read_output(i);
             ui.horizontal(|ui| {
                 let (r, painter) = ui.allocate_painter(
                     egui::Vec2::new(10.0, 10.0),
@@ -117,6 +120,7 @@ pub fn show_inspector(ui: &mut Ui, node: &mut dyn NodeWidget) {
                 );
                 painter.circle_filled(r.rect.center(), 4.0, port.port_type.color());
                 ui.label(&port.name);
+                ui.colored_label(egui::Color32::from_gray(120), format!("{:.2}", val));
             });
         }
         ui.add_space(4.0);

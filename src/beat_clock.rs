@@ -7,12 +7,7 @@ use crate::link_controller::LinkController;
 /// Information delivered to listeners on each matching beat.
 #[derive(Debug, Clone)]
 pub struct BeatInfo {
-    /// Absolute beat number since the timeline started.
     pub beat: u64,
-    /// Current tempo in BPM.
-    pub tempo: f64,
-    /// Whether transport is currently playing.
-    pub playing: bool,
 }
 
 /// Continuously updated snapshot of the Link session, polled ~1ms.
@@ -50,10 +45,6 @@ pub struct BeatPattern {
 impl BeatPattern {
     pub fn every(n: u64) -> Self {
         Self { divisor: n, offset: 0 }
-    }
-
-    pub fn every_with_offset(n: u64, offset: u64) -> Self {
-        Self { divisor: n, offset: offset % n }
     }
 
     fn matches(&self, beat: u64) -> bool {
@@ -109,11 +100,12 @@ impl BeatClock {
                 let state = link.state();
 
                 // Update snapshot every poll (~1ms).
+                // Normalize phase from [0, quantum) to [0, 1).
                 {
                     let mut s = snap.lock().unwrap();
                     s.tempo = state.tempo;
                     s.beat = state.beat;
-                    s.phase = state.phase;
+                    s.phase = state.phase / quantum;
                     s.playing = state.playing;
                     s.num_peers = state.num_peers;
                 }
@@ -134,11 +126,7 @@ impl BeatClock {
                         if current_beat > prev {
                             let subs = subs.lock().unwrap();
                             for beat in (prev + 1)..=current_beat {
-                                let info = BeatInfo {
-                                    beat,
-                                    tempo: state.tempo,
-                                    playing: true,
-                                };
+                                let info = BeatInfo { beat };
                                 for sub in subs.iter() {
                                     if sub.pattern.matches(beat) {
                                         sub.listener.lock().unwrap().on_beat(&info);
@@ -177,6 +165,14 @@ impl BeatClock {
         pattern: BeatPattern,
         listener: Arc<Mutex<dyn BeatListener>>,
     ) -> SubscriptionHandle {
+        // Immediately notify the listener of the current playing state
+        // so it doesn't miss an already-running session.
+        {
+            let snap = self.snapshot.lock().unwrap();
+            let mut l = listener.lock().unwrap();
+            l.on_transport_change(snap.playing);
+        }
+
         let id = {
             let mut subs = self.subscribers.lock().unwrap();
             let id = subs.len();

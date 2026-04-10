@@ -19,6 +19,8 @@ const GRID_SPACING: f32 = 30.0;
 // Interaction state
 // ---------------------------------------------------------------------------
 
+const RESIZE_HANDLE_SIZE: f32 = 10.0;
+
 #[derive(Default)]
 struct DragState {
     /// Dragging selected nodes by title bar.
@@ -26,6 +28,8 @@ struct DragState {
     drawing_conn: Option<DrawingConnection>,
     /// Selection rectangle (canvas-space start pos).
     selection_rect_start: Option<Pos2>,
+    /// Index of node being resized.
+    resizing_node: Option<usize>,
 }
 
 struct DrawingConnection {
@@ -50,7 +54,16 @@ pub struct NodeEntry {
 /// can set up beat-clock subscriptions or other wiring.
 pub struct NewNode {
     pub index: usize,
-    pub node_id: NodeId,
+}
+
+/// A copied node snapshot for clipboard operations.
+struct ClipboardNode {
+    type_name: String,
+    size: Option<Vec2>,
+    params: Vec<(usize, ParamValue)>,
+    data: Option<serde_json::Value>,
+    /// Offset from the first copied node's position.
+    offset: Vec2,
 }
 
 pub struct NodeGraph {
@@ -65,6 +78,7 @@ pub struct NodeGraph {
     context_menu_pos: Option<Pos2>,
     selected_nodes: Vec<usize>,
     canvas_rect: Rect,
+    clipboard: Vec<ClipboardNode>,
 }
 
 impl NodeGraph {
@@ -81,6 +95,7 @@ impl NodeGraph {
             context_menu_pos: None,
             selected_nodes: Vec::new(),
             canvas_rect: Rect::NOTHING,
+            clipboard: Vec::new(),
         }
     }
 
@@ -117,11 +132,6 @@ impl NodeGraph {
         self.nodes[index].as_mut()
     }
 
-    /// Get the indices of selected nodes.
-    pub fn selected_indices(&self) -> &[usize] {
-        &self.selected_nodes
-    }
-
     /// Get mutable references to selected nodes (for inspector).
     /// Returns an iterator of &mut Box<dyn NodeWidget>.
     pub fn selected_nodes_mut(&mut self) -> Vec<&mut Box<dyn NodeWidget>> {
@@ -133,6 +143,30 @@ impl NodeGraph {
             }
         }
         result
+    }
+
+    pub fn node_count(&self) -> usize {
+        self.nodes.len()
+    }
+
+    pub fn node_and_state(&self, index: usize) -> (&dyn NodeWidget, &NodeState) {
+        (self.nodes[index].as_ref(), &self.states[index])
+    }
+
+    pub fn connections(&self) -> &[Connection] {
+        &self.connections
+    }
+
+    pub fn set_node_size(&mut self, index: usize, size: egui::Vec2) {
+        self.states[index].size_override = Some(size);
+    }
+
+    /// Create a node from the registry by type name.
+    pub fn create_from_registry(&self, type_name: &str, id: NodeId) -> Option<Box<dyn NodeWidget>> {
+        self.registry
+            .iter()
+            .find(|e| e.label == type_name)
+            .map(|e| (e.factory)(id))
     }
 
     pub fn add_connection(&mut self, from: PortId, to: PortId) {
@@ -168,7 +202,7 @@ impl NodeGraph {
     // Main draw
     // -----------------------------------------------------------------------
 
-    pub fn show(&mut self, ui: &mut Ui) {
+    pub fn show(&mut self, ui: &mut Ui, snap_to_grid: bool) {
         // Propagate signals through connections before drawing.
         self.propagate_signals();
 
@@ -217,12 +251,16 @@ impl NodeGraph {
         let node_rects: Vec<Rect> = (0..self.nodes.len())
             .map(|i| {
                 let n = &self.nodes[i];
-                let w = n.min_width();
+                let min_w = n.min_width();
                 let port_h = ports_height(n.inputs().len(), n.outputs().len());
                 let content_h = PORT_START_Y + n.min_content_height() + NODE_PADDING;
-                let h = port_h.max(content_h);
+                let min_h = port_h.max(content_h);
+                let size = self.states[i]
+                    .size_override
+                    .map(|s| Vec2::new(s.x.max(min_w), s.y.max(min_h)))
+                    .unwrap_or(Vec2::new(min_w, min_h));
                 let pos = self.states[i].pos + origin;
-                Rect::from_min_size(pos, Vec2::new(w, h))
+                Rect::from_min_size(pos, size)
             })
             .collect();
 
@@ -256,13 +294,34 @@ impl NodeGraph {
         }
 
         // -- Handle interactions --
-        self.handle_interactions(ui, &response, &node_rects);
+        self.handle_interactions(ui, &response, &node_rects, snap_to_grid);
+
+        let ctrl = ui.input(|i| i.modifiers.ctrl || i.modifiers.command);
 
         // -- Delete selected nodes --
         if ui.input(|i| i.key_pressed(egui::Key::Delete) || i.key_pressed(egui::Key::Backspace))
             && !self.selected_nodes.is_empty()
         {
             self.delete_selected();
+        }
+
+        // -- Duplicate (Ctrl+D) --
+        if ctrl && ui.input(|i| i.key_pressed(egui::Key::D)) && !self.selected_nodes.is_empty() {
+            self.duplicate_selected();
+        }
+
+        // -- Copy (Ctrl+C) --
+        if ctrl && ui.input(|i| i.key_pressed(egui::Key::C)) && !self.selected_nodes.is_empty() {
+            self.copy_selected();
+        }
+
+        // -- Paste (Ctrl+V) --
+        if ctrl && ui.input(|i| i.key_pressed(egui::Key::V)) && !self.clipboard.is_empty() {
+            // Paste at mouse position or center of canvas.
+            let pos = ui.input(|i| i.pointer.hover_pos())
+                .map(|p| p - canvas_rect.min.to_vec2() - self.pan)
+                .unwrap_or(Pos2::new(100.0, 100.0));
+            self.paste(pos);
         }
 
         // -- Context menu --
@@ -289,6 +348,89 @@ impl NodeGraph {
         }
 
         self.selected_nodes.clear();
+    }
+
+    fn copy_selected(&mut self) {
+        self.clipboard.clear();
+        if self.selected_nodes.is_empty() {
+            return;
+        }
+
+        // Use first selected node's position as origin.
+        let origin = self.states[self.selected_nodes[0]].pos;
+
+        for &i in &self.selected_nodes {
+            let node = &self.nodes[i];
+            let state = &self.states[i];
+
+            let params: Vec<(usize, ParamValue)> = node
+                .params()
+                .iter()
+                .enumerate()
+                .map(|(pi, p)| {
+                    let val = match p {
+                        ParamDef::Float { value, .. } => ParamValue::Float(*value),
+                        ParamDef::Int { value, .. } => ParamValue::Int(*value),
+                        ParamDef::Bool { value, .. } => ParamValue::Bool(*value),
+                        ParamDef::Choice { value, .. } => ParamValue::Choice(*value),
+                    };
+                    (pi, val)
+                })
+                .collect();
+
+            self.clipboard.push(ClipboardNode {
+                type_name: node.type_name().to_string(),
+                size: state.size_override,
+                params,
+                data: node.save_data(),
+                offset: state.pos - origin,
+            });
+        }
+    }
+
+    fn paste(&mut self, base_pos: Pos2) {
+        if self.clipboard.is_empty() {
+            return;
+        }
+
+        self.selected_nodes.clear();
+        let clip = std::mem::take(&mut self.clipboard);
+
+        for cn in &clip {
+            let id = self.alloc_id();
+            if let Some(mut node) = self.create_from_registry(&cn.type_name, id) {
+                for (pi, val) in &cn.params {
+                    node.set_param(*pi, val.clone());
+                }
+                if let Some(data) = &cn.data {
+                    node.load_data(data);
+                }
+
+                let pos = base_pos + cn.offset;
+                let idx = self.add_node(node, pos);
+
+                if let Some(size) = cn.size {
+                    self.states[idx].size_override = Some(size);
+                }
+
+                self.new_nodes.push(NewNode { index: idx });
+                self.selected_nodes.push(idx);
+            }
+        }
+
+        self.clipboard = clip;
+    }
+
+    fn duplicate_selected(&mut self) {
+        self.copy_selected();
+        // Paste offset from the first selected node.
+        let base = if let Some(&i) = self.selected_nodes.first() {
+            self.states[i].pos + Vec2::new(GRID_SPACING * 2.0, GRID_SPACING * 2.0)
+        } else {
+            Pos2::new(100.0, 100.0)
+        };
+        // Clear selection before paste (paste will set new selection).
+        self.paste(base);
     }
 
     fn show_context_menu(&mut self, ui: &mut Ui, canvas_rect: Rect) {
@@ -340,7 +482,7 @@ impl NodeGraph {
             let canvas_pos = menu_pos - canvas_rect.min.to_vec2() - self.pan;
             let node = (self.registry[reg_idx].factory)(id);
             let index = self.add_node(node, canvas_pos);
-            self.new_nodes.push(NewNode { index, node_id: id });
+            self.new_nodes.push(NewNode { index });
             self.context_menu_pos = None;
         } else if clicked_outside || esc {
             self.context_menu_pos = None;
@@ -384,6 +526,7 @@ impl NodeGraph {
         ui: &mut Ui,
         response: &egui::Response,
         node_rects: &[Rect],
+        snap_to_grid: bool,
     ) {
         let pointer_pos = ui.input(|i| i.pointer.hover_pos()).unwrap_or_default();
         let primary_pressed =
@@ -519,60 +662,108 @@ impl NodeGraph {
             }
         }
 
-        // --- Node selection and dragging ---
-        if primary_pressed && on_canvas && !self.drag.dragging_nodes {
-            let mut clicked_node = None;
-            for i in (0..self.nodes.len()).rev() {
-                if node_rects[i].contains(pointer_pos) {
-                    clicked_node = Some(i);
-                    break;
+        // --- Resize handle ---
+        if let Some(idx) = self.drag.resizing_node {
+            if primary_down {
+                let n = &self.nodes[idx];
+                let min_w = n.min_width();
+                let port_h = ports_height(n.inputs().len(), n.outputs().len());
+                let content_h = PORT_START_Y + n.min_content_height() + NODE_PADDING;
+                let min_h = port_h.max(content_h);
+                let current = self.states[idx].size_override.unwrap_or(Vec2::new(min_w, min_h));
+                let new_size = Vec2::new(
+                    (current.x + drag_delta.x).max(min_w),
+                    (current.y + drag_delta.y).max(min_h),
+                );
+                self.states[idx].size_override = Some(new_size);
+                ui.ctx().set_cursor_icon(CursorIcon::ResizeNwSe);
+            } else {
+                self.drag.resizing_node = None;
+            }
+            // Don't process other interactions while resizing.
+        } else {
+            // --- Check resize handle click ---
+            if primary_pressed && on_canvas {
+                for i in (0..self.nodes.len()).rev() {
+                    if self.nodes[i].resizable() {
+                        let handle_rect = Rect::from_min_size(
+                            node_rects[i].max - Vec2::splat(RESIZE_HANDLE_SIZE),
+                            Vec2::splat(RESIZE_HANDLE_SIZE),
+                        );
+                        if handle_rect.contains(pointer_pos) {
+                            self.drag.resizing_node = Some(i);
+                            if !self.selected_nodes.contains(&i) {
+                                self.selected_nodes.clear();
+                                self.selected_nodes.push(i);
+                            }
+                            // Skip normal selection/drag below.
+                        }
+                    }
                 }
             }
 
-            if let Some(i) = clicked_node {
-                if ctrl {
-                    // Toggle selection.
-                    if let Some(pos) = self.selected_nodes.iter().position(|&x| x == i) {
-                        self.selected_nodes.remove(pos);
-                    } else {
+            // --- Node selection and dragging ---
+            if primary_pressed && on_canvas && !self.drag.dragging_nodes && self.drag.resizing_node.is_none() {
+                let mut clicked_node = None;
+                for i in (0..self.nodes.len()).rev() {
+                    if node_rects[i].contains(pointer_pos) {
+                        clicked_node = Some(i);
+                        break;
+                    }
+                }
+
+                if let Some(i) = clicked_node {
+                    if ctrl {
+                        if let Some(pos) = self.selected_nodes.iter().position(|&x| x == i) {
+                            self.selected_nodes.remove(pos);
+                        } else {
+                            self.selected_nodes.push(i);
+                        }
+                    } else if !self.selected_nodes.contains(&i) {
+                        self.selected_nodes.clear();
                         self.selected_nodes.push(i);
                     }
-                } else if !self.selected_nodes.contains(&i) {
-                    // Replace selection.
-                    self.selected_nodes.clear();
-                    self.selected_nodes.push(i);
+                    let title_rect = Rect::from_min_size(
+                        node_rects[i].min,
+                        Vec2::new(node_rects[i].width(), NODE_TITLE_HEIGHT),
+                    );
+                    if title_rect.contains(pointer_pos) {
+                        self.drag.dragging_nodes = true;
+                    }
+                } else {
+                    if !ctrl {
+                        self.selected_nodes.clear();
+                    }
+                    self.drag.selection_rect_start = Some(pointer_pos);
                 }
-                // Start dragging if clicking title bar.
-                let title_rect = Rect::from_min_size(
-                    node_rects[i].min,
-                    Vec2::new(node_rects[i].width(), NODE_TITLE_HEIGHT),
-                );
-                if title_rect.contains(pointer_pos) {
-                    self.drag.dragging_nodes = true;
+            }
+
+            if self.drag.dragging_nodes {
+                if primary_down {
+                    for &idx in &self.selected_nodes {
+                        self.states[idx].pos += drag_delta;
+                        if snap_to_grid {
+                            self.states[idx].pos.x = (self.states[idx].pos.x / GRID_SPACING).round() * GRID_SPACING;
+                            self.states[idx].pos.y = (self.states[idx].pos.y / GRID_SPACING).round() * GRID_SPACING;
+                        }
+                    }
+                    ui.ctx().set_cursor_icon(CursorIcon::Grabbing);
+                } else {
+                    self.drag.dragging_nodes = false;
                 }
-            } else {
-                // Clicked empty canvas — start selection rectangle or deselect.
-                if !ctrl {
-                    self.selected_nodes.clear();
-                }
-                self.drag.selection_rect_start = Some(pointer_pos);
             }
         }
 
-        if self.drag.dragging_nodes {
-            if primary_down {
-                // Move all selected nodes, snap to grid.
-                for &idx in &self.selected_nodes {
-                    self.states[idx].pos += drag_delta;
+        // Hover cursor for resize handles.
+        for i in 0..self.nodes.len() {
+            if self.nodes[i].resizable() {
+                let handle_rect = Rect::from_min_size(
+                    node_rects[i].max - Vec2::splat(RESIZE_HANDLE_SIZE),
+                    Vec2::splat(RESIZE_HANDLE_SIZE),
+                );
+                if handle_rect.contains(pointer_pos) {
+                    ui.ctx().set_cursor_icon(CursorIcon::ResizeNwSe);
                 }
-                ui.ctx().set_cursor_icon(CursorIcon::Grabbing);
-            } else {
-                // Snap to grid on release.
-                for &idx in &self.selected_nodes {
-                    self.states[idx].pos.x = (self.states[idx].pos.x / GRID_SPACING).round() * GRID_SPACING;
-                    self.states[idx].pos.y = (self.states[idx].pos.y / GRID_SPACING).round() * GRID_SPACING;
-                }
-                self.drag.dragging_nodes = false;
             }
         }
 
@@ -661,12 +852,29 @@ fn draw_node_chrome(painter: &Painter, node: &dyn NodeWidget, rect: Rect, select
         let pos = port_pos(rect.min, rect.width(), PortDir::Output, i);
         draw_port(painter, pos, port_def);
     }
+
+    // Resize handle (small triangle in bottom-right corner)
+    if node.resizable() {
+        let s = RESIZE_HANDLE_SIZE;
+        let br = rect.max;
+        let handle_color = Color32::from_gray(80);
+        painter.line_segment(
+            [Pos2::new(br.x - s, br.y), Pos2::new(br.x, br.y - s)],
+            Stroke::new(1.0, handle_color),
+        );
+        painter.line_segment(
+            [Pos2::new(br.x - s * 0.5, br.y), Pos2::new(br.x, br.y - s * 0.5)],
+            Stroke::new(1.0, handle_color),
+        );
+    }
 }
 
 fn draw_port(painter: &Painter, pos: Pos2, def: &PortDef) {
-    let color = def.port_type.color();
-    painter.circle_filled(pos, PORT_RADIUS, color);
-    painter.circle_stroke(pos, PORT_RADIUS, Stroke::new(1.0, color.linear_multiply(0.6)));
+    let type_color = def.port_type.color();
+    let fill = def.fill_color.unwrap_or(type_color);
+    let stroke_width = if def.fill_color.is_some() { 3.0 } else { 1.5 };
+    painter.circle_filled(pos, PORT_RADIUS, fill);
+    painter.circle_stroke(pos, PORT_RADIUS, Stroke::new(stroke_width, type_color));
 }
 
 fn draw_grid(painter: &Painter, rect: Rect, pan: Vec2) {

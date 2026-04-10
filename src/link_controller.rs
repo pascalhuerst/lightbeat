@@ -3,6 +3,7 @@ use std::sync::{mpsc, OnceLock, Mutex};
 
 /// Events pushed from Link's internal thread via callbacks.
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub enum LinkEvent {
     TempoChanged(f64),
     PlayStateChanged(bool),
@@ -99,11 +100,4 @@ impl LinkController {
         result
     }
 
-    pub fn quantum(&self) -> f64 {
-        self.quantum
-    }
-
-    pub fn set_quantum(&mut self, quantum: f64) {
-        self.quantum = quantum;
-    }
 }

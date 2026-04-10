@@ -10,6 +10,7 @@ use super::types::{NodeId, PortDef, PortDir, PortId, PortType};
 
 /// Describes one editable parameter on a node.
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub enum ParamDef {
     Float {
         name: String,
@@ -49,6 +50,7 @@ impl ParamDef {
 
 /// A value written back from the inspector to a node parameter.
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub enum ParamValue {
     Float(f32),
     Int(i64),
@@ -64,6 +66,8 @@ pub enum ParamValue {
 /// and custom content rendering.
 pub trait NodeWidget: Any {
     fn node_id(&self) -> NodeId;
+    /// Serialization type tag — must match the label used in `register_node`.
+    fn type_name(&self) -> &'static str;
     fn title(&self) -> &str;
     fn inputs(&self) -> &[PortDef];
     fn outputs(&self) -> &[PortDef];
@@ -79,7 +83,17 @@ pub trait NodeWidget: Any {
         0.0
     }
 
+    /// Whether this node can be resized by dragging the bottom-right corner.
+    fn resizable(&self) -> bool {
+        false
+    }
+
     fn read_output(&self, _port_index: usize) -> f32 {
+        0.0
+    }
+
+    /// Read the last value written to an input port.
+    fn read_input(&self, _port_index: usize) -> f32 {
         0.0
     }
 
@@ -104,6 +118,15 @@ pub trait NodeWidget: Any {
     /// Show extra info/visuals in the inspector (e.g. scope display).
     fn show_inspector(&mut self, _ui: &mut Ui) {}
 
+    /// Save custom node data beyond params (e.g. step values).
+    /// Returns a JSON value, or None if no extra data.
+    fn save_data(&self) -> Option<serde_json::Value> {
+        None
+    }
+
+    /// Load custom node data.
+    fn load_data(&mut self, _data: &serde_json::Value) {}
+
     fn as_any_mut(&mut self) -> &mut dyn Any;
 }
 
@@ -112,11 +135,17 @@ pub trait NodeWidget: Any {
 pub struct NodeState {
     pub id: NodeId,
     pub pos: Pos2,
+    /// User-resized dimensions, if any. None = use minimum size.
+    pub size_override: Option<egui::Vec2>,
 }
 
 impl NodeState {
     pub fn new(id: NodeId, pos: Pos2) -> Self {
-        Self { id, pos }
+        Self {
+            id,
+            pos,
+            size_override: None,
+        }
     }
 }
 

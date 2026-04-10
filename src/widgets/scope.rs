@@ -1,40 +1,46 @@
 use std::any::Any;
 use std::collections::VecDeque;
 
-use egui::{self, Color32, Pos2, Rect, Sense, Stroke, StrokeKind, Ui, Vec2};
+use egui::{self, Color32, Pos2, Sense, Stroke, StrokeKind, Ui, Vec2};
 
 use crate::widgets::nodes::{NodeId, NodeWidget, ParamDef, ParamValue, PortDef, PortType};
 
 const MAX_SAMPLES: usize = 512;
+const WAVE_COLORS: [Color32; 2] = [
+    Color32::from_rgb(80, 240, 120),
+    Color32::from_rgb(240, 140, 80),
+];
 
 pub struct ScopeNode {
     id: NodeId,
-    buffer: VecDeque<f32>,
-    input_value: f32,
+    buffers: [VecDeque<f32>; 2],
+    input_values: [f32; 2],
     trigger_threshold: f32,
-    /// Number of samples visible in the scope width.
     width_samples: usize,
-    /// Min display value.
     range_min: f32,
-    /// Max display value.
     range_max: f32,
     inputs: Vec<PortDef>,
-    /// The type of the currently connected signal (None = disconnected).
-    connected_type: Option<PortType>,
+    connected_types: [Option<PortType>; 2],
 }
 
 impl ScopeNode {
     pub fn new(id: NodeId) -> Self {
         Self {
             id,
-            buffer: VecDeque::with_capacity(MAX_SAMPLES),
-            input_value: 0.0,
+            buffers: [
+                VecDeque::with_capacity(MAX_SAMPLES),
+                VecDeque::with_capacity(MAX_SAMPLES),
+            ],
+            input_values: [0.0; 2],
             trigger_threshold: 0.5,
             width_samples: 200,
             range_min: 0.0,
             range_max: 1.0,
-            inputs: vec![PortDef::new("in", PortType::Any)],
-            connected_type: None,
+            inputs: vec![
+                PortDef::new("in 1", PortType::Any),
+                PortDef::new("in 2", PortType::Any),
+            ],
+            connected_types: [None, None],
         }
     }
 }
@@ -42,6 +48,10 @@ impl ScopeNode {
 impl NodeWidget for ScopeNode {
     fn node_id(&self) -> NodeId {
         self.id
+    }
+
+    fn type_name(&self) -> &'static str {
+        "Scope"
     }
 
     fn title(&self) -> &str {
@@ -64,31 +74,55 @@ impl NodeWidget for ScopeNode {
         80.0
     }
 
+    fn resizable(&self) -> bool {
+        true
+    }
+
+    fn read_input(&self, port_index: usize) -> f32 {
+        if port_index < 2 { self.input_values[port_index] } else { 0.0 }
+    }
+
     fn write_input(&mut self, port_index: usize, value: f32) {
-        if port_index == 0 {
-            self.input_value = value;
+        if port_index < 2 {
+            self.input_values[port_index] = value;
         }
     }
 
     fn process(&mut self) {
-        self.buffer.push_back(self.input_value);
-        while self.buffer.len() > MAX_SAMPLES {
-            self.buffer.pop_front();
+        for ch in 0..2 {
+            self.buffers[ch].push_back(self.input_values[ch]);
+            while self.buffers[ch].len() > MAX_SAMPLES {
+                self.buffers[ch].pop_front();
+            }
         }
     }
 
-    fn on_connect(&mut self, _input_port: usize, source_type: PortType) {
-        self.connected_type = Some(source_type);
-        let (lo, hi) = source_type.default_range();
-        self.range_min = lo;
-        self.range_max = hi;
-        // Update the displayed port color to match the connected signal.
-        self.inputs[0] = PortDef::new("in", source_type);
+    fn on_connect(&mut self, input_port: usize, source_type: PortType) {
+        if input_port < 2 {
+            self.connected_types[input_port] = Some(source_type);
+            self.inputs[input_port] = PortDef::new(format!("in {}", input_port + 1), source_type)
+                .with_fill(WAVE_COLORS[input_port]);
+            // Auto-set range from the first connected input.
+            if self.connected_types.iter().filter(|t| t.is_some()).count() == 1 {
+                let (lo, hi) = source_type.default_range();
+                self.range_min = lo;
+                self.range_max = hi;
+            }
+        }
     }
 
-    fn on_disconnect(&mut self, _input_port: usize) {
-        self.connected_type = None;
-        self.inputs[0] = PortDef::new("in", PortType::Any);
+    fn on_disconnect(&mut self, input_port: usize) {
+        if input_port < 2 {
+            self.connected_types[input_port] = None;
+            self.inputs[input_port] = PortDef::new(format!("in {}", input_port + 1), PortType::Any);
+            // If the other input is still connected, use its range.
+            let other = 1 - input_port;
+            if let Some(t) = self.connected_types[other] {
+                let (lo, hi) = t.default_range();
+                self.range_min = lo;
+                self.range_max = hi;
+            }
+        }
     }
 
     fn params(&self) -> Vec<ParamDef> {
@@ -137,13 +171,14 @@ impl NodeWidget for ScopeNode {
     }
 
     fn show_content(&mut self, ui: &mut Ui) {
-        draw_scope(ui, &self.buffer, self.width_samples, self.range_min, self.range_max, self.trigger_threshold);
+        let size = Vec2::new(ui.available_width(), ui.available_height().max(60.0));
+        draw_scope(ui, &self.buffers, &self.connected_types, self.width_samples, self.range_min, self.range_max, self.trigger_threshold, size);
     }
 
     fn show_inspector(&mut self, ui: &mut Ui) {
         ui.heading("Waveform");
         let size = Vec2::new(ui.available_width(), 200.0);
-        draw_scope_sized(ui, &self.buffer, self.width_samples, self.range_min, self.range_max, self.trigger_threshold, size);
+        draw_scope(ui, &self.buffers, &self.connected_types, self.width_samples, self.range_min, self.range_max, self.trigger_threshold, size);
     }
 
     fn as_any_mut(&mut self) -> &mut dyn Any {
@@ -153,19 +188,8 @@ impl NodeWidget for ScopeNode {
 
 fn draw_scope(
     ui: &mut Ui,
-    buffer: &VecDeque<f32>,
-    width_samples: usize,
-    range_min: f32,
-    range_max: f32,
-    threshold: f32,
-) {
-    let size = Vec2::new(ui.available_width(), 60.0);
-    draw_scope_sized(ui, buffer, width_samples, range_min, range_max, threshold, size);
-}
-
-fn draw_scope_sized(
-    ui: &mut Ui,
-    buffer: &VecDeque<f32>,
+    buffers: &[VecDeque<f32>; 2],
+    connected: &[Option<PortType>; 2],
     width_samples: usize,
     range_min: f32,
     range_max: f32,
@@ -177,7 +201,6 @@ fn draw_scope_sized(
 
     let bg = Color32::from_gray(20);
     let grid_color = Color32::from_gray(40);
-    let wave_color = Color32::from_rgb(80, 240, 120);
     let threshold_color = Color32::from_rgb(240, 200, 40).linear_multiply(0.4);
 
     painter.rect_filled(rect, 2.0, bg);
@@ -206,27 +229,34 @@ fn draw_scope_sized(
         );
     }
 
-    // Draw waveform
-    let num_visible = width_samples.min(buffer.len());
-    if num_visible < 2 {
-        return;
-    }
-
-    let start = buffer.len().saturating_sub(num_visible);
-    let dx = rect.width() / (num_visible - 1) as f32;
-
-    let mut prev: Option<Pos2> = None;
-    for i in 0..num_visible {
-        let sample = buffer[start + i];
-        let t = (sample - range_min) / range;
-        let x = rect.min.x + i as f32 * dx;
-        let y = rect.max.y - t * rect.height();
-        let y = y.clamp(rect.min.y, rect.max.y);
-        let pos = Pos2::new(x, y);
-
-        if let Some(p) = prev {
-            painter.line_segment([p, pos], Stroke::new(1.5, wave_color));
+    // Draw waveforms
+    for ch in 0..2 {
+        if connected[ch].is_none() {
+            continue;
         }
-        prev = Some(pos);
+        let buffer = &buffers[ch];
+        let num_visible = width_samples.min(buffer.len());
+        if num_visible < 2 {
+            continue;
+        }
+
+        let start = buffer.len().saturating_sub(num_visible);
+        let dx = rect.width() / (num_visible - 1) as f32;
+        let color = WAVE_COLORS[ch];
+
+        let mut prev: Option<Pos2> = None;
+        for i in 0..num_visible {
+            let sample = buffer[start + i];
+            let t = (sample - range_min) / range;
+            let x = rect.min.x + i as f32 * dx;
+            let y = rect.max.y - t * rect.height();
+            let y = y.clamp(rect.min.y, rect.max.y);
+            let pos = Pos2::new(x, y);
+
+            if let Some(p) = prev {
+                painter.line_segment([p, pos], Stroke::new(1.5, color));
+            }
+            prev = Some(pos);
+        }
     }
 }

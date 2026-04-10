@@ -6,11 +6,14 @@ use crate::widgets::nodes::{NodeId, NodeWidget, ParamDef, ParamValue, PortDef, P
 
 pub struct PhaseScalerNode {
     id: NodeId,
-    numerator: i64,
-    denominator: i64,
+    /// Power of 2 exponent. 0 = ×1, 1 = ×2, 2 = ×4, -1 = ÷2, -2 = ÷4, etc.
+    exponent: i32,
     offset: f32,
     phase_in: f32,
+    prev_phase_in: f32,
     phase_out: f32,
+    /// Counts input phase wraps, used for division to stay in sync.
+    cycle_counter: u64,
     inputs: Vec<PortDef>,
     outputs: Vec<PortDef>,
 }
@@ -19,24 +22,33 @@ impl PhaseScalerNode {
     pub fn new(id: NodeId) -> Self {
         Self {
             id,
-            numerator: 1,
-            denominator: 1,
+            exponent: 0,
             offset: 0.0,
             phase_in: 0.0,
+            prev_phase_in: 0.0,
             phase_out: 0.0,
+            cycle_counter: 0,
             inputs: vec![PortDef::new("phase", PortType::Phase)],
             outputs: vec![PortDef::new("phase", PortType::Phase)],
         }
     }
 
-    fn ratio(&self) -> f32 {
-        self.numerator as f32 / self.denominator.max(1) as f32
+    fn label(&self) -> String {
+        match self.exponent {
+            0 => "×1".into(),
+            e if e > 0 => format!("×{}", 1u64 << e),
+            e => format!("÷{}", 1u64 << (-e)),
+        }
     }
 }
 
 impl NodeWidget for PhaseScalerNode {
     fn node_id(&self) -> NodeId {
         self.id
+    }
+
+    fn type_name(&self) -> &'static str {
+        "Phase Scaler"
     }
 
     fn title(&self) -> &str {
@@ -59,6 +71,13 @@ impl NodeWidget for PhaseScalerNode {
         20.0
     }
 
+    fn read_input(&self, port_index: usize) -> f32 {
+        match port_index {
+            0 => self.phase_in,
+            _ => 0.0,
+        }
+    }
+
     fn write_input(&mut self, port_index: usize, value: f32) {
         if port_index == 0 {
             self.phase_in = value;
@@ -66,7 +85,33 @@ impl NodeWidget for PhaseScalerNode {
     }
 
     fn process(&mut self) {
-        self.phase_out = (self.phase_in * self.ratio() + self.offset).rem_euclid(1.0);
+        // Detect input phase wrap (crossing from ~1 back to ~0).
+        let delta = self.phase_in - self.prev_phase_in;
+        if delta < -0.5 {
+            self.cycle_counter += 1;
+        }
+        self.prev_phase_in = self.phase_in;
+
+        if self.exponent >= 0 {
+            // Multiply: output cycles faster, computed directly.
+            // ×1: output = input
+            // ×2: output = (input * 2) % 1
+            // ×4: output = (input * 4) % 1
+            let multiplier = (1u64 << self.exponent) as f32;
+            self.phase_out = ((self.phase_in * multiplier) + self.offset).rem_euclid(1.0);
+        } else {
+            // Divide: output cycles slower, stays in sync.
+            // ÷2: takes 2 input cycles for 1 output cycle.
+            //   cycle 0: output = input/2        → 0..0.5
+            //   cycle 1: output = input/2 + 0.5  → 0.5..1.0
+            // ÷4: takes 4 input cycles for 1 output cycle.
+            //   cycle 0: output = input/4         → 0..0.25
+            //   cycle 1: output = input/4 + 0.25  → 0.25..0.5
+            //   etc.
+            let divisor = (1u64 << (-self.exponent)) as f32;
+            let sub_cycle = (self.cycle_counter % (divisor as u64)) as f32;
+            self.phase_out = ((sub_cycle + self.phase_in) / divisor + self.offset).rem_euclid(1.0);
+        }
     }
 
     fn read_output(&self, port_index: usize) -> f32 {
@@ -79,16 +124,10 @@ impl NodeWidget for PhaseScalerNode {
     fn params(&self) -> Vec<ParamDef> {
         vec![
             ParamDef::Int {
-                name: "Numerator".into(),
-                value: self.numerator,
-                min: 1,
-                max: 64,
-            },
-            ParamDef::Int {
-                name: "Denominator".into(),
-                value: self.denominator,
-                min: 1,
-                max: 64,
+                name: "Exponent".into(),
+                value: self.exponent as i64,
+                min: -6, // ÷64
+                max: 6,  // ×64
             },
             ParamDef::Float {
                 name: "Offset".into(),
@@ -103,21 +142,22 @@ impl NodeWidget for PhaseScalerNode {
 
     fn set_param(&mut self, index: usize, value: ParamValue) {
         match (index, value) {
-            (0, ParamValue::Int(v)) => self.numerator = v.max(1),
-            (1, ParamValue::Int(v)) => self.denominator = v.max(1),
-            (2, ParamValue::Float(v)) => self.offset = v,
+            (0, ParamValue::Int(v)) => self.exponent = v as i32,
+            (1, ParamValue::Float(v)) => self.offset = v,
             _ => {}
         }
     }
 
     fn show_content(&mut self, ui: &mut Ui) {
-        if self.denominator == 1 {
-            ui.label(format!("×{}", self.numerator));
-        } else if self.numerator == 1 {
-            ui.label(format!("÷{}", self.denominator));
-        } else {
-            ui.label(format!("{}/{}", self.numerator, self.denominator));
-        }
+        ui.horizontal(|ui| {
+            if ui.small_button("÷2").clicked() && self.exponent > -6 {
+                self.exponent -= 1;
+            }
+            ui.label(self.label());
+            if ui.small_button("×2").clicked() && self.exponent < 6 {
+                self.exponent += 1;
+            }
+        });
     }
 
     fn as_any_mut(&mut self) -> &mut dyn Any {

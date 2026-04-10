@@ -76,6 +76,9 @@ impl PortType {
 pub struct PortDef {
     pub name: String,
     pub port_type: PortType,
+    /// Custom fill color for the port circle. If set, the port type color
+    /// is used as the outline and this color fills the interior.
+    pub fill_color: Option<Color32>,
 }
 
 impl PortDef {
@@ -83,7 +86,13 @@ impl PortDef {
         Self {
             name: name.into(),
             port_type,
+            fill_color: None,
         }
+    }
+
+    pub fn with_fill(mut self, color: Color32) -> Self {
+        self.fill_color = Some(color);
+        self
     }
 }
 

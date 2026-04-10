@@ -7,11 +7,12 @@ use egui::{self, Color32, Ui};
 use crate::beat_clock::{BeatInfo, BeatListener, LinkSnapshot};
 use crate::widgets::nodes::{NodeId, NodeWidget, PortDef, PortType};
 
-const BEAT_FLASH_DURATION_MS: u128 = 80;
+const BEAT_FLASH_MS: u128 = 80;
 
 /// Shared state updated by the beat clock thread (for beat flash + pending count).
 pub struct ClockState {
     pub last_beat_time: Option<Instant>,
+    pub last_beat_is_downbeat: bool,
     pub pending_beats: u32,
 }
 
@@ -19,14 +20,17 @@ impl ClockState {
     pub fn new() -> Self {
         Self {
             last_beat_time: None,
+            last_beat_is_downbeat: false,
             pending_beats: 0,
         }
     }
 }
 
 impl BeatListener for ClockState {
-    fn on_beat(&mut self, _info: &BeatInfo) {
+    fn on_beat(&mut self, info: &BeatInfo) {
         self.last_beat_time = Some(Instant::now());
+        // Beat 0, 4, 8, ... are downbeats (quantum = 4).
+        self.last_beat_is_downbeat = info.beat % 4 == 0;
         self.pending_beats += 1;
     }
 
@@ -42,8 +46,8 @@ pub struct ClockNode {
     pub state: Arc<Mutex<ClockState>>,
     pub snapshot: Arc<Mutex<LinkSnapshot>>,
     outputs: Vec<PortDef>,
-    /// Cached beat output: 1.0 while beat flash is active, 0.0 otherwise.
     beat_output: f32,
+    phase_output: f32,
 }
 
 impl ClockNode {
@@ -58,6 +62,7 @@ impl ClockNode {
                 PortDef::new("phase", PortType::Phase),
             ],
             beat_output: 0.0,
+            phase_output: 0.0,
         }
     }
 }
@@ -65,6 +70,10 @@ impl ClockNode {
 impl NodeWidget for ClockNode {
     fn node_id(&self) -> NodeId {
         self.id
+    }
+
+    fn type_name(&self) -> &'static str {
+        "Clock"
     }
 
     fn title(&self) -> &str {
@@ -88,22 +97,31 @@ impl NodeWidget for ClockNode {
     }
 
     fn process(&mut self) {
-        // Pulse beat output high for one frame per beat.
+        let snap = self.snapshot.lock().unwrap();
         let mut cs = self.state.lock().unwrap();
+
+        // Pulse beat output high for one frame per beat.
         if cs.pending_beats > 0 {
             cs.pending_beats = 0;
             self.beat_output = 1.0;
         } else {
             self.beat_output = 0.0;
         }
+
+        // Only update phase while playing; freeze when stopped.
+        if snap.playing {
+            self.phase_output = snap.phase as f32;
+        }
     }
 
     fn read_output(&self, port_index: usize) -> f32 {
-        let snap = self.snapshot.lock().unwrap();
         match port_index {
-            0 => self.beat_output,                          // beat (Logic)
-            1 => if snap.playing { 1.0 } else { 0.0 },     // play (Logic)
-            2 => snap.phase as f32,                         // phase (Phase)
+            0 => self.beat_output,
+            1 => {
+                let snap = self.snapshot.lock().unwrap();
+                if snap.playing { 1.0 } else { 0.0 }
+            }
+            2 => self.phase_output,
             _ => 0.0,
         }
     }
@@ -161,11 +179,15 @@ impl NodeWidget for ClockNode {
             );
 
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                let beat_on = cs.last_beat_time.is_some_and(|t| {
-                    t.elapsed().as_millis() < BEAT_FLASH_DURATION_MS
-                });
+                let beat_on = cs
+                    .last_beat_time
+                    .is_some_and(|t| t.elapsed().as_millis() < BEAT_FLASH_MS);
                 let beat_color = if beat_on {
-                    Color32::from_rgb(240, 200, 40)
+                    if cs.last_beat_is_downbeat {
+                        Color32::from_rgb(255, 255, 255)
+                    } else {
+                        Color32::from_rgb(240, 200, 40)
+                    }
                 } else {
                     Color32::from_gray(40)
                 };
