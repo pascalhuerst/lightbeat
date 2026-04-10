@@ -10,9 +10,12 @@ pub struct StepSequencerNode {
     id: NodeId,
     values: Vec<f32>,
     current_step: usize,
-    playing: bool,
-    /// Pending trigger outputs to fire after advancing.
-    pending_triggers: Vec<usize>,
+    prev_step: Option<usize>,
+    active: bool,
+    /// Current phase input value (0..1, wrapping).
+    phase_in: f32,
+    /// Output: 1.0 on the frame a step changes, 0.0 otherwise.
+    trigger_out: f32,
     inputs: Vec<PortDef>,
     outputs: Vec<PortDef>,
 }
@@ -23,30 +26,20 @@ impl StepSequencerNode {
             id,
             values: vec![0.0; DEFAULT_STEPS],
             current_step: 0,
-            playing: false,
-            pending_triggers: Vec::new(),
-            inputs: vec![PortDef::new("clock", PortType::Trigger)],
+            prev_step: None,
+            active: false,
+            phase_in: 0.0,
+            trigger_out: 0.0,
+            inputs: vec![PortDef::new("phase", PortType::Phase)],
             outputs: vec![
-                PortDef::new("trigger", PortType::Trigger),
-                PortDef::new("value", PortType::Value),
+                PortDef::new("trigger", PortType::Logic),
+                PortDef::new("value", PortType::Untyped),
             ],
         }
     }
 
     fn num_steps(&self) -> usize {
         self.values.len()
-    }
-
-    fn advance(&mut self) {
-        self.current_step = (self.current_step + 1) % self.num_steps();
-        self.playing = true;
-        let value = self.values[self.current_step];
-        println!(
-            "step {} -> trigger (value: {:.2})",
-            self.current_step, value
-        );
-        // Fire trigger output (port 0)
-        self.pending_triggers.push(0);
     }
 }
 
@@ -75,22 +68,36 @@ impl NodeWidget for StepSequencerNode {
         120.0
     }
 
-    fn on_trigger_input(&mut self, port_index: usize) {
-        match port_index {
-            // Port 0 = "clock"
-            0 => self.advance(),
-            _ => {}
+    fn write_input(&mut self, port_index: usize, value: f32) {
+        if port_index == 0 {
+            // Wrap phase into 0..1
+            self.phase_in = value.rem_euclid(1.0);
+            self.active = true;
         }
     }
 
-    fn drain_trigger_outputs(&mut self) -> Vec<usize> {
-        std::mem::take(&mut self.pending_triggers)
+    fn process(&mut self) {
+        if !self.active {
+            self.trigger_out = 0.0;
+            return;
+        }
+
+        let step = (self.phase_in * self.num_steps() as f32).floor() as usize;
+        let step = step.min(self.num_steps() - 1);
+
+        if self.prev_step != Some(step) {
+            self.current_step = step;
+            self.trigger_out = 1.0;
+            self.prev_step = Some(step);
+        } else {
+            self.trigger_out = 0.0;
+        }
     }
 
-    fn read_value_output(&self, port_index: usize) -> f32 {
+    fn read_output(&self, port_index: usize) -> f32 {
         match port_index {
-            // Port 1 = "value" — current step's value
-            1 => self.values[self.current_step],
+            0 => self.trigger_out,                      // trigger (Logic)
+            1 => self.values[self.current_step],        // value (Untyped)
             _ => 0.0,
         }
     }
@@ -123,7 +130,7 @@ impl NodeWidget for StepSequencerNode {
                 egui::pos2(x_max, rect.max.y),
             );
 
-            let color = if i == self.current_step && self.playing {
+            let color = if i == self.current_step && self.active {
                 active_fill
             } else {
                 fill_color
@@ -138,9 +145,14 @@ impl NodeWidget for StepSequencerNode {
             }
         }
 
-        painter.rect_stroke(rect, 2.0, egui::Stroke::new(1.0, line_color), StrokeKind::Inside);
+        painter.rect_stroke(
+            rect,
+            2.0,
+            egui::Stroke::new(1.0, line_color),
+            StrokeKind::Inside,
+        );
 
-        if self.playing {
+        if self.active {
             let i = self.current_step;
             let x_min = rect.min.x + i as f32 * step_width;
             let x_max = x_min + step_width;
@@ -148,14 +160,18 @@ impl NodeWidget for StepSequencerNode {
                 egui::pos2(x_min, rect.min.y),
                 egui::pos2(x_max, rect.max.y),
             );
-            painter.rect_stroke(step_rect, 0.0, egui::Stroke::new(2.0, active_fill), StrokeKind::Inside);
+            painter.rect_stroke(
+                step_rect,
+                0.0,
+                egui::Stroke::new(2.0, active_fill),
+                StrokeKind::Inside,
+            );
         }
 
         if response.dragged() || response.clicked() {
             if let Some(pos) = response.interact_pointer_pos() {
                 if rect.contains(pos) {
-                    let step_index =
-                        ((pos.x - rect.min.x) / step_width).floor() as usize;
+                    let step_index = ((pos.x - rect.min.x) / step_width).floor() as usize;
                     let step_index = step_index.min(num_steps - 1);
                     let value = 1.0 - ((pos.y - rect.min.y) / height).clamp(0.0, 1.0);
                     self.values[step_index] = value;

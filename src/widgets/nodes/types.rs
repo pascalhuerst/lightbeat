@@ -24,21 +24,27 @@ pub enum PortDir {
     Output,
 }
 
-/// Extensible port type. Each variant carries its own color and
-/// compatibility rules.
+/// Signal types, modeled after Bitwig's Grid.
+/// Any signal can connect anywhere — types are hints for semantics and color.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum PortType {
-    /// Instantaneous event (beat, gate on/off, etc.)
-    Trigger,
-    /// Continuous value, 0.0–1.0 (like CV in modular synths)
-    Value,
+    /// Bistate signal (yellow). ≥0.5 = high, <0.5 = low.
+    /// Inputs react to transitions (rising/falling edge).
+    /// High = 1.0, low = 0.0 on outputs.
+    Logic,
+    /// Unipolar 0..1 signal (purple). Values wrap into range.
+    /// Used for driving data lookup / sequencer position.
+    Phase,
+    /// Generic untyped signal (red). Any range, any purpose.
+    Untyped,
 }
 
 impl PortType {
     pub fn color(&self) -> Color32 {
         match self {
-            PortType::Trigger => Color32::from_rgb(240, 200, 40),
-            PortType::Value => Color32::from_rgb(80, 180, 240),
+            PortType::Logic => Color32::from_rgb(240, 200, 40),
+            PortType::Phase => Color32::from_rgb(180, 100, 220),
+            PortType::Untyped => Color32::from_rgb(220, 80, 80),
         }
     }
 

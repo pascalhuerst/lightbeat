@@ -15,6 +15,28 @@ pub struct BeatInfo {
     pub playing: bool,
 }
 
+/// Continuously updated snapshot of the Link session, polled ~1ms.
+#[derive(Debug, Clone)]
+pub struct LinkSnapshot {
+    pub tempo: f64,
+    pub beat: f64,
+    pub phase: f64,
+    pub playing: bool,
+    pub num_peers: usize,
+}
+
+impl Default for LinkSnapshot {
+    fn default() -> Self {
+        Self {
+            tempo: 120.0,
+            beat: 0.0,
+            phase: 0.0,
+            playing: false,
+            num_peers: 0,
+        }
+    }
+}
+
 /// Controls which beats a listener cares about.
 #[derive(Debug, Clone)]
 pub struct BeatPattern {
@@ -54,7 +76,7 @@ struct Subscription {
 /// and dispatching to registered listeners when beats cross.
 pub struct BeatClock {
     subscribers: Arc<Mutex<Vec<Subscription>>>,
-    // Keep a handle so the thread lives as long as BeatClock does.
+    snapshot: Arc<Mutex<LinkSnapshot>>,
     _thread: thread::JoinHandle<()>,
 }
 
@@ -63,6 +85,8 @@ impl BeatClock {
     pub fn new(quantum: f64) -> Self {
         let subscribers: Arc<Mutex<Vec<Subscription>>> = Arc::new(Mutex::new(Vec::new()));
         let subs = Arc::clone(&subscribers);
+        let snapshot: Arc<Mutex<LinkSnapshot>> = Arc::new(Mutex::new(LinkSnapshot::default()));
+        let snap = Arc::clone(&snapshot);
 
         let handle = thread::spawn(move || {
             let link = LinkController::new(quantum);
@@ -70,7 +94,6 @@ impl BeatClock {
             let mut was_playing = false;
 
             loop {
-                // Drain link-level events (tempo/peers changes handled here if needed)
                 for event in link.events() {
                     match event {
                         crate::link_controller::LinkEvent::PlayStateChanged(playing) => {
@@ -85,12 +108,29 @@ impl BeatClock {
 
                 let state = link.state();
 
+                // Update snapshot every poll (~1ms).
+                {
+                    let mut s = snap.lock().unwrap();
+                    s.tempo = state.tempo;
+                    s.beat = state.beat;
+                    s.phase = state.phase;
+                    s.playing = state.playing;
+                    s.num_peers = state.num_peers;
+                }
+
+                // Notify subscribers of play state changes,
+                // including the initial state on first poll.
+                if state.playing != was_playing {
+                    let subs = subs.lock().unwrap();
+                    for sub in subs.iter() {
+                        sub.listener.lock().unwrap().on_transport_change(state.playing);
+                    }
+                }
+
                 if state.playing {
                     let current_beat = state.beat.floor() as u64;
 
-                    // Detect beat crossings
                     if let Some(prev) = last_beat {
-                        // Fire for every beat we crossed since the last poll
                         if current_beat > prev {
                             let subs = subs.lock().unwrap();
                             for beat in (prev + 1)..=current_beat {
@@ -110,7 +150,6 @@ impl BeatClock {
 
                     last_beat = Some(current_beat);
                 } else if was_playing {
-                    // Just stopped — reset so we re-sync on next play
                     last_beat = None;
                 }
 
@@ -121,8 +160,14 @@ impl BeatClock {
 
         Self {
             subscribers,
+            snapshot,
             _thread: handle,
         }
+    }
+
+    /// Get a shared reference to the continuously-updated Link snapshot.
+    pub fn snapshot(&self) -> Arc<Mutex<LinkSnapshot>> {
+        Arc::clone(&self.snapshot)
     }
 
     /// Register a listener with a beat pattern. Returns a handle that keeps

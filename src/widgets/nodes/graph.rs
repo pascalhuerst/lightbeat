@@ -40,7 +40,7 @@ struct DrawingConnection {
 /// Entry in the node registry — a named factory for spawning nodes.
 pub struct NodeEntry {
     pub label: &'static str,
-    pub factory: fn(NodeId) -> Box<dyn NodeWidget>,
+    pub factory: Box<dyn Fn(NodeId) -> Box<dyn NodeWidget>>,
 }
 
 /// Freshly spawned node, returned by `drain_new_nodes` so the app
@@ -60,6 +60,7 @@ pub struct NodeGraph {
     registry: Vec<NodeEntry>,
     new_nodes: Vec<NewNode>,
     context_menu_pos: Option<Pos2>,
+    selected_node: Option<usize>,
 }
 
 impl NodeGraph {
@@ -74,12 +75,13 @@ impl NodeGraph {
             registry: Vec::new(),
             new_nodes: Vec::new(),
             context_menu_pos: None,
+            selected_node: None,
         }
     }
 
     /// Register a node type that can be spawned from the context menu.
-    pub fn register_node(&mut self, label: &'static str, factory: fn(NodeId) -> Box<dyn NodeWidget>) {
-        self.registry.push(NodeEntry { label, factory });
+    pub fn register_node(&mut self, label: &'static str, factory: impl Fn(NodeId) -> Box<dyn NodeWidget> + 'static) {
+        self.registry.push(NodeEntry { label, factory: Box::new(factory) });
     }
 
     fn alloc_id(&mut self) -> NodeId {
@@ -108,6 +110,16 @@ impl NodeGraph {
     /// Get a mutable reference to a node by index (for wiring up state).
     pub fn node_mut(&mut self, index: usize) -> &mut dyn NodeWidget {
         self.nodes[index].as_mut()
+    }
+
+    /// Get a mutable reference to the selected node, if any.
+    pub fn selected_node_mut(&mut self) -> Option<&mut Box<dyn NodeWidget>> {
+        self.selected_node.and_then(|i| self.nodes.get_mut(i))
+    }
+
+    /// Title of the selected node, if any.
+    pub fn selected_node_title(&self) -> Option<&str> {
+        self.selected_node.map(|i| self.nodes[i].title())
     }
 
     pub fn add_connection(&mut self, from: PortId, to: PortId) {
@@ -180,7 +192,8 @@ impl NodeGraph {
 
         // -- Draw node chrome (painter-based, immutable) --
         for i in 0..self.nodes.len() {
-            draw_node_chrome(&painter, self.nodes[i].as_ref(), node_rects[i]);
+            let selected = self.selected_node == Some(i);
+            draw_node_chrome(&painter, self.nodes[i].as_ref(), node_rects[i], selected);
         }
 
         // -- Draw node content (needs &mut node) --
@@ -265,29 +278,25 @@ impl NodeGraph {
     // -----------------------------------------------------------------------
 
     fn propagate_signals(&mut self) {
-        // Collect all trigger outputs that fired this frame.
-        // We need to collect first to avoid borrow issues.
-        let mut triggers: Vec<(NodeId, usize)> = Vec::new();
-        for i in 0..self.nodes.len() {
-            let node_id = self.states[i].id;
-            for port_idx in self.nodes[i].drain_trigger_outputs() {
-                triggers.push((node_id, port_idx));
-            }
+        // 1. Process all nodes (lets them update outputs based on previous inputs).
+        for node in self.nodes.iter_mut() {
+            node.process();
         }
 
-        // Route triggers through connections.
-        for (src_node_id, src_port_idx) in triggers {
-            // Find all connections from this output.
-            let targets: Vec<PortId> = self.connections
-                .iter()
-                .filter(|c| c.from.node == src_node_id && c.from.index == src_port_idx && c.from.dir == PortDir::Output)
-                .map(|c| c.to)
-                .collect();
+        // 2. Read outputs and write to connected inputs.
+        //    Collect values first to avoid borrow issues.
+        let values: Vec<(PortId, f32)> = self.connections
+            .iter()
+            .filter_map(|conn| {
+                let src_idx = self.states.iter().position(|s| s.id == conn.from.node)?;
+                let val = self.nodes[src_idx].read_output(conn.from.index);
+                Some((conn.to, val))
+            })
+            .collect();
 
-            for target in targets {
-                if let Some(idx) = self.states.iter().position(|s| s.id == target.node) {
-                    self.nodes[idx].on_trigger_input(target.index);
-                }
+        for (target, val) in values {
+            if let Some(dst_idx) = self.states.iter().position(|s| s.id == target.node) {
+                self.nodes[dst_idx].write_input(target.index, val);
             }
         }
     }
@@ -411,17 +420,28 @@ impl NodeGraph {
             }
         }
 
-        // --- Node dragging (by title bar) ---
+        // --- Node selection and dragging ---
         if primary_pressed && self.drag.dragging_node.is_none() {
+            let mut clicked_node = None;
             for i in (0..self.nodes.len()).rev() {
+                if node_rects[i].contains(pointer_pos) {
+                    clicked_node = Some(i);
+                    break;
+                }
+            }
+
+            if let Some(i) = clicked_node {
+                self.selected_node = Some(i);
+                // Only drag by title bar.
                 let title_rect = Rect::from_min_size(
                     node_rects[i].min,
                     Vec2::new(node_rects[i].width(), NODE_TITLE_HEIGHT),
                 );
                 if title_rect.contains(pointer_pos) {
                     self.drag.dragging_node = Some(i);
-                    break;
                 }
+            } else {
+                self.selected_node = None;
             }
         }
 
@@ -481,14 +501,17 @@ fn node_content_rect(rect: Rect) -> Rect {
     )
 }
 
-fn draw_node_chrome(painter: &Painter, node: &dyn NodeWidget, rect: Rect) {
+const SELECTED_BORDER: Color32 = Color32::from_rgb(100, 160, 255);
+
+fn draw_node_chrome(painter: &Painter, node: &dyn NodeWidget, rect: Rect, selected: bool) {
     // Shadow
     let shadow_rect = rect.translate(Vec2::new(3.0, 3.0));
     painter.rect_filled(shadow_rect, NODE_CORNER_RADIUS, Color32::from_black_alpha(60));
 
     // Body
     painter.rect_filled(rect, NODE_CORNER_RADIUS, NODE_BG);
-    painter.rect_stroke(rect, NODE_CORNER_RADIUS, Stroke::new(1.0, NODE_BORDER), StrokeKind::Inside);
+    let border = if selected { Stroke::new(2.0, SELECTED_BORDER) } else { Stroke::new(1.0, NODE_BORDER) };
+    painter.rect_stroke(rect, NODE_CORNER_RADIUS, border, StrokeKind::Inside);
 
     // Title bar
     let title_rect = Rect::from_min_size(rect.min, Vec2::new(rect.width(), NODE_TITLE_HEIGHT));

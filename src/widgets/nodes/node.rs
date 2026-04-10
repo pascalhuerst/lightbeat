@@ -4,6 +4,62 @@ use egui::{Pos2, Ui};
 
 use super::types::{PortDef, PortDir, PortId, NodeId};
 
+// ---------------------------------------------------------------------------
+// Node parameters
+// ---------------------------------------------------------------------------
+
+/// Describes one editable parameter on a node.
+#[derive(Debug, Clone)]
+pub enum ParamDef {
+    Float {
+        name: String,
+        value: f32,
+        min: f32,
+        max: f32,
+        step: f32,
+        unit: &'static str,
+    },
+    Int {
+        name: String,
+        value: i64,
+        min: i64,
+        max: i64,
+    },
+    Bool {
+        name: String,
+        value: bool,
+    },
+    Choice {
+        name: String,
+        value: usize,
+        options: Vec<String>,
+    },
+}
+
+impl ParamDef {
+    pub fn name(&self) -> &str {
+        match self {
+            ParamDef::Float { name, .. } => name,
+            ParamDef::Int { name, .. } => name,
+            ParamDef::Bool { name, .. } => name,
+            ParamDef::Choice { name, .. } => name,
+        }
+    }
+}
+
+/// A value written back from the inspector to a node parameter.
+#[derive(Debug, Clone)]
+pub enum ParamValue {
+    Float(f32),
+    Int(i64),
+    Bool(bool),
+    Choice(usize),
+}
+
+// ---------------------------------------------------------------------------
+// NodeWidget trait
+// ---------------------------------------------------------------------------
+
 /// Trait implemented by every node. Provides metadata (title, ports)
 /// and custom content rendering.
 pub trait NodeWidget: Any {
@@ -13,34 +69,35 @@ pub trait NodeWidget: Any {
     fn outputs(&self) -> &[PortDef];
 
     /// Draw the custom content area inside the node body.
-    /// The available width is constrained by the node frame.
     fn show_content(&mut self, ui: &mut Ui);
 
-    /// Minimum width for this node (content may request more).
     fn min_width(&self) -> f32 {
         140.0
     }
 
-    /// Minimum content height (beyond what ports require).
     fn min_content_height(&self) -> f32 {
         0.0
     }
 
-    /// Called when a trigger arrives at an input port.
-    fn on_trigger_input(&mut self, _port_index: usize) {}
-
-    /// Drain any pending trigger outputs that fired since the last call.
-    /// Returns the indices of output ports that fired.
-    fn drain_trigger_outputs(&mut self) -> Vec<usize> {
-        vec![]
-    }
-
-    /// Read a continuous value output (0.0–1.0).
-    fn read_value_output(&self, _port_index: usize) -> f32 {
+    fn read_output(&self, _port_index: usize) -> f32 {
         0.0
     }
 
-    /// Downcast support.
+    fn write_input(&mut self, _port_index: usize, _value: f32) {}
+
+    fn process(&mut self) {}
+
+    /// Return the node's editable parameters for the inspector.
+    fn params(&self) -> Vec<ParamDef> {
+        vec![]
+    }
+
+    /// Apply a parameter change from the inspector.
+    fn set_param(&mut self, _index: usize, _value: ParamValue) {}
+
+    /// Show extra info/visuals in the inspector (e.g. scope display).
+    fn show_inspector(&mut self, _ui: &mut Ui) {}
+
     fn as_any_mut(&mut self) -> &mut dyn Any;
 }
 
