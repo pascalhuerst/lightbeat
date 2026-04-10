@@ -1,49 +1,19 @@
+// Re-export all engine types.
+pub use crate::engine::types::*;
+
 use egui::Color32;
 
 // ---------------------------------------------------------------------------
-// IDs
+// UI extensions for PortType
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct NodeId(pub u64);
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct PortId {
-    pub node: NodeId,
-    pub index: usize,
-    pub dir: PortDir,
+/// UI-specific methods for PortType (colors).
+pub trait PortTypeUi {
+    fn color(&self) -> Color32;
 }
 
-// ---------------------------------------------------------------------------
-// Ports
-// ---------------------------------------------------------------------------
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum PortDir {
-    Input,
-    Output,
-}
-
-/// Signal types, modeled after Bitwig's Grid.
-/// Any signal can connect anywhere — types are hints for semantics and color.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum PortType {
-    /// Bistate signal (yellow). ≥0.5 = high, <0.5 = low.
-    /// Inputs react to transitions (rising/falling edge).
-    /// High = 1.0, low = 0.0 on outputs.
-    Logic,
-    /// Unipolar 0..1 signal (purple). Values wrap into range.
-    /// Used for driving data lookup / sequencer position.
-    Phase,
-    /// Generic untyped signal (red). Any range, any purpose.
-    Untyped,
-    /// Accepts any signal type (grey). Used for monitoring ports like Scope.
-    /// Adopts the color of the connected signal when wired.
-    Any,
-}
-
-impl PortType {
-    pub fn color(&self) -> Color32 {
+impl PortTypeUi for PortType {
+    fn color(&self) -> Color32 {
         match self {
             PortType::Logic => Color32::from_rgb(240, 200, 40),
             PortType::Phase => Color32::from_rgb(180, 100, 220),
@@ -51,41 +21,23 @@ impl PortType {
             PortType::Any => Color32::from_gray(160),
         }
     }
-
-    /// Suggested display range for this signal type.
-    pub fn default_range(&self) -> (f32, f32) {
-        match self {
-            PortType::Logic => (0.0, 1.0),
-            PortType::Phase => (0.0, 1.0),
-            PortType::Untyped => (-1.0, 1.0),
-            PortType::Any => (-1.0, 1.0),
-        }
-    }
-
-    /// Whether an output of this type can connect to an input of `other`.
-    pub fn compatible_with(&self, other: &PortType) -> bool {
-        // Any accepts everything.
-        if *self == PortType::Any || *other == PortType::Any {
-            return true;
-        }
-        self == other
-    }
 }
 
+// ---------------------------------------------------------------------------
+// UI-extended port definition (adds fill_color for rendering)
+// ---------------------------------------------------------------------------
+
+/// Port definition with optional UI fill color override.
 #[derive(Debug, Clone)]
-pub struct PortDef {
-    pub name: String,
-    pub port_type: PortType,
-    /// Custom fill color for the port circle. If set, the port type color
-    /// is used as the outline and this color fills the interior.
+pub struct UiPortDef {
+    pub def: PortDef,
     pub fill_color: Option<Color32>,
 }
 
-impl PortDef {
-    pub fn new(name: impl Into<String>, port_type: PortType) -> Self {
+impl UiPortDef {
+    pub fn from_def(def: &PortDef) -> Self {
         Self {
-            name: name.into(),
-            port_type,
+            def: def.clone(),
             fill_color: None,
         }
     }
@@ -94,14 +46,4 @@ impl PortDef {
         self.fill_color = Some(color);
         self
     }
-}
-
-// ---------------------------------------------------------------------------
-// Connections
-// ---------------------------------------------------------------------------
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct Connection {
-    pub from: PortId,
-    pub to: PortId,
 }

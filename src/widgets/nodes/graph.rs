@@ -1,9 +1,8 @@
-use egui::{
-    self, Color32, CursorIcon, Painter, Pos2, Rect, Sense, Stroke, StrokeKind, Ui, Vec2,
-};
+use egui::{self, Color32, CursorIcon, Painter, Pos2, Rect, Sense, Stroke, StrokeKind, Ui, Vec2};
 
 use super::node::*;
 use super::types::*;
+use crate::engine::types::{Connection, NodeId, ParamDef, ParamValue, PortDir, PortId, PortType};
 
 const MAGNETIC_RADIUS: f32 = 20.0;
 const BEZIER_SEGMENTS: usize = 40;
@@ -57,6 +56,7 @@ pub struct NewNode {
 }
 
 /// A copied node snapshot for clipboard operations.
+#[allow(dead_code)]
 struct ClipboardNode {
     type_name: String,
     size: Option<Vec2>,
@@ -75,6 +75,7 @@ pub struct NodeGraph {
     next_id: u64,
     registry: Vec<NodeEntry>,
     new_nodes: Vec<NewNode>,
+    pending_engine_cmds: Vec<EngineCommand>,
     context_menu_pos: Option<Pos2>,
     selected_nodes: Vec<usize>,
     canvas_rect: Rect,
@@ -92,11 +93,17 @@ impl NodeGraph {
             next_id: 1,
             registry: Vec::new(),
             new_nodes: Vec::new(),
+            pending_engine_cmds: Vec::new(),
             context_menu_pos: None,
             selected_nodes: Vec::new(),
             canvas_rect: Rect::NOTHING,
             clipboard: Vec::new(),
         }
+    }
+
+    /// Drain pending engine commands (called by main.rs each frame).
+    pub fn drain_engine_commands(&mut self) -> Vec<EngineCommand> {
+        std::mem::take(&mut self.pending_engine_cmds)
     }
 
     /// Register a node type that can be spawned from the context menu.
@@ -112,13 +119,14 @@ impl NodeGraph {
 
     pub fn add_node(&mut self, node: Box<dyn NodeWidget>, pos: Pos2) -> usize {
         let id = node.node_id();
-        // Keep next_id above any manually-assigned IDs.
         if id.0 >= self.next_id {
             self.next_id = id.0 + 1;
         }
         self.states.push(NodeState::new(id, pos));
         self.nodes.push(node);
-        self.nodes.len() - 1
+        let idx = self.nodes.len() - 1;
+        self.new_nodes.push(NewNode { index: idx });
+        idx
     }
 
     /// Drain the list of newly-added nodes (from the context menu).
@@ -157,6 +165,7 @@ impl NodeGraph {
         &self.connections
     }
 
+    #[allow(dead_code)]
     pub fn set_node_size(&mut self, index: usize, size: egui::Vec2) {
         self.states[index].size_override = Some(size);
     }
@@ -172,18 +181,30 @@ impl NodeGraph {
     pub fn add_connection(&mut self, from: PortId, to: PortId) {
         let conn = Connection { from, to };
         if !self.connections.contains(&conn) {
-            self.connections.push(conn);
-            // Notify target node about the connection.
+            self.connections.push(conn.clone());
+
+            // Notify engine.
+            self.pending_engine_cmds
+                .push(EngineCommand::AddConnection(conn));
+
+            // Notify target widget (UI side, e.g. scope port colors).
             if let (Some(src_idx), Some(dst_idx)) = (
                 self.states.iter().position(|s| s.id == from.node),
                 self.states.iter().position(|s| s.id == to.node),
             ) {
                 let src_type = self.nodes[src_idx]
-                    .outputs()
+                    .ui_outputs()
                     .get(from.index)
-                    .map(|p| p.port_type)
+                    .map(|p| p.def.port_type)
                     .unwrap_or(PortType::Untyped);
-                self.nodes[dst_idx].on_connect(to.index, src_type);
+                self.nodes[dst_idx].on_ui_connect(to.index, src_type);
+
+                // Notify engine for on_connect callback.
+                self.pending_engine_cmds.push(EngineCommand::NotifyConnect {
+                    node_id: to.node,
+                    input_port: to.index,
+                    source_type: src_type,
+                });
             }
         }
     }
@@ -192,8 +213,17 @@ impl NodeGraph {
         let had = self.connections.iter().any(|c| c.to == to);
         self.connections.retain(|c| c.to != to);
         if had {
+            // Notify engine.
+            self.pending_engine_cmds
+                .push(EngineCommand::RemoveConnectionTo(to));
+            self.pending_engine_cmds
+                .push(EngineCommand::NotifyDisconnect {
+                    node_id: to.node,
+                    input_port: to.index,
+                });
+
             if let Some(dst_idx) = self.states.iter().position(|s| s.id == to.node) {
-                self.nodes[dst_idx].on_disconnect(to.index);
+                self.nodes[dst_idx].on_ui_disconnect(to.index);
             }
         }
     }
@@ -203,9 +233,6 @@ impl NodeGraph {
     // -----------------------------------------------------------------------
 
     pub fn show(&mut self, ui: &mut Ui, snap_to_grid: bool) {
-        // Propagate signals through connections before drawing.
-        self.propagate_signals();
-
         let (response, painter) =
             ui.allocate_painter(ui.available_size(), Sense::click_and_drag());
         let canvas_rect = response.rect;
@@ -252,7 +279,9 @@ impl NodeGraph {
             .map(|i| {
                 let n = &self.nodes[i];
                 let min_w = n.min_width();
-                let port_h = ports_height(n.inputs().len(), n.outputs().len());
+                let inputs = n.ui_inputs();
+                let outputs = n.ui_outputs();
+                let port_h = ports_height(inputs.len(), outputs.len());
                 let content_h = PORT_START_Y + n.min_content_height() + NODE_PADDING;
                 let min_h = port_h.max(content_h);
                 let size = self.states[i]
@@ -267,7 +296,17 @@ impl NodeGraph {
         // -- Draw node chrome (painter-based, immutable) --
         for i in 0..self.nodes.len() {
             let selected = self.selected_nodes.contains(&i);
-            draw_node_chrome(&painter, self.nodes[i].as_ref(), node_rects[i], selected);
+            let inputs = self.nodes[i].ui_inputs();
+            let outputs = self.nodes[i].ui_outputs();
+            draw_node_chrome(
+                &painter,
+                self.nodes[i].title(),
+                self.nodes[i].resizable(),
+                &inputs,
+                &outputs,
+                node_rects[i],
+                selected,
+            );
         }
 
         // -- Draw node content (needs &mut node) --
@@ -329,15 +368,18 @@ impl NodeGraph {
     }
 
     fn delete_selected(&mut self) {
-        // Sort descending so removal indices stay valid.
         let mut to_remove = self.selected_nodes.clone();
         to_remove.sort_unstable();
         to_remove.dedup();
 
-        // Collect node IDs to remove.
         let removed_ids: Vec<NodeId> = to_remove.iter().map(|&i| self.states[i].id).collect();
 
-        // Remove connections involving these nodes.
+        // Notify engine to remove these nodes.
+        for &id in &removed_ids {
+            self.pending_engine_cmds
+                .push(EngineCommand::RemoveNode(id));
+        }
+
         self.connections
             .retain(|c| !removed_ids.contains(&c.from.node) && !removed_ids.contains(&c.to.node));
 
@@ -363,8 +405,10 @@ impl NodeGraph {
             let node = &self.nodes[i];
             let state = &self.states[i];
 
-            let params: Vec<(usize, ParamValue)> = node
-                .params()
+            // Read params from shared state.
+            let shared = node.shared_state().lock().unwrap();
+            let params: Vec<(usize, ParamValue)> = shared
+                .current_params
                 .iter()
                 .enumerate()
                 .map(|(pi, p)| {
@@ -378,11 +422,18 @@ impl NodeGraph {
                 })
                 .collect();
 
+            // Read save_data from shared state display (if the display holds serializable data).
+            let data = shared
+                .display
+                .as_ref()
+                .and_then(|d| d.downcast_ref::<serde_json::Value>().cloned());
+            drop(shared);
+
             self.clipboard.push(ClipboardNode {
                 type_name: node.type_name().to_string(),
                 size: state.size_override,
                 params,
-                data: node.save_data(),
+                data,
                 offset: state.pos - origin,
             });
         }
@@ -398,22 +449,23 @@ impl NodeGraph {
 
         for cn in &clip {
             let id = self.alloc_id();
-            if let Some(mut node) = self.create_from_registry(&cn.type_name, id) {
-                for (pi, val) in &cn.params {
-                    node.set_param(*pi, val.clone());
-                }
-                if let Some(data) = &cn.data {
-                    node.load_data(data);
-                }
-
+            if let Some(node) = self.create_from_registry(&cn.type_name, id) {
                 let pos = base_pos + cn.offset;
                 let idx = self.add_node(node, pos);
+
+                // Apply params by pushing to shared state pending_params.
+                {
+                    let shared = self.nodes[idx].shared_state();
+                    let mut state = shared.lock().unwrap();
+                    for (pi, val) in &cn.params {
+                        state.pending_params.push((*pi, val.clone()));
+                    }
+                }
 
                 if let Some(size) = cn.size {
                     self.states[idx].size_override = Some(size);
                 }
 
-                self.new_nodes.push(NewNode { index: idx });
                 self.selected_nodes.push(idx);
             }
         }
@@ -481,39 +533,10 @@ impl NodeGraph {
             let id = self.alloc_id();
             let canvas_pos = menu_pos - canvas_rect.min.to_vec2() - self.pan;
             let node = (self.registry[reg_idx].factory)(id);
-            let index = self.add_node(node, canvas_pos);
-            self.new_nodes.push(NewNode { index });
+            self.add_node(node, canvas_pos);
             self.context_menu_pos = None;
         } else if clicked_outside || esc {
             self.context_menu_pos = None;
-        }
-    }
-
-    // -----------------------------------------------------------------------
-    // Signal propagation
-    // -----------------------------------------------------------------------
-
-    fn propagate_signals(&mut self) {
-        // 1. Process all nodes (lets them update outputs based on previous inputs).
-        for node in self.nodes.iter_mut() {
-            node.process();
-        }
-
-        // 2. Read outputs and write to connected inputs.
-        //    Collect values first to avoid borrow issues.
-        let values: Vec<(PortId, f32)> = self.connections
-            .iter()
-            .filter_map(|conn| {
-                let src_idx = self.states.iter().position(|s| s.id == conn.from.node)?;
-                let val = self.nodes[src_idx].read_output(conn.from.index);
-                Some((conn.to, val))
-            })
-            .collect();
-
-        for (target, val) in values {
-            if let Some(dst_idx) = self.states.iter().position(|s| s.id == target.node) {
-                self.nodes[dst_idx].write_input(target.index, val);
-            }
         }
     }
 
@@ -546,12 +569,12 @@ impl NodeGraph {
             let mut best_dist = MAGNETIC_RADIUS;
             for i in 0..self.nodes.len() {
                 let (ports, target_dir) = if dc.from.dir == PortDir::Output {
-                    (self.nodes[i].inputs(), PortDir::Input)
+                    (self.nodes[i].ui_inputs(), PortDir::Input)
                 } else {
-                    (self.nodes[i].outputs(), PortDir::Output)
+                    (self.nodes[i].ui_outputs(), PortDir::Output)
                 };
-                for (pi, port_def) in ports.iter().enumerate() {
-                    if !dc.from_type.compatible_with(&port_def.port_type) {
+                for (pi, ui_port) in ports.iter().enumerate() {
+                    if !dc.from_type.compatible_with(&ui_port.def.port_type) {
                         continue;
                     }
                     if self.states[i].id == dc.from.node {
@@ -608,13 +631,14 @@ impl NodeGraph {
                 let rect = node_rects[i];
                 let node_id = self.states[i].id;
 
-                for (pi, port_def) in self.nodes[i].outputs().iter().enumerate() {
+                let outputs = self.nodes[i].ui_outputs();
+                for (pi, ui_port) in outputs.iter().enumerate() {
                     let pos = port_pos(rect.min, rect.width(), PortDir::Output, pi);
                     if pos.distance(pointer_pos) < PORT_RADIUS + 4.0 {
                         self.drag.drawing_conn = Some(DrawingConnection {
                             from: make_port_id(node_id, PortDir::Output, pi),
                             from_pos: pos,
-                            from_type: port_def.port_type,
+                            from_type: ui_port.def.port_type,
                             to_pos: pointer_pos,
                             snap_target: None,
                         });
@@ -622,12 +646,12 @@ impl NodeGraph {
                     }
                 }
                 let input_ports: Vec<(usize, Pos2, PortType)> = self.nodes[i]
-                    .inputs()
+                    .ui_inputs()
                     .iter()
                     .enumerate()
-                    .map(|(pi, pd)| {
+                    .map(|(pi, up)| {
                         let pos = port_pos(rect.min, rect.width(), PortDir::Input, pi);
-                        (pi, pos, pd.port_type)
+                        (pi, pos, up.def.port_type)
                     })
                     .collect();
                 for (pi, pos, pt) in input_ports {
@@ -667,7 +691,9 @@ impl NodeGraph {
             if primary_down {
                 let n = &self.nodes[idx];
                 let min_w = n.min_width();
-                let port_h = ports_height(n.inputs().len(), n.outputs().len());
+                let inputs = n.ui_inputs();
+                let outputs = n.ui_outputs();
+                let port_h = ports_height(inputs.len(), outputs.len());
                 let content_h = PORT_START_Y + n.min_content_height() + NODE_PADDING;
                 let min_h = port_h.max(content_h);
                 let current = self.states[idx].size_override.unwrap_or(Vec2::new(min_w, min_h));
@@ -770,21 +796,21 @@ impl NodeGraph {
         // Hover cursor and tooltips over ports.
         for i in 0..self.nodes.len() {
             let rect = node_rects[i];
-            for (pi, port_def) in self.nodes[i].outputs().iter().enumerate() {
+            for (pi, ui_port) in self.nodes[i].ui_outputs().iter().enumerate() {
                 let pos = port_pos(rect.min, rect.width(), PortDir::Output, pi);
                 if pos.distance(pointer_pos) < PORT_RADIUS + 4.0 {
                     ui.ctx().set_cursor_icon(CursorIcon::PointingHand);
                     egui::show_tooltip_at(ui.ctx(), ui.layer_id(), egui::Id::new(("port_tip", i, pi, 1)), pos + egui::vec2(10.0, -10.0), |ui| {
-                        ui.label(&port_def.name);
+                        ui.label(&ui_port.def.name);
                     });
                 }
             }
-            for (pi, port_def) in self.nodes[i].inputs().iter().enumerate() {
+            for (pi, ui_port) in self.nodes[i].ui_inputs().iter().enumerate() {
                 let pos = port_pos(rect.min, rect.width(), PortDir::Input, pi);
                 if pos.distance(pointer_pos) < PORT_RADIUS + 4.0 {
                     ui.ctx().set_cursor_icon(CursorIcon::PointingHand);
                     egui::show_tooltip_at(ui.ctx(), ui.layer_id(), egui::Id::new(("port_tip", i, pi, 0)), pos + egui::vec2(10.0, -10.0), |ui| {
-                        ui.label(&port_def.name);
+                        ui.label(&ui_port.def.name);
                     });
                 }
             }
@@ -816,7 +842,15 @@ fn node_content_rect(rect: Rect) -> Rect {
 
 const SELECTED_BORDER: Color32 = Color32::from_rgb(100, 160, 255);
 
-fn draw_node_chrome(painter: &Painter, node: &dyn NodeWidget, rect: Rect, selected: bool) {
+fn draw_node_chrome(
+    painter: &Painter,
+    title: &str,
+    resizable: bool,
+    inputs: &[UiPortDef],
+    outputs: &[UiPortDef],
+    rect: Rect,
+    selected: bool,
+) {
     // Shadow
     let shadow_rect = rect.translate(Vec2::new(3.0, 3.0));
     painter.rect_filled(shadow_rect, NODE_CORNER_RADIUS, Color32::from_black_alpha(60));
@@ -836,25 +870,25 @@ fn draw_node_chrome(painter: &Painter, node: &dyn NodeWidget, rect: Rect, select
     painter.text(
         title_rect.center(),
         egui::Align2::CENTER_CENTER,
-        node.title(),
+        title,
         egui::FontId::proportional(13.0),
         Color32::WHITE,
     );
 
     // Input ports
-    for (i, port_def) in node.inputs().iter().enumerate() {
+    for (i, ui_port) in inputs.iter().enumerate() {
         let pos = port_pos(rect.min, rect.width(), PortDir::Input, i);
-        draw_port(painter, pos, port_def);
+        draw_port(painter, pos, ui_port);
     }
 
     // Output ports
-    for (i, port_def) in node.outputs().iter().enumerate() {
+    for (i, ui_port) in outputs.iter().enumerate() {
         let pos = port_pos(rect.min, rect.width(), PortDir::Output, i);
-        draw_port(painter, pos, port_def);
+        draw_port(painter, pos, ui_port);
     }
 
     // Resize handle (small triangle in bottom-right corner)
-    if node.resizable() {
+    if resizable {
         let s = RESIZE_HANDLE_SIZE;
         let br = rect.max;
         let handle_color = Color32::from_gray(80);
@@ -869,10 +903,10 @@ fn draw_node_chrome(painter: &Painter, node: &dyn NodeWidget, rect: Rect, select
     }
 }
 
-fn draw_port(painter: &Painter, pos: Pos2, def: &PortDef) {
-    let type_color = def.port_type.color();
-    let fill = def.fill_color.unwrap_or(type_color);
-    let stroke_width = if def.fill_color.is_some() { 3.0 } else { 1.5 };
+fn draw_port(painter: &Painter, pos: Pos2, ui_port: &UiPortDef) {
+    let type_color = ui_port.def.port_type.color();
+    let fill = ui_port.fill_color.unwrap_or(type_color);
+    let stroke_width = if ui_port.fill_color.is_some() { 3.0 } else { 1.5 };
     painter.circle_filled(pos, PORT_RADIUS, fill);
     painter.circle_stroke(pos, PORT_RADIUS, Stroke::new(stroke_width, type_color));
 }
@@ -945,8 +979,8 @@ fn port_type_for(
 ) -> Option<PortType> {
     let idx = states.iter().position(|s| s.id == port_id.node)?;
     let ports = match port_id.dir {
-        PortDir::Input => nodes[idx].inputs(),
-        PortDir::Output => nodes[idx].outputs(),
+        PortDir::Input => nodes[idx].ui_inputs(),
+        PortDir::Output => nodes[idx].ui_outputs(),
     };
-    ports.get(port_id.index).map(|p| p.port_type)
+    ports.get(port_id.index).map(|p| p.def.port_type)
 }

@@ -1,7 +1,10 @@
 mod graph;
-mod node;
-mod types;
+pub mod node;
+pub mod types;
+
+pub mod io;
+pub mod transport;
+pub mod display;
 
 pub use graph::NodeGraph;
-pub use node::{NodeWidget, ParamDef, ParamValue};
-pub use types::*;
+// Re-export engine types for convenience.

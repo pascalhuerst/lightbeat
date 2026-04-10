@@ -3,7 +3,8 @@ use std::path::PathBuf;
 use egui;
 use serde::{Deserialize, Serialize};
 
-use crate::widgets::nodes::{NodeGraph, NodeId, ParamValue, PortDir, PortId};
+use crate::engine::types::{NodeId, ParamDef, ParamValue, PortDir, PortId};
+use crate::widgets::nodes::NodeGraph;
 
 // ---------------------------------------------------------------------------
 // Save format
@@ -24,6 +25,7 @@ pub struct SavedNode {
     pub size: Option<[f32; 2]>,
     pub params: Vec<SavedParam>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[allow(dead_code)]
     pub data: Option<serde_json::Value>,
 }
 
@@ -43,11 +45,18 @@ pub enum SavedParamValue {
 }
 
 impl SavedParamValue {
+    #[allow(dead_code)]
     fn as_f64(&self) -> f64 {
         match self {
             SavedParamValue::Float(v) => *v,
             SavedParamValue::Int(v) => *v as f64,
-            SavedParamValue::Bool(v) => if *v { 1.0 } else { 0.0 },
+            SavedParamValue::Bool(v) => {
+                if *v {
+                    1.0
+                } else {
+                    0.0
+                }
+            }
             SavedParamValue::Choice(v) => *v as f64,
         }
     }
@@ -71,25 +80,20 @@ pub fn save_graph(graph: &NodeGraph) -> ProjectFile {
     for i in 0..graph.node_count() {
         let (node, state) = graph.node_and_state(i);
 
-        // Save params
+        // Read params from shared state.
+        let shared = node.shared_state().lock().unwrap();
         let mut params = Vec::new();
-        for (pi, p) in node.params().iter().enumerate() {
+        for (pi, p) in shared.current_params.iter().enumerate() {
             let value = match p {
-                crate::widgets::nodes::ParamDef::Float { value, .. } => {
-                    SavedParamValue::Float(*value as f64)
-                }
-                crate::widgets::nodes::ParamDef::Int { value, .. } => {
-                    SavedParamValue::Int(*value)
-                }
-                crate::widgets::nodes::ParamDef::Bool { value, .. } => {
-                    SavedParamValue::Bool(*value)
-                }
-                crate::widgets::nodes::ParamDef::Choice { value, .. } => {
-                    SavedParamValue::Choice(*value)
-                }
+                ParamDef::Float { value, .. } => SavedParamValue::Float(*value as f64),
+                ParamDef::Int { value, .. } => SavedParamValue::Int(*value),
+                ParamDef::Bool { value, .. } => SavedParamValue::Bool(*value),
+                ParamDef::Choice { value, .. } => SavedParamValue::Choice(*value),
             };
             params.push(SavedParam { index: pi, value });
         }
+
+        let data = shared.save_data.clone();
 
         nodes.push(SavedNode {
             type_name: node.type_name().to_string(),
@@ -97,7 +101,7 @@ pub fn save_graph(graph: &NodeGraph) -> ProjectFile {
             pos: [state.pos.x, state.pos.y],
             size: state.size_override.map(|s| [s.x, s.y]),
             params,
-            data: node.save_data(),
+            data,
         });
     }
 
@@ -119,42 +123,34 @@ pub fn save_graph(graph: &NodeGraph) -> ProjectFile {
 // Load
 // ---------------------------------------------------------------------------
 
-/// Load a project file into a graph. Uses the graph's registry to create nodes.
-/// Returns the indices of newly created nodes so the caller can wire them up.
+#[allow(dead_code)]
 pub fn load_graph(graph: &mut NodeGraph, project: &ProjectFile) -> Vec<usize> {
     let mut indices = Vec::new();
 
     for saved in &project.nodes {
         let id = NodeId(saved.id);
         if let Some(node) = graph.create_from_registry(&saved.type_name, id) {
-            let idx = graph.add_node(
-                node,
-                egui::Pos2::new(saved.pos[0], saved.pos[1]),
-            );
+            let idx = graph.add_node(node, egui::Pos2::new(saved.pos[0], saved.pos[1]));
 
-            // Apply size override.
             if let Some([w, h]) = saved.size {
                 graph.set_node_size(idx, egui::Vec2::new(w, h));
             }
 
-            // Apply params — match against the node's declared param type
-            // because serde untagged deserialization may pick Float for integers.
+            // Apply params via shared state.
             {
                 let n = graph.node_mut(idx);
-                let declared = n.params();
+                let declared = {
+                    let shared = n.shared_state().lock().unwrap();
+                    shared.current_params.clone()
+                };
+                let mut shared = n.shared_state().lock().unwrap();
                 for sp in &saved.params {
                     let val = if let Some(decl) = declared.get(sp.index) {
                         match decl {
-                            crate::widgets::nodes::ParamDef::Float { .. } => {
-                                ParamValue::Float(sp.value.as_f64() as f32)
-                            }
-                            crate::widgets::nodes::ParamDef::Int { .. } => {
-                                ParamValue::Int(sp.value.as_f64() as i64)
-                            }
-                            crate::widgets::nodes::ParamDef::Bool { .. } => {
-                                ParamValue::Bool(sp.value.as_f64() != 0.0)
-                            }
-                            crate::widgets::nodes::ParamDef::Choice { .. } => {
+                            ParamDef::Float { .. } => ParamValue::Float(sp.value.as_f64() as f32),
+                            ParamDef::Int { .. } => ParamValue::Int(sp.value.as_f64() as i64),
+                            ParamDef::Bool { .. } => ParamValue::Bool(sp.value.as_f64() != 0.0),
+                            ParamDef::Choice { .. } => {
                                 ParamValue::Choice(sp.value.as_f64() as usize)
                             }
                         }
@@ -166,10 +162,7 @@ pub fn load_graph(graph: &mut NodeGraph, project: &ProjectFile) -> Vec<usize> {
                             SavedParamValue::Choice(v) => ParamValue::Choice(*v),
                         }
                     };
-                    n.set_param(sp.index, val);
-                }
-                if let Some(data) = &saved.data {
-                    n.load_data(data);
+                    shared.pending_params.push((sp.index, val));
                 }
             }
 

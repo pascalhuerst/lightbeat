@@ -1,0 +1,124 @@
+use std::any::Any;
+
+use egui::{self, Color32, Ui};
+
+use crate::engine::nodes::io::clock::ClockDisplay;
+use crate::engine::types::*;
+use crate::widgets::nodes::node::NodeWidget;
+use crate::widgets::nodes::types::UiPortDef;
+
+#[allow(dead_code)]
+const BEAT_FLASH_MS: u128 = 80;
+
+pub struct ClockWidget {
+    id: NodeId,
+    shared: SharedState,
+    outputs: Vec<PortDef>,
+}
+
+impl ClockWidget {
+    pub fn new(id: NodeId, shared: SharedState) -> Self {
+        Self {
+            id,
+            shared,
+            outputs: vec![
+                PortDef::new("beat", PortType::Logic),
+                PortDef::new("play", PortType::Logic),
+                PortDef::new("phase", PortType::Phase),
+            ],
+        }
+    }
+}
+
+impl NodeWidget for ClockWidget {
+    fn node_id(&self) -> NodeId { self.id }
+    fn type_name(&self) -> &'static str { "Clock" }
+    fn title(&self) -> &str { "Clock" }
+
+    fn ui_inputs(&self) -> Vec<UiPortDef> { vec![] }
+    fn ui_outputs(&self) -> Vec<UiPortDef> {
+        self.outputs.iter().map(UiPortDef::from_def).collect()
+    }
+
+    fn min_width(&self) -> f32 { 150.0 }
+    fn min_content_height(&self) -> f32 { 90.0 }
+
+    fn shared_state(&self) -> &SharedState { &self.shared }
+
+    fn show_content(&mut self, ui: &mut Ui) {
+        let shared = self.shared.lock().unwrap();
+        let display = shared.display.as_ref()
+            .and_then(|d| d.downcast_ref::<ClockDisplay>());
+
+        let (tempo, playing, num_peers, beat_on, is_downbeat) = if let Some(d) = display {
+            let beat_on = d.last_beat_time.is_some_and(|t| t.elapsed().as_millis() < BEAT_FLASH_MS);
+            (d.tempo, d.playing, d.num_peers, beat_on, d.last_beat_is_downbeat)
+        } else {
+            (0.0, false, 0, false, false)
+        };
+        drop(shared);
+
+        let pad = 4.0;
+
+        ui.horizontal(|ui| {
+            let link_color = if num_peers > 0 {
+                Color32::from_rgb(80, 240, 120)
+            } else {
+                Color32::from_gray(100)
+            };
+            ui.colored_label(link_color, "LINK");
+            ui.colored_label(Color32::from_gray(140), format!("{} peers", num_peers));
+        });
+
+        ui.add_space(pad);
+
+        ui.vertical_centered(|ui| {
+            ui.colored_label(
+                Color32::WHITE,
+                egui::RichText::new(format!("{:.1}", tempo)).monospace().size(20.0),
+            );
+            ui.colored_label(
+                Color32::from_gray(100),
+                egui::RichText::new("BPM").monospace().size(9.0),
+            );
+        });
+
+        ui.add_space(pad);
+
+        ui.horizontal(|ui| {
+            let led_radius = 5.0;
+
+            let play_color = if playing {
+                Color32::from_rgb(80, 240, 120)
+            } else {
+                Color32::from_gray(60)
+            };
+            let (play_resp, play_painter) = ui.allocate_painter(
+                egui::Vec2::new(led_radius * 2.0, led_radius * 2.0),
+                egui::Sense::hover(),
+            );
+            play_painter.circle_filled(play_resp.rect.center(), led_radius, play_color);
+
+            ui.colored_label(
+                Color32::from_gray(140),
+                if playing { "PLAY" } else { "STOP" },
+            );
+
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                let beat_color = if beat_on {
+                    if is_downbeat { Color32::from_rgb(255, 255, 255) }
+                    else { Color32::from_rgb(240, 200, 40) }
+                } else {
+                    Color32::from_gray(40)
+                };
+                let (beat_resp, beat_painter) = ui.allocate_painter(
+                    egui::Vec2::new(led_radius * 2.0, led_radius * 2.0),
+                    egui::Sense::hover(),
+                );
+                beat_painter.circle_filled(beat_resp.rect.center(), led_radius, beat_color);
+            });
+        });
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any { self }
+}

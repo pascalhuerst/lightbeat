@@ -1,5 +1,6 @@
 mod beat_clock;
 mod config;
+mod engine;
 mod link_controller;
 mod project;
 mod widgets;
@@ -8,14 +9,24 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use eframe::egui;
-use widgets::nodes::{NodeGraph, NodeId};
-use widgets::{ClockNode, PhaseScalerNode, ScopeNode, StepSequencerNode};
 
 use beat_clock::{BeatClock, BeatPattern, SubscriptionHandle};
 use config::AppConfig;
+use engine::types::{new_shared_state, EngineCommand, NodeId};
+use engine::EngineHandle;
+use engine::nodes::io::clock::ClockProcessNode;
+use engine::nodes::transport::phase_scaler::PhaseScalerProcessNode;
+use engine::nodes::transport::step_sequencer::StepSequencerProcessNode;
+use engine::nodes::display::scope::ScopeProcessNode;
+use widgets::nodes::NodeGraph;
+use widgets::nodes::io::clock::ClockWidget;
+use widgets::nodes::transport::phase_scaler::PhaseScalerWidget;
+use widgets::nodes::transport::step_sequencer::StepSequencerWidget;
+use widgets::nodes::display::scope::ScopeWidget;
 
 struct LightBeatApp {
     graph: NodeGraph,
+    engine: EngineHandle,
     beat_clock: BeatClock,
     _subs: Vec<SubscriptionHandle>,
     config: AppConfig,
@@ -29,48 +40,27 @@ impl LightBeatApp {
         let config = AppConfig::load();
         let beat_clock = BeatClock::new(4.0);
         let snapshot = beat_clock.snapshot();
+        let engine = EngineHandle::start();
 
-        let mut graph = NodeGraph::new();
+        let mut app = Self {
+            graph: NodeGraph::new(),
+            engine,
+            beat_clock,
+            _subs: Vec::new(),
+            config,
+            project_path: None,
+            snapshot,
+            quit_requested: false,
+        };
 
-        // Register node types.
-        let snap_for_factory = Arc::clone(&snapshot);
-        graph.register_node("Clock", move |id| {
-            Box::new(ClockNode::new(id, Arc::clone(&snap_for_factory)))
-        });
-        graph.register_node("Step Sequencer", |id| {
-            Box::new(StepSequencerNode::new(id))
-        });
-        graph.register_node("Phase Scaler", |id| {
-            Box::new(PhaseScalerNode::new(id))
-        });
-        graph.register_node("Scope", |id| Box::new(ScopeNode::new(id)));
+        app.register_node_factories();
 
-        let mut subs = Vec::new();
-        let mut project_path = None;
-
-        // Try to autoload.
-        let loaded = if config.autoload_on_open {
+        // Try autoload, or create default clock.
+        let loaded = if app.config.autoload_on_open {
             let path = project::default_project_path();
             if path.exists() {
-                match project::load_from_file(&path) {
-                    Ok(proj) => {
-                        let indices = project::load_graph(&mut graph, &proj);
-                        for idx in indices {
-                            let node = graph.node_mut(idx);
-                            if let Some(clock) = node.as_any_mut().downcast_mut::<ClockNode>() {
-                                let sub = beat_clock
-                                    .subscribe(BeatPattern::every(1), clock.state.clone());
-                                subs.push(sub);
-                            }
-                        }
-                        project_path = Some(path);
-                        true
-                    }
-                    Err(e) => {
-                        eprintln!("Failed to load project: {}", e);
-                        false
-                    }
-                }
+                app.load_project_from(&path);
+                true
             } else {
                 false
             }
@@ -79,32 +69,94 @@ impl LightBeatApp {
         };
 
         if !loaded {
-            let clock = ClockNode::new(NodeId(1), Arc::clone(&snapshot));
-            let clock_state = clock.state.clone();
-            graph.add_node(Box::new(clock), egui::pos2(50.0, 50.0));
-            subs.push(beat_clock.subscribe(BeatPattern::every(1), clock_state));
+            app.create_default_clock();
+            // Drain since create_default_clock already handled the engine side.
+            app.graph.drain_new_nodes();
         }
 
-        Self {
-            graph,
-            beat_clock,
-            _subs: subs,
-            config,
-            project_path,
-            snapshot,
-            quit_requested: false,
-        }
+        app
+    }
+
+    fn register_node_factories(&mut self) {
+        self.graph.register_node("Clock", |id| {
+            let shared = new_shared_state(0, 3);
+            Box::new(ClockWidget::new(id, shared))
+        });
+        self.graph.register_node("Phase Scaler", |id| {
+            let shared = new_shared_state(1, 1);
+            Box::new(PhaseScalerWidget::new(id, shared))
+        });
+        self.graph.register_node("Step Sequencer", |id| {
+            let shared = new_shared_state(1, 2);
+            Box::new(StepSequencerWidget::new(id, shared))
+        });
+        self.graph.register_node("Scope", |id| {
+            let shared = new_shared_state(2, 0);
+            Box::new(ScopeWidget::new(id, shared))
+        });
+    }
+
+    fn create_default_clock(&mut self) {
+        let id = NodeId(1);
+        let shared = new_shared_state(0, 3);
+        let engine_node = ClockProcessNode::new(id, Arc::clone(&self.snapshot));
+        let beat_state = engine_node.beat_state.clone();
+        let widget = ClockWidget::new(id, Arc::clone(&shared));
+
+        self.graph.add_node(Box::new(widget), egui::pos2(50.0, 50.0));
+        self.engine.send(EngineCommand::AddNode {
+            node: Box::new(engine_node),
+            shared,
+        });
+        self._subs.push(
+            self.beat_clock
+                .subscribe(BeatPattern::every(1), beat_state),
+        );
     }
 
     fn wire_new_nodes(&mut self) {
+        // Handle nodes created by context menu / paste / duplicate.
         for new_node in self.graph.drain_new_nodes() {
             let node = self.graph.node_mut(new_node.index);
+            let type_name = node.type_name();
+            let id = node.node_id();
+            let shared = Arc::clone(node.shared_state());
 
-            if let Some(clock) = node.as_any_mut().downcast_mut::<ClockNode>() {
-                let sub = self
-                    .beat_clock
-                    .subscribe(BeatPattern::every(1), clock.state.clone());
-                self._subs.push(sub);
+            // Create corresponding engine node.
+            match type_name {
+                "Clock" => {
+                    let engine_node = ClockProcessNode::new(id, Arc::clone(&self.snapshot));
+                    let beat_state = engine_node.beat_state.clone();
+                    self.engine.send(EngineCommand::AddNode {
+                        node: Box::new(engine_node),
+                        shared,
+                    });
+                    self._subs.push(
+                        self.beat_clock
+                            .subscribe(BeatPattern::every(1), beat_state),
+                    );
+                }
+                "Phase Scaler" => {
+                    self.engine.send(EngineCommand::AddNode {
+                        node: Box::new(PhaseScalerProcessNode::new(id)),
+                        shared,
+                    });
+                }
+                "Step Sequencer" => {
+                    self.engine.send(EngineCommand::AddNode {
+                        node: Box::new(StepSequencerProcessNode::new(id)),
+                        shared,
+                    });
+                }
+                "Scope" => {
+                    self.engine.send(EngineCommand::AddNode {
+                        node: Box::new(ScopeProcessNode::new(id)),
+                        shared,
+                    });
+                }
+                _ => {
+                    eprintln!("Unknown node type for engine: {}", type_name);
+                }
             }
         }
     }
@@ -142,40 +194,50 @@ impl LightBeatApp {
             .add_filter("LightBeat Project", &["json"]);
 
         if let Some(path) = dialog.pick_file() {
-            match project::load_from_file(&path) {
-                Ok(proj) => {
-                    // Clear existing graph.
-                    self.graph = NodeGraph::new();
+            self.load_project_from(&path);
+        }
+    }
 
-                    // Re-register node types.
-                    let snap = Arc::clone(&self.snapshot);
-                    self.graph.register_node("Clock", move |id| {
-                        Box::new(ClockNode::new(id, Arc::clone(&snap)))
-                    });
-                    self.graph.register_node("Step Sequencer", |id| {
-                        Box::new(StepSequencerNode::new(id))
-                    });
-                    self.graph.register_node("Phase Scaler", |id| {
-                        Box::new(PhaseScalerNode::new(id))
-                    });
-                    self.graph
-                        .register_node("Scope", |id| Box::new(ScopeNode::new(id)));
+    fn load_project_from(&mut self, path: &std::path::Path) {
+        match project::load_from_file(&path.to_path_buf()) {
+            Ok(proj) => {
+                // Clear engine and UI graph.
+                self.engine.send(EngineCommand::RemoveAllNodes);
+                self.graph = NodeGraph::new();
+                self.register_node_factories();
 
-                    let indices = project::load_graph(&mut self.graph, &proj);
-                    for idx in indices {
-                        let node = self.graph.node_mut(idx);
-                        if let Some(clock) = node.as_any_mut().downcast_mut::<ClockNode>() {
-                            let sub = self
-                                .beat_clock
-                                .subscribe(BeatPattern::every(1), clock.state.clone());
-                            self._subs.push(sub);
+                // Load nodes and connections into UI graph.
+                let indices = project::load_graph(&mut self.graph, &proj);
+
+                // Create engine nodes (via wire_new_nodes mechanism).
+                // drain_new_nodes will pick them up.
+                // But we also need to send connections and load_data to the engine.
+
+                // Create engine nodes.
+                self.wire_new_nodes();
+
+                // Drain engine commands queued by add_connection during load.
+                for cmd in self.graph.drain_engine_commands() {
+                    self.engine.send(cmd);
+                }
+
+                // Send load_data for nodes that have custom data.
+                for (i, saved) in proj.nodes.iter().enumerate() {
+                    if let Some(data) = &saved.data {
+                        if i < indices.len() {
+                            let node = self.graph.node_mut(indices[i]);
+                            self.engine.send(EngineCommand::LoadData {
+                                node_id: node.node_id(),
+                                data: data.clone(),
+                            });
                         }
                     }
-                    self.project_path = Some(path);
                 }
-                Err(e) => {
-                    eprintln!("Failed to open project: {}", e);
-                }
+
+                self.project_path = Some(path.to_path_buf());
+            }
+            Err(e) => {
+                eprintln!("Failed to open project: {}", e);
             }
         }
     }
@@ -194,8 +256,6 @@ impl LightBeatApp {
 impl eframe::App for LightBeatApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         ctx.request_repaint();
-
-        // Update window title.
         ctx.send_viewport_cmd(egui::ViewportCommand::Title(self.window_title()));
 
         // Menu bar.
@@ -224,7 +284,7 @@ impl eframe::App for LightBeatApp {
             });
         });
 
-        // Inspector panel on the right.
+        // Inspector panel.
         egui::SidePanel::right("inspector")
             .default_width(250.0)
             .show(ctx, |ui| {
@@ -243,24 +303,26 @@ impl eframe::App for LightBeatApp {
                 }
             });
 
-        // Node graph fills the rest.
+        // Node graph.
         egui::CentralPanel::default().show(ctx, |ui| {
             self.graph.show(ui, self.config.snap_to_grid);
         });
 
         self.wire_new_nodes();
 
-        // Ctrl+S to save.
+        // Send any pending engine commands from the graph.
+        for cmd in self.graph.drain_engine_commands() {
+            self.engine.send(cmd);
+        }
+
+        // Keyboard shortcuts.
         if ctx.input(|i| i.modifiers.ctrl && i.key_pressed(egui::Key::S)) {
             self.save_project();
         }
-
-        // Ctrl+O to open.
         if ctx.input(|i| i.modifiers.ctrl && i.key_pressed(egui::Key::O)) {
             self.open_project();
         }
 
-        // Handle quit.
         if self.quit_requested {
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
         }

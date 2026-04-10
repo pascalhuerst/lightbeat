@@ -4,139 +4,17 @@
       "type_name": "Clock",
       "id": 1,
       "pos": [
-        22.25,
-        155.3789
+        50.0,
+        50.0
       ],
       "params": []
     },
     {
-      "type_name": "Scope",
+      "type_name": "Step Sequencer",
       "id": 2,
       "pos": [
-        260.1953,
-        13.683594
-      ],
-      "size": [
-        328.08594,
-        236.79688
-      ],
-      "params": [
-        {
-          "index": 0,
-          "value": 0.5
-        },
-        {
-          "index": 1,
-          "value": 200
-        },
-        {
-          "index": 2,
-          "value": 2.9802322387695312e-8
-        },
-        {
-          "index": 3,
-          "value": 1.0
-        }
-      ]
-    },
-    {
-      "type_name": "Phase Scaler",
-      "id": 3,
-      "pos": [
-        52.382812,
-        336.03906
-      ],
-      "params": [
-        {
-          "index": 0,
-          "value": 0
-        },
-        {
-          "index": 1,
-          "value": 1.0
-        }
-      ]
-    },
-    {
-      "type_name": "Scope",
-      "id": 4,
-      "pos": [
-        264.83203,
-        267.90234
-      ],
-      "size": [
-        325.4375,
-        237.11719
-      ],
-      "params": [
-        {
-          "index": 0,
-          "value": 0.5
-        },
-        {
-          "index": 1,
-          "value": 200
-        },
-        {
-          "index": 2,
-          "value": 2.9802322387695312e-8
-        },
-        {
-          "index": 3,
-          "value": 1.0
-        }
-      ]
-    },
-    {
-      "type_name": "Phase Scaler",
-      "id": 5,
-      "pos": [
-        54.1875,
-        423.47266
-      ],
-      "params": [
-        {
-          "index": 0,
-          "value": -1
-        },
-        {
-          "index": 1,
-          "value": 1.0
-        }
-      ]
-    },
-    {
-      "type_name": "Step Sequencer",
-      "id": 6,
-      "pos": [
-        748.03906,
-        57.984375
-      ],
-      "params": [
-        {
-          "index": 0,
-          "value": 8
-        }
-      ],
-      "data": {
-        "values": [
-          0.8887695074081421,
-          0.63623046875,
-          0.2637695074081421,
-          0.3187011480331421,
-          0.49443358182907104,
-          0.6912597417831421,
-          0.790087878704071,
-          0.888964831829071
-        ]
-      }
-    },
-    {
-      "type_name": "Step Sequencer",
-      "id": 7,
-      "pos": [
-        749.77734,
-        316.57422
+        293.11328,
+        144.10156
       ],
       "params": [
         {
@@ -147,39 +25,39 @@
       "data": {
         "values": [
           0.0,
-          0.3423827886581421,
-          0.419189453125,
-          0.43017578125,
-          0.40825194120407104,
-          0.3423827886581421,
-          0.2764648199081421,
-          0.17778319120407104
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.7223144769668579,
+          0.0,
+          0.0
         ]
       }
     },
     {
       "type_name": "Scope",
-      "id": 8,
+      "id": 3,
       "pos": [
-        964.14453,
-        69.63281
+        582.45703,
+        66.23828
       ],
       "params": [
         {
           "index": 0,
-          "value": 0.5
+          "value": 0.4099999964237213
         },
         {
           "index": 1,
-          "value": 200
+          "value": 512
         },
         {
           "index": 2,
-          "value": -0.29999998211860657
+          "value": 2.9802322387695312e-8
         },
         {
           "index": 3,
-          "value": 1.4000000953674316
+          "value": 1.0
         }
       ]
     }
@@ -193,57 +71,15 @@
     },
     {
       "from_node": 1,
-      "from_port": 2,
+      "from_port": 0,
       "to_node": 3,
       "to_port": 0
     },
     {
       "from_node": 1,
       "from_port": 2,
-      "to_node": 5,
-      "to_port": 0
-    },
-    {
-      "from_node": 5,
-      "from_port": 0,
-      "to_node": 4,
+      "to_node": 3,
       "to_port": 1
-    },
-    {
-      "from_node": 1,
-      "from_port": 0,
-      "to_node": 2,
-      "to_port": 1
-    },
-    {
-      "from_node": 1,
-      "from_port": 0,
-      "to_node": 4,
-      "to_port": 0
-    },
-    {
-      "from_node": 1,
-      "from_port": 2,
-      "to_node": 6,
-      "to_port": 0
-    },
-    {
-      "from_node": 5,
-      "from_port": 0,
-      "to_node": 7,
-      "to_port": 0
-    },
-    {
-      "from_node": 6,
-      "from_port": 1,
-      "to_node": 8,
-      "to_port": 1
-    },
-    {
-      "from_node": 6,
-      "from_port": 0,
-      "to_node": 8,
-      "to_port": 0
     }
   ]
 }
