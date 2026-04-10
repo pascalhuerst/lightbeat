@@ -1,3 +1,5 @@
+mod beat_clock;
+mod link_controller;
 mod widgets;
 
 use eframe::egui;
