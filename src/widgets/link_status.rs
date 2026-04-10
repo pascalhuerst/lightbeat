@@ -1,8 +1,9 @@
-use egui::{self, Color32, Sense, StrokeKind, Ui, Vec2};
+use egui::{self, Color32, Ui};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use crate::beat_clock::{BeatInfo, BeatListener};
+use crate::widgets::nodes::{NodeId, NodeWidget, PortDef, PortType};
 
 const BEAT_FLASH_DURATION_MS: u128 = 80;
 
@@ -38,99 +39,115 @@ impl BeatListener for LinkStatusState {
     }
 }
 
-pub struct LinkStatus {
+pub struct LinkStatusNode {
+    id: NodeId,
     pub state: Arc<Mutex<LinkStatusState>>,
+    outputs: Vec<PortDef>,
 }
 
-impl LinkStatus {
-    pub fn new() -> Self {
+impl LinkStatusNode {
+    pub fn new(id: NodeId) -> Self {
         Self {
+            id,
             state: Arc::new(Mutex::new(LinkStatusState::new())),
+            outputs: vec![
+                PortDef::new("beat", PortType::Trigger),
+                PortDef::new("play", PortType::Value),
+            ],
         }
     }
+}
 
-    pub fn show(&self, ui: &mut Ui) {
+impl NodeWidget for LinkStatusNode {
+    fn node_id(&self) -> NodeId {
+        self.id
+    }
+
+    fn title(&self) -> &str {
+        "Ableton Link"
+    }
+
+    fn inputs(&self) -> &[PortDef] {
+        &[]
+    }
+
+    fn outputs(&self) -> &[PortDef] {
+        &self.outputs
+    }
+
+    fn min_width(&self) -> f32 {
+        150.0
+    }
+
+    fn min_content_height(&self) -> f32 {
+        90.0
+    }
+
+    fn show_content(&mut self, ui: &mut Ui) {
         let state = self.state.lock().unwrap();
 
-        let size = 120.0;
-        let (response, painter) =
-            ui.allocate_painter(Vec2::splat(size), Sense::hover());
-        let rect = response.rect;
+        let pad = 4.0;
 
-        // Background
-        painter.rect_filled(rect, 4.0, Color32::from_gray(25));
-        painter.rect_stroke(rect, 4.0, egui::Stroke::new(1.0, Color32::from_gray(50)), StrokeKind::Inside);
-
-        let pad = 8.0;
-
-        // -- "LINK" label top-left --
-        let link_color = if state.num_peers > 0 {
-            Color32::from_rgb(80, 240, 120)
-        } else {
-            Color32::from_gray(100)
-        };
-        painter.text(
-            egui::pos2(rect.min.x + pad, rect.min.y + pad),
-            egui::Align2::LEFT_TOP,
-            "LINK",
-            egui::FontId::monospace(11.0),
-            link_color,
-        );
-
-        // -- Peer count top-right --
-        let peers_text = format!("{}", state.num_peers);
-        painter.text(
-            egui::pos2(rect.max.x - pad, rect.min.y + pad),
-            egui::Align2::RIGHT_TOP,
-            &peers_text,
-            egui::FontId::monospace(11.0),
-            Color32::from_gray(140),
-        );
-
-        // -- BPM center --
-        let bpm_text = format!("{:.1}", state.tempo);
-        painter.text(
-            rect.center(),
-            egui::Align2::CENTER_CENTER,
-            &bpm_text,
-            egui::FontId::monospace(22.0),
-            Color32::WHITE,
-        );
-        painter.text(
-            egui::pos2(rect.center().x, rect.center().y + 16.0),
-            egui::Align2::CENTER_TOP,
-            "BPM",
-            egui::FontId::monospace(9.0),
-            Color32::from_gray(100),
-        );
-
-        // -- Play/Stop LED bottom-left --
-        let led_radius = 5.0;
-        let play_led_center = egui::pos2(rect.min.x + pad + led_radius, rect.max.y - pad - led_radius);
-        let play_color = if state.playing {
-            Color32::from_rgb(80, 240, 120)
-        } else {
-            Color32::from_gray(60)
-        };
-        painter.circle_filled(play_led_center, led_radius, play_color);
-        painter.text(
-            egui::pos2(play_led_center.x + led_radius + 4.0, play_led_center.y),
-            egui::Align2::LEFT_CENTER,
-            if state.playing { "PLAY" } else { "STOP" },
-            egui::FontId::monospace(9.0),
-            Color32::from_gray(140),
-        );
-
-        // -- Beat flash LED bottom-right --
-        let beat_led_center = egui::pos2(rect.max.x - pad - led_radius, rect.max.y - pad - led_radius);
-        let beat_on = state.last_beat_time.is_some_and(|t| {
-            t.elapsed().as_millis() < BEAT_FLASH_DURATION_MS
+        // -- LINK + peers row --
+        ui.horizontal(|ui| {
+            let link_color = if state.num_peers > 0 {
+                Color32::from_rgb(80, 240, 120)
+            } else {
+                Color32::from_gray(100)
+            };
+            ui.colored_label(link_color, "LINK");
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                ui.colored_label(Color32::from_gray(140), format!("{} peers", state.num_peers));
+            });
         });
-        let beat_color = if beat_on {
-            Color32::from_rgb(240, 200, 40)
-        } else {
-            Color32::from_gray(40)
-        };
-        painter.circle_filled(beat_led_center, led_radius, beat_color);
+
+        ui.add_space(pad);
+
+        // -- BPM --
+        ui.vertical_centered(|ui| {
+            ui.colored_label(Color32::WHITE, egui::RichText::new(format!("{:.1}", state.tempo)).monospace().size(20.0));
+            ui.colored_label(Color32::from_gray(100), egui::RichText::new("BPM").monospace().size(9.0));
+        });
+
+        ui.add_space(pad);
+
+        // -- Play/Stop LED + Beat flash --
+        ui.horizontal(|ui| {
+            let led_radius = 5.0;
+
+            // Play LED
+            let play_color = if state.playing {
+                Color32::from_rgb(80, 240, 120)
+            } else {
+                Color32::from_gray(60)
+            };
+            let (play_resp, play_painter) = ui.allocate_painter(
+                egui::Vec2::new(led_radius * 2.0, led_radius * 2.0),
+                egui::Sense::hover(),
+            );
+            play_painter.circle_filled(play_resp.rect.center(), led_radius, play_color);
+
+            ui.colored_label(
+                Color32::from_gray(140),
+                if state.playing { "PLAY" } else { "STOP" },
+            );
+
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                // Beat flash LED
+                let beat_on = state.last_beat_time.is_some_and(|t| {
+                    t.elapsed().as_millis() < BEAT_FLASH_DURATION_MS
+                });
+                let beat_color = if beat_on {
+                    Color32::from_rgb(240, 200, 40)
+                } else {
+                    Color32::from_gray(40)
+                };
+                let (beat_resp, beat_painter) = ui.allocate_painter(
+                    egui::Vec2::new(led_radius * 2.0, led_radius * 2.0),
+                    egui::Sense::hover(),
+                );
+                beat_painter.circle_filled(beat_resp.rect.center(), led_radius, beat_color);
+            });
+        });
     }
 }
