@@ -519,13 +519,12 @@ impl eframe::App for LightBeatApp {
                 }
             });
 
-        // DMX Monitor (bottom panel, toggled via View menu).
+        // DMX Monitor (floating window, toggled via View menu).
         if self.show_dmx_monitor {
-            egui::TopBottomPanel::bottom("dmx_monitor")
-                .default_height(180.0)
-                .resizable(true)
+            egui::Window::new("DMX Monitor")
+                .open(&mut self.show_dmx_monitor)
+                .default_size([600.0, 200.0])
                 .show(ctx, |ui| {
-                    // TODO: wire to actual universe data once objects/interfaces are connected.
                     let empty = [0u8; 512];
                     self.dmx_monitor.show(ui, "No output connected", &empty);
                 });

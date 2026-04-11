@@ -1,22 +1,21 @@
 use crate::engine::types::*;
 
-/// Delays a trigger by a fraction of a phase cycle.
-/// Input: a Logic trigger signal.
-/// The delay amount is specified as a fraction (numerator/denominator) of
-/// the incoming phase cycle. When a rising edge is detected on the trigger
-/// input, it captures the current phase and fires the output trigger
-/// after the specified phase offset has elapsed.
+/// Display state.
+pub struct TriggerDelayDisplay {
+    pub exponent: i32,
+    pub has_pending: bool,
+}
+
 pub struct TriggerDelayProcessNode {
     id: NodeId,
-    // Params
-    numerator: i64,
-    denominator: i64,
+    /// Power of 2 exponent. 0 = 1 beat, 1 = 2 beats, -1 = 1/2 beat, etc.
+    exponent: i32,
     // State
     trigger_in: f32,
     phase_in: f32,
     prev_trigger: bool,
-    /// Pending trigger: Some(phase_at_which_to_fire)
-    pending: Option<f32>,
+    /// Remaining delay in phase units. None = no pending trigger.
+    remaining: Option<f32>,
     prev_phase: f32,
     trigger_out: f32,
     inputs: Vec<PortDef>,
@@ -27,12 +26,11 @@ impl TriggerDelayProcessNode {
     pub fn new(id: NodeId) -> Self {
         Self {
             id,
-            numerator: 1,
-            denominator: 4,
+            exponent: -2, // default: 1/4 beat
             trigger_in: 0.0,
             phase_in: 0.0,
             prev_trigger: false,
-            pending: None,
+            remaining: None,
             prev_phase: 0.0,
             trigger_out: 0.0,
             inputs: vec![
@@ -44,15 +42,8 @@ impl TriggerDelayProcessNode {
     }
 
     fn delay_amount(&self) -> f32 {
-        self.numerator as f32 / self.denominator.max(1) as f32
+        2.0_f32.powi(self.exponent)
     }
-}
-
-/// Display state.
-pub struct TriggerDelayDisplay {
-    pub numerator: i64,
-    pub denominator: i64,
-    pub has_pending: bool,
 }
 
 impl ProcessNode for TriggerDelayProcessNode {
@@ -77,25 +68,25 @@ impl ProcessNode for TriggerDelayProcessNode {
         let gate_high = self.trigger_in >= 0.5;
         self.trigger_out = 0.0;
 
-        // Detect rising edge -> schedule delayed trigger.
+        // On rising edge, (re)start the delay. If already pending, reset
+        // the timer — this coalesces multiple triggers into one output.
         if gate_high && !self.prev_trigger {
-            let fire_at = (self.phase_in + self.delay_amount()).rem_euclid(1.0);
-            self.pending = Some(fire_at);
+            self.remaining = Some(self.delay_amount());
         }
         self.prev_trigger = gate_high;
 
-        // Check if we've crossed the fire point.
-        if let Some(fire_at) = self.pending {
-            // Detect if the phase crossed the fire point since last tick.
-            let crossed = if self.prev_phase <= fire_at {
-                self.phase_in >= fire_at || self.phase_in < self.prev_phase // wrapped
-            } else {
-                self.phase_in >= fire_at && self.phase_in < self.prev_phase // wrapped back
-            };
-
-            if crossed {
+        // Count down remaining delay using phase delta.
+        if let Some(rem) = &mut self.remaining {
+            let mut delta = self.phase_in - self.prev_phase;
+            if delta < -0.5 {
+                delta += 1.0;
+            }
+            if delta > 0.0 {
+                *rem -= delta;
+            }
+            if *rem <= 0.0 {
                 self.trigger_out = 1.0;
-                self.pending = None;
+                self.remaining = None;
             }
         }
 
@@ -107,25 +98,24 @@ impl ProcessNode for TriggerDelayProcessNode {
     }
 
     fn params(&self) -> Vec<ParamDef> {
-        vec![
-            ParamDef::Int { name: "Numerator".into(), value: self.numerator, min: 1, max: 64 },
-            ParamDef::Int { name: "Denominator".into(), value: self.denominator, min: 1, max: 64 },
-        ]
+        vec![ParamDef::Int {
+            name: "Exponent".into(),
+            value: self.exponent as i64,
+            min: -6,
+            max: 6,
+        }]
     }
 
     fn set_param(&mut self, index: usize, value: ParamValue) {
-        match (index, value) {
-            (0, ParamValue::Int(v)) => self.numerator = v.max(1),
-            (1, ParamValue::Int(v)) => self.denominator = v.max(1),
-            _ => {}
+        if let (0, ParamValue::Int(v)) = (index, value) {
+            self.exponent = v as i32;
         }
     }
 
     fn update_display(&self, shared: &mut NodeSharedState) {
         shared.display = Some(Box::new(TriggerDelayDisplay {
-            numerator: self.numerator,
-            denominator: self.denominator,
-            has_pending: self.pending.is_some(),
+            exponent: self.exponent,
+            has_pending: self.remaining.is_some(),
         }));
     }
 }

@@ -251,8 +251,8 @@ impl NodeGraph {
         let canvas_rect = response.rect;
         self.canvas_rect = canvas_rect;
 
-        // Zoom with Ctrl+scroll wheel, centered on mouse position.
-        if response.hovered() {
+        // Zoom with scroll wheel, centered on mouse position.
+        if response.hovered() && !ui.ctx().is_using_pointer() {
             let scroll_delta = ui.input(|i| i.smooth_scroll_delta.y);
             if scroll_delta != 0.0 {
                 let zoom_factor = 1.0 + scroll_delta * 0.002;
@@ -383,25 +383,29 @@ impl NodeGraph {
 
         let ctrl = ui.input(|i| i.modifiers.ctrl || i.modifiers.command);
 
+        // Only process keyboard shortcuts when no text field has focus.
+        let text_has_focus = ui.ctx().memory(|m| m.focused().is_some());
+
         // -- Delete selected nodes --
-        if ui.input(|i| i.key_pressed(egui::Key::Delete) || i.key_pressed(egui::Key::Backspace))
+        if !text_has_focus
+            && ui.input(|i| i.key_pressed(egui::Key::Delete) || i.key_pressed(egui::Key::Backspace))
             && !self.selected_nodes.is_empty()
         {
             self.delete_selected();
         }
 
         // -- Duplicate (Ctrl+D) --
-        if ctrl && ui.input(|i| i.key_pressed(egui::Key::D)) && !self.selected_nodes.is_empty() {
+        if !text_has_focus && ctrl && ui.input(|i| i.key_pressed(egui::Key::D)) && !self.selected_nodes.is_empty() {
             self.duplicate_selected();
         }
 
         // -- Copy (Ctrl+C) --
-        if ctrl && ui.input(|i| i.key_pressed(egui::Key::C)) && !self.selected_nodes.is_empty() {
+        if !text_has_focus && ctrl && ui.input(|i| i.key_pressed(egui::Key::C)) && !self.selected_nodes.is_empty() {
             self.copy_selected();
         }
 
         // -- Paste (Ctrl+V) --
-        if ctrl && ui.input(|i| i.key_pressed(egui::Key::V)) && !self.clipboard.is_empty() {
+        if !text_has_focus && ctrl && ui.input(|i| i.key_pressed(egui::Key::V)) && !self.clipboard.is_empty() {
             // Paste at mouse position or center of canvas.
             let pos = ui.input(|i| i.pointer.hover_pos())
                 .map(|p| p - canvas_rect.min.to_vec2() - self.pan)
@@ -557,21 +561,25 @@ impl NodeGraph {
             .order(egui::Order::Foreground)
             .show(ui.ctx(), |ui| {
                 egui::Frame::popup(ui.style()).show(ui, |ui| {
-                    ui.set_min_width(140.0);
+                    ui.set_min_width(160.0);
                     ui.label(egui::RichText::new("Add node").strong().size(11.0));
                     ui.separator();
-                    for cat in &categories {
-                        ui.menu_button(*cat, |ui| {
+                    egui::ScrollArea::vertical().max_height(400.0).show(ui, |ui| {
+                        for cat in &categories {
+                            ui.colored_label(
+                                egui::Color32::from_gray(120),
+                                egui::RichText::new(*cat).size(10.0),
+                            );
                             for (idx, entry) in self.registry.iter().enumerate() {
                                 if entry.category == *cat {
                                     if ui.button(entry.label).clicked() {
                                         spawn = Some(idx);
-                                        ui.close_menu();
                                     }
                                 }
                             }
-                        });
-                    }
+                            ui.add_space(4.0);
+                        }
+                    });
                 });
             });
 
@@ -607,14 +615,18 @@ impl NodeGraph {
         snap_to_grid: bool,
     ) {
         let pointer_pos = ui.input(|i| i.pointer.hover_pos()).unwrap_or_default();
-        let primary_pressed =
-            ui.input(|i| i.pointer.button_pressed(egui::PointerButton::Primary));
+        // Only process interactions if the canvas layer owns the pointer.
+        // This prevents interactions when dragging egui Windows over the canvas.
+        let canvas_has_pointer = response.hovered()
+            && !ui.ctx().is_using_pointer();
+        let primary_pressed = canvas_has_pointer
+            && ui.input(|i| i.pointer.button_pressed(egui::PointerButton::Primary));
         let primary_down = ui.input(|i| i.pointer.button_down(egui::PointerButton::Primary));
         let primary_released =
             ui.input(|i| i.pointer.button_released(egui::PointerButton::Primary));
         let ctrl = ui.input(|i| i.modifiers.ctrl || i.modifiers.command);
         let drag_delta = response.drag_delta();
-        let on_canvas = self.canvas_rect.contains(pointer_pos);
+        let on_canvas = canvas_has_pointer && self.canvas_rect.contains(pointer_pos);
 
         // --- Connection drawing ---
         if let Some(ref mut dc) = self.drag.drawing_conn {

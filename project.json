@@ -53,7 +53,7 @@
         },
         {
           "index": 1,
-          "value": 512
+          "value": 200
         },
         {
           "index": 2,
@@ -109,7 +109,7 @@
         },
         {
           "index": 1,
-          "value": 512
+          "value": 200
         },
         {
           "index": 2,
@@ -131,7 +131,7 @@
       "params": [
         {
           "index": 0,
-          "value": -5
+          "value": 0
         },
         {
           "index": 1,
@@ -228,79 +228,175 @@
       "params": []
     },
     {
-      "type_name": "Fixture",
+      "type_name": "Clock",
       "id": 12,
       "pos": [
-        -202.09772,
-        -891.5313
+        81.759705,
+        238.05215
+      ],
+      "params": []
+    },
+    {
+      "type_name": "Phase Scaler",
+      "id": 13,
+      "pos": [
+        332.16406,
+        484.8789
       ],
       "params": [
         {
           "index": 0,
-          "value": 1
+          "value": 0
         },
         {
           "index": 1,
-          "value": 0
-        },
+          "value": 0.0
+        }
+      ]
+    },
+    {
+      "type_name": "Step Sequencer",
+      "id": 14,
+      "pos": [
+        369.875,
+        649.71875
+      ],
+      "params": [
         {
-          "index": 2,
-          "value": 0
-        },
-        {
-          "index": 3,
-          "value": 0
+          "index": 0,
+          "value": 8
         }
       ],
       "data": {
-        "address": {
-          "net": 0,
-          "start_channel": 1,
-          "subnet": 0,
-          "universe": 0
-        },
-        "channels": [
-          {
-            "kind": "Dimmer",
-            "name": "Dimmer",
-            "offset": 0,
-            "values": [
-              0.0
-            ]
-          },
-          {
-            "kind": {
-              "Color": {
-                "mode": "Rgb"
-              }
-            },
-            "name": "Color",
-            "offset": 1,
-            "values": [
-              0.0,
-              0.0,
-              0.0
-            ]
-          }
-        ],
-        "id": 1,
-        "name": "New Fixture"
+        "values": [
+          0.5533691644668579,
+          0.8060058355331421,
+          0.915820300579071,
+          0.970751941204071,
+          0.937792956829071,
+          0.6961425542831421,
+          0.015185534954071045,
+          0.0
+        ]
       }
     },
     {
-      "type_name": "Interface",
-      "id": 13,
+      "type_name": "ADSR",
+      "id": 15,
       "pos": [
-        -212.52284,
-        -790.7095
+        533.08636,
+        88.43634
       ],
-      "params": [],
-      "data": {
-        "ArtNet": {
-          "host": "255.255.255.255",
-          "port": 6454
+      "size": [
+        194.625,
+        389.83984
+      ],
+      "params": [
+        {
+          "index": 0,
+          "value": 0.0010000000474974513
+        },
+        {
+          "index": 1,
+          "value": 1.1009999513626099
+        },
+        {
+          "index": 2,
+          "value": 0.47999998927116394
+        },
+        {
+          "index": 3,
+          "value": 0.20099999010562897
         }
-      }
+      ]
+    },
+    {
+      "type_name": "Scope",
+      "id": 16,
+      "pos": [
+        1189.2617,
+        125.82422
+      ],
+      "size": [
+        272.76953,
+        161.8711
+      ],
+      "params": [
+        {
+          "index": 0,
+          "value": 0.5
+        },
+        {
+          "index": 1,
+          "value": 200
+        },
+        {
+          "index": 2,
+          "value": -1.0
+        },
+        {
+          "index": 3,
+          "value": 1.0
+        }
+      ]
+    },
+    {
+      "type_name": "Const Value",
+      "id": 18,
+      "pos": [
+        77.85147,
+        110.60572
+      ],
+      "params": [
+        {
+          "index": 0,
+          "value": 0.9999997615814209
+        }
+      ]
+    },
+    {
+      "type_name": "Scope",
+      "id": 21,
+      "pos": [
+        1055.213,
+        529.09564
+      ],
+      "size": [
+        475.64844,
+        126.69922
+      ],
+      "params": [
+        {
+          "index": 0,
+          "value": 0.5
+        },
+        {
+          "index": 1,
+          "value": 200
+        },
+        {
+          "index": 2,
+          "value": 2.9802322387695312e-8
+        },
+        {
+          "index": 3,
+          "value": 1.0
+        }
+      ]
+    },
+    {
+      "type_name": "Trigger Delay",
+      "id": 23,
+      "pos": [
+        772.5781,
+        683.85156
+      ],
+      "params": [
+        {
+          "index": 0,
+          "value": -2
+        }
+      ]
     }
   ],
   "connections": [
@@ -387,6 +483,60 @@
       "from_port": 1,
       "to_node": 7,
       "to_port": 1
+    },
+    {
+      "from_node": 12,
+      "from_port": 2,
+      "to_node": 13,
+      "to_port": 0
+    },
+    {
+      "from_node": 13,
+      "from_port": 0,
+      "to_node": 14,
+      "to_port": 0
+    },
+    {
+      "from_node": 12,
+      "from_port": 0,
+      "to_node": 15,
+      "to_port": 0
+    },
+    {
+      "from_node": 18,
+      "from_port": 0,
+      "to_node": 15,
+      "to_port": 1
+    },
+    {
+      "from_node": 15,
+      "from_port": 1,
+      "to_node": 16,
+      "to_port": 0
+    },
+    {
+      "from_node": 14,
+      "from_port": 0,
+      "to_node": 23,
+      "to_port": 0
+    },
+    {
+      "from_node": 13,
+      "from_port": 0,
+      "to_node": 23,
+      "to_port": 1
+    },
+    {
+      "from_node": 23,
+      "from_port": 0,
+      "to_node": 21,
+      "to_port": 1
+    },
+    {
+      "from_node": 14,
+      "from_port": 0,
+      "to_node": 21,
+      "to_port": 0
     }
   ]
 }

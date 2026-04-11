@@ -167,13 +167,23 @@ pub fn load_graph(graph: &mut NodeGraph, project: &ProjectFile) -> Vec<usize> {
             }
 
             indices.push(idx);
-        } else {
-            eprintln!("Unknown node type: {}", saved.type_name);
         }
+        // Unknown types are silently skipped.
     }
 
-    // Restore connections.
+    // Collect loaded node IDs for filtering connections.
+    let loaded_ids: Vec<u64> = indices.iter()
+        .map(|&idx| {
+            let (node, _) = graph.node_and_state(idx);
+            node.node_id().0
+        })
+        .collect();
+
+    // Restore connections (only between nodes that were actually loaded).
     for sc in &project.connections {
+        if !loaded_ids.contains(&sc.from_node) || !loaded_ids.contains(&sc.to_node) {
+            continue;
+        }
         let from = PortId {
             node: NodeId(sc.from_node),
             index: sc.from_port,

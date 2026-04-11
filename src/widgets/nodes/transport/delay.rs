@@ -28,6 +28,14 @@ impl TriggerDelayWidget {
     }
 }
 
+fn delay_label(exp: i32) -> String {
+    match exp {
+        0 => "1 beat".into(),
+        e if e > 0 => format!("{} beats", 1u64 << e),
+        e => format!("1/{} beat", 1u64 << (-e)),
+    }
+}
+
 impl NodeWidget for TriggerDelayWidget {
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { "Trigger Delay" }
@@ -40,7 +48,7 @@ impl NodeWidget for TriggerDelayWidget {
         self.outputs.iter().map(UiPortDef::from_def).collect()
     }
 
-    fn min_width(&self) -> f32 { 110.0 }
+    fn min_width(&self) -> f32 { 130.0 }
     fn min_content_height(&self) -> f32 { 20.0 }
 
     fn shared_state(&self) -> &SharedState { &self.shared }
@@ -50,26 +58,32 @@ impl NodeWidget for TriggerDelayWidget {
         let display = shared.display.as_ref()
             .and_then(|d| d.downcast_ref::<TriggerDelayDisplay>());
 
-        let (num, den, pending) = if let Some(d) = display {
-            (d.numerator, d.denominator, d.has_pending)
+        let (exponent, pending) = if let Some(d) = display {
+            (d.exponent, d.has_pending)
         } else {
-            (1, 4, false)
+            (-2, false)
         };
         drop(shared);
 
         ui.horizontal(|ui| {
-            let label = if den == 1 {
-                format!("{} beat", num)
-            } else {
-                format!("{}/{} beat", num, den)
-            };
+            if ui.small_button("÷2").clicked() && exponent > -6 {
+                self.shared.lock().unwrap()
+                    .pending_params
+                    .push((0, ParamValue::Int((exponent - 1) as i64)));
+            }
 
             let color = if pending {
                 Color32::from_rgb(240, 200, 40)
             } else {
                 Color32::from_gray(180)
             };
-            ui.colored_label(color, label);
+            ui.colored_label(color, delay_label(exponent));
+
+            if ui.small_button("×2").clicked() && exponent < 6 {
+                self.shared.lock().unwrap()
+                    .pending_params
+                    .push((0, ParamValue::Int((exponent + 1) as i64)));
+            }
         });
     }
 
