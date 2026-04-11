@@ -3,6 +3,7 @@ use std::time::Duration;
 use ringbuf::traits::Consumer;
 
 use super::CommandConsumer;
+use super::nodes::meta::subgraph::SubgraphProcessNode;
 use super::types::*;
 use crate::dmx_io::{DmxOutputManager, SharedDmxState, SharedObjectStore};
 
@@ -103,6 +104,44 @@ impl EngineGraph {
                     dmx.set_interfaces(interfaces);
                 }
             }
+            EngineCommand::SubgraphInnerCommand { subgraph_path, command } => {
+                self.apply_subgraph_inner_cmd(&subgraph_path, *command);
+            }
+        }
+    }
+
+    fn apply_subgraph_inner_cmd(&mut self, path: &[NodeId], cmd: SubgraphInnerCmd) {
+        if path.is_empty() {
+            return;
+        }
+        // Find the subgraph node at the first path element.
+        let target_id = path[0];
+        let Some(node) = self.nodes.iter_mut().find(|n| n.node_id() == target_id) else {
+            return;
+        };
+        let Some(sg) = node.as_any_mut().downcast_mut::<SubgraphProcessNode>() else {
+            return;
+        };
+
+        if path.len() == 1 {
+            // This is the target subgraph — apply the command.
+            sg.apply_inner_cmd(cmd);
+        } else {
+            // Nested subgraph — recurse into inner graph.
+            let inner_target = path[1];
+            let Some(inner_node) = sg.inner.nodes.iter_mut().find(|n| n.node_id() == inner_target) else {
+                return;
+            };
+            let Some(inner_sg) = inner_node.as_any_mut().downcast_mut::<SubgraphProcessNode>() else {
+                return;
+            };
+            if path.len() == 2 {
+                inner_sg.apply_inner_cmd(cmd);
+            } else {
+                // For deeper nesting, we'd need a recursive approach.
+                // For now, support up to 2 levels of nesting.
+                eprintln!("Subgraph nesting deeper than 2 levels not yet supported");
+            }
         }
     }
 
@@ -152,12 +191,8 @@ impl EngineGraph {
             let (pending, config_update) = {
                 let mut shared = self.shared_states[i].lock().unwrap();
                 let pending = std::mem::take(&mut shared.pending_params);
-                // Check for Group Output reconfiguration via save_data.
-                let config = if node.type_name() == "Group Output" {
-                    shared.save_data.take()
-                } else {
-                    None
-                };
+                // Check for widget-pushed config updates.
+                let config = shared.pending_config.take();
                 (pending, config)
             };
             for (idx, val) in pending {
@@ -172,11 +207,13 @@ impl EngineGraph {
         // 4. Update shared state for UI.
         for (i, node) in self.nodes.iter().enumerate() {
             let mut shared = self.shared_states[i].lock().unwrap();
-            for pi in 0..node.outputs().len().min(shared.outputs.len()) {
-                shared.outputs[pi] = node.read_output(pi);
+            let total_out = total_channels(node.outputs());
+            for ch in 0..total_out.min(shared.outputs.len()) {
+                shared.outputs[ch] = node.read_output(ch);
             }
-            for pi in 0..node.inputs().len().min(shared.inputs.len()) {
-                shared.inputs[pi] = node.read_input(pi);
+            let total_in = total_channels(node.inputs());
+            for ch in 0..total_in.min(shared.inputs.len()) {
+                shared.inputs[ch] = node.read_input(ch);
             }
             shared.current_params = node.params();
             shared.save_data = node.save_data();

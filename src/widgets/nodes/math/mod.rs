@@ -1,10 +1,13 @@
 pub mod change_detect;
 pub mod color_ops;
+pub mod counter;
 pub mod compare;
 pub mod constant;
 pub mod logic_gate;
 pub mod lookup;
 pub mod math_op;
 pub mod oscillator;
+pub mod palette_select;
 pub mod position_ops;
 pub mod scaler;
+pub mod stack_ops;

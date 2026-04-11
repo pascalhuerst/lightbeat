@@ -9,7 +9,10 @@ pub enum ColorMode {
     Hsv,
     Rgbw,
     Cmy,
+    Stack,
 }
+
+pub const COLOR_MODE_NAMES: &[&str] = &["RGB", "HSV", "RGBW", "CMY", "Stack"];
 
 impl ColorMode {
     pub fn label(&self) -> &'static str {
@@ -18,6 +21,7 @@ impl ColorMode {
             ColorMode::Hsv => "HSV",
             ColorMode::Rgbw => "RGBW",
             ColorMode::Cmy => "CMY",
+            ColorMode::Stack => "Stack",
         }
     }
 
@@ -25,6 +29,7 @@ impl ColorMode {
         match self {
             ColorMode::Rgb | ColorMode::Hsv | ColorMode::Cmy => 3,
             ColorMode::Rgbw => 4,
+            ColorMode::Stack => 4, // 4 Color ports
         }
     }
 
@@ -34,6 +39,7 @@ impl ColorMode {
             ColorMode::Hsv => &["H", "S", "V"],
             ColorMode::Rgbw => &["R", "G", "B", "W"],
             ColorMode::Cmy => &["C", "M", "Y"],
+            ColorMode::Stack => &["primary", "secondary", "third", "fourth"],
         }
     }
 
@@ -43,6 +49,7 @@ impl ColorMode {
             1 => ColorMode::Hsv,
             2 => ColorMode::Rgbw,
             3 => ColorMode::Cmy,
+            4 => ColorMode::Stack,
             _ => ColorMode::Rgb,
         }
     }
@@ -53,8 +60,12 @@ impl ColorMode {
             ColorMode::Hsv => 1,
             ColorMode::Rgbw => 2,
             ColorMode::Cmy => 3,
+            ColorMode::Stack => 4,
         }
     }
+
+    /// Whether this mode uses Color ports (vs Untyped component ports).
+    pub fn is_stack(&self) -> bool { *self == ColorMode::Stack }
 }
 
 /// Display state.
@@ -70,7 +81,7 @@ pub struct ColorOpsDisplay {
 pub struct ColorMergeProcessNode {
     id: NodeId,
     mode: ColorMode,
-    components: [f32; 4], // up to 4 input components
+    channels: [f32; 12], // up to 12 input channels (Stack mode: 4×RGB)
     rgb_out: [f32; 3],
     inputs: Vec<PortDef>,
     outputs: Vec<PortDef>,
@@ -82,19 +93,31 @@ impl ColorMergeProcessNode {
         Self {
             id,
             mode,
-            components: [0.0; 4],
+            channels: [0.0; 12],
             rgb_out: [0.0; 3],
             inputs: Self::make_inputs(mode),
-            outputs: vec![PortDef::new("color", PortType::Color)],
+            outputs: Self::make_outputs(mode),
         }
     }
 
     fn make_inputs(mode: ColorMode) -> Vec<PortDef> {
-        mode.channel_names().iter().map(|n| PortDef::new(*n, PortType::Untyped)).collect()
+        if mode.is_stack() {
+            mode.channel_names().iter().map(|n| PortDef::new(*n, PortType::Color)).collect()
+        } else {
+            mode.channel_names().iter().map(|n| PortDef::new(*n, PortType::Untyped)).collect()
+        }
+    }
+
+    fn make_outputs(mode: ColorMode) -> Vec<PortDef> {
+        if mode.is_stack() {
+            vec![PortDef::new("palette", PortType::ColorStack)]
+        } else {
+            vec![PortDef::new("color", PortType::Color)]
+        }
     }
 
     fn convert_to_rgb(&self) -> [f32; 3] {
-        let c = &self.components;
+        let c = &self.channels;
         match self.mode {
             ColorMode::Rgb => [c[0], c[1], c[2]],
             ColorMode::Hsv => {
@@ -102,13 +125,13 @@ impl ColorMergeProcessNode {
                 [rgb.r, rgb.g, rgb.b]
             }
             ColorMode::Rgbw => {
-                // RGBW → RGB: add white to each channel.
                 [c[0] + c[3], c[1] + c[3], c[2] + c[3]]
             }
             ColorMode::Cmy => {
                 let rgb = cmy_to_rgb(c[0], c[1], c[2]);
                 [rgb.r, rgb.g, rgb.b]
             }
+            ColorMode::Stack => [0.0; 3], // Not used in stack mode.
         }
     }
 }
@@ -120,25 +143,32 @@ impl ProcessNode for ColorMergeProcessNode {
     fn outputs(&self) -> &[PortDef] { &self.outputs }
 
     fn write_input(&mut self, pi: usize, v: f32) {
-        if pi < 4 { self.components[pi] = v; }
+        if pi < 12 { self.channels[pi] = v; }
     }
     fn read_input(&self, pi: usize) -> f32 {
-        if pi < 4 { self.components[pi] } else { 0.0 }
+        if pi < 12 { self.channels[pi] } else { 0.0 }
     }
 
     fn process(&mut self) {
-        self.rgb_out = self.convert_to_rgb();
+        if !self.mode.is_stack() {
+            self.rgb_out = self.convert_to_rgb();
+        }
     }
 
     fn read_output(&self, channel: usize) -> f32 {
-        match channel { 0 => self.rgb_out[0], 1 => self.rgb_out[1], 2 => self.rgb_out[2], _ => 0.0 }
+        if self.mode.is_stack() {
+            // Pass through: 4 Color inputs (12 channels) → 1 ColorStack output (12 channels).
+            if channel < 12 { self.channels[channel] } else { 0.0 }
+        } else {
+            match channel { 0 => self.rgb_out[0], 1 => self.rgb_out[1], 2 => self.rgb_out[2], _ => 0.0 }
+        }
     }
 
     fn params(&self) -> Vec<ParamDef> {
         vec![ParamDef::Choice {
             name: "Mode".into(),
             value: self.mode.to_index(),
-            options: vec!["RGB".into(), "HSV".into(), "RGBW".into(), "CMY".into()],
+            options: COLOR_MODE_NAMES.iter().map(|s| s.to_string()).collect(),
         }]
     }
 
@@ -148,6 +178,7 @@ impl ProcessNode for ColorMergeProcessNode {
             if new_mode != self.mode {
                 self.mode = new_mode;
                 self.inputs = Self::make_inputs(new_mode);
+                self.outputs = Self::make_outputs(new_mode);
             }
         }
     }
@@ -155,7 +186,11 @@ impl ProcessNode for ColorMergeProcessNode {
     fn update_display(&self, shared: &mut NodeSharedState) {
         shared.display = Some(Box::new(ColorOpsDisplay {
             mode: self.mode,
-            rgb: self.rgb_out,
+            rgb: if self.mode.is_stack() {
+                [self.channels[0], self.channels[1], self.channels[2]]
+            } else {
+                self.rgb_out
+            },
         }));
     }
 }
@@ -167,7 +202,7 @@ impl ProcessNode for ColorMergeProcessNode {
 pub struct ColorSplitProcessNode {
     id: NodeId,
     mode: ColorMode,
-    rgb_in: [f32; 3],
+    channels: [f32; 12], // up to 12 input channels (Stack mode: 4×RGB)
     components_out: [f32; 4],
     inputs: Vec<PortDef>,
     outputs: Vec<PortDef>,
@@ -179,19 +214,31 @@ impl ColorSplitProcessNode {
         Self {
             id,
             mode,
-            rgb_in: [0.0; 3],
+            channels: [0.0; 12],
             components_out: [0.0; 4],
-            inputs: vec![PortDef::new("color", PortType::Color)],
+            inputs: Self::make_inputs(mode),
             outputs: Self::make_outputs(mode),
         }
     }
 
+    fn make_inputs(mode: ColorMode) -> Vec<PortDef> {
+        if mode.is_stack() {
+            vec![PortDef::new("palette", PortType::ColorStack)]
+        } else {
+            vec![PortDef::new("color", PortType::Color)]
+        }
+    }
+
     fn make_outputs(mode: ColorMode) -> Vec<PortDef> {
-        mode.channel_names().iter().map(|n| PortDef::new(*n, PortType::Untyped)).collect()
+        if mode.is_stack() {
+            mode.channel_names().iter().map(|n| PortDef::new(*n, PortType::Color)).collect()
+        } else {
+            mode.channel_names().iter().map(|n| PortDef::new(*n, PortType::Untyped)).collect()
+        }
     }
 
     fn convert_from_rgb(&self) -> [f32; 4] {
-        let rgb = Rgb::new(self.rgb_in[0], self.rgb_in[1], self.rgb_in[2]);
+        let rgb = Rgb::new(self.channels[0], self.channels[1], self.channels[2]);
         match self.mode {
             ColorMode::Rgb => [rgb.r, rgb.g, rgb.b, 0.0],
             ColorMode::Hsv => {
@@ -206,6 +253,7 @@ impl ColorSplitProcessNode {
                 let (c, m, y) = rgb_to_cmy(rgb);
                 [c, m, y, 0.0]
             }
+            ColorMode::Stack => [0.0; 4], // Not used in stack mode.
         }
     }
 }
@@ -217,25 +265,32 @@ impl ProcessNode for ColorSplitProcessNode {
     fn outputs(&self) -> &[PortDef] { &self.outputs }
 
     fn write_input(&mut self, channel: usize, v: f32) {
-        if channel < 3 { self.rgb_in[channel] = v; }
+        if channel < 12 { self.channels[channel] = v; }
     }
     fn read_input(&self, channel: usize) -> f32 {
-        if channel < 3 { self.rgb_in[channel] } else { 0.0 }
+        if channel < 12 { self.channels[channel] } else { 0.0 }
     }
 
     fn process(&mut self) {
-        self.components_out = self.convert_from_rgb();
+        if !self.mode.is_stack() {
+            self.components_out = self.convert_from_rgb();
+        }
     }
 
     fn read_output(&self, pi: usize) -> f32 {
-        if pi < 4 { self.components_out[pi] } else { 0.0 }
+        if self.mode.is_stack() {
+            // Pass through: 1 ColorStack input (12 channels) → 4 Color outputs (12 channels).
+            if pi < 12 { self.channels[pi] } else { 0.0 }
+        } else {
+            if pi < 4 { self.components_out[pi] } else { 0.0 }
+        }
     }
 
     fn params(&self) -> Vec<ParamDef> {
         vec![ParamDef::Choice {
             name: "Mode".into(),
             value: self.mode.to_index(),
-            options: vec!["RGB".into(), "HSV".into(), "RGBW".into(), "CMY".into()],
+            options: COLOR_MODE_NAMES.iter().map(|s| s.to_string()).collect(),
         }]
     }
 
@@ -244,6 +299,7 @@ impl ProcessNode for ColorSplitProcessNode {
             let new_mode = ColorMode::from_index(value.as_usize());
             if new_mode != self.mode {
                 self.mode = new_mode;
+                self.inputs = Self::make_inputs(new_mode);
                 self.outputs = Self::make_outputs(new_mode);
             }
         }
@@ -252,7 +308,7 @@ impl ProcessNode for ColorSplitProcessNode {
     fn update_display(&self, shared: &mut NodeSharedState) {
         shared.display = Some(Box::new(ColorOpsDisplay {
             mode: self.mode,
-            rgb: self.rgb_in,
+            rgb: [self.channels[0], self.channels[1], self.channels[2]],
         }));
     }
 }

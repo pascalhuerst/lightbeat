@@ -85,39 +85,39 @@ impl NodeWidget for ClockWidget {
 
         ui.add_space(pad);
 
-        ui.horizontal(|ui| {
-            let led_radius = 5.0 * zoom;
+        // Play/beat LEDs row — use painter for precise control at all zoom levels.
+        let row_h = (12.0 * zoom).max(4.0);
+        let (row_resp, row_painter) = ui.allocate_painter(
+            egui::Vec2::new(ui.available_width(), row_h),
+            egui::Sense::hover(),
+        );
+        let row_rect = row_resp.rect;
+        let led_r = (row_h * 0.4).max(2.0);
 
-            let play_color = if playing {
-                Color32::from_rgb(80, 240, 120)
-            } else {
-                Color32::from_gray(60)
-            };
-            let (play_resp, play_painter) = ui.allocate_painter(
-                egui::Vec2::new(led_radius * 2.0, led_radius * 2.0),
-                egui::Sense::hover(),
-            );
-            play_painter.circle_filled(play_resp.rect.center(), led_radius, play_color);
+        // Play LED (left).
+        let play_color = if playing { Color32::from_rgb(80, 240, 120) } else { Color32::from_gray(60) };
+        let play_center = egui::pos2(row_rect.min.x + led_r + 2.0, row_rect.center().y);
+        row_painter.circle_filled(play_center, led_r, play_color);
 
-            ui.colored_label(
-                Color32::from_gray(140),
-                if playing { "PLAY" } else { "STOP" },
-            );
+        // Play/Stop text.
+        let text_x = play_center.x + led_r + 3.0;
+        row_painter.text(
+            egui::pos2(text_x, row_rect.center().y),
+            egui::Align2::LEFT_CENTER,
+            if playing { "PLAY" } else { "STOP" },
+            egui::FontId::monospace(9.0 * zoom),
+            Color32::from_gray(140),
+        );
 
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                let beat_color = if beat_on {
-                    if is_downbeat { Color32::from_rgb(255, 255, 255) }
-                    else { Color32::from_rgb(240, 200, 40) }
-                } else {
-                    Color32::from_gray(40)
-                };
-                let (beat_resp, beat_painter) = ui.allocate_painter(
-                    egui::Vec2::new(led_radius * 2.0, led_radius * 2.0),
-                    egui::Sense::hover(),
-                );
-                beat_painter.circle_filled(beat_resp.rect.center(), led_radius, beat_color);
-            });
-        });
+        // Beat LED (right).
+        let beat_color = if beat_on {
+            if is_downbeat { Color32::from_rgb(255, 255, 255) }
+            else { Color32::from_rgb(240, 200, 40) }
+        } else {
+            Color32::from_gray(40)
+        };
+        let beat_center = egui::pos2(row_rect.max.x - led_r - 2.0, row_rect.center().y);
+        row_painter.circle_filled(beat_center, led_r, beat_color);
     }
 
     fn as_any_mut(&mut self) -> &mut dyn Any { self }

@@ -1,0 +1,338 @@
+use std::any::Any;
+use crate::engine::types::*;
+
+// ---------------------------------------------------------------------------
+// Display state
+// ---------------------------------------------------------------------------
+
+pub struct SubgraphDisplay {
+    pub name: String,
+    pub inner_node_count: usize,
+    pub input_ports: Vec<PortDef>,
+    pub output_ports: Vec<PortDef>,
+}
+
+// ---------------------------------------------------------------------------
+// Port definition for external interface (serializable)
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct SubgraphPortDef {
+    pub name: String,
+    pub port_type_idx: usize, // index into PortType variants
+}
+
+impl SubgraphPortDef {
+    pub fn to_port_def(&self) -> PortDef {
+        PortDef::new(&self.name, idx_to_port_type(self.port_type_idx))
+    }
+}
+
+fn idx_to_port_type(idx: usize) -> PortType {
+    match idx {
+        0 => PortType::Logic,
+        1 => PortType::Phase,
+        2 => PortType::Untyped,
+        3 => PortType::Color,
+        4 => PortType::Position,
+        5 => PortType::ColorStack,
+        _ => PortType::Untyped,
+    }
+}
+
+pub fn port_type_to_idx(pt: PortType) -> usize {
+    match pt {
+        PortType::Logic => 0,
+        PortType::Phase => 1,
+        PortType::Untyped => 2,
+        PortType::Color => 3,
+        PortType::Position => 4,
+        PortType::ColorStack => 5,
+        PortType::Any => 2,
+    }
+}
+
+pub const PORT_TYPE_NAMES: &[&str] = &["Logic", "Phase", "Untyped", "Color", "Position", "ColorStack"];
+
+// ---------------------------------------------------------------------------
+// Inner graph (owns nodes + connections, runs synchronously)
+// ---------------------------------------------------------------------------
+
+/// A self-contained graph that runs inside a subgraph node.
+/// The "Graph Input" and "Graph Output" are not nodes — they're just
+/// value buffers at reserved indices. Inner nodes read from/write to them
+/// via connections that reference special node IDs.
+pub struct InnerGraph {
+    pub nodes: Vec<Box<dyn ProcessNode>>,
+    pub shared_states: Vec<SharedState>,
+    pub connections: Vec<Connection>,
+    /// Values bridged IN from the parent (corresponds to ext_inputs).
+    pub bridge_in: Vec<f32>,
+    /// Values bridged OUT to the parent (corresponds to ext_outputs).
+    pub bridge_out: Vec<f32>,
+}
+
+/// Reserved NodeIds for bridge endpoints.
+pub const BRIDGE_IN_NODE_ID: NodeId = NodeId(u64::MAX - 1);
+pub const BRIDGE_OUT_NODE_ID: NodeId = NodeId(u64::MAX);
+
+impl InnerGraph {
+    pub fn new() -> Self {
+        Self {
+            nodes: Vec::new(),
+            shared_states: Vec::new(),
+            connections: Vec::new(),
+            bridge_in: Vec::new(),
+            bridge_out: Vec::new(),
+        }
+    }
+
+    /// Run one tick of the inner graph.
+    pub fn tick(&mut self, input_ports: &[PortDef], output_ports: &[PortDef]) {
+        // 1. Process all inner nodes.
+        for node in self.nodes.iter_mut() {
+            node.process();
+        }
+
+        // 2. Propagate connections (including bridge connections).
+        let mut writes: Vec<(usize, usize, f32)> = Vec::new(); // (dst_node_vec_idx, channel, value)
+        let mut bridge_out_writes: Vec<(usize, f32)> = Vec::new();
+
+        for conn in &self.connections {
+            // Determine source channel count.
+            let src_channels = if conn.from.node == BRIDGE_IN_NODE_ID {
+                input_ports.get(conn.from.index).map(|p| p.port_type.channel_count()).unwrap_or(1)
+            } else if let Some(idx) = self.nodes.iter().position(|n| n.node_id() == conn.from.node) {
+                self.nodes[idx].outputs().get(conn.from.index)
+                    .map(|p| p.port_type.channel_count()).unwrap_or(1)
+            } else {
+                continue;
+            };
+
+            // Determine dest channel count.
+            let dst_channels = if conn.to.node == BRIDGE_OUT_NODE_ID {
+                output_ports.get(conn.to.index).map(|p| p.port_type.channel_count()).unwrap_or(1)
+            } else if let Some(idx) = self.nodes.iter().position(|n| n.node_id() == conn.to.node) {
+                self.nodes[idx].inputs().get(conn.to.index)
+                    .map(|p| p.port_type.channel_count()).unwrap_or(1)
+            } else {
+                continue;
+            };
+
+            let channels = src_channels.min(dst_channels);
+
+            for ch in 0..channels {
+                // Read source value.
+                let val = if conn.from.node == BRIDGE_IN_NODE_ID {
+                    let base = port_base_index(input_ports, conn.from.index);
+                    self.bridge_in.get(base + ch).copied().unwrap_or(0.0)
+                } else if let Some(idx) = self.nodes.iter().position(|n| n.node_id() == conn.from.node) {
+                    let base = port_base_index(self.nodes[idx].outputs(), conn.from.index);
+                    self.nodes[idx].read_output(base + ch)
+                } else {
+                    0.0
+                };
+
+                // Queue destination write.
+                if conn.to.node == BRIDGE_OUT_NODE_ID {
+                    let base = port_base_index(output_ports, conn.to.index);
+                    bridge_out_writes.push((base + ch, val));
+                } else if let Some(dst_idx) = self.nodes.iter().position(|n| n.node_id() == conn.to.node) {
+                    let base = port_base_index(self.nodes[dst_idx].inputs(), conn.to.index);
+                    writes.push((dst_idx, base + ch, val));
+                }
+            }
+        }
+
+        // Apply writes.
+        for (dst_idx, ch, val) in writes {
+            self.nodes[dst_idx].write_input(ch, val);
+        }
+        for (ch, val) in bridge_out_writes {
+            if ch < self.bridge_out.len() {
+                self.bridge_out[ch] = val;
+            }
+        }
+
+        // 3. Drain pending param changes from UI (via shared state).
+        for (i, node) in self.nodes.iter_mut().enumerate() {
+            let (pending, config_update) = {
+                let mut shared = self.shared_states[i].lock().unwrap();
+                let pending = std::mem::take(&mut shared.pending_params);
+                let config = shared.pending_config.take();
+                (pending, config)
+            };
+            for (idx, val) in pending {
+                node.set_param(idx, val);
+            }
+            if let Some(config) = config_update {
+                node.load_data(&config);
+            }
+        }
+
+        // 4. Update shared state for UI.
+        for (i, node) in self.nodes.iter().enumerate() {
+            let mut shared = self.shared_states[i].lock().unwrap();
+            let total_out = total_channels(node.outputs());
+            for ch in 0..total_out.min(shared.outputs.len()) {
+                shared.outputs[ch] = node.read_output(ch);
+            }
+            let total_in = total_channels(node.inputs());
+            for ch in 0..total_in.min(shared.inputs.len()) {
+                shared.inputs[ch] = node.read_input(ch);
+            }
+            shared.current_params = node.params();
+            shared.save_data = node.save_data();
+            node.update_display(&mut shared);
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Subgraph process node
+// ---------------------------------------------------------------------------
+
+pub struct SubgraphProcessNode {
+    id: NodeId,
+    pub name: String,
+    ext_inputs: Vec<PortDef>,
+    ext_outputs: Vec<PortDef>,
+    ext_input_values: Vec<f32>,
+    pub inner: InnerGraph,
+}
+
+impl SubgraphProcessNode {
+    pub fn new(id: NodeId) -> Self {
+        Self {
+            id,
+            name: "Subgraph".to_string(),
+            ext_inputs: Vec::new(),
+            ext_outputs: Vec::new(),
+            ext_input_values: Vec::new(),
+            inner: InnerGraph::new(),
+        }
+    }
+
+    fn rebuild_from_port_defs(&mut self) {
+        let in_ch = total_channels(&self.ext_inputs);
+        let out_ch = total_channels(&self.ext_outputs);
+        self.ext_input_values.resize(in_ch, 0.0);
+        self.inner.bridge_in.resize(in_ch, 0.0);
+        self.inner.bridge_out.resize(out_ch, 0.0);
+    }
+}
+
+impl ProcessNode for SubgraphProcessNode {
+    fn node_id(&self) -> NodeId { self.id }
+    fn type_name(&self) -> &'static str { "Subgraph" }
+    fn inputs(&self) -> &[PortDef] { &self.ext_inputs }
+    fn outputs(&self) -> &[PortDef] { &self.ext_outputs }
+
+    fn write_input(&mut self, ch: usize, v: f32) {
+        if ch < self.ext_input_values.len() { self.ext_input_values[ch] = v; }
+    }
+    fn read_input(&self, ch: usize) -> f32 {
+        self.ext_input_values.get(ch).copied().unwrap_or(0.0)
+    }
+
+    fn process(&mut self) {
+        // Copy external inputs to inner bridge.
+        let copy_len = self.inner.bridge_in.len().min(self.ext_input_values.len());
+        self.inner.bridge_in[..copy_len].copy_from_slice(&self.ext_input_values[..copy_len]);
+
+        // Tick inner graph.
+        self.inner.tick(&self.ext_inputs, &self.ext_outputs);
+    }
+
+    fn read_output(&self, ch: usize) -> f32 {
+        self.inner.bridge_out.get(ch).copied().unwrap_or(0.0)
+    }
+
+    fn load_data(&mut self, data: &serde_json::Value) {
+        // Port configuration from widget.
+        if let Some(name) = data.get("name").and_then(|v| v.as_str()) {
+            self.name = name.to_string();
+        }
+        if let Some(inputs) = data.get("inputs").and_then(|v| v.as_array()) {
+            self.ext_inputs = inputs.iter()
+                .filter_map(|v| serde_json::from_value::<SubgraphPortDef>(v.clone()).ok())
+                .map(|p| p.to_port_def())
+                .collect();
+        }
+        if let Some(outputs) = data.get("outputs").and_then(|v| v.as_array()) {
+            self.ext_outputs = outputs.iter()
+                .filter_map(|v| serde_json::from_value::<SubgraphPortDef>(v.clone()).ok())
+                .map(|p| p.to_port_def())
+                .collect();
+        }
+        self.rebuild_from_port_defs();
+    }
+
+    fn save_data(&self) -> Option<serde_json::Value> {
+        let inputs: Vec<SubgraphPortDef> = self.ext_inputs.iter()
+            .map(|p| SubgraphPortDef { name: p.name.clone(), port_type_idx: port_type_to_idx(p.port_type) })
+            .collect();
+        let outputs: Vec<SubgraphPortDef> = self.ext_outputs.iter()
+            .map(|p| SubgraphPortDef { name: p.name.clone(), port_type_idx: port_type_to_idx(p.port_type) })
+            .collect();
+        Some(serde_json::json!({
+            "name": self.name,
+            "inputs": inputs,
+            "outputs": outputs,
+            // TODO: serialize inner nodes + connections for full save
+        }))
+    }
+
+    fn update_display(&self, shared: &mut NodeSharedState) {
+        shared.display = Some(Box::new(SubgraphDisplay {
+            name: self.name.clone(),
+            inner_node_count: self.inner.nodes.len(),
+            input_ports: self.ext_inputs.clone(),
+            output_ports: self.ext_outputs.clone(),
+        }));
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any { self }
+}
+
+impl SubgraphProcessNode {
+    /// Apply an inner command to this subgraph's inner graph.
+    pub fn apply_inner_cmd(&mut self, cmd: SubgraphInnerCmd) {
+        match cmd {
+            SubgraphInnerCmd::AddNode { node, shared } => {
+                self.inner.shared_states.push(shared);
+                self.inner.nodes.push(node);
+            }
+            SubgraphInnerCmd::RemoveNode(id) => {
+                if let Some(idx) = self.inner.nodes.iter().position(|n| n.node_id() == id) {
+                    self.inner.nodes.remove(idx);
+                    self.inner.shared_states.remove(idx);
+                    self.inner.connections.retain(|c| c.from.node != id && c.to.node != id);
+                }
+            }
+            SubgraphInnerCmd::AddConnection(conn) => {
+                if !self.inner.connections.contains(&conn) {
+                    self.inner.connections.push(conn);
+                }
+            }
+            SubgraphInnerCmd::RemoveConnectionTo(to) => {
+                self.inner.connections.retain(|c| c.to != to);
+            }
+            SubgraphInnerCmd::LoadData { node_id, data } => {
+                if let Some(node) = self.inner.nodes.iter_mut().find(|n| n.node_id() == node_id) {
+                    node.load_data(&data);
+                }
+            }
+            SubgraphInnerCmd::NotifyConnect { node_id, input_port, source_type } => {
+                if let Some(node) = self.inner.nodes.iter_mut().find(|n| n.node_id() == node_id) {
+                    node.on_connect(input_port, source_type);
+                }
+            }
+            SubgraphInnerCmd::NotifyDisconnect { node_id, input_port } => {
+                if let Some(node) = self.inner.nodes.iter_mut().find(|n| n.node_id() == node_id) {
+                    node.on_disconnect(input_port);
+                }
+            }
+        }
+    }
+}

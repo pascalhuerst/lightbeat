@@ -17,7 +17,7 @@ use eframe::egui;
 
 use beat_clock::{BeatClock, BeatPattern, SubscriptionHandle};
 use config::AppConfig;
-use engine::types::{new_shared_state, EngineCommand, NodeId, PortType};
+use engine::types::{new_shared_state, EngineCommand, NodeId, PortType, ProcessNode, SubgraphInnerCmd};
 use engine::EngineHandle;
 use engine::nodes::display::color_display::ColorDisplayProcessNode;
 use engine::nodes::display::scope::ScopeProcessNode;
@@ -27,9 +27,13 @@ use engine::nodes::math::change_detect::ChangeDetectProcessNode;
 use engine::nodes::math::color_ops::{ColorMergeProcessNode, ColorSplitProcessNode};
 use engine::nodes::math::compare::{CompareOp, CompareProcessNode};
 use engine::nodes::math::constant::ConstantProcessNode;
+use engine::nodes::math::counter::CounterProcessNode;
 use engine::nodes::math::lookup::LookupProcessNode;
 use engine::nodes::math::logic_gate::{LogicOp, LogicGateProcessNode};
 use engine::nodes::math::math_op::{MathOp, MathProcessNode};
+use engine::nodes::math::palette_select::PaletteSelectProcessNode;
+use engine::nodes::meta::subgraph::SubgraphProcessNode;
+use engine::nodes::math::stack_ops::{StackSplitProcessNode, StackMergeProcessNode};
 use engine::nodes::math::scaler::ScalerProcessNode;
 use engine::nodes::math::oscillator::{OscFunc, OscillatorProcessNode};
 use engine::nodes::math::position_ops::{PositionMergeProcessNode, PositionSplitProcessNode};
@@ -49,9 +53,13 @@ use widgets::nodes::math::change_detect::ChangeDetectWidget;
 use widgets::nodes::math::color_ops::{ColorMergeWidget, ColorSplitWidget};
 use widgets::nodes::math::compare::CompareWidget;
 use widgets::nodes::math::constant::ConstantWidget;
+use widgets::nodes::math::counter::CounterWidget;
 use widgets::nodes::math::lookup::LookupWidget;
 use widgets::nodes::math::logic_gate::LogicGateWidget;
 use widgets::nodes::math::math_op::MathWidget;
+use widgets::nodes::math::palette_select::{PaletteSelectWidget, new_shared_palette_context};
+use widgets::nodes::meta::subgraph::SubgraphWidget;
+use widgets::nodes::math::stack_ops::{StackSplitWidget, StackMergeWidget};
 use widgets::nodes::math::scaler::ScalerWidget;
 use widgets::nodes::math::oscillator::OscillatorWidget;
 use widgets::nodes::math::position_ops::{PositionMergeWidget, PositionSplitWidget};
@@ -65,6 +73,12 @@ use widgets::nodes::transport::phase_scaler::PhaseScalerWidget;
 use widgets::nodes::transport::step_sequencer::StepSequencerWidget;
 use widgets::nodes::NodeGraph;
 
+/// Result from a background file dialog.
+enum FileDialogResult {
+    OpenProject(PathBuf),
+    SaveProjectAs(PathBuf),
+}
+
 struct LightBeatApp {
     graph: NodeGraph,
     engine: EngineHandle,
@@ -72,6 +86,7 @@ struct LightBeatApp {
     _subs: Vec<SubscriptionHandle>,
     config: AppConfig,
     project_path: Option<PathBuf>,
+    file_dialog_rx: Option<std::sync::mpsc::Receiver<FileDialogResult>>,
     snapshot: Arc<std::sync::Mutex<beat_clock::LinkSnapshot>>,
     quit_requested: bool,
     show_dmx_monitor: bool,
@@ -91,6 +106,7 @@ struct LightBeatApp {
     group_manager: widgets::group_list::GroupManager,
     color_stack_manager: widgets::color_stack_list::ColorStackManager,
     color_group_manager: widgets::color_group_list::ColorGroupManager,
+    palette_ctx: widgets::nodes::math::palette_select::SharedPaletteContext,
 }
 
 impl LightBeatApp {
@@ -110,6 +126,7 @@ impl LightBeatApp {
             _subs: Vec::new(),
             config,
             project_path: None,
+            file_dialog_rx: None,
             snapshot,
             quit_requested: false,
             show_dmx_monitor: false,
@@ -129,6 +146,7 @@ impl LightBeatApp {
             group_manager: widgets::group_list::GroupManager::new(),
             color_stack_manager: widgets::color_stack_list::ColorStackManager::new(),
             color_group_manager: widgets::color_group_list::ColorGroupManager::new(),
+            palette_ctx: new_shared_palette_context(),
         };
 
         // Load hardware setup (fixtures + interfaces).
@@ -138,6 +156,7 @@ impl LightBeatApp {
         app.sync_group_context();
         app.sync_object_store();
         app.sync_interfaces();
+        app.sync_palette_context();
 
         // Try autoload, or create default clock.
         let loaded = if app.config.autoload_on_open {
@@ -187,8 +206,8 @@ impl LightBeatApp {
             Box::new(ClockGenWidget::new(id, new_shared_state(1, 1)))
         });
         self.graph.register_node("Transport", "Transition", |id| {
-            // trigger(1) + phase(1) + color(3) = 5 input channels, color(3) output channels
-            Box::new(TransitionWidget::new(id, new_shared_state(5, 3)))
+            // trigger(1) + phase(1) + colorstack(12) = 14 input channels, 12 output channels max
+            Box::new(TransitionWidget::new(id, new_shared_state(14, 12)))
         });
 
         // Math
@@ -211,10 +230,10 @@ impl LightBeatApp {
             Box::new(OscillatorWidget::new(id, OscFunc::Cos, new_shared_state(2, 1)))
         });
         self.graph.register_node("Math", "Color Merge", |id| {
-            Box::new(ColorMergeWidget::new(id, new_shared_state(4, 3))) // up to 4 inputs (RGBW), 3 outputs (RGB)
+            Box::new(ColorMergeWidget::new(id, new_shared_state(12, 12))) // Stack mode: 4×Color in, ColorStack out
         });
         self.graph.register_node("Math", "Color Split", |id| {
-            Box::new(ColorSplitWidget::new(id, new_shared_state(3, 4))) // 3 inputs (RGB), up to 4 outputs (RGBW)
+            Box::new(ColorSplitWidget::new(id, new_shared_state(12, 12))) // Stack mode: ColorStack in, 4×Color out
         });
         self.graph.register_node("Math", "Lookup", |id| {
             Box::new(LookupWidget::new(id, new_shared_state(1, 3))) // 1 input, up to 3 output channels (Color)
@@ -229,6 +248,9 @@ impl LightBeatApp {
             Box::new(ConstantWidget::new(id, PortType::Phase, new_shared_state(0, 1)))
         });
 
+        self.graph.register_node("Math", "Counter", |id| {
+            Box::new(CounterWidget::new(id, new_shared_state(2, 2)))
+        });
         self.graph.register_node("Math", "Change Detect", |id| {
             Box::new(ChangeDetectWidget::new(id, new_shared_state(2, 2)))
         });
@@ -274,7 +296,7 @@ impl LightBeatApp {
             Box::new(ScopeWidget::new(id, new_shared_state(2, 0)))
         });
         self.graph.register_node("Display", "Color Display", |id| {
-            Box::new(ColorDisplayWidget::new(id, new_shared_state(3, 0)))
+            Box::new(ColorDisplayWidget::new(id, new_shared_state(12, 0)))
         });
         self.graph.register_node("Display", "Value Display", |id| {
             Box::new(ValueDisplayWidget::new(id, new_shared_state(1, 0)))
@@ -285,10 +307,30 @@ impl LightBeatApp {
             Box::new(ScalerWidget::new(id, new_shared_state(1, 1)))
         });
 
+        // Palette
+        let pctx = self.palette_ctx.clone();
+        self.graph.register_node("Math", "Palette Select", move |id| {
+            // 2 inputs, ColorStack output = 12 channels
+            Box::new(PaletteSelectWidget::new(id, new_shared_state(2, 12), pctx.clone()))
+        });
+        // Stack Split/Merge kept for backward compat with saved projects (hidden from menu).
+        self.graph.register_node("_hidden", "Stack Split", |id| {
+            Box::new(StackSplitWidget::new(id, new_shared_state(12, 12)))
+        });
+        self.graph.register_node("_hidden", "Stack Merge", |id| {
+            Box::new(StackMergeWidget::new(id, new_shared_state(12, 12)))
+        });
+
+        // Meta
+        self.graph.register_node("Meta", "Subgraph", |id| {
+            // Start with generous shared state; will resize as ports are added.
+            Box::new(SubgraphWidget::new(id, new_shared_state(12, 12)))
+        });
+
         // Output
         let gctx = self.group_ctx.clone();
         self.graph.register_node("Output", "Group Output", move |id| {
-            Box::new(GroupWidget::new(id, new_shared_state(6, 0), gctx.clone()))
+            Box::new(GroupWidget::new(id, new_shared_state(13, 0), gctx.clone()))
         });
     }
 
@@ -297,6 +339,12 @@ impl LightBeatApp {
         let mut ctx = self.group_ctx.lock().unwrap();
         ctx.groups = self.group_manager.groups.clone();
         ctx.objects = self.object_manager.objects.clone();
+    }
+
+    fn sync_palette_context(&self) {
+        let mut ctx = self.palette_ctx.lock().unwrap();
+        ctx.stacks = self.color_stack_manager.stacks.clone();
+        ctx.groups = self.color_group_manager.groups.clone();
     }
 
     fn create_default_clock(&mut self) {
@@ -320,204 +368,97 @@ impl LightBeatApp {
     fn wire_new_nodes(&mut self) {
         // Handle nodes created by context menu / paste / duplicate.
         for new_node in self.graph.drain_new_nodes() {
-            let node = self.graph.node_mut(new_node.index);
+            let node = self.graph.node_mut_at_path(new_node.index, &new_node.subgraph_path);
             let type_name = node.type_name();
             let id = node.node_id();
             let shared = Arc::clone(node.shared_state());
+            let subgraph_path = new_node.subgraph_path;
 
             // Create corresponding engine node.
-            match type_name {
+            let engine_node: Option<Box<dyn ProcessNode>> = match type_name {
                 "Clock" => {
                     let engine_node = ClockProcessNode::new(id, Arc::clone(&self.snapshot));
                     let beat_state = engine_node.beat_state.clone();
-                    self.engine.send(EngineCommand::AddNode {
-                        node: Box::new(engine_node),
-                        shared,
-                    });
                     self._subs.push(
                         self.beat_clock
                             .subscribe(BeatPattern::every(1), beat_state),
                     );
+                    Some(Box::new(engine_node))
                 }
-                "Phase Scaler" => {
-                    self.engine.send(EngineCommand::AddNode {
-                        node: Box::new(PhaseScalerProcessNode::new(id)),
-                        shared,
-                    });
-                }
-                "Step Sequencer" => {
-                    self.engine.send(EngineCommand::AddNode {
-                        node: Box::new(StepSequencerProcessNode::new(id)),
-                        shared,
-                    });
-                }
-                "Scope" => {
-                    self.engine.send(EngineCommand::AddNode {
-                        node: Box::new(ScopeProcessNode::new(id)),
-                        shared,
-                    });
-                }
-                "ADSR" => {
-                    self.engine.send(EngineCommand::AddNode {
-                        node: Box::new(EnvelopeProcessNode::new(id)),
-                        shared,
-                    });
-                }
-                "Trigger Delay" => {
-                    self.engine.send(EngineCommand::AddNode {
-                        node: Box::new(TriggerDelayProcessNode::new(id)),
-                        shared,
-                    });
-                }
-                "Clock Divider" => {
-                    self.engine.send(EngineCommand::AddNode {
-                        node: Box::new(ClockDividerProcessNode::new(id)),
-                        shared,
-                    });
-                }
-                "Clock Gen" => {
-                    self.engine.send(EngineCommand::AddNode {
-                        node: Box::new(ClockGenProcessNode::new(id)),
-                        shared,
-                    });
-                }
-                "Transition" => {
-                    self.engine.send(EngineCommand::AddNode {
-                        node: Box::new(TransitionProcessNode::new(id)),
-                        shared,
-                    });
-                }
+                "Phase Scaler" => Some(Box::new(PhaseScalerProcessNode::new(id))),
+                "Step Sequencer" => Some(Box::new(StepSequencerProcessNode::new(id))),
+                "Scope" => Some(Box::new(ScopeProcessNode::new(id))),
+                "ADSR" => Some(Box::new(EnvelopeProcessNode::new(id))),
+                "Trigger Delay" => Some(Box::new(TriggerDelayProcessNode::new(id))),
+                "Clock Divider" => Some(Box::new(ClockDividerProcessNode::new(id))),
+                "Clock Gen" => Some(Box::new(ClockGenProcessNode::new(id))),
+                "Transition" => Some(Box::new(TransitionProcessNode::new(id))),
                 "Add" | "Sub" | "Mul" | "Div" => {
                     let op = match type_name {
-                        "Add" => MathOp::Add,
-                        "Sub" => MathOp::Sub,
-                        "Mul" => MathOp::Mul,
-                        "Div" => MathOp::Div,
+                        "Add" => MathOp::Add, "Sub" => MathOp::Sub,
+                        "Mul" => MathOp::Mul, "Div" => MathOp::Div,
                         _ => unreachable!(),
                     };
-                    self.engine.send(EngineCommand::AddNode {
-                        node: Box::new(MathProcessNode::new(id, op)),
-                        shared,
-                    });
+                    Some(Box::new(MathProcessNode::new(id, op)))
                 }
-                "Color Display" => {
-                    self.engine.send(EngineCommand::AddNode {
-                        node: Box::new(ColorDisplayProcessNode::new(id)),
-                        shared,
-                    });
-                }
-                "Value Display" => {
-                    self.engine.send(EngineCommand::AddNode {
-                        node: Box::new(ValueDisplayProcessNode::new(id)),
-                        shared,
-                    });
-                }
-                "Scaler" => {
-                    self.engine.send(EngineCommand::AddNode {
-                        node: Box::new(ScalerProcessNode::new(id)),
-                        shared,
-                    });
-                }
+                "Color Display" => Some(Box::new(ColorDisplayProcessNode::new(id))),
+                "Value Display" => Some(Box::new(ValueDisplayProcessNode::new(id))),
+                "Palette Select" => Some(Box::new(PaletteSelectProcessNode::new(id))),
+                "Stack Split" => Some(Box::new(StackSplitProcessNode::new(id))),
+                "Stack Merge" => Some(Box::new(StackMergeProcessNode::new(id))),
+                "Scaler" => Some(Box::new(ScalerProcessNode::new(id))),
                 ">=" | "<=" | "==" | "!=" => {
                     let op = match type_name {
-                        ">=" => CompareOp::Gte,
-                        "<=" => CompareOp::Lte,
-                        "==" => CompareOp::Eq,
-                        "!=" => CompareOp::Neq,
+                        ">=" => CompareOp::Gte, "<=" => CompareOp::Lte,
+                        "==" => CompareOp::Eq, "!=" => CompareOp::Neq,
                         _ => unreachable!(),
                     };
-                    self.engine.send(EngineCommand::AddNode {
-                        node: Box::new(CompareProcessNode::new(id, op)),
-                        shared,
-                    });
+                    Some(Box::new(CompareProcessNode::new(id, op)))
                 }
                 "AND" | "OR" | "XOR" | "NOT" => {
                     let op = match type_name {
-                        "AND" => LogicOp::And,
-                        "OR" => LogicOp::Or,
-                        "XOR" => LogicOp::Xor,
-                        "NOT" => LogicOp::Not,
+                        "AND" => LogicOp::And, "OR" => LogicOp::Or,
+                        "XOR" => LogicOp::Xor, "NOT" => LogicOp::Not,
                         _ => unreachable!(),
                     };
-                    self.engine.send(EngineCommand::AddNode {
-                        node: Box::new(LogicGateProcessNode::new(id, op)),
-                        shared,
-                    });
+                    Some(Box::new(LogicGateProcessNode::new(id, op)))
                 }
-                "Color Merge" => {
-                    self.engine.send(EngineCommand::AddNode {
-                        node: Box::new(ColorMergeProcessNode::new(id)),
-                        shared,
-                    });
-                }
-                "Color Split" => {
-                    self.engine.send(EngineCommand::AddNode {
-                        node: Box::new(ColorSplitProcessNode::new(id)),
-                        shared,
-                    });
-                }
-                "Position Merge" => {
-                    self.engine.send(EngineCommand::AddNode {
-                        node: Box::new(PositionMergeProcessNode::new(id)),
-                        shared,
-                    });
-                }
-                "Position Split" => {
-                    self.engine.send(EngineCommand::AddNode {
-                        node: Box::new(PositionSplitProcessNode::new(id)),
-                        shared,
-                    });
-                }
-                "Lookup" => {
-                    self.engine.send(EngineCommand::AddNode {
-                        node: Box::new(LookupProcessNode::new(id)),
-                        shared,
-                    });
-                }
-                "Change Detect" => {
-                    self.engine.send(EngineCommand::AddNode {
-                        node: Box::new(ChangeDetectProcessNode::new(id)),
-                        shared,
-                    });
-                }
-                "Const Value" => {
-                    self.engine.send(EngineCommand::AddNode {
-                        node: Box::new(ConstantProcessNode::new(id, PortType::Untyped, 0.0)),
-                        shared,
-                    });
-                }
-                "Const Logic" => {
-                    self.engine.send(EngineCommand::AddNode {
-                        node: Box::new(ConstantProcessNode::new(id, PortType::Logic, 0.0)),
-                        shared,
-                    });
-                }
-                "Const Phase" => {
-                    self.engine.send(EngineCommand::AddNode {
-                        node: Box::new(ConstantProcessNode::new(id, PortType::Phase, 0.0)),
-                        shared,
-                    });
-                }
-                "Sin" => {
-                    self.engine.send(EngineCommand::AddNode {
-                        node: Box::new(OscillatorProcessNode::new(id, OscFunc::Sin)),
-                        shared,
-                    });
-                }
-                "Cos" => {
-                    self.engine.send(EngineCommand::AddNode {
-                        node: Box::new(OscillatorProcessNode::new(id, OscFunc::Cos)),
-                        shared,
-                    });
-                }
-                "Group Output" => {
-                    self.engine.send(EngineCommand::AddNode {
-                        node: Box::new(GroupProcessNode::new(id, self.object_store.clone())),
-                        shared,
-                    });
-                }
+                "Color Merge" => Some(Box::new(ColorMergeProcessNode::new(id))),
+                "Color Split" => Some(Box::new(ColorSplitProcessNode::new(id))),
+                "Position Merge" => Some(Box::new(PositionMergeProcessNode::new(id))),
+                "Position Split" => Some(Box::new(PositionSplitProcessNode::new(id))),
+                "Lookup" => Some(Box::new(LookupProcessNode::new(id))),
+                "Counter" => Some(Box::new(CounterProcessNode::new(id))),
+                "Change Detect" => Some(Box::new(ChangeDetectProcessNode::new(id))),
+                "Const Value" => Some(Box::new(ConstantProcessNode::new(id, PortType::Untyped, 0.0))),
+                "Const Logic" => Some(Box::new(ConstantProcessNode::new(id, PortType::Logic, 0.0))),
+                "Const Phase" => Some(Box::new(ConstantProcessNode::new(id, PortType::Phase, 0.0))),
+                "Sin" => Some(Box::new(OscillatorProcessNode::new(id, OscFunc::Sin))),
+                "Cos" => Some(Box::new(OscillatorProcessNode::new(id, OscFunc::Cos))),
+                "Subgraph" => Some(Box::new(SubgraphProcessNode::new(id))),
+                "Group Output" => Some(Box::new(GroupProcessNode::new(id, self.object_store.clone()))),
                 _ => {
                     eprintln!("Unknown node type for engine: {}", type_name);
+                    None
+                }
+            };
+
+            if let Some(engine_node) = engine_node {
+                if subgraph_path.is_empty() {
+                    // Root level — send directly.
+                    self.engine.send(EngineCommand::AddNode {
+                        node: engine_node,
+                        shared,
+                    });
+                } else {
+                    // Inside a subgraph — wrap in SubgraphInnerCommand.
+                    self.engine.send(EngineCommand::SubgraphInnerCommand {
+                        subgraph_path,
+                        command: Box::new(SubgraphInnerCmd::AddNode {
+                            node: engine_node,
+                            shared,
+                        }),
+                    });
                 }
             }
         }
@@ -585,28 +526,117 @@ impl LightBeatApp {
         }
     }
 
-    fn save_project_as(&mut self) {
-        let dialog = rfd::FileDialog::new()
-            .set_title("Save Project As")
-            .add_filter("LightBeat Project", &["json"])
-            .set_file_name("project.json");
+    fn save_project_as(&mut self, ctx: &egui::Context) {
+        if self.file_dialog_rx.is_some() { return; } // dialog already open
+        let (tx, rx) = std::sync::mpsc::channel();
+        self.file_dialog_rx = Some(rx);
+        let ctx = ctx.clone();
+        std::thread::spawn(move || {
+            let dialog = rfd::FileDialog::new()
+                .set_title("Save Project As")
+                .add_filter("LightBeat Project", &["json"])
+                .set_file_name("project.json");
+            if let Some(path) = dialog.save_file() {
+                let _ = tx.send(FileDialogResult::SaveProjectAs(path));
+            }
+            ctx.request_repaint();
+        });
+    }
 
-        if let Some(path) = dialog.save_file() {
-            if let Err(e) = project::save_to_file(&self.graph, &path) {
-                eprintln!("Failed to save project: {}", e);
-            } else {
-                self.project_path = Some(path);
+    fn open_project(&mut self, ctx: &egui::Context) {
+        if self.file_dialog_rx.is_some() { return; } // dialog already open
+        let (tx, rx) = std::sync::mpsc::channel();
+        self.file_dialog_rx = Some(rx);
+        let ctx = ctx.clone();
+        std::thread::spawn(move || {
+            let dialog = rfd::FileDialog::new()
+                .set_title("Open Project")
+                .add_filter("LightBeat Project", &["json"]);
+            if let Some(path) = dialog.pick_file() {
+                let _ = tx.send(FileDialogResult::OpenProject(path));
+            }
+            ctx.request_repaint();
+        });
+    }
+
+    fn poll_file_dialog(&mut self) {
+        let rx = match &self.file_dialog_rx {
+            Some(rx) => rx,
+            None => return,
+        };
+
+        match rx.try_recv() {
+            Ok(result) => {
+                self.file_dialog_rx = None;
+                match result {
+                    FileDialogResult::OpenProject(path) => {
+                        self.load_project_from(&path);
+                    }
+                    FileDialogResult::SaveProjectAs(path) => {
+                        if let Err(e) = project::save_to_file(&self.graph, &path) {
+                            eprintln!("Failed to save project: {}", e);
+                        } else {
+                            self.project_path = Some(path);
+                        }
+                    }
+                }
+            }
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                // Dialog was cancelled (thread finished without sending a result).
+                self.file_dialog_rx = None;
+            }
+            Err(std::sync::mpsc::TryRecvError::Empty) => {
+                // Dialog still open, keep waiting.
             }
         }
     }
 
-    fn open_project(&mut self) {
-        let dialog = rfd::FileDialog::new()
-            .set_title("Open Project")
-            .add_filter("LightBeat Project", &["json"]);
+    fn send_load_data_recursive(
+        &mut self,
+        saved_nodes: &[project::SavedNode],
+        indices: &[usize],
+        subgraph_path: Vec<NodeId>,
+    ) {
+        for (i, saved) in saved_nodes.iter().enumerate() {
+            if i >= indices.len() { continue; }
+            let node_id = NodeId(saved.id);
 
-        if let Some(path) = dialog.pick_file() {
-            self.load_project_from(&path);
+            if let Some(data) = &saved.data {
+                if subgraph_path.is_empty() {
+                    self.engine.send(EngineCommand::LoadData {
+                        node_id,
+                        data: data.clone(),
+                    });
+                } else {
+                    self.engine.send(EngineCommand::SubgraphInnerCommand {
+                        subgraph_path: subgraph_path.clone(),
+                        command: Box::new(SubgraphInnerCmd::LoadData {
+                            node_id,
+                            data: data.clone(),
+                        }),
+                    });
+                }
+            }
+
+            // Recurse into inner graph.
+            if saved.type_name == "Subgraph" {
+                if let Some(inner_project) = &saved.inner_graph {
+                    let mut inner_path = subgraph_path.clone();
+                    inner_path.push(node_id);
+
+                    // Inner indices: the inner graph was loaded starting at index 2
+                    // (after bridge nodes at 0 and 1).
+                    let inner_indices: Vec<usize> = (0..inner_project.nodes.len())
+                        .map(|j| j + 2) // offset by bridge nodes
+                        .collect();
+
+                    self.send_load_data_recursive(
+                        &inner_project.nodes,
+                        &inner_indices,
+                        inner_path,
+                    );
+                }
+            }
         }
     }
 
@@ -633,19 +663,10 @@ impl LightBeatApp {
                     self.engine.send(cmd);
                 }
 
-                // Send load_data for nodes that have custom data.
-                for (i, saved) in proj.nodes.iter().enumerate() {
-                    if let Some(data) = &saved.data {
-                        if i < indices.len() {
-                            let node = self.graph.node_mut(indices[i]);
-                            self.engine.send(EngineCommand::LoadData {
-                                node_id: node.node_id(),
-                                data: data.clone(),
-                            });
-                        }
-                    }
-                }
+                // Send load_data for nodes that have custom data (recursively for subgraphs).
+                self.send_load_data_recursive(&proj.nodes, &indices, vec![]);
 
+                self.graph.fit_to_content();
                 self.project_path = Some(path.to_path_buf());
             }
             Err(e) => {
@@ -670,13 +691,16 @@ impl eframe::App for LightBeatApp {
         ctx.request_repaint();
         ctx.send_viewport_cmd(egui::ViewportCommand::Title(self.window_title()));
 
+        // Poll background file dialog results.
+        self.poll_file_dialog();
+
         // Menu bar.
         egui::TopBottomPanel::top("menu_bar").show(ctx, |ui| {
             egui::menu::bar(ui, |ui| {
                 ui.menu_button("File", |ui| {
                     if ui.button("Open...").clicked() {
                         ui.close_menu();
-                        self.open_project();
+                        self.open_project(ctx);
                     }
                     ui.separator();
                     if ui.button("Save").clicked() {
@@ -685,7 +709,7 @@ impl eframe::App for LightBeatApp {
                     }
                     if ui.button("Save As...").clicked() {
                         ui.close_menu();
-                        self.save_project_as();
+                        self.save_project_as(ctx);
                     }
                     ui.separator();
                     if ui.button("Quit").clicked() {
@@ -878,6 +902,12 @@ impl eframe::App for LightBeatApp {
             self.sync_interfaces();
         }
 
+        // Sync object store if objects were edited directly.
+        if self.object_manager.needs_sync {
+            self.object_manager.needs_sync = false;
+            self.sync_object_store();
+        }
+
         // Re-register group nodes and sync objects if groups/objects changed.
         if self.group_manager.needs_refresh {
             self.group_manager.needs_refresh = false;
@@ -896,7 +926,7 @@ impl eframe::App for LightBeatApp {
             self.save_setup();
         }
         if ctx.input(|i| i.modifiers.ctrl && i.key_pressed(egui::Key::O)) {
-            self.open_project();
+            self.open_project(ctx);
         }
 
         if self.quit_requested {

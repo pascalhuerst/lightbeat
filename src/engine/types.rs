@@ -40,6 +40,8 @@ pub enum PortType {
     Color,
     /// Pan/Tilt position (2 floats: pan, tilt in 0..1). Green-blue.
     Position,
+    /// A stack of 4 colors (12 floats: 4 × RGB). Warm white.
+    ColorStack,
 }
 
 impl PortType {
@@ -51,14 +53,16 @@ impl PortType {
             PortType::Any => (-1.0, 1.0),
             PortType::Color => (0.0, 1.0),
             PortType::Position => (0.0, 1.0),
+            PortType::ColorStack => (0.0, 1.0),
         }
     }
 
     /// Number of float components this port type carries.
     pub fn channel_count(&self) -> usize {
         match self {
-            PortType::Color => 3,    // R, G, B
-            PortType::Position => 2, // Pan, Tilt
+            PortType::Color => 3,      // R, G, B
+            PortType::Position => 2,   // Pan, Tilt
+            PortType::ColorStack => 12, // 4 × RGB
             _ => 1,
         }
     }
@@ -221,6 +225,9 @@ pub struct NodeSharedState {
     pub pending_params: Vec<(usize, ParamValue)>,
     /// Serializable custom data for save/load (written by engine, read by UI for saving).
     pub save_data: Option<serde_json::Value>,
+    /// Config pushed by widget for the engine to apply via load_data.
+    /// Separate from save_data to avoid the engine overwriting its own config.
+    pub pending_config: Option<serde_json::Value>,
 }
 
 impl NodeSharedState {
@@ -232,6 +239,7 @@ impl NodeSharedState {
             display: None,
             pending_params: Vec::new(),
             save_data: None,
+            pending_config: None,
         }
     }
 }
@@ -278,6 +286,36 @@ pub enum EngineCommand {
     RemoveAllNodes,
     /// Set DMX output interfaces (id, output).
     SetInterfaces(Vec<(u32, Box<dyn crate::interfaces::DmxOutput>)>),
+    /// Command targeting a subgraph's inner graph.
+    SubgraphInnerCommand {
+        /// Path from root to the target subgraph (supports nested subgraphs).
+        subgraph_path: Vec<NodeId>,
+        command: Box<SubgraphInnerCmd>,
+    },
+}
+
+/// Commands for a subgraph's inner graph (routed via SubgraphInnerCommand).
+pub enum SubgraphInnerCmd {
+    AddNode {
+        node: Box<dyn ProcessNode>,
+        shared: SharedState,
+    },
+    RemoveNode(NodeId),
+    AddConnection(Connection),
+    RemoveConnectionTo(PortId),
+    LoadData {
+        node_id: NodeId,
+        data: serde_json::Value,
+    },
+    NotifyConnect {
+        node_id: NodeId,
+        input_port: usize,
+        source_type: PortType,
+    },
+    NotifyDisconnect {
+        node_id: NodeId,
+        input_port: usize,
+    },
 }
 
 // ---------------------------------------------------------------------------
@@ -309,4 +347,6 @@ pub trait ProcessNode: Send {
     fn load_data(&mut self, _data: &serde_json::Value) {}
 
     fn update_display(&self, _shared: &mut NodeSharedState) {}
+
+    fn as_any_mut(&mut self) -> &mut dyn Any { unimplemented!("as_any_mut not implemented") }
 }

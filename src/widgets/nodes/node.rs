@@ -30,6 +30,9 @@ pub trait NodeWidget: Any {
     fn min_content_height(&self) -> f32 { 0.0 }
     fn resizable(&self) -> bool { false }
 
+    /// Optional custom title bar color. Return None for default.
+    fn title_color(&self) -> Option<egui::Color32> { None }
+
     /// Show extra info/visuals in the inspector (e.g. scope waveform).
     fn show_inspector(&mut self, _ui: &mut Ui) {}
 

@@ -79,6 +79,21 @@ fn show_port_value(ui: &mut Ui, def: &PortDef, values: &[f32], base: usize) {
                     format!("P:{:.2} T:{:.2}", pan, tilt),
                 );
             }
+            PortType::ColorStack => {
+                for slot in 0..4 {
+                    let sb = base + slot * 3;
+                    let rv = values.get(sb).copied().unwrap_or(0.0).clamp(0.0, 1.0);
+                    let gv = values.get(sb + 1).copied().unwrap_or(0.0).clamp(0.0, 1.0);
+                    let bv = values.get(sb + 2).copied().unwrap_or(0.0).clamp(0.0, 1.0);
+                    let color = egui::Color32::from_rgb(
+                        (rv * 255.0) as u8, (gv * 255.0) as u8, (bv * 255.0) as u8,
+                    );
+                    let (cr, cp) = ui.allocate_painter(
+                        egui::Vec2::new(14.0, 12.0), egui::Sense::hover(),
+                    );
+                    cp.rect_filled(cr.rect, 1.0, color);
+                }
+            }
             _ => {
                 let val = values.get(base).copied().unwrap_or(0.0);
                 ui.colored_label(egui::Color32::from_gray(120), format!("{:.2}", val));

@@ -6,6 +6,7 @@ use crate::objects::object::Object;
 /// Manages object instances.
 pub struct ObjectManager {
     pub objects: Vec<Object>,
+    pub needs_sync: bool,
     next_id: u32,
     // Batch creation state.
     batch_count: i32,
@@ -18,6 +19,7 @@ impl ObjectManager {
     pub fn new() -> Self {
         Self {
             objects: Vec::new(),
+            needs_sync: false,
             next_id: 1,
             batch_count: 1,
             batch_start_ch: 1,
@@ -30,6 +32,7 @@ impl ObjectManager {
         let next_id = objects.iter().map(|o| o.id).max().unwrap_or(0) + 1;
         Self {
             objects,
+            needs_sync: false,
             next_id,
             batch_count: 1,
             batch_start_ch: 1,
@@ -77,6 +80,7 @@ impl ObjectManager {
                             let mut addr = obj.address.start_channel as i32;
                             if ui.add(egui::DragValue::new(&mut addr).range(1..=512)).changed() {
                                 obj.address.start_channel = addr as u16;
+                                self.needs_sync = true;
                             }
                         });
                         ui.horizontal(|ui| {
@@ -84,16 +88,19 @@ impl ObjectManager {
                             let mut u = obj.address.universe as i32;
                             if ui.add(egui::DragValue::new(&mut u).range(0..=15)).changed() {
                                 obj.address.universe = u as u8;
+                                self.needs_sync = true;
                             }
                             ui.label("Subnet:");
                             let mut s = obj.address.subnet as i32;
                             if ui.add(egui::DragValue::new(&mut s).range(0..=15)).changed() {
                                 obj.address.subnet = s as u8;
+                                self.needs_sync = true;
                             }
                             ui.label("Net:");
                             let mut n = obj.address.net as i32;
                             if ui.add(egui::DragValue::new(&mut n).range(0..=127)).changed() {
                                 obj.address.net = n as u8;
+                                self.needs_sync = true;
                             }
                         });
 
@@ -107,9 +114,13 @@ impl ObjectManager {
                             egui::ComboBox::from_id_salt(("iface", obj.id))
                                 .selected_text(current)
                                 .show_ui(ui, |ui| {
-                                    if ui.selectable_value(&mut obj.interface_id, 0, "None").clicked() {}
+                                    if ui.selectable_value(&mut obj.interface_id, 0, "None").changed() {
+                                        self.needs_sync = true;
+                                    }
                                     for (iid, iname) in interface_names {
-                                        if ui.selectable_value(&mut obj.interface_id, *iid, iname).clicked() {}
+                                        if ui.selectable_value(&mut obj.interface_id, *iid, iname).changed() {
+                                            self.needs_sync = true;
+                                        }
                                     }
                                 });
                         });
@@ -130,6 +141,7 @@ impl ObjectManager {
 
         if let Some(id) = remove_id {
             self.objects.retain(|o| o.id != id);
+            self.needs_sync = true;
         }
 
         // Batch creation.
@@ -191,6 +203,7 @@ impl ObjectManager {
                     );
                     self.objects.push(obj);
                 }
+                self.needs_sync = true;
                 // Advance start channel for next batch.
                 self.batch_start_ch = self.batch_start_ch + self.batch_count * stride;
             }

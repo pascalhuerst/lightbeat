@@ -3,8 +3,10 @@ use std::path::PathBuf;
 use egui;
 use serde::{Deserialize, Serialize};
 
+use crate::engine::nodes::meta::subgraph::{BRIDGE_IN_NODE_ID, BRIDGE_OUT_NODE_ID, SubgraphPortDef};
 use crate::engine::types::{NodeId, ParamDef, ParamValue, PortDir, PortId};
-use crate::widgets::nodes::NodeGraph;
+use crate::widgets::nodes::{GraphLevel, NodeGraph};
+use crate::widgets::nodes::meta::subgraph::SubgraphWidget;
 
 // ---------------------------------------------------------------------------
 // Save format
@@ -27,6 +29,9 @@ pub struct SavedNode {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[allow(dead_code)]
     pub data: Option<serde_json::Value>,
+    /// Inner graph for Subgraph nodes (recursive).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub inner_graph: Option<ProjectFile>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -74,11 +79,19 @@ pub struct SavedConnection {
 // Save
 // ---------------------------------------------------------------------------
 
-pub fn save_graph(graph: &NodeGraph) -> ProjectFile {
+/// Save a single graph level to a ProjectFile.
+fn save_level(level: &GraphLevel, graph: &NodeGraph) -> ProjectFile {
     let mut nodes = Vec::new();
 
-    for i in 0..graph.node_count() {
-        let (node, state) = graph.node_and_state(i);
+    for i in 0..level.nodes.len() {
+        let node = level.nodes[i].as_ref();
+        let state = &level.states[i];
+        let node_id = state.id;
+
+        // Skip bridge pseudo-nodes — they're reconstructed on load.
+        if node.type_name() == "GraphInput" || node.type_name() == "GraphOutput" {
+            continue;
+        }
 
         // Read params from shared state.
         let shared = node.shared_state().lock().unwrap();
@@ -94,19 +107,29 @@ pub fn save_graph(graph: &NodeGraph) -> ProjectFile {
         }
 
         let data = shared.save_data.clone();
+        drop(shared);
+
+        // For Subgraph nodes, recursively save the inner level.
+        let inner_graph = if node.type_name() == "Subgraph" {
+            graph.find_level_for_subgraph(node_id)
+                .map(|inner_level| save_level(inner_level, graph))
+        } else {
+            None
+        };
 
         nodes.push(SavedNode {
             type_name: node.type_name().to_string(),
-            id: state.id.0,
+            id: node_id.0,
             pos: [state.pos.x, state.pos.y],
             size: state.size_override.map(|s| [s.x, s.y]),
             params,
             data,
+            inner_graph,
         });
     }
 
-    let connections = graph
-        .connections()
+    let connections = level
+        .connections
         .iter()
         .map(|c| SavedConnection {
             from_node: c.from.node.0,
@@ -117,6 +140,11 @@ pub fn save_graph(graph: &NodeGraph) -> ProjectFile {
         .collect();
 
     ProjectFile { nodes, connections }
+}
+
+pub fn save_graph(graph: &NodeGraph) -> ProjectFile {
+    // Always save the root level, regardless of which level is active.
+    save_level(graph.root_level(), graph)
 }
 
 // ---------------------------------------------------------------------------
@@ -166,18 +194,56 @@ pub fn load_graph(graph: &mut NodeGraph, project: &ProjectFile) -> Vec<usize> {
                 }
             }
 
+            // For Subgraph nodes, restore port definitions on the widget
+            // BEFORE connections are loaded (so ports exist for wiring).
+            if saved.type_name == "Subgraph" {
+                if let Some(data) = &saved.data {
+                    let n = graph.node_mut(idx);
+                    if let Some(sub) = n.as_any_mut().downcast_mut::<SubgraphWidget>() {
+                        if let Some(inputs) = data.get("inputs").and_then(|v| v.as_array()) {
+                            sub.input_defs = inputs.iter()
+                                .filter_map(|v| serde_json::from_value::<SubgraphPortDef>(v.clone()).ok())
+                                .collect();
+                        }
+                        if let Some(outputs) = data.get("outputs").and_then(|v| v.as_array()) {
+                            sub.output_defs = outputs.iter()
+                                .filter_map(|v| serde_json::from_value::<SubgraphPortDef>(v.clone()).ok())
+                                .collect();
+                        }
+                        sub.push_config();
+                    }
+                }
+
+                if let Some(inner_project) = &saved.inner_graph {
+                    // Navigate into the subgraph to create its inner level.
+                    graph.navigate_into_by_index(idx);
+
+                    // Recursively load inner nodes (including bridge connections if saved).
+                    let _inner_indices = load_graph(graph, inner_project);
+
+                    // Navigate back to parent.
+                    graph.navigate_up();
+                }
+            }
+
             indices.push(idx);
         }
         // Unknown types are silently skipped.
     }
 
     // Collect loaded node IDs for filtering connections.
-    let loaded_ids: Vec<u64> = indices.iter()
-        .map(|&idx| {
-            let (node, _) = graph.node_and_state(idx);
-            node.node_id().0
-        })
-        .collect();
+    // Include bridge node IDs so bridge connections are preserved.
+    let loaded_ids: Vec<u64> = {
+        let mut ids: Vec<u64> = indices.iter()
+            .map(|&idx| {
+                let (node, _) = graph.node_and_state(idx);
+                node.node_id().0
+            })
+            .collect();
+        ids.push(BRIDGE_IN_NODE_ID.0);
+        ids.push(crate::engine::nodes::meta::subgraph::BRIDGE_OUT_NODE_ID.0);
+        ids
+    };
 
     // Restore connections (only between nodes that were actually loaded).
     for sc in &project.connections {

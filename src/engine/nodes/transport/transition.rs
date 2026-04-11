@@ -1,29 +1,30 @@
 use super::easing::EasingCurve;
 use crate::engine::types::*;
 
-const MAX_CHANNELS: usize = 3; // Color is the widest at 3
+const MAX_CHANNELS: usize = 12; // ColorStack is the widest at 4×RGB
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TransitionMode {
     Float,
     Color,
+    ColorStack,
 }
 
 impl TransitionMode {
     pub fn label(&self) -> &'static str {
-        match self { Self::Float => "Float", Self::Color => "Color" }
+        match self { Self::Float => "Float", Self::Color => "Color", Self::ColorStack => "Color Stack" }
     }
     pub fn value_type(&self) -> PortType {
-        match self { Self::Float => PortType::Untyped, Self::Color => PortType::Color }
+        match self { Self::Float => PortType::Untyped, Self::Color => PortType::Color, Self::ColorStack => PortType::ColorStack }
     }
     pub fn channels(&self) -> usize {
-        match self { Self::Float => 1, Self::Color => 3 }
+        match self { Self::Float => 1, Self::Color => 3, Self::ColorStack => 12 }
     }
     pub fn from_index(i: usize) -> Self {
-        match i { 1 => Self::Color, _ => Self::Float }
+        match i { 1 => Self::Color, 2 => Self::ColorStack, _ => Self::Float }
     }
     pub fn to_index(&self) -> usize {
-        match self { Self::Float => 0, Self::Color => 1 }
+        match self { Self::Float => 0, Self::Color => 1, Self::ColorStack => 2 }
     }
 }
 
@@ -166,7 +167,7 @@ impl ProcessNode for TransitionProcessNode {
             ParamDef::Choice {
                 name: "Mode".into(),
                 value: self.mode.to_index(),
-                options: vec!["Float".into(), "Color".into()],
+                options: vec!["Float".into(), "Color".into(), "Color Stack".into()],
             },
             ParamDef::Choice {
                 name: "Curve".into(),

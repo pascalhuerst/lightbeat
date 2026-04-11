@@ -5,7 +5,7 @@ use egui::{self, Color32, Ui};
 
 use crate::engine::nodes::output::group::GroupNodeDisplay;
 use crate::engine::types::*;
-use crate::objects::group::{Group, GroupCapability};
+use crate::objects::group::Group;
 use crate::objects::object::Object;
 use crate::widgets::nodes::node::NodeWidget;
 use crate::widgets::nodes::types::UiPortDef;
@@ -31,10 +31,6 @@ pub struct GroupWidget {
     group_ctx: SharedGroupContext,
     /// Which group IDs are selected.
     selected_group_ids: Vec<u32>,
-    /// Cached capabilities from selected groups.
-    capabilities: Vec<GroupCapability>,
-    /// Needs to push config to engine.
-    needs_engine_update: bool,
 }
 
 impl GroupWidget {
@@ -44,51 +40,13 @@ impl GroupWidget {
             shared,
             group_ctx,
             selected_group_ids: Vec::new(),
-            capabilities: Vec::new(),
-            needs_engine_update: false,
         }
-    }
-
-    pub fn group_name(&self) -> String {
-        "Group Output".to_string()
-    }
-
-    fn build_inputs(caps: &[GroupCapability]) -> Vec<UiPortDef> {
-        caps.iter().map(|cap| {
-            let (name, pt) = match cap {
-                GroupCapability::Dimmer => ("dimmer", PortType::Untyped),
-                GroupCapability::Color => ("color", PortType::Color),
-                GroupCapability::Position => ("position", PortType::Position),
-            };
-            UiPortDef::from_def(&PortDef::new(name, pt))
-        }).collect()
-    }
-
-    fn recompute_capabilities(&mut self) {
-        let ctx = self.group_ctx.lock().unwrap();
-        let mut caps = Vec::new();
-        for gid in &self.selected_group_ids {
-            if let Some(group) = ctx.groups.iter().find(|g| g.id == *gid) {
-                for cap in group.capabilities(&ctx.objects) {
-                    if !caps.contains(&cap) {
-                        caps.push(cap);
-                    }
-                }
-            }
-        }
-        caps.sort_by_key(|c| match c {
-            GroupCapability::Dimmer => 0,
-            GroupCapability::Color => 1,
-            GroupCapability::Position => 2,
-        });
-        self.capabilities = caps;
     }
 
     /// Push the current group selection to the engine via shared state.
     fn push_config_to_engine(&self) {
         let ctx = self.group_ctx.lock().unwrap();
 
-        // Collect all object IDs from selected groups.
         let mut object_ids = Vec::new();
         let mut group_names = Vec::new();
         for gid in &self.selected_group_ids {
@@ -102,22 +60,14 @@ impl GroupWidget {
             }
         }
 
-        // Encode config as JSON and push via pending_params with a special index.
         let config = serde_json::json!({
             "group_ids": self.selected_group_ids,
             "group_names": group_names,
             "object_ids": object_ids,
-            "capabilities": self.capabilities.iter().map(|c| match c {
-                GroupCapability::Dimmer => "Dimmer",
-                GroupCapability::Color => "Color",
-                GroupCapability::Position => "Position",
-            }).collect::<Vec<_>>(),
         });
 
         let mut shared = self.shared.lock().unwrap();
-        // Use a special convention: index 999 = full reconfigure.
-        // Store the JSON in save_data temporarily for the engine to pick up.
-        shared.save_data = Some(config);
+        shared.pending_config = Some(config);
     }
 }
 
@@ -127,7 +77,10 @@ impl NodeWidget for GroupWidget {
     fn title(&self) -> &str { "Group Output" }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> {
-        Self::build_inputs(&self.capabilities)
+        vec![
+            UiPortDef::from_def(&PortDef::new("palette", PortType::ColorStack)),
+            UiPortDef::from_def(&PortDef::new("dimmer", PortType::Untyped)),
+        ]
     }
     fn ui_outputs(&self) -> Vec<UiPortDef> { vec![] }
 
@@ -147,7 +100,7 @@ impl NodeWidget for GroupWidget {
         if self.selected_group_ids.is_empty() {
             ui.colored_label(Color32::from_gray(120), "No groups");
         } else {
-            ui.colored_label(Color32::from_gray(140), format!("{} groups, {} objects", self.selected_group_ids.len(), obj_count));
+            ui.colored_label(Color32::from_gray(140), format!("{} groups, {} obj", self.selected_group_ids.len(), obj_count));
         }
     }
 
@@ -174,7 +127,6 @@ impl NodeWidget for GroupWidget {
         }
 
         if changed {
-            self.recompute_capabilities();
             self.push_config_to_engine();
         }
     }
