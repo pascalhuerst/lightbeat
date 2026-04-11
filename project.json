@@ -4,8 +4,8 @@
       "type_name": "Clock",
       "id": 12,
       "pos": [
-        -350.78918,
-        -45.470425
+        -495.5815,
+        39.343864
       ],
       "params": []
     },
@@ -13,13 +13,13 @@
       "type_name": "Phase Scaler",
       "id": 13,
       "pos": [
-        -159.33212,
-        6.230369
+        -225.05666,
+        163.26883
       ],
       "params": [
         {
           "index": 0,
-          "value": 0
+          "value": -2
         },
         {
           "index": 1,
@@ -31,12 +31,12 @@
       "type_name": "Step Sequencer",
       "id": 14,
       "pos": [
-        0.1064927,
-        175.21826
+        3.184616,
+        171.21436
       ],
       "size": [
-        269.5556,
-        260.5478
+        288.33994,
+        256.53848
       ],
       "params": [
         {
@@ -47,114 +47,26 @@
       "data": {
         "values": [
           0.5533691644668579,
-          0.10672777891159058,
-          0.7313876152038574,
-          0.04145532846450806,
-          0.937792956829071,
-          0.07449662685394287,
-          0.015185534954071045,
-          0.559295117855072
+          0.003952503204345703,
+          0.0006414055824279785,
+          0.0006900429725646973,
+          0.0008684992790222168,
+          0.0042989253997802734,
+          0.008482098579406738,
+          0.0027678608894348145
         ]
       }
-    },
-    {
-      "type_name": "ADSR",
-      "id": 15,
-      "pos": [
-        449.9466,
-        179.8797
-      ],
-      "size": [
-        180.0,
-        324.10754
-      ],
-      "params": [
-        {
-          "index": 0,
-          "value": 0.0010000000474974513
-        },
-        {
-          "index": 1,
-          "value": 0.0010000000474974513
-        },
-        {
-          "index": 2,
-          "value": 1.0
-        },
-        {
-          "index": 3,
-          "value": 0.7009999752044678
-        }
-      ]
-    },
-    {
-      "type_name": "Scope",
-      "id": 16,
-      "pos": [
-        886.44684,
-        -2.9341187
-      ],
-      "size": [
-        272.76953,
-        161.8711
-      ],
-      "params": [
-        {
-          "index": 0,
-          "value": 0.0
-        },
-        {
-          "index": 1,
-          "value": 200
-        },
-        {
-          "index": 2,
-          "value": -1.0
-        },
-        {
-          "index": 3,
-          "value": 1.0
-        }
-      ]
-    },
-    {
-      "type_name": "Const Value",
-      "id": 18,
-      "pos": [
-        305.90723,
-        248.86777
-      ],
-      "params": [
-        {
-          "index": 0,
-          "value": 0.9999997615814209
-        }
-      ]
-    },
-    {
-      "type_name": "Color Merge",
-      "id": 28,
-      "pos": [
-        728.9402,
-        246.34335
-      ],
-      "params": [
-        {
-          "index": 0,
-          "value": 0
-        }
-      ]
     },
     {
       "type_name": "Lookup",
       "id": 30,
       "pos": [
-        46.40207,
-        556.06934
+        -0.06270367,
+        444.6261
       ],
       "size": [
-        329.68658,
-        76.0
+        269.50293,
+        78.43776
       ],
       "params": [
         {
@@ -174,18 +86,18 @@
           0.0,
           0.0,
           0.0,
-          0.4000000059604645,
-          0.0,
-          0.3700000047683716,
           0.0,
           0.0,
           0.0,
-          0.44999998807907104,
+          0.24386310577392578,
+          1.0,
+          0.0,
+          0.0,
           0.0,
           1.0,
-          1.0,
-          1.0,
-          0.33000001311302185,
+          0.0,
+          0.0,
+          0.0,
           0.0,
           0.0,
           0.3700000047683716,
@@ -201,10 +113,287 @@
       "type_name": "Group Output",
       "id": 31,
       "pos": [
-        1045.3503,
-        473.66592
+        695.79193,
+        305.05273
       ],
       "params": []
+    },
+    {
+      "type_name": "Transition",
+      "id": 32,
+      "pos": [
+        430.5795,
+        309.276
+      ],
+      "params": [
+        {
+          "index": 0,
+          "value": 1
+        },
+        {
+          "index": 1,
+          "value": 6
+        }
+      ]
+    },
+    {
+      "type_name": "Color Display",
+      "id": 33,
+      "pos": [
+        693.0043,
+        398.08664
+      ],
+      "size": [
+        190.80421,
+        166.5361
+      ],
+      "params": []
+    },
+    {
+      "type_name": "Scope",
+      "id": 34,
+      "pos": [
+        13.878724,
+        -53.421978
+      ],
+      "size": [
+        432.21558,
+        173.07779
+      ],
+      "params": [
+        {
+          "index": 0,
+          "value": 0.5
+        },
+        {
+          "index": 1,
+          "value": 512
+        },
+        {
+          "index": 2,
+          "value": 2.9802322387695312e-8
+        },
+        {
+          "index": 3,
+          "value": 1.0
+        }
+      ]
+    },
+    {
+      "type_name": "Phase Scaler",
+      "id": 35,
+      "pos": [
+        -223.84332,
+        248.67747
+      ],
+      "params": [
+        {
+          "index": 0,
+          "value": 1
+        },
+        {
+          "index": 1,
+          "value": 0.0
+        }
+      ]
+    },
+    {
+      "type_name": "Scope",
+      "id": 36,
+      "pos": [
+        681.35803,
+        -17.614862
+      ],
+      "size": [
+        455.9162,
+        249.69777
+      ],
+      "params": [
+        {
+          "index": 0,
+          "value": 0.5
+        },
+        {
+          "index": 1,
+          "value": 512
+        },
+        {
+          "index": 2,
+          "value": 2.9802322387695312e-8
+        },
+        {
+          "index": 3,
+          "value": 1.0
+        }
+      ]
+    },
+    {
+      "type_name": "Change Detect",
+      "id": 37,
+      "pos": [
+        1086.9283,
+        -268.87228
+      ],
+      "params": [
+        {
+          "index": 0,
+          "value": 0.0010000000474974513
+        }
+      ]
+    },
+    {
+      "type_name": "Transition",
+      "id": 38,
+      "pos": [
+        447.03287,
+        172.79822
+      ],
+      "params": [
+        {
+          "index": 0,
+          "value": 0
+        },
+        {
+          "index": 1,
+          "value": 6
+        }
+      ]
+    },
+    {
+      "type_name": "Lookup",
+      "id": 40,
+      "pos": [
+        7.953273,
+        544.4917
+      ],
+      "size": [
+        269.50293,
+        78.43776
+      ],
+      "params": [
+        {
+          "index": 0,
+          "value": 0
+        },
+        {
+          "index": 1,
+          "value": 2
+        }
+      ],
+      "data": {
+        "entry_count": 2,
+        "mode": 0,
+        "table": [
+          0.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "type_name": "Phase Scaler",
+      "id": 41,
+      "pos": [
+        -228.54034,
+        358.78607
+      ],
+      "params": [
+        {
+          "index": 0,
+          "value": 2
+        },
+        {
+          "index": 1,
+          "value": 0.0
+        }
+      ]
+    },
+    {
+      "type_name": "Clock Gen",
+      "id": 42,
+      "pos": [
+        -51.404232,
+        -329.5818
+      ],
+      "params": [
+        {
+          "index": 0,
+          "value": 16
+        }
+      ]
+    },
+    {
+      "type_name": "Scope",
+      "id": 43,
+      "pos": [
+        236.2375,
+        -342.9266
+      ],
+      "size": [
+        506.42725,
+        243.96382
+      ],
+      "params": [
+        {
+          "index": 0,
+          "value": 0.5
+        },
+        {
+          "index": 1,
+          "value": 512
+        },
+        {
+          "index": 2,
+          "value": 2.9802322387695312e-8
+        },
+        {
+          "index": 3,
+          "value": 1.0
+        }
+      ]
+    },
+    {
+      "type_name": "Scope",
+      "id": 44,
+      "pos": [
+        1359.1729,
+        -348.24957
+      ],
+      "size": [
+        506.42725,
+        243.96382
+      ],
+      "params": [
+        {
+          "index": 0,
+          "value": 0.5
+        },
+        {
+          "index": 1,
+          "value": 512
+        },
+        {
+          "index": 2,
+          "value": 0.0
+        },
+        {
+          "index": 3,
+          "value": 1.0
+        }
+      ]
+    },
+    {
+      "type_name": "Value Display",
+      "id": 45,
+      "pos": [
+        1295.955,
+        -506.6224
+      ],
+      "params": [
+        {
+          "index": 0,
+          "value": 1
+        }
+      ]
     }
   ],
   "connections": [
@@ -221,33 +410,135 @@
       "to_port": 0
     },
     {
-      "from_node": 18,
+      "from_node": 30,
       "from_port": 0,
-      "to_node": 15,
-      "to_port": 1
+      "to_node": 32,
+      "to_port": 2
     },
     {
-      "from_node": 15,
-      "from_port": 1,
-      "to_node": 16,
+      "from_node": 32,
+      "from_port": 0,
+      "to_node": 33,
       "to_port": 0
     },
     {
       "from_node": 14,
       "from_port": 0,
-      "to_node": 15,
+      "to_node": 32,
       "to_port": 0
     },
     {
-      "from_node": 15,
-      "from_port": 1,
-      "to_node": 28,
+      "from_node": 12,
+      "from_port": 2,
+      "to_node": 35,
       "to_port": 0
+    },
+    {
+      "from_node": 13,
+      "from_port": 0,
+      "to_node": 34,
+      "to_port": 0
+    },
+    {
+      "from_node": 35,
+      "from_port": 0,
+      "to_node": 34,
+      "to_port": 1
+    },
+    {
+      "from_node": 35,
+      "from_port": 0,
+      "to_node": 32,
+      "to_port": 1
+    },
+    {
+      "from_node": 14,
+      "from_port": 0,
+      "to_node": 38,
+      "to_port": 0
+    },
+    {
+      "from_node": 35,
+      "from_port": 0,
+      "to_node": 38,
+      "to_port": 1
+    },
+    {
+      "from_node": 14,
+      "from_port": 0,
+      "to_node": 36,
+      "to_port": 0
+    },
+    {
+      "from_node": 38,
+      "from_port": 0,
+      "to_node": 36,
+      "to_port": 1
     },
     {
       "from_node": 14,
       "from_port": 2,
       "to_node": 30,
+      "to_port": 0
+    },
+    {
+      "from_node": 14,
+      "from_port": 2,
+      "to_node": 40,
+      "to_port": 0
+    },
+    {
+      "from_node": 40,
+      "from_port": 0,
+      "to_node": 38,
+      "to_port": 2
+    },
+    {
+      "from_node": 12,
+      "from_port": 2,
+      "to_node": 42,
+      "to_port": 0
+    },
+    {
+      "from_node": 42,
+      "from_port": 0,
+      "to_node": 43,
+      "to_port": 0
+    },
+    {
+      "from_node": 12,
+      "from_port": 2,
+      "to_node": 43,
+      "to_port": 1
+    },
+    {
+      "from_node": 42,
+      "from_port": 0,
+      "to_node": 37,
+      "to_port": 0
+    },
+    {
+      "from_node": 42,
+      "from_port": 0,
+      "to_node": 44,
+      "to_port": 0
+    },
+    {
+      "from_node": 14,
+      "from_port": 1,
+      "to_node": 37,
+      "to_port": 1
+    },
+    {
+      "from_node": 37,
+      "from_port": 1,
+      "to_node": 44,
+      "to_port": 1
+    },
+    {
+      "from_node": 37,
+      "from_port": 0,
+      "to_node": 45,
       "to_port": 0
     }
   ]

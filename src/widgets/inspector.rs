@@ -1,8 +1,8 @@
-use egui::Ui;
+use egui::{self, Ui};
 
 use super::nodes::node::NodeWidget;
 use super::nodes::types::PortTypeUi;
-use crate::engine::types::{ParamDef, ParamValue};
+use crate::engine::types::{ParamDef, ParamValue, PortDef, PortType};
 
 /// Read params from a node's shared state.
 fn read_params(node: &dyn NodeWidget) -> Vec<ParamDef> {
@@ -38,6 +38,55 @@ fn read_output_value(node: &dyn NodeWidget, port_index: usize) -> f32 {
         .unwrap_or(0.0)
 }
 
+/// Render a port value with type-specific preview.
+fn show_port_value(ui: &mut Ui, def: &PortDef, values: &[f32], base: usize) {
+    ui.horizontal(|ui| {
+        // Port type dot.
+        let (r, painter) = ui.allocate_painter(
+            egui::Vec2::new(10.0, 10.0),
+            egui::Sense::hover(),
+        );
+        painter.circle_filled(r.rect.center(), 4.0, def.port_type.color());
+
+        ui.label(&def.name);
+
+        // Type-specific value display.
+        match def.port_type {
+            PortType::Color => {
+                let rv = values.get(base).copied().unwrap_or(0.0).clamp(0.0, 1.0);
+                let gv = values.get(base + 1).copied().unwrap_or(0.0).clamp(0.0, 1.0);
+                let bv = values.get(base + 2).copied().unwrap_or(0.0).clamp(0.0, 1.0);
+                let color = egui::Color32::from_rgb(
+                    (rv * 255.0) as u8,
+                    (gv * 255.0) as u8,
+                    (bv * 255.0) as u8,
+                );
+                let (cr, cp) = ui.allocate_painter(
+                    egui::Vec2::new(32.0, 12.0),
+                    egui::Sense::hover(),
+                );
+                cp.rect_filled(cr.rect, 2.0, color);
+                ui.colored_label(
+                    egui::Color32::from_gray(100),
+                    format!("#{:02X}{:02X}{:02X}", (rv * 255.0) as u8, (gv * 255.0) as u8, (bv * 255.0) as u8),
+                );
+            }
+            PortType::Position => {
+                let pan = values.get(base).copied().unwrap_or(0.0);
+                let tilt = values.get(base + 1).copied().unwrap_or(0.0);
+                ui.colored_label(
+                    egui::Color32::from_gray(120),
+                    format!("P:{:.2} T:{:.2}", pan, tilt),
+                );
+            }
+            _ => {
+                let val = values.get(base).copied().unwrap_or(0.0);
+                ui.colored_label(egui::Color32::from_gray(120), format!("{:.2}", val));
+            }
+        }
+    });
+}
+
 /// Draw the inspector panel for a single selected node.
 pub fn show_inspector(ui: &mut Ui, node: &mut dyn NodeWidget) {
     ui.heading(node.title());
@@ -47,17 +96,14 @@ pub fn show_inspector(ui: &mut Ui, node: &mut dyn NodeWidget) {
     let inputs = node.ui_inputs();
     if !inputs.is_empty() {
         ui.label(egui::RichText::new("Inputs").strong().size(11.0));
-        for (i, port) in inputs.iter().enumerate() {
-            let val = read_input_value(node, i);
-            ui.horizontal(|ui| {
-                let (r, painter) = ui.allocate_painter(
-                    egui::Vec2::new(10.0, 10.0),
-                    egui::Sense::hover(),
-                );
-                painter.circle_filled(r.rect.center(), 4.0, port.def.port_type.color());
-                ui.label(&port.def.name);
-                ui.colored_label(egui::Color32::from_gray(120), format!("{:.2}", val));
-            });
+        let shared = node.shared_state().lock().unwrap();
+        let values = shared.inputs.clone();
+        drop(shared);
+        let mut ch_base = 0;
+        for port in &inputs {
+            let cpe = port.def.port_type.channel_count();
+            show_port_value(ui, &port.def, &values, ch_base);
+            ch_base += cpe;
         }
         ui.add_space(4.0);
     }
@@ -65,17 +111,14 @@ pub fn show_inspector(ui: &mut Ui, node: &mut dyn NodeWidget) {
     let outputs = node.ui_outputs();
     if !outputs.is_empty() {
         ui.label(egui::RichText::new("Outputs").strong().size(11.0));
-        for (i, port) in outputs.iter().enumerate() {
-            let val = read_output_value(node, i);
-            ui.horizontal(|ui| {
-                let (r, painter) = ui.allocate_painter(
-                    egui::Vec2::new(10.0, 10.0),
-                    egui::Sense::hover(),
-                );
-                painter.circle_filled(r.rect.center(), 4.0, port.def.port_type.color());
-                ui.label(&port.def.name);
-                ui.colored_label(egui::Color32::from_gray(120), format!("{:.2}", val));
-            });
+        let shared = node.shared_state().lock().unwrap();
+        let values = shared.outputs.clone();
+        drop(shared);
+        let mut ch_base = 0;
+        for port in &outputs {
+            let cpe = port.def.port_type.channel_count();
+            show_port_value(ui, &port.def, &values, ch_base);
+            ch_base += cpe;
         }
         ui.add_space(4.0);
     }

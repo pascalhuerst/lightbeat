@@ -48,7 +48,8 @@ pub struct TransitionProcessNode {
     to: [f32; MAX_CHANNELS],
     output: [f32; MAX_CHANNELS],
     active: bool,
-    phase_at_trigger: f32,
+    progress: f32,
+    prev_phase: f32,
     inputs: Vec<PortDef>,
     outputs: Vec<PortDef>,
 }
@@ -68,7 +69,8 @@ impl TransitionProcessNode {
             to: [0.0; MAX_CHANNELS],
             output: [0.0; MAX_CHANNELS],
             active: false,
-            phase_at_trigger: 0.0,
+            progress: 0.0,
+            prev_phase: 0.0,
             inputs: Self::build_inputs(mode),
             outputs: Self::build_outputs(mode),
         }
@@ -125,25 +127,29 @@ impl ProcessNode for TransitionProcessNode {
             self.from = self.output;
             self.to = self.value_in;
             self.active = true;
-            self.phase_at_trigger = self.phase_in;
+            self.progress = 0.0;
         }
         self.prev_trigger = gate;
 
-        if self.active {
-            // Compute progress: how far the phase has advanced since trigger,
-            // normalized to 0..1 over one full phase cycle.
-            let mut progress = self.phase_in - self.phase_at_trigger;
-            if progress < 0.0 { progress += 1.0; }
-            let progress = progress.clamp(0.0, 1.0);
+        // Accumulate progress from phase delta.
+        let mut delta = self.phase_in - self.prev_phase;
+        if delta < -0.5 { delta += 1.0; }
+        if delta > 0.5 { delta -= 1.0; }
+        self.prev_phase = self.phase_in;
 
-            let eased = self.curve.apply(progress);
+        if self.active {
+            if delta > 0.0 {
+                self.progress += delta;
+            }
+            let p = self.progress.clamp(0.0, 1.0);
+
+            let eased = self.curve.apply(p);
             let ch = self.mode.channels();
             for i in 0..ch {
                 self.output[i] = self.from[i] + (self.to[i] - self.from[i]) * eased;
             }
 
-            // Complete when phase wraps back.
-            if progress >= 0.999 {
+            if self.progress >= 1.0 {
                 self.output = self.to;
                 self.active = false;
             }
@@ -171,27 +177,23 @@ impl ProcessNode for TransitionProcessNode {
     }
 
     fn set_param(&mut self, index: usize, value: ParamValue) {
-        match (index, value) {
-            (0, ParamValue::Choice(v)) => {
-                let new_mode = TransitionMode::from_index(v);
+        match index {
+            0 => {
+                let new_mode = TransitionMode::from_index(value.as_usize());
                 if new_mode != self.mode {
                     self.mode = new_mode;
                     self.inputs = Self::build_inputs(new_mode);
                     self.outputs = Self::build_outputs(new_mode);
                 }
             }
-            (1, ParamValue::Choice(v)) => {
-                self.curve = EasingCurve::from_index(v);
-            }
+            1 => self.curve = EasingCurve::from_index(value.as_usize()),
             _ => {}
         }
     }
 
     fn update_display(&self, shared: &mut NodeSharedState) {
         let progress = if self.active {
-            let mut p = self.phase_in - self.phase_at_trigger;
-            if p < 0.0 { p += 1.0; }
-            p.clamp(0.0, 1.0)
+            self.progress.clamp(0.0, 1.0)
         } else {
             0.0
         };

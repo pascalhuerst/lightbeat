@@ -100,11 +100,11 @@ impl ProcessNode for ScopeProcessNode {
     }
 
     fn set_param(&mut self, index: usize, value: ParamValue) {
-        match (index, value) {
-            (0, ParamValue::Float(v)) => self.trigger_threshold = v,
-            (1, ParamValue::Int(v)) => self.width_samples = v as usize,
-            (2, ParamValue::Float(v)) => self.range_min = v,
-            (3, ParamValue::Float(v)) => self.range_max = v,
+        match index {
+            0 => self.trigger_threshold = value.as_f32(),
+            1 => self.width_samples = value.as_i64() as usize,
+            2 => self.range_min = value.as_f32(),
+            3 => self.range_max = value.as_f32(),
             _ => {}
         }
     }

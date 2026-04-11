@@ -58,8 +58,6 @@ impl ProcessNode for ConstantProcessNode {
     }
 
     fn set_param(&mut self, index: usize, value: ParamValue) {
-        if let (0, ParamValue::Float(v)) = (index, value) {
-            self.value = v;
-        }
+        if index == 0 { self.value = value.as_f32(); }
     }
 }

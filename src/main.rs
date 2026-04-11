@@ -21,17 +21,21 @@ use engine::types::{new_shared_state, EngineCommand, NodeId, PortType};
 use engine::EngineHandle;
 use engine::nodes::display::color_display::ColorDisplayProcessNode;
 use engine::nodes::display::scope::ScopeProcessNode;
+use engine::nodes::display::value_display::ValueDisplayProcessNode;
 use engine::nodes::io::clock::ClockProcessNode;
+use engine::nodes::math::change_detect::ChangeDetectProcessNode;
 use engine::nodes::math::color_ops::{ColorMergeProcessNode, ColorSplitProcessNode};
 use engine::nodes::math::compare::{CompareOp, CompareProcessNode};
 use engine::nodes::math::constant::ConstantProcessNode;
 use engine::nodes::math::lookup::LookupProcessNode;
 use engine::nodes::math::logic_gate::{LogicOp, LogicGateProcessNode};
 use engine::nodes::math::math_op::{MathOp, MathProcessNode};
+use engine::nodes::math::scaler::ScalerProcessNode;
 use engine::nodes::math::oscillator::{OscFunc, OscillatorProcessNode};
 use engine::nodes::math::position_ops::{PositionMergeProcessNode, PositionSplitProcessNode};
 use engine::nodes::output::group::GroupProcessNode;
 use engine::nodes::transport::clock_divider::ClockDividerProcessNode;
+use engine::nodes::transport::clock_gen::ClockGenProcessNode;
 use engine::nodes::transport::delay::TriggerDelayProcessNode;
 use engine::nodes::transport::envelope::EnvelopeProcessNode;
 use engine::nodes::transport::transition::TransitionProcessNode;
@@ -39,17 +43,21 @@ use engine::nodes::transport::phase_scaler::PhaseScalerProcessNode;
 use engine::nodes::transport::step_sequencer::StepSequencerProcessNode;
 use widgets::nodes::display::color_display::ColorDisplayWidget;
 use widgets::nodes::display::scope::ScopeWidget;
+use widgets::nodes::display::value_display::ValueDisplayWidget;
 use widgets::nodes::io::clock::ClockWidget;
+use widgets::nodes::math::change_detect::ChangeDetectWidget;
 use widgets::nodes::math::color_ops::{ColorMergeWidget, ColorSplitWidget};
 use widgets::nodes::math::compare::CompareWidget;
 use widgets::nodes::math::constant::ConstantWidget;
 use widgets::nodes::math::lookup::LookupWidget;
 use widgets::nodes::math::logic_gate::LogicGateWidget;
 use widgets::nodes::math::math_op::MathWidget;
+use widgets::nodes::math::scaler::ScalerWidget;
 use widgets::nodes::math::oscillator::OscillatorWidget;
 use widgets::nodes::math::position_ops::{PositionMergeWidget, PositionSplitWidget};
 use widgets::nodes::output::group::GroupWidget;
 use widgets::nodes::transport::clock_divider::ClockDividerWidget;
+use widgets::nodes::transport::clock_gen::ClockGenWidget;
 use widgets::nodes::transport::delay::TriggerDelayWidget;
 use widgets::nodes::transport::envelope::EnvelopeWidget;
 use widgets::nodes::transport::transition::TransitionWidget;
@@ -71,6 +79,8 @@ struct LightBeatApp {
     show_object_list: bool,
     show_interface_list: bool,
     show_group_list: bool,
+    show_color_stacks: bool,
+    show_color_groups: bool,
     dmx_monitor: widgets::dmx_monitor::DmxMonitor,
     dmx_shared: dmx_io::SharedDmxState,
     object_store: dmx_io::SharedObjectStore,
@@ -79,6 +89,8 @@ struct LightBeatApp {
     object_manager: widgets::object_list::ObjectManager,
     interface_manager: widgets::interface_list::InterfaceManager,
     group_manager: widgets::group_list::GroupManager,
+    color_stack_manager: widgets::color_stack_list::ColorStackManager,
+    color_group_manager: widgets::color_group_list::ColorGroupManager,
 }
 
 impl LightBeatApp {
@@ -105,6 +117,8 @@ impl LightBeatApp {
             show_object_list: false,
             show_interface_list: false,
             show_group_list: false,
+            show_color_stacks: false,
+            show_color_groups: false,
             dmx_monitor: widgets::dmx_monitor::DmxMonitor::new(),
             dmx_shared,
             object_store,
@@ -113,6 +127,8 @@ impl LightBeatApp {
             object_manager: widgets::object_list::ObjectManager::new(),
             interface_manager: widgets::interface_list::InterfaceManager::new(),
             group_manager: widgets::group_list::GroupManager::new(),
+            color_stack_manager: widgets::color_stack_list::ColorStackManager::new(),
+            color_group_manager: widgets::color_group_list::ColorGroupManager::new(),
         };
 
         // Load hardware setup (fixtures + interfaces).
@@ -167,6 +183,9 @@ impl LightBeatApp {
         self.graph.register_node("Transport", "Clock Divider", |id| {
             Box::new(ClockDividerWidget::new(id, new_shared_state(1, 1)))
         });
+        self.graph.register_node("Transport", "Clock Gen", |id| {
+            Box::new(ClockGenWidget::new(id, new_shared_state(1, 1)))
+        });
         self.graph.register_node("Transport", "Transition", |id| {
             // trigger(1) + phase(1) + color(3) = 5 input channels, color(3) output channels
             Box::new(TransitionWidget::new(id, new_shared_state(5, 3)))
@@ -208,6 +227,10 @@ impl LightBeatApp {
         });
         self.graph.register_node("Math", "Const Phase", |id| {
             Box::new(ConstantWidget::new(id, PortType::Phase, new_shared_state(0, 1)))
+        });
+
+        self.graph.register_node("Math", "Change Detect", |id| {
+            Box::new(ChangeDetectWidget::new(id, new_shared_state(2, 2)))
         });
 
         // Compare
@@ -252,6 +275,14 @@ impl LightBeatApp {
         });
         self.graph.register_node("Display", "Color Display", |id| {
             Box::new(ColorDisplayWidget::new(id, new_shared_state(3, 0)))
+        });
+        self.graph.register_node("Display", "Value Display", |id| {
+            Box::new(ValueDisplayWidget::new(id, new_shared_state(1, 0)))
+        });
+
+        // Math - Scaler
+        self.graph.register_node("Math", "Scaler", |id| {
+            Box::new(ScalerWidget::new(id, new_shared_state(1, 1)))
         });
 
         // Output
@@ -344,6 +375,12 @@ impl LightBeatApp {
                         shared,
                     });
                 }
+                "Clock Gen" => {
+                    self.engine.send(EngineCommand::AddNode {
+                        node: Box::new(ClockGenProcessNode::new(id)),
+                        shared,
+                    });
+                }
                 "Transition" => {
                     self.engine.send(EngineCommand::AddNode {
                         node: Box::new(TransitionProcessNode::new(id)),
@@ -366,6 +403,18 @@ impl LightBeatApp {
                 "Color Display" => {
                     self.engine.send(EngineCommand::AddNode {
                         node: Box::new(ColorDisplayProcessNode::new(id)),
+                        shared,
+                    });
+                }
+                "Value Display" => {
+                    self.engine.send(EngineCommand::AddNode {
+                        node: Box::new(ValueDisplayProcessNode::new(id)),
+                        shared,
+                    });
+                }
+                "Scaler" => {
+                    self.engine.send(EngineCommand::AddNode {
+                        node: Box::new(ScalerProcessNode::new(id)),
                         shared,
                     });
                 }
@@ -425,6 +474,12 @@ impl LightBeatApp {
                         shared,
                     });
                 }
+                "Change Detect" => {
+                    self.engine.send(EngineCommand::AddNode {
+                        node: Box::new(ChangeDetectProcessNode::new(id)),
+                        shared,
+                    });
+                }
                 "Const Value" => {
                     self.engine.send(EngineCommand::AddNode {
                         node: Box::new(ConstantProcessNode::new(id, PortType::Untyped, 0.0)),
@@ -475,6 +530,8 @@ impl LightBeatApp {
                 self.object_manager = widgets::object_list::ObjectManager::from_objects(s.objects);
                 self.interface_manager = widgets::interface_list::InterfaceManager::from_saved(s.interfaces);
                 self.group_manager = widgets::group_list::GroupManager::from_groups(s.groups);
+                self.color_stack_manager = widgets::color_stack_list::ColorStackManager::from_stacks(s.color_stacks);
+                self.color_group_manager = widgets::color_group_list::ColorGroupManager::from_groups(s.color_groups);
             }
             Err(e) => eprintln!("Failed to load setup: {}", e),
         }
@@ -486,6 +543,8 @@ impl LightBeatApp {
             objects: self.object_manager.objects.clone(),
             interfaces: self.interface_manager.to_saved(),
             groups: self.group_manager.groups.clone(),
+            color_stacks: self.color_stack_manager.stacks.clone(),
+            color_groups: self.color_group_manager.groups.clone(),
         };
         if let Err(e) = setup::save_setup(&setup) {
             eprintln!("Failed to save setup: {}", e);
@@ -647,6 +706,14 @@ impl eframe::App for LightBeatApp {
                     if ui.checkbox(&mut self.show_interface_list, "Interfaces").changed() {
                         ui.close_menu();
                     }
+                    ui.separator();
+                    if ui.checkbox(&mut self.show_color_stacks, "Color Stacks").changed() {
+                        ui.close_menu();
+                    }
+                    if ui.checkbox(&mut self.show_color_groups, "Color Groups").changed() {
+                        ui.close_menu();
+                    }
+                    ui.separator();
                     if ui.checkbox(&mut self.show_dmx_monitor, "DMX Monitor").changed() {
                         ui.close_menu();
                     }
@@ -695,6 +762,26 @@ impl eframe::App for LightBeatApp {
                 .default_size([350.0, 400.0])
                 .show(ctx, |ui| {
                     self.group_manager.show(ui, &self.object_manager.objects);
+                });
+        }
+
+        // Color Stacks window.
+        if self.show_color_stacks {
+            egui::Window::new("Color Stacks")
+                .open(&mut self.show_color_stacks)
+                .default_size([300.0, 400.0])
+                .show(ctx, |ui| {
+                    self.color_stack_manager.show(ui);
+                });
+        }
+
+        // Color Groups window.
+        if self.show_color_groups {
+            egui::Window::new("Color Groups")
+                .open(&mut self.show_color_groups)
+                .default_size([350.0, 400.0])
+                .show(ctx, |ui| {
+                    self.color_group_manager.show(ui, &self.color_stack_manager.stacks);
                 });
         }
 

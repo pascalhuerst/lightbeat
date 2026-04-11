@@ -108,13 +108,12 @@ impl ProcessNode for StepSequencerProcessNode {
     }
 
     fn set_param(&mut self, index: usize, value: ParamValue) {
-        match (index, &value) {
-            (0, ParamValue::Int(v)) => self.set_num_steps(*v as usize),
-            // Indices 100+ are step value edits from the UI faders.
-            (i, ParamValue::Float(v)) if i >= 100 => {
+        match index {
+            0 => self.set_num_steps(value.as_i64() as usize),
+            i if i >= 100 => {
                 let step = i - 100;
                 if step < self.values.len() {
-                    self.values[step] = *v;
+                    self.values[step] = value.as_f32();
                 }
             }
             _ => {}

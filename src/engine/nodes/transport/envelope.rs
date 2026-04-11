@@ -152,11 +152,11 @@ impl ProcessNode for EnvelopeProcessNode {
     }
 
     fn set_param(&mut self, index: usize, value: ParamValue) {
-        match (index, value) {
-            (0, ParamValue::Float(v)) => self.attack = v,
-            (1, ParamValue::Float(v)) => self.decay = v,
-            (2, ParamValue::Float(v)) => self.sustain = v,
-            (3, ParamValue::Float(v)) => self.release = v,
+        match index {
+            0 => self.attack = value.as_f32(),
+            1 => self.decay = value.as_f32(),
+            2 => self.sustain = value.as_f32(),
+            3 => self.release = value.as_f32(),
             _ => {}
         }
     }

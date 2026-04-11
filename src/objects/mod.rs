@@ -1,4 +1,5 @@
 pub mod channel;
+pub mod color_palette;
 pub mod fixture;
 pub mod group;
 pub mod object;

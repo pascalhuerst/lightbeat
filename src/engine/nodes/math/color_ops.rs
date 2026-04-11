@@ -143,8 +143,8 @@ impl ProcessNode for ColorMergeProcessNode {
     }
 
     fn set_param(&mut self, index: usize, value: ParamValue) {
-        if let (0, ParamValue::Choice(v)) = (index, value) {
-            let new_mode = ColorMode::from_index(v);
+        if index == 0 {
+            let new_mode = ColorMode::from_index(value.as_usize());
             if new_mode != self.mode {
                 self.mode = new_mode;
                 self.inputs = Self::make_inputs(new_mode);
@@ -240,8 +240,8 @@ impl ProcessNode for ColorSplitProcessNode {
     }
 
     fn set_param(&mut self, index: usize, value: ParamValue) {
-        if let (0, ParamValue::Choice(v)) = (index, value) {
-            let new_mode = ColorMode::from_index(v);
+        if index == 0 {
+            let new_mode = ColorMode::from_index(value.as_usize());
             if new_mode != self.mode {
                 self.mode = new_mode;
                 self.outputs = Self::make_outputs(new_mode);

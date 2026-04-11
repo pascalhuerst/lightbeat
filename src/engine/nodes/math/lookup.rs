@@ -129,22 +129,20 @@ impl ProcessNode for LookupProcessNode {
     }
 
     fn set_param(&mut self, index: usize, value: ParamValue) {
-        match (index, value) {
-            (0, ParamValue::Choice(v)) => {
-                self.reconfigure_mode(LookupMode::from_index(v));
+        match index {
+            0 => {
+                self.reconfigure_mode(LookupMode::from_index(value.as_usize()));
             }
-            (1, ParamValue::Int(v)) => {
-                let new_count = v.max(1) as usize;
+            1 => {
+                let new_count = value.as_i64().max(1) as usize;
                 let cpe = self.mode.channels_per_entry();
                 self.table.resize(new_count * cpe, 0.0);
                 self.entry_count = new_count;
             }
-            // Indices 100+ are table value edits from the widget.
-            // Format: index = 100 + entry_index * cpe + channel
-            (i, ParamValue::Float(v)) if i >= 100 => {
+            i if i >= 100 => {
                 let table_idx = i - 100;
                 if table_idx < self.table.len() {
-                    self.table[table_idx] = v;
+                    self.table[table_idx] = value.as_f32();
                 }
             }
             _ => {}

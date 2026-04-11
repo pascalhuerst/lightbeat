@@ -1,4 +1,5 @@
 pub mod clock_divider;
+pub mod clock_gen;
 pub mod delay;
 pub mod easing;
 pub mod envelope;

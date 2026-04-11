@@ -74,9 +74,9 @@ impl ProcessNode for PhaseScalerProcessNode {
     }
 
     fn set_param(&mut self, index: usize, value: ParamValue) {
-        match (index, value) {
-            (0, ParamValue::Int(v)) => self.exponent = v as i32,
-            (1, ParamValue::Float(v)) => self.offset = v,
+        match index {
+            0 => self.exponent = value.as_i64() as i32,
+            1 => self.offset = value.as_f32(),
             _ => {}
         }
     }

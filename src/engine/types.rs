@@ -169,6 +169,38 @@ pub enum ParamValue {
     Choice(usize),
 }
 
+impl ParamValue {
+    /// Coerce to f32 regardless of variant.
+    pub fn as_f32(&self) -> f32 {
+        match self {
+            ParamValue::Float(v) => *v,
+            ParamValue::Int(v) => *v as f32,
+            ParamValue::Bool(v) => if *v { 1.0 } else { 0.0 },
+            ParamValue::Choice(v) => *v as f32,
+        }
+    }
+
+    /// Coerce to i64 regardless of variant.
+    pub fn as_i64(&self) -> i64 {
+        match self {
+            ParamValue::Float(v) => *v as i64,
+            ParamValue::Int(v) => *v,
+            ParamValue::Bool(v) => if *v { 1 } else { 0 },
+            ParamValue::Choice(v) => *v as i64,
+        }
+    }
+
+    /// Coerce to usize regardless of variant.
+    pub fn as_usize(&self) -> usize {
+        match self {
+            ParamValue::Float(v) => *v as usize,
+            ParamValue::Int(v) => *v as usize,
+            ParamValue::Bool(v) => if *v { 1 } else { 0 },
+            ParamValue::Choice(v) => *v,
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Shared state between engine and UI per node
 // ---------------------------------------------------------------------------

@@ -256,7 +256,31 @@ impl NodeGraph {
     // Main draw
     // -----------------------------------------------------------------------
 
+    /// Remove connections that reference ports beyond a node's current port count.
+    fn cleanup_stale_connections(&mut self) {
+        let stale: Vec<PortId> = self.connections.iter().filter(|conn| {
+            let from_ok = self.nodes.iter()
+                .zip(self.states.iter())
+                .find(|(_, s)| s.id == conn.from.node)
+                .map(|(n, _)| conn.from.index < n.ui_outputs().len())
+                .unwrap_or(false);
+            let to_ok = self.nodes.iter()
+                .zip(self.states.iter())
+                .find(|(_, s)| s.id == conn.to.node)
+                .map(|(n, _)| conn.to.index < n.ui_inputs().len())
+                .unwrap_or(false);
+            !from_ok || !to_ok
+        }).map(|c| c.to).collect();
+
+        for port_id in stale {
+            self.remove_connection_to(port_id);
+        }
+    }
+
     pub fn show(&mut self, ui: &mut Ui, snap_to_grid: bool) {
+        // Clean up stale connections (ports removed by dynamic nodes like Group Output).
+        self.cleanup_stale_connections();
+
         let (response, painter) =
             ui.allocate_painter(ui.available_size(), Sense::click_and_drag());
         let canvas_rect = response.rect;
@@ -604,7 +628,7 @@ impl NodeGraph {
 
                     ui.separator();
 
-                    egui::ScrollArea::vertical().max_height(350.0).show(ui, |ui| {
+                    egui::ScrollArea::vertical().max_height(800.0).show(ui, |ui| {
                         if filtered.is_empty() {
                             ui.colored_label(egui::Color32::from_gray(100), "No matches");
                         } else {

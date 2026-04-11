@@ -1,3 +1,4 @@
+pub mod change_detect;
 pub mod color_ops;
 pub mod compare;
 pub mod constant;
@@ -6,3 +7,4 @@ pub mod lookup;
 pub mod math_op;
 pub mod oscillator;
 pub mod position_ops;
+pub mod scaler;

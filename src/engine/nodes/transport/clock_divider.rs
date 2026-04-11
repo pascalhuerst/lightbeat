@@ -72,8 +72,8 @@ impl ProcessNode for ClockDividerProcessNode {
     }
 
     fn set_param(&mut self, index: usize, value: ParamValue) {
-        if let (0, ParamValue::Int(v)) = (index, value) {
-            self.divisor = v.max(2) as i32;
+        if index == 0 {
+            self.divisor = value.as_i64().max(2) as i32;
             self.count = 0;
         }
     }

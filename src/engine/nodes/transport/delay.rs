@@ -107,8 +107,8 @@ impl ProcessNode for TriggerDelayProcessNode {
     }
 
     fn set_param(&mut self, index: usize, value: ParamValue) {
-        if let (0, ParamValue::Int(v)) = (index, value) {
-            self.exponent = v as i32;
+        if index == 0 {
+            self.exponent = value.as_i64() as i32;
         }
     }
 
