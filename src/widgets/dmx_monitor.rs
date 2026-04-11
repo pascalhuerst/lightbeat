@@ -1,22 +1,18 @@
-use egui::{Color32, Rect, Sense, Stroke, StrokeKind, Ui, Vec2};
+use egui::{self, Color32, Rect, Sense, Stroke, StrokeKind, Ui, Vec2};
+
+use crate::dmx_io::SharedDmxState;
 
 const COLS: usize = 32;
 const ROWS: usize = 16;
 const CHANNEL_COUNT: usize = 512;
 
-/// Colors matching the app's dark theme.
 const CELL_BG: Color32 = Color32::from_rgb(30, 30, 34);
 const CELL_BORDER: Color32 = Color32::from_rgb(50, 50, 56);
 const LABEL_COLOR: Color32 = Color32::from_rgb(160, 160, 170);
 const VALUE_COLOR: Color32 = Color32::from_rgb(200, 200, 210);
+const OVERRIDE_COLOR: Color32 = Color32::from_rgb(240, 160, 40);
 
-/// A DMX channel monitor widget that displays 512 channels as a grid of
-/// vertical bars, similar to the Blux DMXChannelView.
-///
-/// Feed it a `&[u8; 512]` each frame. It does not depend on `crate::objects`
-/// so it can visualize any raw DMX buffer.
 pub struct DmxMonitor {
-    /// Which channel the mouse is hovering over (0-based), if any.
     hovered_channel: Option<usize>,
 }
 
@@ -27,32 +23,41 @@ impl DmxMonitor {
         }
     }
 
-    /// Draw the DMX monitor grid.
-    ///
-    /// `label`: header text (e.g. "Art-Net / Net 0 / Sub 0 / Uni 0").
-    /// `channels`: the 512 DMX channel values to display.
-    pub fn show(&mut self, ui: &mut Ui, label: &str, channels: &[u8; 512]) {
-        // Header: show label and hovered channel detail.
+    pub fn show(&mut self, ui: &mut Ui, label: &str, shared: &SharedDmxState) {
+        let state = shared.lock().unwrap();
+        let channels = state.output;
+        let overrides = state.overrides.clone();
+        drop(state);
+
+        // Header.
         ui.horizontal(|ui| {
             ui.label(egui::RichText::new(label).monospace());
             ui.separator();
+
+            if ui.small_button("Clear Overrides").clicked() {
+                shared.lock().unwrap().overrides.clear_all();
+            }
+
+            ui.separator();
             if let Some(ch) = self.hovered_channel {
+                let ovr = if overrides.active[ch] { " [OVR]" } else { "" };
                 ui.label(
                     egui::RichText::new(format!(
-                        "Ch {:>3}: {:>3} ({:.0}%)",
+                        "Ch {:>3}: {:>3} ({:.0}%){}",
                         ch + 1,
                         channels[ch],
-                        channels[ch] as f32 / 255.0 * 100.0
+                        channels[ch] as f32 / 255.0 * 100.0,
+                        ovr,
                     ))
                     .monospace()
-                    .color(VALUE_COLOR),
+                    .color(if overrides.active[ch] { OVERRIDE_COLOR } else { VALUE_COLOR }),
                 );
             }
         });
 
         ui.separator();
 
-        // Calculate cell size from available width.
+        // Grid.
         let avail = ui.available_size();
         let cell_w = ((avail.x - 2.0) / COLS as f32).floor().max(8.0);
         let cell_h = ((avail.y - 2.0) / ROWS as f32).floor().max(8.0);
@@ -60,13 +65,32 @@ impl DmxMonitor {
 
         let (response, painter) = ui.allocate_painter(
             Vec2::new(cell_w * COLS as f32, cell_h * ROWS as f32),
-            Sense::hover(),
+            Sense::click_and_drag(),
         );
 
         let origin = response.rect.left_top();
         self.hovered_channel = None;
 
         let mouse_pos = response.hover_pos();
+        let ctrl = ui.input(|i| i.modifiers.ctrl || i.modifiers.command);
+
+        // Handle Ctrl+click/drag for overrides.
+        if ctrl && (response.dragged() || response.clicked()) {
+            if let Some(pos) = response.interact_pointer_pos() {
+                let col = ((pos.x - origin.x) / cell_w).floor() as usize;
+                let row = ((pos.y - origin.y) / cell_h).floor() as usize;
+                if col < COLS && row < ROWS {
+                    let ch = row * COLS + col;
+                    if ch < CHANNEL_COUNT {
+                        // Value from vertical position within cell (bottom = 0, top = 255).
+                        let cell_top = origin.y + row as f32 * cell_h;
+                        let norm = 1.0 - ((pos.y - cell_top) / cell_h).clamp(0.0, 1.0);
+                        let value = (norm * 255.0).round() as u8;
+                        shared.lock().unwrap().overrides.set(ch, value);
+                    }
+                }
+            }
+        }
 
         for i in 0..CHANNEL_COUNT {
             let col = i % COLS;
@@ -77,12 +101,9 @@ impl DmxMonitor {
 
             let value = channels[i];
             let norm = value as f32 / 255.0;
+            let is_override = overrides.active[i];
 
-            // Check hover.
-            let hovered = mouse_pos
-                .map(|p| cell_rect.contains(p))
-                .unwrap_or(false);
-
+            let hovered = mouse_pos.map(|p| cell_rect.contains(p)).unwrap_or(false);
             if hovered {
                 self.hovered_channel = Some(i);
             }
@@ -95,30 +116,35 @@ impl DmxMonitor {
             };
             painter.rect_filled(cell_rect, 1.0, bg);
 
-            // Value bar (fills from bottom).
+            // Value bar.
             if value > 0 {
                 let bar_height = norm * (cell_size.y - 2.0);
                 let bar_rect = Rect::from_min_max(
-                    egui::pos2(
-                        cell_rect.left() + 1.0,
-                        cell_rect.bottom() - 1.0 - bar_height,
-                    ),
+                    egui::pos2(cell_rect.left() + 1.0, cell_rect.bottom() - 1.0 - bar_height),
                     egui::pos2(cell_rect.right() - 1.0, cell_rect.bottom() - 1.0),
                 );
 
-                // Color intensity: brighter for higher values.
-                let bar_color = Color32::from_rgb(
-                    (60.0 + 195.0 * norm) as u8,
-                    (100.0 + 100.0 * norm) as u8,
-                    255,
-                );
+                let bar_color = if is_override {
+                    Color32::from_rgb(
+                        (200.0 + 55.0 * norm) as u8,
+                        (120.0 + 80.0 * norm) as u8,
+                        (20.0 + 30.0 * norm) as u8,
+                    )
+                } else {
+                    Color32::from_rgb(
+                        (60.0 + 195.0 * norm) as u8,
+                        (100.0 + 100.0 * norm) as u8,
+                        255,
+                    )
+                };
                 painter.rect_filled(bar_rect, 0.0, bar_color);
             }
 
-            // Border.
-            painter.rect_stroke(cell_rect, 1.0, Stroke::new(0.5, CELL_BORDER), StrokeKind::Inside);
+            // Border — orange tint for overridden channels.
+            let border_color = if is_override { OVERRIDE_COLOR.linear_multiply(0.5) } else { CELL_BORDER };
+            painter.rect_stroke(cell_rect, 1.0, Stroke::new(0.5, border_color), StrokeKind::Inside);
 
-            // Channel number label (only if cells are big enough).
+            // Channel number.
             if cell_w >= 16.0 && cell_h >= 20.0 {
                 let font_size = if cell_h > 30.0 { 9.0 } else { 7.0 };
                 painter.text(
@@ -138,7 +164,7 @@ impl DmxMonitor {
                     egui::Align2::RIGHT_TOP,
                     format!("{}", value),
                     egui::FontId::monospace(font_size),
-                    VALUE_COLOR,
+                    if is_override { OVERRIDE_COLOR } else { VALUE_COLOR },
                 );
             }
         }

@@ -1,7 +1,9 @@
 mod beat_clock;
 mod color;
 mod config;
+mod dmx_io;
 mod engine;
+mod setup;
 // mod interfaces; // TODO: fix artnet_protocol/sacn API version mismatch
 mod link_controller;
 mod objects;
@@ -56,6 +58,7 @@ struct LightBeatApp {
     show_fixture_list: bool,
     show_interface_list: bool,
     dmx_monitor: widgets::dmx_monitor::DmxMonitor,
+    dmx_shared: dmx_io::SharedDmxState,
     fixture_manager: widgets::fixture_list::FixtureManager,
     interface_manager: widgets::interface_list::InterfaceManager,
 }
@@ -65,7 +68,8 @@ impl LightBeatApp {
         let config = AppConfig::load();
         let beat_clock = BeatClock::new(4.0);
         let snapshot = beat_clock.snapshot();
-        let engine = EngineHandle::start();
+        let dmx_shared = dmx_io::new_shared_dmx_state();
+        let engine = EngineHandle::start(dmx_shared.clone());
 
         let mut app = Self {
             graph: NodeGraph::new(),
@@ -80,9 +84,13 @@ impl LightBeatApp {
             show_fixture_list: false,
             show_interface_list: false,
             dmx_monitor: widgets::dmx_monitor::DmxMonitor::new(),
+            dmx_shared,
             fixture_manager: widgets::fixture_list::FixtureManager::new(),
             interface_manager: widgets::interface_list::InterfaceManager::new(),
         };
+
+        // Load hardware setup (fixtures + interfaces).
+        app.load_setup();
 
         app.register_node_factories();
 
@@ -346,6 +354,26 @@ impl LightBeatApp {
         }
     }
 
+    fn load_setup(&mut self) {
+        match setup::load_setup() {
+            Ok(s) => {
+                self.fixture_manager = widgets::fixture_list::FixtureManager::from_fixtures(s.fixtures);
+                self.interface_manager = widgets::interface_list::InterfaceManager::from_saved(s.interfaces);
+            }
+            Err(e) => eprintln!("Failed to load setup: {}", e),
+        }
+    }
+
+    fn save_setup(&self) {
+        let setup = setup::SetupFile {
+            fixtures: self.fixture_manager.fixtures.clone(),
+            interfaces: self.interface_manager.to_saved(),
+        };
+        if let Err(e) = setup::save_setup(&setup) {
+            eprintln!("Failed to save setup: {}", e);
+        }
+    }
+
     fn save_project(&mut self) {
         let path = self
             .project_path
@@ -525,10 +553,56 @@ impl eframe::App for LightBeatApp {
                 .open(&mut self.show_dmx_monitor)
                 .default_size([600.0, 200.0])
                 .show(ctx, |ui| {
-                    let empty = [0u8; 512];
-                    self.dmx_monitor.show(ui, "No output connected", &empty);
+                    self.dmx_monitor.show(ui, "Universe 0.0.0", &self.dmx_shared);
                 });
         }
+
+        // Status bar.
+        egui::TopBottomPanel::bottom("status_bar")
+            .exact_height(28.0)
+            .show(ctx, |ui| {
+                ui.horizontal_centered(|ui| {
+                    let mut shared = self.dmx_shared.lock().unwrap();
+
+                    // Blackout button — red when active.
+                    let blackout_text = if shared.blackout {
+                        egui::RichText::new("BLACKOUT").color(egui::Color32::WHITE).strong()
+                    } else {
+                        egui::RichText::new("Blackout").color(egui::Color32::from_gray(160))
+                    };
+                    let blackout_btn = egui::Button::new(blackout_text)
+                        .fill(if shared.blackout { egui::Color32::from_rgb(180, 40, 40) } else { egui::Color32::TRANSPARENT });
+                    if ui.add(blackout_btn).clicked() {
+                        shared.blackout = !shared.blackout;
+                    }
+
+                    ui.separator();
+
+                    // Bypass button — orange when active.
+                    let bypass_text = if shared.bypass {
+                        egui::RichText::new("BYPASS").color(egui::Color32::WHITE).strong()
+                    } else {
+                        egui::RichText::new("Bypass").color(egui::Color32::from_gray(160))
+                    };
+                    let bypass_btn = egui::Button::new(bypass_text)
+                        .fill(if shared.bypass { egui::Color32::from_rgb(200, 140, 30) } else { egui::Color32::TRANSPARENT });
+                    if ui.add(bypass_btn).clicked() {
+                        shared.bypass = !shared.bypass;
+                    }
+
+                    ui.separator();
+
+                    // Status text.
+                    let status = if shared.blackout {
+                        "All outputs zeroed"
+                    } else if shared.bypass {
+                        "DMX output suspended"
+                    } else {
+                        "Live"
+                    };
+                    ui.colored_label(egui::Color32::from_gray(100), status);
+                });
+            });
 
         // Node graph.
         egui::CentralPanel::default().show(ctx, |ui| {
@@ -545,6 +619,7 @@ impl eframe::App for LightBeatApp {
         // Keyboard shortcuts.
         if ctx.input(|i| i.modifiers.ctrl && i.key_pressed(egui::Key::S)) {
             self.save_project();
+            self.save_setup();
         }
         if ctx.input(|i| i.modifiers.ctrl && i.key_pressed(egui::Key::O)) {
             self.open_project();
@@ -558,6 +633,7 @@ impl eframe::App for LightBeatApp {
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
         if self.config.autosave_on_close {
             self.save_project();
+            self.save_setup();
         }
     }
 }

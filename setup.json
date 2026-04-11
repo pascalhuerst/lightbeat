@@ -1,0 +1,47 @@
+{
+  "fixtures": [
+    {
+      "id": 1,
+      "name": "Fun White RGBW PAR",
+      "channels": [
+        {
+          "name": "Color 1",
+          "kind": {
+            "Color": {
+              "mode": {
+                "Rgbw": {
+                  "white_temperature": 6500
+                }
+              }
+            }
+          },
+          "offset": 0,
+          "values": [
+            0.0,
+            0.0,
+            0.0
+          ]
+        }
+      ],
+      "address": {
+        "net": 0,
+        "subnet": 0,
+        "universe": 0,
+        "start_channel": 1
+      }
+    }
+  ],
+  "interfaces": [
+    {
+      "id": 1,
+      "name": "OLA Artnet Node",
+      "config": {
+        "ArtNet": {
+          "host": "192.168.1.3",
+          "port": 6454
+        }
+      },
+      "enabled": false
+    }
+  ]
+}

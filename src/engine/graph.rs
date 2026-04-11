@@ -4,20 +4,23 @@ use ringbuf::traits::Consumer;
 
 use super::CommandConsumer;
 use super::types::*;
+use crate::dmx_io::{DmxOutputManager, SharedDmxState};
 
 /// The engine-side signal graph. Runs on its own thread at ~1kHz.
 pub struct EngineGraph {
     nodes: Vec<Box<dyn ProcessNode>>,
     shared_states: Vec<SharedState>,
     connections: Vec<Connection>,
+    dmx: Option<DmxOutputManager>,
 }
 
 impl EngineGraph {
-    pub fn new() -> Self {
+    pub fn new(dmx_shared: SharedDmxState) -> Self {
         Self {
             nodes: Vec::new(),
             shared_states: Vec::new(),
             connections: Vec::new(),
+            dmx: Some(DmxOutputManager::new(dmx_shared)),
         }
     }
 
@@ -146,6 +149,11 @@ impl EngineGraph {
             shared.current_params = node.params();
             shared.save_data = node.save_data();
             node.update_display(&mut shared);
+        }
+
+        // 5. Tick the DMX output manager (merge overrides, send to interfaces).
+        if let Some(dmx) = &mut self.dmx {
+            dmx.tick();
         }
     }
 

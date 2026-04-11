@@ -252,7 +252,7 @@ impl NodeGraph {
         self.canvas_rect = canvas_rect;
 
         // Zoom with scroll wheel, centered on mouse position.
-        if response.hovered() && !ui.ctx().is_using_pointer() {
+        if response.contains_pointer() {
             let scroll_delta = ui.input(|i| i.smooth_scroll_delta.y);
             if scroll_delta != 0.0 {
                 let zoom_factor = 1.0 + scroll_delta * 0.002;
@@ -617,8 +617,7 @@ impl NodeGraph {
         let pointer_pos = ui.input(|i| i.pointer.hover_pos()).unwrap_or_default();
         // Only process interactions if the canvas layer owns the pointer.
         // This prevents interactions when dragging egui Windows over the canvas.
-        let canvas_has_pointer = response.hovered()
-            && !ui.ctx().is_using_pointer();
+        let canvas_has_pointer = response.contains_pointer();
         let primary_pressed = canvas_has_pointer
             && ui.input(|i| i.pointer.button_pressed(egui::PointerButton::Primary));
         let primary_down = ui.input(|i| i.pointer.button_down(egui::PointerButton::Primary));

@@ -23,6 +23,32 @@ impl InterfaceManager {
         }
     }
 
+    pub fn from_saved(saved: Vec<crate::setup::SavedInterface>) -> Self {
+        let next_id = saved.iter().map(|e| e.id).max().unwrap_or(0) + 1;
+        let interfaces = saved
+            .into_iter()
+            .map(|s| InterfaceEntry {
+                id: s.id,
+                name: s.name,
+                config: s.config,
+                enabled: s.enabled,
+            })
+            .collect();
+        Self { interfaces, next_id }
+    }
+
+    pub fn to_saved(&self) -> Vec<crate::setup::SavedInterface> {
+        self.interfaces
+            .iter()
+            .map(|e| crate::setup::SavedInterface {
+                id: e.id,
+                name: e.name.clone(),
+                config: e.config.clone(),
+                enabled: e.enabled,
+            })
+            .collect()
+    }
+
     pub fn show(&mut self, ui: &mut Ui) {
         ui.heading("Interfaces");
         ui.separator();
@@ -39,6 +65,7 @@ impl InterfaceManager {
                     egui::CollapsingHeader::new(
                         egui::RichText::new(&entry.name).strong(),
                     )
+                    .id_salt(entry.id)
                     .default_open(true)
                     .show(ui, |ui| {
                         // Name

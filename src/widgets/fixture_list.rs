@@ -17,6 +17,11 @@ impl FixtureManager {
         }
     }
 
+    pub fn from_fixtures(fixtures: Vec<Fixture>) -> Self {
+        let next_id = fixtures.iter().map(|f| f.id).max().unwrap_or(0) + 1;
+        Self { fixtures, next_id }
+    }
+
     pub fn add_fixture(&mut self, name: impl Into<String>, address: DmxAddress) -> u32 {
         let id = self.next_id;
         self.next_id += 1;
@@ -48,15 +53,13 @@ impl FixtureManager {
                     egui::CollapsingHeader::new(
                         egui::RichText::new(&fixture.name).strong(),
                     )
+                    .id_salt(fixture.id)
                     .default_open(false)
                     .show(ui, |ui| {
                         // Name
                         ui.horizontal(|ui| {
                             ui.label("Name:");
-                            let mut name = fixture.name.clone();
-                            if ui.text_edit_singleline(&mut name).changed() {
-                                fixture.name = name;
-                            }
+                            ui.text_edit_singleline(&mut fixture.name);
                         });
 
                         // Address
