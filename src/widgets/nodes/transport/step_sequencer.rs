@@ -29,6 +29,7 @@ impl StepSequencerWidget {
             outputs: vec![
                 PortDef::new("trigger", PortType::Logic),
                 PortDef::new("value", PortType::Untyped),
+                PortDef::new("step", PortType::Untyped),
             ],
         }
     }

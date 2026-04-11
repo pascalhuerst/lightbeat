@@ -45,8 +45,8 @@ struct DrawingConnection {
 
 /// Entry in the node registry — a named factory for spawning nodes.
 pub struct NodeEntry {
-    pub label: &'static str,
-    pub category: &'static str,
+    pub label: String,
+    pub category: String,
     pub factory: Box<dyn Fn(NodeId) -> Box<dyn NodeWidget>>,
 }
 
@@ -79,6 +79,7 @@ pub struct NodeGraph {
     new_nodes: Vec<NewNode>,
     pending_engine_cmds: Vec<EngineCommand>,
     context_menu_pos: Option<Pos2>,
+    context_menu_search: String,
     selected_nodes: Vec<usize>,
     canvas_rect: Rect,
     clipboard: Vec<ClipboardNode>,
@@ -98,6 +99,7 @@ impl NodeGraph {
             new_nodes: Vec::new(),
             pending_engine_cmds: Vec::new(),
             context_menu_pos: None,
+            context_menu_search: String::new(),
             selected_nodes: Vec::new(),
             canvas_rect: Rect::NOTHING,
             clipboard: Vec::new(),
@@ -110,8 +112,17 @@ impl NodeGraph {
     }
 
     /// Register a node type that can be spawned from the context menu.
-    pub fn register_node(&mut self, category: &'static str, label: &'static str, factory: impl Fn(NodeId) -> Box<dyn NodeWidget> + 'static) {
-        self.registry.push(NodeEntry { label, category, factory: Box::new(factory) });
+    pub fn register_node(&mut self, category: impl Into<String>, label: impl Into<String>, factory: impl Fn(NodeId) -> Box<dyn NodeWidget> + 'static) {
+        self.registry.push(NodeEntry {
+            label: label.into(),
+            category: category.into(),
+            factory: Box::new(factory),
+        });
+    }
+
+    /// Remove all registered nodes in a given category.
+    pub fn clear_category(&mut self, category: &str) {
+        self.registry.retain(|e| e.category != category);
     }
 
     fn alloc_id(&mut self) -> NodeId {
@@ -277,6 +288,7 @@ impl NodeGraph {
         if response.secondary_clicked() {
             if let Some(pos) = ui.input(|i| i.pointer.hover_pos()) {
                 self.context_menu_pos = Some(pos);
+                self.context_menu_search.clear();
             }
         }
 
@@ -542,10 +554,10 @@ impl NodeGraph {
         let menu_pos = self.context_menu_pos.unwrap();
 
         // Group entries by category.
-        let mut categories: Vec<&'static str> = Vec::new();
+        let mut categories: Vec<String> = Vec::new();
         for e in &self.registry {
             if !categories.contains(&e.category) {
-                categories.push(e.category);
+                categories.push(e.category.clone());
             }
         }
 
@@ -555,29 +567,61 @@ impl NodeGraph {
         }
 
         let mut spawn: Option<usize> = None;
+        let search = self.context_menu_search.to_lowercase();
+
+        // Filter entries by search.
+        let filtered: Vec<(usize, &str, &str)> = self.registry.iter().enumerate()
+            .filter(|(_, e)| search.is_empty() || e.label.to_lowercase().contains(&search) || e.category.to_lowercase().contains(&search))
+            .map(|(i, e)| (i, e.category.as_str(), e.label.as_str()))
+            .collect();
 
         let area_resp = egui::Area::new(egui::Id::new("node_ctx_menu"))
             .fixed_pos(menu_pos)
             .order(egui::Order::Foreground)
             .show(ui.ctx(), |ui| {
                 egui::Frame::popup(ui.style()).show(ui, |ui| {
-                    ui.set_min_width(160.0);
-                    ui.label(egui::RichText::new("Add node").strong().size(11.0));
+                    ui.set_min_width(180.0);
+
+                    // Search field — auto-focused.
+                    let search_resp = ui.add(
+                        egui::TextEdit::singleline(&mut self.context_menu_search)
+                            .hint_text("Search nodes...")
+                            .desired_width(170.0),
+                    );
+                    if search_resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                        self.context_menu_pos = None;
+                        self.context_menu_search.clear();
+                        return;
+                    }
+                    // Enter to add the first match.
+                    if search_resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                        if let Some(&(idx, _, _)) = filtered.first() {
+                            spawn = Some(idx);
+                        }
+                    }
+                    // Auto-focus search on open.
+                    search_resp.request_focus();
+
                     ui.separator();
-                    egui::ScrollArea::vertical().max_height(400.0).show(ui, |ui| {
-                        for cat in &categories {
-                            ui.colored_label(
-                                egui::Color32::from_gray(120),
-                                egui::RichText::new(*cat).size(10.0),
-                            );
-                            for (idx, entry) in self.registry.iter().enumerate() {
-                                if entry.category == *cat {
-                                    if ui.button(entry.label).clicked() {
-                                        spawn = Some(idx);
-                                    }
+
+                    egui::ScrollArea::vertical().max_height(350.0).show(ui, |ui| {
+                        if filtered.is_empty() {
+                            ui.colored_label(egui::Color32::from_gray(100), "No matches");
+                        } else {
+                            let mut last_cat = "";
+                            for &(idx, cat, label) in &filtered {
+                                if cat != last_cat {
+                                    if !last_cat.is_empty() { ui.add_space(2.0); }
+                                    ui.colored_label(
+                                        egui::Color32::from_gray(120),
+                                        egui::RichText::new(cat).size(10.0),
+                                    );
+                                    last_cat = cat;
+                                }
+                                if ui.button(label).clicked() {
+                                    spawn = Some(idx);
                                 }
                             }
-                            ui.add_space(4.0);
                         }
                     });
                 });
@@ -597,9 +641,11 @@ impl NodeGraph {
             let canvas_pos = (menu_pos - canvas_rect.min.to_vec2() - self.pan) / self.zoom;
             let node = (self.registry[reg_idx].factory)(id);
             self.add_node(node, canvas_pos);
+            self.context_menu_search.clear();
             self.context_menu_pos = None;
         } else if clicked_outside || esc {
             self.context_menu_pos = None;
+            self.context_menu_search.clear();
         }
     }
 
@@ -1039,7 +1085,9 @@ fn port_screen_pos(
 ) -> Option<Pos2> {
     let idx = states.iter().position(|s| s.id == port_id.node)?;
     let pos = Pos2::new(states[idx].pos.x * zoom, states[idx].pos.y * zoom) + origin;
-    let width = nodes[idx].min_width() * zoom;
+    let width = states[idx].size_override
+        .map(|s| s.x)
+        .unwrap_or(nodes[idx].min_width()) * zoom;
     Some(port_pos_z(pos, width, port_id.dir, port_id.index, zoom))
 }
 

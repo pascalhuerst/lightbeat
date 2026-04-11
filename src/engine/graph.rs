@@ -149,12 +149,23 @@ impl EngineGraph {
 
         // 3. Drain pending param changes from UI (via shared state).
         for (i, node) in self.nodes.iter_mut().enumerate() {
-            let pending: Vec<(usize, ParamValue)> = {
+            let (pending, config_update) = {
                 let mut shared = self.shared_states[i].lock().unwrap();
-                std::mem::take(&mut shared.pending_params)
+                let pending = std::mem::take(&mut shared.pending_params);
+                // Check for Group Output reconfiguration via save_data.
+                let config = if node.type_name() == "Group Output" {
+                    shared.save_data.take()
+                } else {
+                    None
+                };
+                (pending, config)
             };
             for (idx, val) in pending {
                 node.set_param(idx, val);
+            }
+            // Apply Group Output reconfiguration via load_data.
+            if let Some(config) = config_update {
+                node.load_data(&config);
             }
         }
 

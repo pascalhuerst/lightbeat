@@ -7,16 +7,17 @@ use crate::objects::object::Object;
 pub struct GroupManager {
     pub groups: Vec<Group>,
     next_id: u32,
+    pub needs_refresh: bool,
 }
 
 impl GroupManager {
     pub fn new() -> Self {
-        Self { groups: Vec::new(), next_id: 1 }
+        Self { groups: Vec::new(), next_id: 1, needs_refresh: false }
     }
 
     pub fn from_groups(groups: Vec<Group>) -> Self {
         let next_id = groups.iter().map(|g| g.id).max().unwrap_or(0) + 1;
-        Self { groups, next_id }
+        Self { groups, next_id, needs_refresh: true }
     }
 
     pub fn show(&mut self, ui: &mut Ui, objects: &[Object]) {
@@ -66,6 +67,7 @@ impl GroupManager {
                         }
                         if let Some(oid) = remove_obj_id {
                             group.object_ids.retain(|id| *id != oid);
+                            self.needs_refresh = true;
                         }
 
                         let available: Vec<&Object> = objects.iter()
@@ -77,6 +79,7 @@ impl GroupManager {
                                 for obj in &available {
                                     if ui.small_button(&obj.name).clicked() {
                                         group.object_ids.push(obj.id);
+                                        self.needs_refresh = true;
                                     }
                                 }
                             });
@@ -93,6 +96,7 @@ impl GroupManager {
 
         if let Some(id) = remove_id {
             self.groups.retain(|g| g.id != id);
+            self.needs_refresh = true;
         }
 
         ui.separator();
@@ -100,6 +104,7 @@ impl GroupManager {
             let id = self.next_id;
             self.next_id += 1;
             self.groups.push(Group::new(id, format!("Group {}", id)));
+            self.needs_refresh = true;
         }
     }
 }

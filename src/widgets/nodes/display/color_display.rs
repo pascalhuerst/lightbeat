@@ -18,11 +18,7 @@ impl ColorDisplayWidget {
         Self {
             id,
             shared,
-            inputs: vec![
-                PortDef::new("R", PortType::Untyped),
-                PortDef::new("G", PortType::Untyped),
-                PortDef::new("B", PortType::Untyped),
-            ],
+            inputs: vec![PortDef::new("color", PortType::Color)],
         }
     }
 }

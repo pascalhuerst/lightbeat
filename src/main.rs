@@ -25,13 +25,16 @@ use engine::nodes::io::clock::ClockProcessNode;
 use engine::nodes::math::color_ops::{ColorMergeProcessNode, ColorSplitProcessNode};
 use engine::nodes::math::compare::{CompareOp, CompareProcessNode};
 use engine::nodes::math::constant::ConstantProcessNode;
+use engine::nodes::math::lookup::LookupProcessNode;
 use engine::nodes::math::logic_gate::{LogicOp, LogicGateProcessNode};
 use engine::nodes::math::math_op::{MathOp, MathProcessNode};
 use engine::nodes::math::oscillator::{OscFunc, OscillatorProcessNode};
 use engine::nodes::math::position_ops::{PositionMergeProcessNode, PositionSplitProcessNode};
 use engine::nodes::output::group::GroupProcessNode;
+use engine::nodes::transport::clock_divider::ClockDividerProcessNode;
 use engine::nodes::transport::delay::TriggerDelayProcessNode;
 use engine::nodes::transport::envelope::EnvelopeProcessNode;
+use engine::nodes::transport::transition::TransitionProcessNode;
 use engine::nodes::transport::phase_scaler::PhaseScalerProcessNode;
 use engine::nodes::transport::step_sequencer::StepSequencerProcessNode;
 use widgets::nodes::display::color_display::ColorDisplayWidget;
@@ -40,13 +43,16 @@ use widgets::nodes::io::clock::ClockWidget;
 use widgets::nodes::math::color_ops::{ColorMergeWidget, ColorSplitWidget};
 use widgets::nodes::math::compare::CompareWidget;
 use widgets::nodes::math::constant::ConstantWidget;
+use widgets::nodes::math::lookup::LookupWidget;
 use widgets::nodes::math::logic_gate::LogicGateWidget;
 use widgets::nodes::math::math_op::MathWidget;
 use widgets::nodes::math::oscillator::OscillatorWidget;
 use widgets::nodes::math::position_ops::{PositionMergeWidget, PositionSplitWidget};
 use widgets::nodes::output::group::GroupWidget;
+use widgets::nodes::transport::clock_divider::ClockDividerWidget;
 use widgets::nodes::transport::delay::TriggerDelayWidget;
 use widgets::nodes::transport::envelope::EnvelopeWidget;
+use widgets::nodes::transport::transition::TransitionWidget;
 use widgets::nodes::transport::phase_scaler::PhaseScalerWidget;
 use widgets::nodes::transport::step_sequencer::StepSequencerWidget;
 use widgets::nodes::NodeGraph;
@@ -68,6 +74,7 @@ struct LightBeatApp {
     dmx_monitor: widgets::dmx_monitor::DmxMonitor,
     dmx_shared: dmx_io::SharedDmxState,
     object_store: dmx_io::SharedObjectStore,
+    group_ctx: widgets::nodes::output::group::SharedGroupContext,
     fixture_manager: widgets::fixture_list::FixtureManager,
     object_manager: widgets::object_list::ObjectManager,
     interface_manager: widgets::interface_list::InterfaceManager,
@@ -81,6 +88,7 @@ impl LightBeatApp {
         let snapshot = beat_clock.snapshot();
         let dmx_shared = dmx_io::new_shared_dmx_state();
         let object_store = dmx_io::new_shared_object_store();
+        let group_ctx = widgets::nodes::output::group::new_shared_group_context();
         let engine = EngineHandle::start(dmx_shared.clone(), object_store.clone());
 
         let mut app = Self {
@@ -100,6 +108,7 @@ impl LightBeatApp {
             dmx_monitor: widgets::dmx_monitor::DmxMonitor::new(),
             dmx_shared,
             object_store,
+            group_ctx,
             fixture_manager: widgets::fixture_list::FixtureManager::new(),
             object_manager: widgets::object_list::ObjectManager::new(),
             interface_manager: widgets::interface_list::InterfaceManager::new(),
@@ -110,7 +119,7 @@ impl LightBeatApp {
         app.load_setup();
 
         app.register_node_factories();
-        app.register_group_nodes();
+        app.sync_group_context();
         app.sync_object_store();
         app.sync_interfaces();
 
@@ -147,13 +156,20 @@ impl LightBeatApp {
             Box::new(PhaseScalerWidget::new(id, new_shared_state(1, 1)))
         });
         self.graph.register_node("Transport", "Step Sequencer", |id| {
-            Box::new(StepSequencerWidget::new(id, new_shared_state(1, 2)))
+            Box::new(StepSequencerWidget::new(id, new_shared_state(1, 3)))
         });
         self.graph.register_node("Transport", "ADSR", |id| {
             Box::new(EnvelopeWidget::new(id, new_shared_state(2, 2)))
         });
         self.graph.register_node("Transport", "Trigger Delay", |id| {
             Box::new(TriggerDelayWidget::new(id, new_shared_state(2, 1)))
+        });
+        self.graph.register_node("Transport", "Clock Divider", |id| {
+            Box::new(ClockDividerWidget::new(id, new_shared_state(1, 1)))
+        });
+        self.graph.register_node("Transport", "Transition", |id| {
+            // trigger(1) + phase(1) + color(3) = 5 input channels, color(3) output channels
+            Box::new(TransitionWidget::new(id, new_shared_state(5, 3)))
         });
 
         // Math
@@ -180,6 +196,9 @@ impl LightBeatApp {
         });
         self.graph.register_node("Math", "Color Split", |id| {
             Box::new(ColorSplitWidget::new(id, new_shared_state(3, 4))) // 3 inputs (RGB), up to 4 outputs (RGBW)
+        });
+        self.graph.register_node("Math", "Lookup", |id| {
+            Box::new(LookupWidget::new(id, new_shared_state(1, 3))) // 1 input, up to 3 output channels (Color)
         });
         self.graph.register_node("Math", "Const Value", |id| {
             Box::new(ConstantWidget::new(id, PortType::Untyped, new_shared_state(0, 1)))
@@ -235,37 +254,18 @@ impl LightBeatApp {
             Box::new(ColorDisplayWidget::new(id, new_shared_state(3, 0)))
         });
 
-        // Output — Group nodes are registered dynamically when groups exist.
-        // See register_group_nodes().
+        // Output
+        let gctx = self.group_ctx.clone();
+        self.graph.register_node("Output", "Group Output", move |id| {
+            Box::new(GroupWidget::new(id, new_shared_state(6, 0), gctx.clone()))
+        });
     }
 
-    /// Register/re-register group nodes based on current groups and fixtures.
-    fn register_group_nodes(&mut self) {
-        // Remove old group registrations and re-add based on current groups.
-        // For now, groups are added to the context menu as "Output" category.
-        // This is called after setup is loaded.
-        for group in &self.group_manager.groups {
-            let caps = group.capabilities(&self.object_manager.objects);
-            if caps.is_empty() { continue; }
-
-            let group_name = group.name.clone();
-            let group_clone = group.clone();
-            let caps_clone = caps.clone();
-            let num_channels: usize = caps.iter().map(|c| match c {
-                crate::objects::group::GroupCapability::Dimmer => 1,
-                crate::objects::group::GroupCapability::Color => 3,
-                crate::objects::group::GroupCapability::Position => 2,
-            }).sum();
-
-            self.graph.register_node("Output", Box::leak(group_name.into_boxed_str()), move |id| {
-                Box::new(GroupWidget::new(
-                    id,
-                    new_shared_state(num_channels, 0),
-                    group_clone.name.clone(),
-                    caps_clone.clone(),
-                ))
-            });
-        }
+    /// Sync group and object data to the shared context for Group Output widgets.
+    fn sync_group_context(&self) {
+        let mut ctx = self.group_ctx.lock().unwrap();
+        ctx.groups = self.group_manager.groups.clone();
+        ctx.objects = self.object_manager.objects.clone();
     }
 
     fn create_default_clock(&mut self) {
@@ -338,6 +338,18 @@ impl LightBeatApp {
                         shared,
                     });
                 }
+                "Clock Divider" => {
+                    self.engine.send(EngineCommand::AddNode {
+                        node: Box::new(ClockDividerProcessNode::new(id)),
+                        shared,
+                    });
+                }
+                "Transition" => {
+                    self.engine.send(EngineCommand::AddNode {
+                        node: Box::new(TransitionProcessNode::new(id)),
+                        shared,
+                    });
+                }
                 "Add" | "Sub" | "Mul" | "Div" => {
                     let op = match type_name {
                         "Add" => MathOp::Add,
@@ -407,6 +419,12 @@ impl LightBeatApp {
                         shared,
                     });
                 }
+                "Lookup" => {
+                    self.engine.send(EngineCommand::AddNode {
+                        node: Box::new(LookupProcessNode::new(id)),
+                        shared,
+                    });
+                }
                 "Const Value" => {
                     self.engine.send(EngineCommand::AddNode {
                         node: Box::new(ConstantProcessNode::new(id, PortType::Untyped, 0.0)),
@@ -437,21 +455,11 @@ impl LightBeatApp {
                         shared,
                     });
                 }
-                "Group" => {
-                    // Find the matching group by checking the widget's title.
-                    if let Some(group_widget) = node.as_any_mut().downcast_mut::<GroupWidget>() {
-                        let group_name = group_widget.group_name();
-                        if let Some(group) = self.group_manager.groups.iter().find(|g| g.name == group_name) {
-                            let caps = group.capabilities(&self.object_manager.objects);
-                            let engine_node = GroupProcessNode::new(
-                                id, group.clone(), caps, self.object_store.clone(),
-                            );
-                            self.engine.send(EngineCommand::AddNode {
-                                node: Box::new(engine_node),
-                                shared,
-                            });
-                        }
-                    }
+                "Group Output" => {
+                    self.engine.send(EngineCommand::AddNode {
+                        node: Box::new(GroupProcessNode::new(id, self.object_store.clone())),
+                        shared,
+                    });
                 }
                 _ => {
                     eprintln!("Unknown node type for engine: {}", type_name);
@@ -781,6 +789,13 @@ impl eframe::App for LightBeatApp {
         if self.interface_manager.needs_sync {
             self.interface_manager.needs_sync = false;
             self.sync_interfaces();
+        }
+
+        // Re-register group nodes and sync objects if groups/objects changed.
+        if self.group_manager.needs_refresh {
+            self.group_manager.needs_refresh = false;
+            self.sync_group_context();
+            self.sync_object_store();
         }
 
         // Send any pending engine commands from the graph.

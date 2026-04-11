@@ -35,6 +35,7 @@ impl StepSequencerProcessNode {
             outputs: vec![
                 PortDef::new("trigger", PortType::Logic),
                 PortDef::new("value", PortType::Untyped),
+                PortDef::new("step", PortType::Untyped),
             ],
         }
     }
@@ -92,6 +93,7 @@ impl ProcessNode for StepSequencerProcessNode {
         match port_index {
             0 => self.trigger_out,
             1 => self.values[self.current_step],
+            2 => self.current_step as f32,
             _ => 0.0,
         }
     }
