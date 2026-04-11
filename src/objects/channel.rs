@@ -244,7 +244,7 @@ mod tests {
 
     #[test]
     fn dimmer_writes_correct_channel() {
-        let mut ch = Channel::dimmer("Dim", 0);
+        let mut ch = Channel::dimmer("Dim");
         ch.set_dimmer(0.5);
         let mut buf = [0u8; 512];
         ch.write_dmx(&mut buf, 10);
@@ -253,7 +253,8 @@ mod tests {
 
     #[test]
     fn color_rgb_writes_three_channels() {
-        let mut ch = Channel::color("Col", 1, ColorMode::Rgb);
+        let mut ch = Channel::color("Col", ColorMode::Rgb);
+        ch.offset = 1;
         ch.set_color(Rgb::new(1.0, 0.5, 0.0));
         let mut buf = [0u8; 512];
         ch.write_dmx(&mut buf, 0);
@@ -264,7 +265,7 @@ mod tests {
 
     #[test]
     fn pan_tilt_fine_writes_four_channels() {
-        let mut ch = Channel::pan_tilt("PT", 0, true);
+        let mut ch = Channel::pan_tilt("PT", true);
         ch.set_pan_tilt(0.5, 1.0);
         let mut buf = [0u8; 512];
         ch.write_dmx(&mut buf, 0);

@@ -1,6 +1,6 @@
 use sacn::DmxSource;
 
-use crate::objects::DmxUniverse;
+use crate::objects::universe::DmxUniverse;
 use super::DmxOutput;
 
 /// sACN (E1.31) DMX output. Sends DMX universes via multicast using the

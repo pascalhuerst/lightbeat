@@ -36,6 +36,10 @@ pub enum PortType {
     Untyped,
     /// Accepts any signal type (grey). Monitoring ports.
     Any,
+    /// RGB color (3 floats: r, g, b in 0..1). Cyan.
+    Color,
+    /// Pan/Tilt position (2 floats: pan, tilt in 0..1). Green-blue.
+    Position,
 }
 
 impl PortType {
@@ -45,6 +49,17 @@ impl PortType {
             PortType::Phase => (0.0, 1.0),
             PortType::Untyped => (-1.0, 1.0),
             PortType::Any => (-1.0, 1.0),
+            PortType::Color => (0.0, 1.0),
+            PortType::Position => (0.0, 1.0),
+        }
+    }
+
+    /// Number of float components this port type carries.
+    pub fn channel_count(&self) -> usize {
+        match self {
+            PortType::Color => 3,    // R, G, B
+            PortType::Position => 2, // Pan, Tilt
+            _ => 1,
         }
     }
 
@@ -70,6 +85,24 @@ impl PortDef {
             port_type,
         }
     }
+}
+
+/// Compute the internal channel base index for a given logical port index.
+/// Accounts for multi-channel ports (Color=3, Position=2).
+pub fn port_base_index(ports: &[PortDef], logical_index: usize) -> usize {
+    let mut base = 0;
+    for (i, p) in ports.iter().enumerate() {
+        if i == logical_index {
+            return base;
+        }
+        base += p.port_type.channel_count();
+    }
+    base
+}
+
+/// Total number of internal float channels for a list of ports.
+pub fn total_channels(ports: &[PortDef]) -> usize {
+    ports.iter().map(|p| p.port_type.channel_count()).sum()
 }
 
 // ---------------------------------------------------------------------------
@@ -211,6 +244,8 @@ pub enum EngineCommand {
         data: serde_json::Value,
     },
     RemoveAllNodes,
+    /// Set DMX output interfaces.
+    SetInterfaces(Vec<Box<dyn crate::interfaces::DmxOutput>>),
 }
 
 // ---------------------------------------------------------------------------

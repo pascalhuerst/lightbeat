@@ -2,8 +2,8 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-use crate::objects::fixture::{DmxAddress, Fixture};
-use crate::objects::channel::{Channel, ChannelKind, ColorMode};
+use crate::objects::fixture::Fixture;
+use crate::objects::group::Group;
 use crate::objects::output::OutputConfig;
 
 const SETUP_FILENAME: &str = "setup.json";
@@ -16,6 +16,8 @@ const SETUP_FILENAME: &str = "setup.json";
 pub struct SetupFile {
     pub fixtures: Vec<Fixture>,
     pub interfaces: Vec<SavedInterface>,
+    #[serde(default)]
+    pub groups: Vec<Group>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]

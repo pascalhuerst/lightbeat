@@ -4,7 +4,7 @@ use ringbuf::traits::Consumer;
 
 use super::CommandConsumer;
 use super::types::*;
-use crate::dmx_io::{DmxOutputManager, SharedDmxState};
+use crate::dmx_io::{DmxOutputManager, SharedDmxState, SharedFixtureStore};
 
 /// The engine-side signal graph. Runs on its own thread at ~1kHz.
 pub struct EngineGraph {
@@ -15,12 +15,12 @@ pub struct EngineGraph {
 }
 
 impl EngineGraph {
-    pub fn new(dmx_shared: SharedDmxState) -> Self {
+    pub fn new(dmx_shared: SharedDmxState, fixture_store: SharedFixtureStore) -> Self {
         Self {
             nodes: Vec::new(),
             shared_states: Vec::new(),
             connections: Vec::new(),
-            dmx: Some(DmxOutputManager::new(dmx_shared)),
+            dmx: Some(DmxOutputManager::new(dmx_shared, fixture_store)),
         }
     }
 
@@ -98,6 +98,11 @@ impl EngineGraph {
                 self.shared_states.clear();
                 self.connections.clear();
             }
+            EngineCommand::SetInterfaces(interfaces) => {
+                if let Some(dmx) = &mut self.dmx {
+                    dmx.set_interfaces(interfaces);
+                }
+            }
         }
     }
 
@@ -109,21 +114,37 @@ impl EngineGraph {
         }
 
         // 2. Propagate signals through connections.
-        // Collect values first to avoid borrow issues.
-        let values: Vec<(PortId, f32)> = self
-            .connections
-            .iter()
-            .filter_map(|conn| {
-                let src_idx = self.nodes.iter().position(|n| n.node_id() == conn.from.node)?;
-                let val = self.nodes[src_idx].read_output(conn.from.index);
-                Some((conn.to, val))
-            })
-            .collect();
+        // Multi-channel ports (Color=3, Position=2) expand to multiple float copies.
+        let mut writes: Vec<(usize, usize, f32)> = Vec::new();
 
-        for (target, val) in values {
-            if let Some(dst_idx) = self.nodes.iter().position(|n| n.node_id() == target.node) {
-                self.nodes[dst_idx].write_input(target.index, val);
+        for conn in &self.connections {
+            let src_node_idx = match self.nodes.iter().position(|n| n.node_id() == conn.from.node) {
+                Some(i) => i,
+                None => continue,
+            };
+            let dst_node_idx = match self.nodes.iter().position(|n| n.node_id() == conn.to.node) {
+                Some(i) => i,
+                None => continue,
+            };
+
+            let src_ports = self.nodes[src_node_idx].outputs();
+            let dst_ports = self.nodes[dst_node_idx].inputs();
+
+            let src_base = port_base_index(src_ports, conn.from.index);
+            let dst_base = port_base_index(dst_ports, conn.to.index);
+
+            let src_channels = src_ports.get(conn.from.index).map(|p| p.port_type.channel_count()).unwrap_or(1);
+            let dst_channels = dst_ports.get(conn.to.index).map(|p| p.port_type.channel_count()).unwrap_or(1);
+            let channels = src_channels.min(dst_channels);
+
+            for ch in 0..channels {
+                let val = self.nodes[src_node_idx].read_output(src_base + ch);
+                writes.push((dst_node_idx, dst_base + ch, val));
             }
+        }
+
+        for (dst_idx, channel, val) in writes {
+            self.nodes[dst_idx].write_input(channel, val);
         }
 
         // 3. Drain pending param changes from UI (via shared state).

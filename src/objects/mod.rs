@@ -1,5 +1,6 @@
 pub mod channel;
 pub mod fixture;
+pub mod group;
 pub mod output;
 pub mod universe;
 

@@ -4,7 +4,7 @@ mod sacn;
 pub use artnet::ArtNetOutput;
 pub use sacn::SacnOutput;
 
-use crate::objects::DmxUniverse;
+use crate::objects::universe::DmxUniverse;
 
 /// Trait for sending DMX universe data to hardware over a network protocol.
 pub trait DmxOutput: Send {
@@ -33,6 +33,19 @@ pub enum DmxOutputConfig {
 }
 
 impl DmxOutputConfig {
+    /// Convert from the objects::OutputConfig used in setup.json.
+    pub fn from_output_config(config: &crate::objects::output::OutputConfig) -> Option<Self> {
+        match config {
+            crate::objects::output::OutputConfig::ArtNet { host, port } => {
+                Some(DmxOutputConfig::ArtNet { host: host.clone(), port: *port })
+            }
+            crate::objects::output::OutputConfig::Sacn { source_name } => {
+                Some(DmxOutputConfig::Sacn { source_name: source_name.clone() })
+            }
+            crate::objects::output::OutputConfig::None => None,
+        }
+    }
+
     pub fn artnet_broadcast() -> Self {
         DmxOutputConfig::ArtNet {
             host: "255.255.255.255".to_string(),

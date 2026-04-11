@@ -9,12 +9,7 @@ pub struct ConstantProcessNode {
 
 impl ConstantProcessNode {
     pub fn new(id: NodeId, port_type: PortType, default: f32) -> Self {
-        let name = match port_type {
-            PortType::Logic => "out",
-            PortType::Phase => "out",
-            PortType::Untyped => "out",
-            PortType::Any => "out",
-        };
+        let name = "out";
         Self {
             id,
             value: default,

@@ -4,7 +4,7 @@ mod config;
 mod dmx_io;
 mod engine;
 mod setup;
-// mod interfaces; // TODO: fix artnet_protocol/sacn API version mismatch
+mod interfaces;
 mod link_controller;
 mod objects;
 mod project;
@@ -22,11 +22,14 @@ use engine::EngineHandle;
 use engine::nodes::display::color_display::ColorDisplayProcessNode;
 use engine::nodes::display::scope::ScopeProcessNode;
 use engine::nodes::io::clock::ClockProcessNode;
+use engine::nodes::math::color_ops::{ColorMergeProcessNode, ColorSplitProcessNode};
 use engine::nodes::math::compare::{CompareOp, CompareProcessNode};
 use engine::nodes::math::constant::ConstantProcessNode;
 use engine::nodes::math::logic_gate::{LogicOp, LogicGateProcessNode};
 use engine::nodes::math::math_op::{MathOp, MathProcessNode};
 use engine::nodes::math::oscillator::{OscFunc, OscillatorProcessNode};
+use engine::nodes::math::position_ops::{PositionMergeProcessNode, PositionSplitProcessNode};
+use engine::nodes::output::group::GroupProcessNode;
 use engine::nodes::transport::delay::TriggerDelayProcessNode;
 use engine::nodes::transport::envelope::EnvelopeProcessNode;
 use engine::nodes::transport::phase_scaler::PhaseScalerProcessNode;
@@ -34,11 +37,14 @@ use engine::nodes::transport::step_sequencer::StepSequencerProcessNode;
 use widgets::nodes::display::color_display::ColorDisplayWidget;
 use widgets::nodes::display::scope::ScopeWidget;
 use widgets::nodes::io::clock::ClockWidget;
+use widgets::nodes::math::color_ops::{ColorMergeWidget, ColorSplitWidget};
 use widgets::nodes::math::compare::CompareWidget;
 use widgets::nodes::math::constant::ConstantWidget;
 use widgets::nodes::math::logic_gate::LogicGateWidget;
 use widgets::nodes::math::math_op::MathWidget;
 use widgets::nodes::math::oscillator::OscillatorWidget;
+use widgets::nodes::math::position_ops::{PositionMergeWidget, PositionSplitWidget};
+use widgets::nodes::output::group::GroupWidget;
 use widgets::nodes::transport::delay::TriggerDelayWidget;
 use widgets::nodes::transport::envelope::EnvelopeWidget;
 use widgets::nodes::transport::phase_scaler::PhaseScalerWidget;
@@ -57,10 +63,13 @@ struct LightBeatApp {
     show_dmx_monitor: bool,
     show_fixture_list: bool,
     show_interface_list: bool,
+    show_group_list: bool,
     dmx_monitor: widgets::dmx_monitor::DmxMonitor,
     dmx_shared: dmx_io::SharedDmxState,
+    fixture_store: dmx_io::SharedFixtureStore,
     fixture_manager: widgets::fixture_list::FixtureManager,
     interface_manager: widgets::interface_list::InterfaceManager,
+    group_manager: widgets::group_list::GroupManager,
 }
 
 impl LightBeatApp {
@@ -69,7 +78,8 @@ impl LightBeatApp {
         let beat_clock = BeatClock::new(4.0);
         let snapshot = beat_clock.snapshot();
         let dmx_shared = dmx_io::new_shared_dmx_state();
-        let engine = EngineHandle::start(dmx_shared.clone());
+        let fixture_store = dmx_io::new_shared_fixture_store();
+        let engine = EngineHandle::start(dmx_shared.clone(), fixture_store.clone());
 
         let mut app = Self {
             graph: NodeGraph::new(),
@@ -83,16 +93,22 @@ impl LightBeatApp {
             show_dmx_monitor: false,
             show_fixture_list: false,
             show_interface_list: false,
+            show_group_list: false,
             dmx_monitor: widgets::dmx_monitor::DmxMonitor::new(),
             dmx_shared,
+            fixture_store,
             fixture_manager: widgets::fixture_list::FixtureManager::new(),
             interface_manager: widgets::interface_list::InterfaceManager::new(),
+            group_manager: widgets::group_list::GroupManager::new(),
         };
 
         // Load hardware setup (fixtures + interfaces).
         app.load_setup();
 
         app.register_node_factories();
+        app.register_group_nodes();
+        app.sync_fixture_store();
+        app.sync_interfaces();
 
         // Try autoload, or create default clock.
         let loaded = if app.config.autoload_on_open {
@@ -155,6 +171,12 @@ impl LightBeatApp {
         self.graph.register_node("Math", "Cos", |id| {
             Box::new(OscillatorWidget::new(id, OscFunc::Cos, new_shared_state(2, 1)))
         });
+        self.graph.register_node("Math", "Color Merge", |id| {
+            Box::new(ColorMergeWidget::new(id, new_shared_state(4, 3))) // up to 4 inputs (RGBW), 3 outputs (RGB)
+        });
+        self.graph.register_node("Math", "Color Split", |id| {
+            Box::new(ColorSplitWidget::new(id, new_shared_state(3, 4))) // 3 inputs (RGB), up to 4 outputs (RGBW)
+        });
         self.graph.register_node("Math", "Const Value", |id| {
             Box::new(ConstantWidget::new(id, PortType::Untyped, new_shared_state(0, 1)))
         });
@@ -193,6 +215,14 @@ impl LightBeatApp {
             Box::new(LogicGateWidget::new(id, LogicOp::Not, new_shared_state(1, 1)))
         });
 
+        // Position
+        self.graph.register_node("Math", "Position Merge", |id| {
+            Box::new(PositionMergeWidget::new(id, new_shared_state(2, 2)))
+        });
+        self.graph.register_node("Math", "Position Split", |id| {
+            Box::new(PositionSplitWidget::new(id, new_shared_state(2, 2)))
+        });
+
         // Display
         self.graph.register_node("Display", "Scope", |id| {
             Box::new(ScopeWidget::new(id, new_shared_state(2, 0)))
@@ -200,6 +230,38 @@ impl LightBeatApp {
         self.graph.register_node("Display", "Color Display", |id| {
             Box::new(ColorDisplayWidget::new(id, new_shared_state(3, 0)))
         });
+
+        // Output — Group nodes are registered dynamically when groups exist.
+        // See register_group_nodes().
+    }
+
+    /// Register/re-register group nodes based on current groups and fixtures.
+    fn register_group_nodes(&mut self) {
+        // Remove old group registrations and re-add based on current groups.
+        // For now, groups are added to the context menu as "Output" category.
+        // This is called after setup is loaded.
+        for group in &self.group_manager.groups {
+            let caps = group.capabilities(&self.fixture_manager.fixtures);
+            if caps.is_empty() { continue; }
+
+            let group_name = group.name.clone();
+            let group_clone = group.clone();
+            let caps_clone = caps.clone();
+            let num_channels: usize = caps.iter().map(|c| match c {
+                crate::objects::group::GroupCapability::Dimmer => 1,
+                crate::objects::group::GroupCapability::Color => 3,
+                crate::objects::group::GroupCapability::Position => 2,
+            }).sum();
+
+            self.graph.register_node("Output", Box::leak(group_name.into_boxed_str()), move |id| {
+                Box::new(GroupWidget::new(
+                    id,
+                    new_shared_state(num_channels, 0),
+                    group_clone.name.clone(),
+                    caps_clone.clone(),
+                ))
+            });
+        }
     }
 
     fn create_default_clock(&mut self) {
@@ -317,6 +379,30 @@ impl LightBeatApp {
                         shared,
                     });
                 }
+                "Color Merge" => {
+                    self.engine.send(EngineCommand::AddNode {
+                        node: Box::new(ColorMergeProcessNode::new(id)),
+                        shared,
+                    });
+                }
+                "Color Split" => {
+                    self.engine.send(EngineCommand::AddNode {
+                        node: Box::new(ColorSplitProcessNode::new(id)),
+                        shared,
+                    });
+                }
+                "Position Merge" => {
+                    self.engine.send(EngineCommand::AddNode {
+                        node: Box::new(PositionMergeProcessNode::new(id)),
+                        shared,
+                    });
+                }
+                "Position Split" => {
+                    self.engine.send(EngineCommand::AddNode {
+                        node: Box::new(PositionSplitProcessNode::new(id)),
+                        shared,
+                    });
+                }
                 "Const Value" => {
                     self.engine.send(EngineCommand::AddNode {
                         node: Box::new(ConstantProcessNode::new(id, PortType::Untyped, 0.0)),
@@ -347,6 +433,22 @@ impl LightBeatApp {
                         shared,
                     });
                 }
+                "Group" => {
+                    // Find the matching group by checking the widget's title.
+                    if let Some(group_widget) = node.as_any_mut().downcast_mut::<GroupWidget>() {
+                        let group_name = group_widget.group_name();
+                        if let Some(group) = self.group_manager.groups.iter().find(|g| g.name == group_name) {
+                            let caps = group.capabilities(&self.fixture_manager.fixtures);
+                            let engine_node = GroupProcessNode::new(
+                                id, group.clone(), caps, self.fixture_store.clone(),
+                            );
+                            self.engine.send(EngineCommand::AddNode {
+                                node: Box::new(engine_node),
+                                shared,
+                            });
+                        }
+                    }
+                }
                 _ => {
                     eprintln!("Unknown node type for engine: {}", type_name);
                 }
@@ -359,6 +461,7 @@ impl LightBeatApp {
             Ok(s) => {
                 self.fixture_manager = widgets::fixture_list::FixtureManager::from_fixtures(s.fixtures);
                 self.interface_manager = widgets::interface_list::InterfaceManager::from_saved(s.interfaces);
+                self.group_manager = widgets::group_list::GroupManager::from_groups(s.groups);
             }
             Err(e) => eprintln!("Failed to load setup: {}", e),
         }
@@ -368,10 +471,33 @@ impl LightBeatApp {
         let setup = setup::SetupFile {
             fixtures: self.fixture_manager.fixtures.clone(),
             interfaces: self.interface_manager.to_saved(),
+            groups: self.group_manager.groups.clone(),
         };
         if let Err(e) = setup::save_setup(&setup) {
             eprintln!("Failed to save setup: {}", e);
         }
+    }
+
+    /// Sync fixture definitions from the UI manager to the engine's shared store.
+    fn sync_fixture_store(&self) {
+        let mut store = self.fixture_store.lock().unwrap();
+        store.fixtures = self.fixture_manager.fixtures.clone();
+    }
+
+    /// Build and send DMX output interfaces to the engine.
+    fn sync_interfaces(&mut self) {
+        let mut ifaces: Vec<Box<dyn interfaces::DmxOutput>> = Vec::new();
+        for entry in &self.interface_manager.interfaces {
+            if !entry.enabled { continue; }
+            let config = interfaces::DmxOutputConfig::from_output_config(&entry.config);
+            if let Some(cfg) = config {
+                match cfg.build() {
+                    Ok(output) => ifaces.push(output),
+                    Err(e) => eprintln!("Failed to create interface '{}': {}", entry.name, e),
+                }
+            }
+        }
+        self.engine.send(EngineCommand::SetInterfaces(ifaces));
     }
 
     fn save_project(&mut self) {
@@ -498,6 +624,9 @@ impl eframe::App for LightBeatApp {
                     if ui.checkbox(&mut self.show_fixture_list, "Fixtures").changed() {
                         ui.close_menu();
                     }
+                    if ui.checkbox(&mut self.show_group_list, "Groups").changed() {
+                        ui.close_menu();
+                    }
                     if ui.checkbox(&mut self.show_interface_list, "Interfaces").changed() {
                         ui.close_menu();
                     }
@@ -525,6 +654,16 @@ impl eframe::App for LightBeatApp {
                 .default_size([350.0, 300.0])
                 .show(ctx, |ui| {
                     self.interface_manager.show(ui);
+                });
+        }
+
+        // Groups window (toggled via View menu).
+        if self.show_group_list {
+            egui::Window::new("Groups")
+                .open(&mut self.show_group_list)
+                .default_size([350.0, 400.0])
+                .show(ctx, |ui| {
+                    self.group_manager.show(ui, &self.fixture_manager.fixtures);
                 });
         }
 

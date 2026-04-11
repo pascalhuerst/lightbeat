@@ -19,6 +19,8 @@ impl PortTypeUi for PortType {
             PortType::Phase => Color32::from_rgb(180, 100, 220),
             PortType::Untyped => Color32::from_rgb(220, 80, 80),
             PortType::Any => Color32::from_gray(160),
+            PortType::Color => Color32::from_rgb(60, 200, 220),
+            PortType::Position => Color32::from_rgb(80, 200, 140),
         }
     }
 }
