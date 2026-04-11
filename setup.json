@@ -2,7 +2,7 @@
   "fixtures": [
     {
       "id": 1,
-      "name": "Fun White RGBW PAR",
+      "name": "Fun White Par RGBW",
       "channels": [
         {
           "name": "Color 1",
@@ -22,26 +22,360 @@
             0.0
           ]
         }
-      ],
+      ]
+    }
+  ],
+  "objects": [
+    {
+      "id": 1,
+      "name": "Fun White Par RGBW #1",
+      "fixture_id": 1,
       "address": {
         "net": 0,
         "subnet": 0,
-        "universe": 0,
-        "start_channel": 1
-      }
+        "universe": 3,
+        "start_channel": 60
+      },
+      "interface_id": 1,
+      "channels": [
+        {
+          "name": "Color 1",
+          "kind": {
+            "Color": {
+              "mode": {
+                "Rgbw": {
+                  "white_temperature": 6500
+                }
+              }
+            }
+          },
+          "offset": 0,
+          "values": [
+            0.0,
+            0.0,
+            0.0
+          ]
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "name": "Fun White Par RGBW #2",
+      "fixture_id": 1,
+      "address": {
+        "net": 0,
+        "subnet": 0,
+        "universe": 3,
+        "start_channel": 64
+      },
+      "interface_id": 1,
+      "channels": [
+        {
+          "name": "Color 1",
+          "kind": {
+            "Color": {
+              "mode": {
+                "Rgbw": {
+                  "white_temperature": 6500
+                }
+              }
+            }
+          },
+          "offset": 0,
+          "values": [
+            0.0,
+            0.0,
+            0.0
+          ]
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "name": "Fun White Par RGBW #3",
+      "fixture_id": 1,
+      "address": {
+        "net": 0,
+        "subnet": 0,
+        "universe": 3,
+        "start_channel": 68
+      },
+      "interface_id": 1,
+      "channels": [
+        {
+          "name": "Color 1",
+          "kind": {
+            "Color": {
+              "mode": {
+                "Rgbw": {
+                  "white_temperature": 6500
+                }
+              }
+            }
+          },
+          "offset": 0,
+          "values": [
+            0.0,
+            0.0,
+            0.0
+          ]
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "name": "Fun White Par RGBW #4",
+      "fixture_id": 1,
+      "address": {
+        "net": 0,
+        "subnet": 0,
+        "universe": 3,
+        "start_channel": 72
+      },
+      "interface_id": 1,
+      "channels": [
+        {
+          "name": "Color 1",
+          "kind": {
+            "Color": {
+              "mode": {
+                "Rgbw": {
+                  "white_temperature": 6500
+                }
+              }
+            }
+          },
+          "offset": 0,
+          "values": [
+            0.0,
+            0.0,
+            0.0
+          ]
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "name": "Fun White Par RGBW #5",
+      "fixture_id": 1,
+      "address": {
+        "net": 0,
+        "subnet": 0,
+        "universe": 3,
+        "start_channel": 76
+      },
+      "interface_id": 1,
+      "channels": [
+        {
+          "name": "Color 1",
+          "kind": {
+            "Color": {
+              "mode": {
+                "Rgbw": {
+                  "white_temperature": 6500
+                }
+              }
+            }
+          },
+          "offset": 0,
+          "values": [
+            0.0,
+            0.0,
+            0.0
+          ]
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "name": "Fun White Par RGBW #6",
+      "fixture_id": 1,
+      "address": {
+        "net": 0,
+        "subnet": 0,
+        "universe": 3,
+        "start_channel": 80
+      },
+      "interface_id": 1,
+      "channels": [
+        {
+          "name": "Color 1",
+          "kind": {
+            "Color": {
+              "mode": {
+                "Rgbw": {
+                  "white_temperature": 6500
+                }
+              }
+            }
+          },
+          "offset": 0,
+          "values": [
+            0.0,
+            0.0,
+            0.0
+          ]
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "name": "Fun White Par RGBW #7",
+      "fixture_id": 1,
+      "address": {
+        "net": 0,
+        "subnet": 0,
+        "universe": 3,
+        "start_channel": 84
+      },
+      "interface_id": 1,
+      "channels": [
+        {
+          "name": "Color 1",
+          "kind": {
+            "Color": {
+              "mode": {
+                "Rgbw": {
+                  "white_temperature": 6500
+                }
+              }
+            }
+          },
+          "offset": 0,
+          "values": [
+            0.0,
+            0.0,
+            0.0
+          ]
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "name": "Fun White Par RGBW #8",
+      "fixture_id": 1,
+      "address": {
+        "net": 0,
+        "subnet": 0,
+        "universe": 3,
+        "start_channel": 88
+      },
+      "interface_id": 1,
+      "channels": [
+        {
+          "name": "Color 1",
+          "kind": {
+            "Color": {
+              "mode": {
+                "Rgbw": {
+                  "white_temperature": 6500
+                }
+              }
+            }
+          },
+          "offset": 0,
+          "values": [
+            0.0,
+            0.0,
+            0.0
+          ]
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "name": "Fun White Par RGBW #9",
+      "fixture_id": 1,
+      "address": {
+        "net": 0,
+        "subnet": 0,
+        "universe": 3,
+        "start_channel": 92
+      },
+      "interface_id": 1,
+      "channels": [
+        {
+          "name": "Color 1",
+          "kind": {
+            "Color": {
+              "mode": {
+                "Rgbw": {
+                  "white_temperature": 6500
+                }
+              }
+            }
+          },
+          "offset": 0,
+          "values": [
+            0.0,
+            0.0,
+            0.0
+          ]
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "name": "Fun White Par RGBW #10",
+      "fixture_id": 1,
+      "address": {
+        "net": 0,
+        "subnet": 0,
+        "universe": 3,
+        "start_channel": 96
+      },
+      "interface_id": 1,
+      "channels": [
+        {
+          "name": "Color 1",
+          "kind": {
+            "Color": {
+              "mode": {
+                "Rgbw": {
+                  "white_temperature": 6500
+                }
+              }
+            }
+          },
+          "offset": 0,
+          "values": [
+            0.0,
+            0.0,
+            0.0
+          ]
+        }
+      ]
     }
   ],
   "interfaces": [
     {
       "id": 1,
-      "name": "OLA Artnet Node",
+      "name": "OLA Node",
       "config": {
         "ArtNet": {
           "host": "192.168.1.3",
           "port": 6454
         }
       },
-      "enabled": false
+      "enabled": true
+    }
+  ],
+  "groups": [
+    {
+      "id": 1,
+      "name": "Fun White Floor",
+      "object_ids": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10
+      ]
     }
   ]
 }

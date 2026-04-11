@@ -1,9 +1,9 @@
 use egui::{self, Color32, Ui};
 
-use crate::objects::fixture::Fixture;
 use crate::objects::group::Group;
+use crate::objects::object::Object;
 
-/// Manages groups of fixtures.
+/// Manages groups of objects.
 pub struct GroupManager {
     pub groups: Vec<Group>,
     next_id: u32,
@@ -11,10 +11,7 @@ pub struct GroupManager {
 
 impl GroupManager {
     pub fn new() -> Self {
-        Self {
-            groups: Vec::new(),
-            next_id: 1,
-        }
+        Self { groups: Vec::new(), next_id: 1 }
     }
 
     pub fn from_groups(groups: Vec<Group>) -> Self {
@@ -22,7 +19,7 @@ impl GroupManager {
         Self { groups, next_id }
     }
 
-    pub fn show(&mut self, ui: &mut Ui, fixtures: &[Fixture]) {
+    pub fn show(&mut self, ui: &mut Ui, objects: &[Object]) {
         ui.heading("Groups");
         ui.separator();
 
@@ -35,7 +32,7 @@ impl GroupManager {
         egui::ScrollArea::vertical().show(ui, |ui| {
             for group in &mut self.groups {
                 ui.push_id(group.id, |ui| {
-                    let caps = group.capabilities(fixtures);
+                    let caps = group.capabilities(objects);
                     let caps_str = caps.iter().map(|c| c.label()).collect::<Vec<_>>().join(", ");
 
                     egui::CollapsingHeader::new(
@@ -44,47 +41,42 @@ impl GroupManager {
                     .id_salt(group.id)
                     .default_open(false)
                     .show(ui, |ui| {
-                        // Name
                         ui.horizontal(|ui| {
                             ui.label("Name:");
                             ui.text_edit_singleline(&mut group.name);
                         });
 
-                        // Capabilities
                         if !caps_str.is_empty() {
                             ui.colored_label(Color32::from_gray(140), format!("Capabilities: {}", caps_str));
                         }
 
-                        // Member fixtures
                         ui.add_space(4.0);
                         ui.label(egui::RichText::new("Members").strong());
 
-                        // Show current members with remove button.
-                        let mut remove_fixture_id = None;
-                        for fid in &group.fixture_ids {
-                            if let Some(fixture) = fixtures.iter().find(|f| f.id == *fid) {
+                        let mut remove_obj_id = None;
+                        for oid in &group.object_ids {
+                            if let Some(obj) = objects.iter().find(|o| o.id == *oid) {
                                 ui.horizontal(|ui| {
-                                    ui.label(format!("  {}", fixture.name));
+                                    ui.label(format!("  {}", obj.name));
                                     if ui.small_button("x").clicked() {
-                                        remove_fixture_id = Some(*fid);
+                                        remove_obj_id = Some(*oid);
                                     }
                                 });
                             }
                         }
-                        if let Some(fid) = remove_fixture_id {
-                            group.fixture_ids.retain(|id| *id != fid);
+                        if let Some(oid) = remove_obj_id {
+                            group.object_ids.retain(|id| *id != oid);
                         }
 
-                        // Add fixture dropdown.
-                        let available: Vec<&Fixture> = fixtures.iter()
-                            .filter(|f| !group.fixture_ids.contains(&f.id))
+                        let available: Vec<&Object> = objects.iter()
+                            .filter(|o| !group.object_ids.contains(&o.id))
                             .collect();
                         if !available.is_empty() {
-                            ui.horizontal(|ui| {
+                            ui.horizontal_wrapped(|ui| {
                                 ui.label("Add:");
-                                for fixture in &available {
-                                    if ui.small_button(&fixture.name).clicked() {
-                                        group.fixture_ids.push(fixture.id);
+                                for obj in &available {
+                                    if ui.small_button(&obj.name).clicked() {
+                                        group.object_ids.push(obj.id);
                                     }
                                 }
                             });

@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use super::channel::ChannelKind;
 use super::fixture::Fixture;
+use super::object::Object;
 
 /// What capabilities a group exposes as inputs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -21,14 +22,14 @@ impl GroupCapability {
     }
 }
 
-/// A group of fixtures that can be controlled together.
-/// Capabilities are the UNION of all member fixtures' channel types.
+/// A group of objects that can be controlled together.
+/// Capabilities are the UNION of all member objects' channel types.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Group {
     pub id: u32,
     pub name: String,
-    /// IDs of fixtures in this group.
-    pub fixture_ids: Vec<u32>,
+    /// IDs of objects in this group.
+    pub object_ids: Vec<u32>,
 }
 
 impl Group {
@@ -36,17 +37,17 @@ impl Group {
         Self {
             id,
             name: name.into(),
-            fixture_ids: Vec::new(),
+            object_ids: Vec::new(),
         }
     }
 
-    /// Compute the union of capabilities from all member fixtures.
-    pub fn capabilities(&self, fixtures: &[Fixture]) -> Vec<GroupCapability> {
+    /// Compute the union of capabilities from all member objects.
+    pub fn capabilities(&self, objects: &[Object]) -> Vec<GroupCapability> {
         let mut caps = Vec::new();
 
-        for fid in &self.fixture_ids {
-            if let Some(fixture) = fixtures.iter().find(|f| f.id == *fid) {
-                for ch in &fixture.channels {
+        for oid in &self.object_ids {
+            if let Some(obj) = objects.iter().find(|o| o.id == *oid) {
+                for ch in &obj.channels {
                     let cap = match &ch.kind {
                         ChannelKind::Dimmer => GroupCapability::Dimmer,
                         ChannelKind::Color { .. } => GroupCapability::Color,
@@ -60,7 +61,6 @@ impl Group {
             }
         }
 
-        // Sort for consistent ordering: Dimmer, Color, Position.
         caps.sort_by_key(|c| match c {
             GroupCapability::Dimmer => 0,
             GroupCapability::Color => 1,
@@ -68,15 +68,5 @@ impl Group {
         });
 
         caps
-    }
-
-    /// Check if a fixture supports a capability.
-    pub fn fixture_has_capability(fixture: &Fixture, cap: GroupCapability) -> bool {
-        fixture.channels.iter().any(|ch| match (&ch.kind, cap) {
-            (ChannelKind::Dimmer, GroupCapability::Dimmer) => true,
-            (ChannelKind::Color { .. }, GroupCapability::Color) => true,
-            (ChannelKind::PanTilt { .. }, GroupCapability::Position) => true,
-            _ => false,
-        })
     }
 }

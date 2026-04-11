@@ -4,7 +4,7 @@ use ringbuf::traits::Consumer;
 
 use super::CommandConsumer;
 use super::types::*;
-use crate::dmx_io::{DmxOutputManager, SharedDmxState, SharedFixtureStore};
+use crate::dmx_io::{DmxOutputManager, SharedDmxState, SharedObjectStore};
 
 /// The engine-side signal graph. Runs on its own thread at ~1kHz.
 pub struct EngineGraph {
@@ -15,12 +15,12 @@ pub struct EngineGraph {
 }
 
 impl EngineGraph {
-    pub fn new(dmx_shared: SharedDmxState, fixture_store: SharedFixtureStore) -> Self {
+    pub fn new(dmx_shared: SharedDmxState, object_store: SharedObjectStore) -> Self {
         Self {
             nodes: Vec::new(),
             shared_states: Vec::new(),
             connections: Vec::new(),
-            dmx: Some(DmxOutputManager::new(dmx_shared, fixture_store)),
+            dmx: Some(DmxOutputManager::new(dmx_shared, object_store)),
         }
     }
 

@@ -6,6 +6,8 @@ use crate::objects::output::OutputConfig;
 pub struct InterfaceManager {
     pub interfaces: Vec<InterfaceEntry>,
     next_id: u32,
+    /// Set to true when interfaces are added/removed/enabled/disabled.
+    pub needs_sync: bool,
 }
 
 pub struct InterfaceEntry {
@@ -20,6 +22,7 @@ impl InterfaceManager {
         Self {
             interfaces: Vec::new(),
             next_id: 1,
+            needs_sync: false,
         }
     }
 
@@ -34,7 +37,7 @@ impl InterfaceManager {
                 enabled: s.enabled,
             })
             .collect();
-        Self { interfaces, next_id }
+        Self { interfaces, next_id, needs_sync: true }
     }
 
     pub fn to_saved(&self) -> Vec<crate::setup::SavedInterface> {
@@ -75,7 +78,9 @@ impl InterfaceManager {
                         });
 
                         // Enabled
-                        ui.checkbox(&mut entry.enabled, "Enabled");
+                        if ui.checkbox(&mut entry.enabled, "Enabled").changed() {
+                            self.needs_sync = true;
+                        }
 
                         // Config
                         match &mut entry.config {
@@ -116,6 +121,7 @@ impl InterfaceManager {
 
         if let Some(id) = remove_id {
             self.interfaces.retain(|e| e.id != id);
+            self.needs_sync = true;
         }
 
         ui.separator();
@@ -132,6 +138,7 @@ impl InterfaceManager {
                     },
                     enabled: true,
                 });
+                self.needs_sync = true;
             }
             if ui.button("+ sACN").clicked() {
                 let id = self.next_id;
@@ -144,6 +151,7 @@ impl InterfaceManager {
                     },
                     enabled: true,
                 });
+                self.needs_sync = true;
             }
         });
     }

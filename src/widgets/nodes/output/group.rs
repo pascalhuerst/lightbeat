@@ -61,7 +61,7 @@ impl NodeWidget for GroupWidget {
 
             ui.colored_label(
                 Color32::from_gray(140),
-                format!("{} fixtures", d.fixture_count),
+                format!("{} fixtures", d.object_count),
             );
         }
     }

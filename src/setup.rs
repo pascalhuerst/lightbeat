@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::objects::fixture::Fixture;
 use crate::objects::group::Group;
+use crate::objects::object::Object;
 use crate::objects::output::OutputConfig;
 
 const SETUP_FILENAME: &str = "setup.json";
@@ -14,7 +15,11 @@ const SETUP_FILENAME: &str = "setup.json";
 
 #[derive(Serialize, Deserialize, Default)]
 pub struct SetupFile {
+    /// Fixture templates (channel definitions).
     pub fixtures: Vec<Fixture>,
+    /// Object instances (fixture type + address + interface).
+    #[serde(default)]
+    pub objects: Vec<Object>,
     pub interfaces: Vec<SavedInterface>,
     #[serde(default)]
     pub groups: Vec<Group>,

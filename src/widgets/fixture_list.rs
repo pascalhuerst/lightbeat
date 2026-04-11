@@ -1,9 +1,9 @@
 use egui::{self, Color32, Ui};
 
 use crate::objects::channel::{Channel, ChannelKind, ColorMode};
-use crate::objects::fixture::{DmxAddress, Fixture};
+use crate::objects::fixture::Fixture;
 
-/// Standalone fixture manager — holds all fixtures, shown in a dedicated window.
+/// Manages fixture templates (channel definitions, no addresses).
 pub struct FixtureManager {
     pub fixtures: Vec<Fixture>,
     next_id: u32,
@@ -11,10 +11,7 @@ pub struct FixtureManager {
 
 impl FixtureManager {
     pub fn new() -> Self {
-        Self {
-            fixtures: Vec::new(),
-            next_id: 1,
-        }
+        Self { fixtures: Vec::new(), next_id: 1 }
     }
 
     pub fn from_fixtures(fixtures: Vec<Fixture>) -> Self {
@@ -22,27 +19,12 @@ impl FixtureManager {
         Self { fixtures, next_id }
     }
 
-    pub fn add_fixture(&mut self, name: impl Into<String>, address: DmxAddress) -> u32 {
-        let id = self.next_id;
-        self.next_id += 1;
-        let mut fixture = Fixture::new(id, name, address);
-        fixture.add_channel(Channel::dimmer("Dimmer"));
-        fixture.add_channel(Channel::color("Color", ColorMode::Rgb));
-        self.fixtures.push(fixture);
-        id
-    }
-
-    pub fn remove_fixture(&mut self, id: u32) {
-        self.fixtures.retain(|f| f.id != id);
-    }
-
-    /// Show the fixture list window contents.
     pub fn show(&mut self, ui: &mut Ui) {
-        ui.heading("Fixtures");
+        ui.heading("Fixture Templates");
         ui.separator();
 
         if self.fixtures.is_empty() {
-            ui.colored_label(Color32::from_gray(120), "No fixtures.");
+            ui.colored_label(Color32::from_gray(120), "No fixture templates.");
         }
 
         let mut remove_id = None;
@@ -60,32 +42,6 @@ impl FixtureManager {
                         ui.horizontal(|ui| {
                             ui.label("Name:");
                             ui.text_edit_singleline(&mut fixture.name);
-                        });
-
-                        // Address
-                        ui.horizontal(|ui| {
-                            ui.label("Address:");
-                            let mut addr = fixture.address.start_channel as i32;
-                            if ui.add(egui::DragValue::new(&mut addr).range(1..=512)).changed() {
-                                fixture.address.start_channel = addr as u16;
-                            }
-                        });
-                        ui.horizontal(|ui| {
-                            ui.label("Universe:");
-                            let mut u = fixture.address.universe as i32;
-                            if ui.add(egui::DragValue::new(&mut u).range(0..=15)).changed() {
-                                fixture.address.universe = u as u8;
-                            }
-                            ui.label("Subnet:");
-                            let mut s = fixture.address.subnet as i32;
-                            if ui.add(egui::DragValue::new(&mut s).range(0..=15)).changed() {
-                                fixture.address.subnet = s as u8;
-                            }
-                            ui.label("Net:");
-                            let mut n = fixture.address.net as i32;
-                            if ui.add(egui::DragValue::new(&mut n).range(0..=127)).changed() {
-                                fixture.address.net = n as u8;
-                            }
                         });
 
                         ui.colored_label(
@@ -116,8 +72,7 @@ impl FixtureManager {
                             if ui.small_button("+ RGBW").clicked() {
                                 let n = format!("Color {}", fixture.channels.len() + 1);
                                 fixture.add_channel(Channel::color(
-                                    &n,
-                                    ColorMode::Rgbw { white_temperature: 6500 },
+                                    &n, ColorMode::Rgbw { white_temperature: 6500 },
                                 ));
                             }
                         });
@@ -133,7 +88,7 @@ impl FixtureManager {
                         });
 
                         ui.add_space(4.0);
-                        if ui.small_button("Delete fixture").clicked() {
+                        if ui.small_button("Delete template").clicked() {
                             remove_id = Some(fixture.id);
                         }
                     });
@@ -142,18 +97,17 @@ impl FixtureManager {
         });
 
         if let Some(id) = remove_id {
-            self.remove_fixture(id);
+            self.fixtures.retain(|f| f.id != id);
         }
 
         ui.separator();
-        if ui.button("Add Fixture").clicked() {
-            let next_addr = self.fixtures.last()
-                .map(|f| f.address.start_channel + f.dmx_footprint() as u16)
-                .unwrap_or(1);
-            self.add_fixture(
-                format!("Fixture {}", self.fixtures.len() + 1),
-                DmxAddress { start_channel: next_addr, ..Default::default() },
-            );
+        if ui.button("Add Fixture Template").clicked() {
+            let id = self.next_id;
+            self.next_id += 1;
+            let mut fixture = Fixture::new(id, format!("Fixture {}", id));
+            fixture.add_channel(Channel::dimmer("Dimmer"));
+            fixture.add_channel(Channel::color("Color", ColorMode::Rgb));
+            self.fixtures.push(fixture);
         }
     }
 }

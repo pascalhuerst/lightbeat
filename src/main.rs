@@ -62,12 +62,14 @@ struct LightBeatApp {
     quit_requested: bool,
     show_dmx_monitor: bool,
     show_fixture_list: bool,
+    show_object_list: bool,
     show_interface_list: bool,
     show_group_list: bool,
     dmx_monitor: widgets::dmx_monitor::DmxMonitor,
     dmx_shared: dmx_io::SharedDmxState,
-    fixture_store: dmx_io::SharedFixtureStore,
+    object_store: dmx_io::SharedObjectStore,
     fixture_manager: widgets::fixture_list::FixtureManager,
+    object_manager: widgets::object_list::ObjectManager,
     interface_manager: widgets::interface_list::InterfaceManager,
     group_manager: widgets::group_list::GroupManager,
 }
@@ -78,8 +80,8 @@ impl LightBeatApp {
         let beat_clock = BeatClock::new(4.0);
         let snapshot = beat_clock.snapshot();
         let dmx_shared = dmx_io::new_shared_dmx_state();
-        let fixture_store = dmx_io::new_shared_fixture_store();
-        let engine = EngineHandle::start(dmx_shared.clone(), fixture_store.clone());
+        let object_store = dmx_io::new_shared_object_store();
+        let engine = EngineHandle::start(dmx_shared.clone(), object_store.clone());
 
         let mut app = Self {
             graph: NodeGraph::new(),
@@ -92,12 +94,14 @@ impl LightBeatApp {
             quit_requested: false,
             show_dmx_monitor: false,
             show_fixture_list: false,
+            show_object_list: false,
             show_interface_list: false,
             show_group_list: false,
             dmx_monitor: widgets::dmx_monitor::DmxMonitor::new(),
             dmx_shared,
-            fixture_store,
+            object_store,
             fixture_manager: widgets::fixture_list::FixtureManager::new(),
+            object_manager: widgets::object_list::ObjectManager::new(),
             interface_manager: widgets::interface_list::InterfaceManager::new(),
             group_manager: widgets::group_list::GroupManager::new(),
         };
@@ -107,7 +111,7 @@ impl LightBeatApp {
 
         app.register_node_factories();
         app.register_group_nodes();
-        app.sync_fixture_store();
+        app.sync_object_store();
         app.sync_interfaces();
 
         // Try autoload, or create default clock.
@@ -241,7 +245,7 @@ impl LightBeatApp {
         // For now, groups are added to the context menu as "Output" category.
         // This is called after setup is loaded.
         for group in &self.group_manager.groups {
-            let caps = group.capabilities(&self.fixture_manager.fixtures);
+            let caps = group.capabilities(&self.object_manager.objects);
             if caps.is_empty() { continue; }
 
             let group_name = group.name.clone();
@@ -438,9 +442,9 @@ impl LightBeatApp {
                     if let Some(group_widget) = node.as_any_mut().downcast_mut::<GroupWidget>() {
                         let group_name = group_widget.group_name();
                         if let Some(group) = self.group_manager.groups.iter().find(|g| g.name == group_name) {
-                            let caps = group.capabilities(&self.fixture_manager.fixtures);
+                            let caps = group.capabilities(&self.object_manager.objects);
                             let engine_node = GroupProcessNode::new(
-                                id, group.clone(), caps, self.fixture_store.clone(),
+                                id, group.clone(), caps, self.object_store.clone(),
                             );
                             self.engine.send(EngineCommand::AddNode {
                                 node: Box::new(engine_node),
@@ -460,6 +464,7 @@ impl LightBeatApp {
         match setup::load_setup() {
             Ok(s) => {
                 self.fixture_manager = widgets::fixture_list::FixtureManager::from_fixtures(s.fixtures);
+                self.object_manager = widgets::object_list::ObjectManager::from_objects(s.objects);
                 self.interface_manager = widgets::interface_list::InterfaceManager::from_saved(s.interfaces);
                 self.group_manager = widgets::group_list::GroupManager::from_groups(s.groups);
             }
@@ -470,6 +475,7 @@ impl LightBeatApp {
     fn save_setup(&self) {
         let setup = setup::SetupFile {
             fixtures: self.fixture_manager.fixtures.clone(),
+            objects: self.object_manager.objects.clone(),
             interfaces: self.interface_manager.to_saved(),
             groups: self.group_manager.groups.clone(),
         };
@@ -478,21 +484,21 @@ impl LightBeatApp {
         }
     }
 
-    /// Sync fixture definitions from the UI manager to the engine's shared store.
-    fn sync_fixture_store(&self) {
-        let mut store = self.fixture_store.lock().unwrap();
-        store.fixtures = self.fixture_manager.fixtures.clone();
+    /// Sync object instances from the UI manager to the engine's shared store.
+    fn sync_object_store(&self) {
+        let mut store = self.object_store.lock().unwrap();
+        store.objects = self.object_manager.objects.clone();
     }
 
     /// Build and send DMX output interfaces to the engine.
     fn sync_interfaces(&mut self) {
-        let mut ifaces: Vec<Box<dyn interfaces::DmxOutput>> = Vec::new();
+        let mut ifaces: Vec<(u32, Box<dyn interfaces::DmxOutput>)> = Vec::new();
         for entry in &self.interface_manager.interfaces {
             if !entry.enabled { continue; }
             let config = interfaces::DmxOutputConfig::from_output_config(&entry.config);
             if let Some(cfg) = config {
                 match cfg.build() {
-                    Ok(output) => ifaces.push(output),
+                    Ok(output) => ifaces.push((entry.id, output)),
                     Err(e) => eprintln!("Failed to create interface '{}': {}", entry.name, e),
                 }
             }
@@ -621,7 +627,10 @@ impl eframe::App for LightBeatApp {
                     }
                 });
                 ui.menu_button("View", |ui| {
-                    if ui.checkbox(&mut self.show_fixture_list, "Fixtures").changed() {
+                    if ui.checkbox(&mut self.show_fixture_list, "Fixture Templates").changed() {
+                        ui.close_menu();
+                    }
+                    if ui.checkbox(&mut self.show_object_list, "Objects").changed() {
                         ui.close_menu();
                     }
                     if ui.checkbox(&mut self.show_group_list, "Groups").changed() {
@@ -637,13 +646,27 @@ impl eframe::App for LightBeatApp {
             });
         });
 
-        // Fixture list window (toggled via View menu).
+        // Fixture templates window.
         if self.show_fixture_list {
-            egui::Window::new("Fixtures")
+            egui::Window::new("Fixture Templates")
                 .open(&mut self.show_fixture_list)
                 .default_size([350.0, 400.0])
                 .show(ctx, |ui| {
                     self.fixture_manager.show(ui);
+                });
+        }
+
+        // Objects window.
+        if self.show_object_list {
+            let interface_names: Vec<(u32, String)> = self.interface_manager.interfaces
+                .iter()
+                .map(|e| (e.id, e.name.clone()))
+                .collect();
+            egui::Window::new("Objects")
+                .open(&mut self.show_object_list)
+                .default_size([400.0, 400.0])
+                .show(ctx, |ui| {
+                    self.object_manager.show(ui, &self.fixture_manager.fixtures, &interface_names);
                 });
         }
 
@@ -663,7 +686,7 @@ impl eframe::App for LightBeatApp {
                 .open(&mut self.show_group_list)
                 .default_size([350.0, 400.0])
                 .show(ctx, |ui| {
-                    self.group_manager.show(ui, &self.fixture_manager.fixtures);
+                    self.group_manager.show(ui, &self.object_manager.objects);
                 });
         }
 
@@ -692,7 +715,11 @@ impl eframe::App for LightBeatApp {
                 .open(&mut self.show_dmx_monitor)
                 .default_size([600.0, 200.0])
                 .show(ctx, |ui| {
-                    self.dmx_monitor.show(ui, "Universe 0.0.0", &self.dmx_shared);
+                    let iface_names: Vec<(u32, String)> = self.interface_manager.interfaces
+                        .iter()
+                        .map(|e| (e.id, e.name.clone()))
+                        .collect();
+                    self.dmx_monitor.show(ui, &self.dmx_shared, &iface_names);
                 });
         }
 
@@ -749,6 +776,12 @@ impl eframe::App for LightBeatApp {
         });
 
         self.wire_new_nodes();
+
+        // Re-sync interfaces if they changed.
+        if self.interface_manager.needs_sync {
+            self.interface_manager.needs_sync = false;
+            self.sync_interfaces();
+        }
 
         // Send any pending engine commands from the graph.
         for cmd in self.graph.drain_engine_commands() {

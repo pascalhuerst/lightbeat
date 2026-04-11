@@ -1,5 +1,5 @@
 use crate::color::Rgb;
-use crate::dmx_io::SharedFixtureStore;
+use crate::dmx_io::SharedObjectStore;
 use crate::engine::types::*;
 use crate::objects::channel::ChannelKind;
 use crate::objects::group::{Group, GroupCapability};
@@ -8,14 +8,14 @@ use crate::objects::group::{Group, GroupCapability};
 pub struct GroupNodeDisplay {
     pub group_name: String,
     pub capabilities: Vec<GroupCapability>,
-    pub fixture_count: usize,
+    pub object_count: usize,
 }
 
 pub struct GroupProcessNode {
     id: NodeId,
     group: Group,
     capabilities: Vec<GroupCapability>,
-    fixture_store: SharedFixtureStore,
+    object_store: SharedObjectStore,
     // Input values indexed by internal channel.
     // Layout: [dimmer] [color_r, color_g, color_b] [pos_pan, pos_tilt]
     // depending on which capabilities exist.
@@ -24,14 +24,14 @@ pub struct GroupProcessNode {
 }
 
 impl GroupProcessNode {
-    pub fn new(id: NodeId, group: Group, capabilities: Vec<GroupCapability>, fixture_store: SharedFixtureStore) -> Self {
+    pub fn new(id: NodeId, group: Group, capabilities: Vec<GroupCapability>, object_store: SharedObjectStore) -> Self {
         let inputs = Self::build_inputs(&capabilities);
         let num_channels = Self::total_input_channels(&capabilities);
         Self {
             id,
             group,
             capabilities,
-            fixture_store,
+            object_store,
             input_values: vec![0.0; num_channels],
             inputs,
         }
@@ -95,25 +95,25 @@ impl ProcessNode for GroupProcessNode {
     }
 
     fn process(&mut self) {
-        // Write input values to all member fixtures.
-        let mut store = self.fixture_store.lock().unwrap();
+        // Write input values to all member objects.
+        let mut store = self.object_store.lock().unwrap();
 
-        for fid in &self.group.fixture_ids {
-            let fixture = match store.fixtures.iter_mut().find(|f| f.id == *fid) {
-                Some(f) => f,
+        for oid in &self.group.object_ids {
+            let obj = match store.objects.iter_mut().find(|o| o.id == *oid) {
+                Some(o) => o,
                 None => continue,
             };
 
-            // Apply dimmer if this fixture has it and the group provides it.
+            // Apply dimmer if this object has it and the group provides it.
             if let Some(base) = self.cap_base_index(GroupCapability::Dimmer) {
-                if let Some(ch) = fixture.channels.iter_mut().find(|c| matches!(c.kind, ChannelKind::Dimmer)) {
+                if let Some(ch) = obj.channels.iter_mut().find(|c| matches!(c.kind, ChannelKind::Dimmer)) {
                     ch.set_dimmer(self.input_values[base]);
                 }
             }
 
             // Apply color.
             if let Some(base) = self.cap_base_index(GroupCapability::Color) {
-                if let Some(ch) = fixture.channels.iter_mut().find(|c| matches!(c.kind, ChannelKind::Color { .. })) {
+                if let Some(ch) = obj.channels.iter_mut().find(|c| matches!(c.kind, ChannelKind::Color { .. })) {
                     ch.set_color(Rgb::new(
                         self.input_values[base],
                         self.input_values[base + 1],
@@ -124,7 +124,7 @@ impl ProcessNode for GroupProcessNode {
 
             // Apply position.
             if let Some(base) = self.cap_base_index(GroupCapability::Position) {
-                if let Some(ch) = fixture.channels.iter_mut().find(|c| matches!(c.kind, ChannelKind::PanTilt { .. })) {
+                if let Some(ch) = obj.channels.iter_mut().find(|c| matches!(c.kind, ChannelKind::PanTilt { .. })) {
                     ch.set_pan_tilt(
                         self.input_values[base],
                         self.input_values[base + 1],
@@ -138,7 +138,7 @@ impl ProcessNode for GroupProcessNode {
         shared.display = Some(Box::new(GroupNodeDisplay {
             group_name: self.group.name.clone(),
             capabilities: self.capabilities.clone(),
-            fixture_count: self.group.fixture_ids.len(),
+            object_count: self.group.object_ids.len(),
         }));
     }
 }

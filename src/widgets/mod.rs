@@ -4,3 +4,4 @@ pub mod group_list;
 pub mod inspector;
 pub mod interface_list;
 pub mod nodes;
+pub mod object_list;

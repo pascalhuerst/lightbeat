@@ -244,8 +244,8 @@ pub enum EngineCommand {
         data: serde_json::Value,
     },
     RemoveAllNodes,
-    /// Set DMX output interfaces.
-    SetInterfaces(Vec<Box<dyn crate::interfaces::DmxOutput>>),
+    /// Set DMX output interfaces (id, output).
+    SetInterfaces(Vec<(u32, Box<dyn crate::interfaces::DmxOutput>)>),
 }
 
 // ---------------------------------------------------------------------------
