@@ -23,6 +23,7 @@ use engine::nodes::display::color_display::ColorDisplayProcessNode;
 use engine::nodes::display::scope::ScopeProcessNode;
 use engine::nodes::display::value_display::ValueDisplayProcessNode;
 use engine::nodes::io::clock::ClockProcessNode;
+use engine::nodes::io::internal_clock::InternalClockProcessNode;
 use engine::nodes::math::change_detect::ChangeDetectProcessNode;
 use engine::nodes::math::color_ops::{ColorMergeProcessNode, ColorSplitProcessNode};
 use engine::nodes::math::compare::{CompareOp, CompareProcessNode};
@@ -49,6 +50,7 @@ use widgets::nodes::display::color_display::ColorDisplayWidget;
 use widgets::nodes::display::scope::ScopeWidget;
 use widgets::nodes::display::value_display::ValueDisplayWidget;
 use widgets::nodes::io::clock::ClockWidget;
+use widgets::nodes::io::internal_clock::InternalClockWidget;
 use widgets::nodes::math::change_detect::ChangeDetectWidget;
 use widgets::nodes::math::color_ops::{ColorMergeWidget, ColorSplitWidget};
 use widgets::nodes::math::compare::CompareWidget;
@@ -184,6 +186,9 @@ impl LightBeatApp {
         // IO
         self.graph.register_node("IO", "Clock", |id| {
             Box::new(ClockWidget::new(id, new_shared_state(0, 3)))
+        });
+        self.graph.register_node("IO", "Internal Clock", |id| {
+            Box::new(InternalClockWidget::new(id, new_shared_state(1, 3)))
         });
 
         // Transport
@@ -385,6 +390,7 @@ impl LightBeatApp {
                     );
                     Some(Box::new(engine_node))
                 }
+                "Internal Clock" => Some(Box::new(InternalClockProcessNode::new(id))),
                 "Phase Scaler" => Some(Box::new(PhaseScalerProcessNode::new(id))),
                 "Step Sequencer" => Some(Box::new(StepSequencerProcessNode::new(id))),
                 "Scope" => Some(Box::new(ScopeProcessNode::new(id))),
