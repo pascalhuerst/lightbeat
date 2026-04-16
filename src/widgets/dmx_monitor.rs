@@ -34,12 +34,25 @@ impl DmxMonitor {
         // Read available universes and current data.
         let state = shared.lock().unwrap();
         let available_keys: Vec<UniverseKey> = state.universes.keys().copied().collect();
+        drop(state);
 
-        // Auto-select first available if nothing selected.
-        if self.selected_key.is_none() || !available_keys.contains(self.selected_key.as_ref().unwrap_or(&UniverseKey { interface_id: 0, net: 0, subnet: 0, universe: 0 })) {
-            self.selected_key = available_keys.first().copied();
+        // Auto-select first available if nothing selected, or default to first interface.
+        if self.selected_key.is_none() {
+            self.selected_key = available_keys.first().copied()
+                .or_else(|| interface_names.first().map(|(id, _)| UniverseKey {
+                    interface_id: *id, net: 0, subnet: 0, universe: 0,
+                }));
         }
 
+        // Ensure the selected universe exists in shared state (request it as a test universe).
+        if let Some(key) = self.selected_key {
+            let mut state = shared.lock().unwrap();
+            if !state.test_universes.contains(&key) {
+                state.test_universes.push(key);
+            }
+        }
+
+        let state = shared.lock().unwrap();
         let (channels, overrides) = if let Some(key) = &self.selected_key {
             if let Some(uni) = state.universes.get(key) {
                 (uni.channels, uni.overrides.clone())
@@ -53,33 +66,49 @@ impl DmxMonitor {
 
         // Header: interface + universe selector.
         ui.horizontal(|ui| {
-            // Interface + universe combo.
-            let selected_label = self.selected_key.map(|k| {
-                let iface_name = interface_names.iter()
-                    .find(|(id, _)| *id == k.interface_id)
-                    .map(|(_, n)| n.as_str())
-                    .unwrap_or("???");
-                format!("{} / {}", iface_name, k.label())
-            }).unwrap_or_else(|| "No universes".into());
+            // Interface dropdown.
+            let cur_iface_name = self.selected_key.map(|k| {
+                interface_names.iter().find(|(id, _)| *id == k.interface_id)
+                    .map(|(_, n)| n.clone())
+                    .unwrap_or_else(|| "???".into())
+            }).unwrap_or_else(|| "No interface".into());
 
-            egui::ComboBox::from_id_salt("dmx_monitor_uni")
-                .selected_text(&selected_label)
+            ui.label("Interface:");
+            egui::ComboBox::from_id_salt("dmx_monitor_iface")
+                .selected_text(&cur_iface_name)
                 .show_ui(ui, |ui| {
-                    for key in &available_keys {
-                        let iface_name = interface_names.iter()
-                            .find(|(id, _)| *id == key.interface_id)
-                            .map(|(_, n)| n.as_str())
-                            .unwrap_or("???");
-                        let label = format!("{} / {}", iface_name, key.label());
-                        let is_selected = self.selected_key == Some(*key);
-                        if ui.selectable_label(is_selected, &label).clicked() {
-                            self.selected_key = Some(*key);
+                    if interface_names.is_empty() {
+                        ui.label("No interfaces configured");
+                    }
+                    for (id, name) in interface_names {
+                        let is_selected = self.selected_key.map(|k| k.interface_id) == Some(*id);
+                        if ui.selectable_label(is_selected, name).clicked() {
+                            // Switching interface — keep universe number, reset net/subnet.
+                            let uni = self.selected_key.map(|k| k.universe).unwrap_or(0);
+                            self.selected_key = Some(UniverseKey {
+                                interface_id: *id, net: 0, subnet: 0, universe: uni,
+                            });
                         }
                     }
-                    if available_keys.is_empty() {
-                        ui.label("No active universes");
-                    }
                 });
+
+            // Universe number picker (0..15).
+            ui.label("Universe:");
+            let mut uni_num: i32 = self.selected_key.map(|k| k.universe as i32).unwrap_or(0);
+            if ui.add(egui::DragValue::new(&mut uni_num).range(0..=15)).changed() {
+                if let Some(k) = self.selected_key.as_mut() {
+                    k.universe = uni_num as u8;
+                }
+            }
+
+            // Marker if this universe currently has live data (objects writing to it).
+            if let Some(key) = self.selected_key {
+                if available_keys.contains(&key) {
+                    ui.colored_label(Color32::from_rgb(80, 200, 120), "● live");
+                } else {
+                    ui.colored_label(Color32::from_gray(120), "○ test");
+                }
+            }
 
             ui.separator();
 

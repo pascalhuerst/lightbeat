@@ -28,6 +28,120 @@ impl ColorMode {
     }
 }
 
+/// Pixel layout for an LED strip.
+/// Defines the byte order of one pixel on the wire as a sequence of color
+/// channels. Each W channel carries its own temperature in Kelvin (metadata
+/// describing the physical LED, used to extract a white component from RGB).
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct PixelFormat {
+    pub channels: Vec<PixelChannel>,
+}
+
+// Manual deserializer that also accepts the legacy enum form
+// (`{"Rgb": null}`, `{"Rgbw": {"white_temperature": 6500}}`, etc.).
+impl<'de> serde::Deserialize<'de> for PixelFormat {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(deserializer)?;
+
+        // New form: {"channels": [...]}
+        if let Some(channels) = v.get("channels") {
+            let channels: Vec<PixelChannel> = serde_json::from_value(channels.clone())
+                .map_err(serde::de::Error::custom)?;
+            return Ok(PixelFormat { channels });
+        }
+
+        // Plain string form: "Rgb", "Grb"
+        if let Some(s) = v.as_str() {
+            return Ok(match s {
+                "Rgb" => PixelFormat::rgb(),
+                "Grb" => PixelFormat::grb(),
+                _ => return Err(serde::de::Error::custom(format!("unknown PixelFormat \"{}\"", s))),
+            });
+        }
+
+        // Legacy externally-tagged enum: { "Rgbw": { "white_temperature": 6500 } } etc.
+        if let Some(obj) = v.as_object() {
+            if let Some((tag, body)) = obj.iter().next() {
+                let temp = body.get("white_temperature")
+                    .or_else(|| body.get("warm_temperature"))
+                    .and_then(|t| t.as_u64())
+                    .unwrap_or(6500) as u16;
+                return Ok(match tag.as_str() {
+                    "Rgb" => PixelFormat::rgb(),
+                    "Grb" => PixelFormat::grb(),
+                    "Rgbw" => PixelFormat::rgbw(temp),
+                    "Grbw" => PixelFormat::grbw(temp),
+                    "Grbww" => PixelFormat::grbww(temp, temp),
+                    other => return Err(serde::de::Error::custom(format!("unknown PixelFormat tag \"{}\"", other))),
+                });
+            }
+        }
+        Err(serde::de::Error::custom("could not parse PixelFormat"))
+    }
+}
+
+/// A single byte slot in a pixel.
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum PixelChannel {
+    Red,
+    Green,
+    Blue,
+    /// White channel with its physical color temperature in Kelvin
+    /// (e.g. 3000 = warm white, 6500 = daylight). The DMX writer
+    /// extracts a white component from RGB using this temperature.
+    White { temperature_k: u16 },
+}
+
+impl PixelChannel {
+    pub fn label(self) -> &'static str {
+        match self {
+            PixelChannel::Red => "R",
+            PixelChannel::Green => "G",
+            PixelChannel::Blue => "B",
+            PixelChannel::White { .. } => "W",
+        }
+    }
+}
+
+impl PixelFormat {
+    pub fn new(channels: Vec<PixelChannel>) -> Self { Self { channels } }
+
+    pub fn bytes_per_pixel(&self) -> usize { self.channels.len() }
+    pub fn floats_per_pixel(&self) -> usize { 3 } // always stored as RGB internally
+
+    /// Display label like "GRBWW" (white channels show as W regardless of temp).
+    pub fn label(&self) -> String {
+        self.channels.iter().map(|c| c.label()).collect::<Vec<_>>().join("")
+    }
+
+    // Common presets.
+    pub fn rgb() -> Self {
+        Self::new(vec![PixelChannel::Red, PixelChannel::Green, PixelChannel::Blue])
+    }
+    pub fn grb() -> Self {
+        Self::new(vec![PixelChannel::Green, PixelChannel::Red, PixelChannel::Blue])
+    }
+    pub fn rgbw(temp: u16) -> Self {
+        Self::new(vec![
+            PixelChannel::Red, PixelChannel::Green, PixelChannel::Blue,
+            PixelChannel::White { temperature_k: temp },
+        ])
+    }
+    pub fn grbw(temp: u16) -> Self {
+        Self::new(vec![
+            PixelChannel::Green, PixelChannel::Red, PixelChannel::Blue,
+            PixelChannel::White { temperature_k: temp },
+        ])
+    }
+    pub fn grbww(t1: u16, t2: u16) -> Self {
+        Self::new(vec![
+            PixelChannel::Green, PixelChannel::Red, PixelChannel::Blue,
+            PixelChannel::White { temperature_k: t1 },
+            PixelChannel::White { temperature_k: t2 },
+        ])
+    }
+}
+
 /// The kind of channel, determining what value it holds and how it serializes to DMX.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum ChannelKind {
@@ -39,6 +153,9 @@ pub enum ChannelKind {
     PanTilt { fine: bool },
     /// Arbitrary float values → N DMX channels.
     Raw { count: usize },
+    /// LED strip with N pixels. Stored internally as N×3 floats (RGB).
+    /// Serializes to N × bytes_per_pixel DMX channels.
+    LedStrip { count: usize, format: PixelFormat },
 }
 
 impl ChannelKind {
@@ -49,6 +166,7 @@ impl ChannelKind {
             ChannelKind::Color { mode } => mode.channel_count(),
             ChannelKind::PanTilt { fine } => if *fine { 4 } else { 2 },
             ChannelKind::Raw { count } => *count,
+            ChannelKind::LedStrip { count, format } => count * format.bytes_per_pixel(),
         }
     }
 }
@@ -102,6 +220,56 @@ impl Channel {
             kind: ChannelKind::Raw { count },
             offset: 0,
             values: vec![0.0; count],
+        }
+    }
+
+    /// Create an LED strip channel with N pixels.
+    pub fn led_strip(name: impl Into<String>, count: usize, format: PixelFormat) -> Self {
+        Self {
+            name: name.into(),
+            kind: ChannelKind::LedStrip { count, format },
+            offset: 0,
+            values: vec![0.0; count * 3], // RGB internally
+        }
+    }
+
+    /// Number of pixels in this LED strip channel (0 if not a strip).
+    pub fn pixel_count(&self) -> usize {
+        match self.kind {
+            ChannelKind::LedStrip { count, .. } => count,
+            _ => 0,
+        }
+    }
+
+    /// Set one pixel of an LED strip (no-op if not a strip or index out of range).
+    pub fn set_pixel(&mut self, index: usize, color: Rgb) {
+        if let ChannelKind::LedStrip { count, .. } = self.kind {
+            if index < count {
+                let base = index * 3;
+                self.values[base] = color.r;
+                self.values[base + 1] = color.g;
+                self.values[base + 2] = color.b;
+            }
+        }
+    }
+
+    /// Get one pixel of an LED strip.
+    pub fn pixel(&self, index: usize) -> Rgb {
+        if let ChannelKind::LedStrip { count, .. } = self.kind {
+            if index < count {
+                let base = index * 3;
+                return Rgb::new(self.values[base], self.values[base + 1], self.values[base + 2]);
+            }
+        }
+        Rgb::new(0.0, 0.0, 0.0)
+    }
+
+    /// Clear all pixels (set to black).
+    pub fn clear_pixels(&mut self) {
+        if matches!(self.kind, ChannelKind::LedStrip { .. }) {
+            for v in &mut self.values {
+                *v = 0.0;
+            }
         }
     }
 
@@ -215,6 +383,33 @@ impl Channel {
                     let idx = start + i;
                     if idx < 512 {
                         buf[idx] = float_to_dmx(self.values.get(i).copied().unwrap_or(0.0));
+                    }
+                }
+            }
+            ChannelKind::LedStrip { count, format } => {
+                let bpp = format.bytes_per_pixel();
+                if bpp == 0 { return; }
+                for px in 0..*count {
+                    let pos = start + px * bpp;
+                    if pos + bpp > 512 {
+                        break;
+                    }
+                    let base = px * 3;
+                    let r = self.values.get(base).copied().unwrap_or(0.0);
+                    let g = self.values.get(base + 1).copied().unwrap_or(0.0);
+                    let b = self.values.get(base + 2).copied().unwrap_or(0.0);
+                    let rgb = Rgb::new(r, g, b);
+
+                    for (i, ch) in format.channels.iter().enumerate() {
+                        let val = match ch {
+                            PixelChannel::Red => r,
+                            PixelChannel::Green => g,
+                            PixelChannel::Blue => b,
+                            PixelChannel::White { temperature_k } => {
+                                rgb_to_rgbw(rgb, *temperature_k).w
+                            }
+                        };
+                        buf[pos + i] = float_to_dmx(val);
                     }
                 }
             }

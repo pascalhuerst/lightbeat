@@ -79,6 +79,10 @@ pub struct DmxSharedState {
     pub universes: HashMap<UniverseKey, UniverseOutput>,
     /// Which universe the DMX monitor is currently viewing.
     pub monitor_key: Option<UniverseKey>,
+    /// Universes forced into existence by the UI (e.g. for testing via the monitor).
+    /// The engine ensures these universes exist on the corresponding interface so
+    /// overrides can be sent even when no objects target them.
+    pub test_universes: Vec<UniverseKey>,
     /// Global bypass: stop sending DMX entirely.
     pub bypass: bool,
     /// Global blackout: force all channels to 0 on the wire.
@@ -90,6 +94,7 @@ impl DmxSharedState {
         Self {
             universes: HashMap::new(),
             monitor_key: None,
+            test_universes: Vec::new(),
             bypass: false,
             blackout: false,
         }
@@ -173,6 +178,20 @@ impl DmxOutputManager {
     }
 
     pub fn tick(&mut self) {
+        // 0. Ensure UI-requested test universes exist on their interfaces.
+        {
+            let shared = self.shared.lock().unwrap();
+            let test_keys: Vec<UniverseKey> = shared.test_universes.clone();
+            drop(shared);
+            for key in test_keys {
+                if let Some(iface) = self.interfaces.iter_mut().find(|i| i.id == key.interface_id) {
+                    iface.universes
+                        .entry((key.net, key.subnet, key.universe))
+                        .or_insert_with(|| DmxUniverse::new(key.net, key.subnet, key.universe));
+                }
+            }
+        }
+
         // 1. Write all object channel values into the correct interface's universe buffer.
         {
             let store = self.object_store.lock().unwrap();

@@ -1,6 +1,7 @@
 use egui::{self, Color32, Ui};
 
-use crate::objects::group::Group;
+use crate::objects::channel::ChannelKind;
+use crate::objects::group::{Group, StripLayout};
 use crate::objects::object::Object;
 
 /// Manages groups of objects.
@@ -83,6 +84,82 @@ impl GroupManager {
                                     }
                                 }
                             });
+                        }
+
+                        // ---- Strip layout editor ----
+                        // Show LED strip members and let the user assign each one a
+                        // logical_start/logical_end on the group's 0..1 axis.
+                        let strip_members: Vec<&Object> = group.object_ids.iter()
+                            .filter_map(|oid| objects.iter().find(|o| o.id == *oid))
+                            .filter(|o| o.channels.iter().any(|c| matches!(c.kind, ChannelKind::LedStrip { .. })))
+                            .collect();
+
+                        if !strip_members.is_empty() {
+                            ui.add_space(4.0);
+                            ui.separator();
+                            ui.label(egui::RichText::new("LED Strip layout").strong());
+                            ui.colored_label(
+                                Color32::from_gray(120),
+                                "Each strip's first/last LED maps onto the group's 0..1 axis. Set end<start to reverse.",
+                            );
+
+                            let mut layout_changed = false;
+                            for obj in &strip_members {
+                                ui.horizontal(|ui| {
+                                    ui.label(format!("{}:", obj.name));
+
+                                    // Get or insert the layout entry.
+                                    let entry_idx = group.strip_layout.iter().position(|l| l.object_id == obj.id);
+                                    let (mut start, mut end) = match entry_idx {
+                                        Some(i) => (group.strip_layout[i].logical_start, group.strip_layout[i].logical_end),
+                                        None => (0.0_f32, 1.0_f32),
+                                    };
+
+                                    let mut changed = false;
+                                    if ui.add(
+                                        egui::DragValue::new(&mut start)
+                                            .range(0.0..=1.0).speed(0.01).fixed_decimals(2).prefix("start: ")
+                                    ).changed() { changed = true; }
+                                    if ui.add(
+                                        egui::DragValue::new(&mut end)
+                                            .range(0.0..=1.0).speed(0.01).fixed_decimals(2).prefix("end: ")
+                                    ).changed() { changed = true; }
+
+                                    if ui.small_button("Reverse").clicked() {
+                                        std::mem::swap(&mut start, &mut end);
+                                        changed = true;
+                                    }
+
+                                    if changed {
+                                        match entry_idx {
+                                            Some(i) => {
+                                                group.strip_layout[i].logical_start = start;
+                                                group.strip_layout[i].logical_end = end;
+                                            }
+                                            None => {
+                                                group.strip_layout.push(StripLayout {
+                                                    object_id: obj.id,
+                                                    logical_start: start,
+                                                    logical_end: end,
+                                                });
+                                            }
+                                        }
+                                        layout_changed = true;
+                                    }
+                                });
+                            }
+
+                            // Drop layout entries for objects no longer in the group.
+                            let valid_ids: Vec<u32> = strip_members.iter().map(|o| o.id).collect();
+                            let before = group.strip_layout.len();
+                            group.strip_layout.retain(|l| valid_ids.contains(&l.object_id));
+                            if group.strip_layout.len() != before {
+                                layout_changed = true;
+                            }
+
+                            if layout_changed {
+                                self.needs_refresh = true;
+                            }
                         }
 
                         ui.add_space(4.0);
