@@ -4,6 +4,7 @@ pub mod dmx_monitor;
 pub mod fader;
 pub mod fixture_list;
 pub mod group_list;
+pub mod input_controller_list;
 pub mod inspector;
 pub mod interface_list;
 pub mod nodes;

@@ -3,6 +3,7 @@ mod color;
 mod config;
 mod dmx_io;
 mod engine;
+mod input_controller;
 mod setup;
 mod interfaces;
 mod link_controller;
@@ -19,10 +20,12 @@ use beat_clock::{BeatClock, BeatPattern, SubscriptionHandle};
 use config::{AppConfig, InspectorMode};
 use engine::types::{new_shared_state, EngineCommand, NodeId, PortType, ProcessNode, SubgraphInnerCmd};
 use engine::EngineHandle;
+use input_controller::InputControllerManager;
 use engine::nodes::display::color_display::ColorDisplayProcessNode;
 use engine::nodes::display::scope::ScopeProcessNode;
 use engine::nodes::display::value_display::ValueDisplayProcessNode;
 use engine::nodes::io::clock::ClockProcessNode;
+use engine::nodes::io::input_controller::InputControllerProcessNode;
 use engine::nodes::io::internal_clock::InternalClockProcessNode;
 use engine::nodes::ui::button::ButtonProcessNode;
 use engine::nodes::ui::button_group::ButtonGroupProcessNode;
@@ -55,6 +58,7 @@ use widgets::nodes::display::color_display::ColorDisplayWidget;
 use widgets::nodes::display::scope::ScopeWidget;
 use widgets::nodes::display::value_display::ValueDisplayWidget;
 use widgets::nodes::io::clock::ClockWidget;
+use widgets::nodes::io::input_controller::InputControllerWidget;
 use widgets::nodes::io::internal_clock::InternalClockWidget;
 use widgets::nodes::ui::button::ButtonWidget;
 use widgets::nodes::ui::button_group::ButtonGroupWidget;
@@ -119,6 +123,8 @@ struct LightBeatApp {
     color_palette_manager: widgets::color_palette_list::ColorPaletteManager,
     color_palette_group_manager: widgets::color_palette_group_list::ColorPaletteGroupManager,
     palette_ctx: widgets::nodes::math::palette_select::SharedPaletteContext,
+    input_controllers: InputControllerManager,
+    show_input_controllers: bool,
     project_undoer: egui::util::undoer::Undoer<project::ProjectFile>,
     setup_undoer: egui::util::undoer::Undoer<setup::SetupFile>,
 }
@@ -167,6 +173,8 @@ impl LightBeatApp {
             color_palette_manager: widgets::color_palette_list::ColorPaletteManager::new(),
             color_palette_group_manager: widgets::color_palette_group_list::ColorPaletteGroupManager::new(),
             palette_ctx: new_shared_palette_context(),
+            input_controllers: InputControllerManager::new(),
+            show_input_controllers: false,
             project_undoer: egui::util::undoer::Undoer::default(),
             setup_undoer: egui::util::undoer::Undoer::default(),
         };
@@ -209,6 +217,11 @@ impl LightBeatApp {
         });
         self.graph.register_node("IO", "Internal Clock", |id| {
             Box::new(InternalClockWidget::new(id, new_shared_state(1, 3)))
+        });
+        let ic_shared = self.input_controllers.shared.clone();
+        self.graph.register_node("IO", "Input Controller", move |id| {
+            // Generous output channel budget; engine resizes as inputs change.
+            Box::new(InputControllerWidget::new(id, new_shared_state(0, 64), ic_shared.clone()))
         });
 
         // UI
@@ -427,6 +440,9 @@ impl LightBeatApp {
                     Some(Box::new(engine_node))
                 }
                 "Internal Clock" => Some(Box::new(InternalClockProcessNode::new(id))),
+                "Input Controller" => Some(Box::new(InputControllerProcessNode::new(
+                    id, self.input_controllers.shared.clone(),
+                ))),
                 "Button" => Some(Box::new(ButtonProcessNode::new(id))),
                 "Fader" => Some(Box::new(FaderProcessNode::new(id))),
                 "Button Group" => Some(Box::new(ButtonGroupProcessNode::new(id))),
@@ -521,6 +537,7 @@ impl LightBeatApp {
                 self.group_manager = widgets::group_list::GroupManager::from_groups(s.groups);
                 self.color_palette_manager = widgets::color_palette_list::ColorPaletteManager::from_palettes(s.color_palettes);
                 self.color_palette_group_manager = widgets::color_palette_group_list::ColorPaletteGroupManager::from_groups(s.color_palette_groups);
+                self.input_controllers.set_controllers(&s.input_controllers);
                 // Reset history so undo doesn't go back to an empty setup.
                 self.setup_undoer = egui::util::undoer::Undoer::default();
             }
@@ -727,6 +744,7 @@ impl LightBeatApp {
             groups: self.group_manager.groups.clone(),
             color_palettes: self.color_palette_manager.palettes.clone(),
             color_palette_groups: self.color_palette_group_manager.groups.clone(),
+            input_controllers: self.input_controllers.export(),
         }
     }
 
@@ -738,6 +756,7 @@ impl LightBeatApp {
         self.group_manager = widgets::group_list::GroupManager::from_groups(s.groups.clone());
         self.color_palette_manager = widgets::color_palette_list::ColorPaletteManager::from_palettes(s.color_palettes.clone());
         self.color_palette_group_manager = widgets::color_palette_group_list::ColorPaletteGroupManager::from_groups(s.color_palette_groups.clone());
+        self.input_controllers.set_controllers(&s.input_controllers);
 
         self.sync_group_context();
         self.sync_object_store();
@@ -848,6 +867,10 @@ impl eframe::App for LightBeatApp {
                         ui.close_menu();
                     }
                     ui.separator();
+                    if ui.checkbox(&mut self.show_input_controllers, "Input Controllers").changed() {
+                        ui.close_menu();
+                    }
+                    ui.separator();
                     if ui.checkbox(&mut self.show_dmx_monitor, "DMX Monitor").changed() {
                         ui.close_menu();
                     }
@@ -947,6 +970,19 @@ impl eframe::App for LightBeatApp {
                 });
             mark_hovered(r);
         }
+
+        // Input Controllers window.
+        if self.show_input_controllers {
+            let r = egui::Window::new("Input Controllers")
+                .open(&mut self.show_input_controllers)
+                .default_size([400.0, 500.0])
+                .show(ctx, |ui| {
+                    widgets::input_controller_list::show(ui, &mut self.input_controllers);
+                });
+            mark_hovered(r);
+        }
+        // Periodic reconnect / port availability check.
+        self.input_controllers.tick_reconnect();
 
         // Inspector panel — visibility gated by InspectorMode.
         let has_selection = !self.graph.selected_nodes_mut().is_empty();

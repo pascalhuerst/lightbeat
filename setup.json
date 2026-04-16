@@ -2517,5 +2517,70 @@
         40
       ]
     }
+  ],
+  "input_controllers": [
+    {
+      "id": 1,
+      "name": "TestController",
+      "kind": {
+        "Midi": {
+          "hw_port_name": "nanoKONTROL:nanoKONTROL _ CTRL 24:0"
+        }
+      },
+      "inputs": [
+        {
+          "id": 1,
+          "name": "Fader1",
+          "source": {
+            "Midi": {
+              "Cc": {
+                "channel": 1,
+                "controller": 2
+              }
+            }
+          },
+          "mode": "Value"
+        },
+        {
+          "id": 2,
+          "name": "Knob1",
+          "source": {
+            "Midi": {
+              "Cc": {
+                "channel": 1,
+                "controller": 14
+              }
+            }
+          },
+          "mode": "Value"
+        },
+        {
+          "id": 3,
+          "name": "Button1",
+          "source": {
+            "Midi": {
+              "Cc": {
+                "channel": 1,
+                "controller": 23
+              }
+            }
+          },
+          "mode": "Value"
+        },
+        {
+          "id": 4,
+          "name": "Button2",
+          "source": {
+            "Midi": {
+              "Cc": {
+                "channel": 1,
+                "controller": 33
+              }
+            }
+          },
+          "mode": "Value"
+        }
+      ]
+    }
   ]
 }

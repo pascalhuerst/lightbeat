@@ -4,8 +4,8 @@
       "type_name": "Group Output",
       "id": 75,
       "pos": [
-        390.8919,
-        -79.73398
+        37.230522,
+        -120.2883
       ],
       "params": [],
       "data": {
@@ -65,8 +65,8 @@
       "type_name": "Subgraph",
       "id": 89,
       "pos": [
-        11.276558,
-        -20.31773
+        -110.12383,
+        -19.515398
       ],
       "params": [],
       "data": {
@@ -84,7 +84,7 @@
             "port_type_idx": 0
           }
         ],
-        "name": "Subgraph",
+        "name": "PaletteCarousell",
         "outputs": [
           {
             "name": "out 0",
@@ -949,8 +949,8 @@
       "type_name": "Color Display",
       "id": 90,
       "pos": [
-        396.5036,
-        33.193367
+        42.842205,
+        -7.360957
       ],
       "params": [
         {
@@ -963,8 +963,8 @@
       "type_name": "Palette Select",
       "id": 94,
       "pos": [
-        -15.154671,
-        270.67987
+        -28.356705,
+        256.04822
       ],
       "params": [],
       "data": {
@@ -1620,8 +1620,8 @@
       "type_name": "Const Value",
       "id": 95,
       "pos": [
-        -177.83516,
-        199.6416
+        -129.85919,
+        254.6702
       ],
       "params": [
         {
@@ -1634,8 +1634,8 @@
       "type_name": "Color Split",
       "id": 97,
       "pos": [
-        223.51872,
-        192.12553
+        134.84448,
+        257.4785
       ],
       "params": [
         {
@@ -1648,8 +1648,8 @@
       "type_name": "Effect Stack",
       "id": 99,
       "pos": [
-        1495.6259,
-        512.89044
+        411.67612,
+        325.38123
       ],
       "params": [],
       "data": {
@@ -1691,8 +1691,8 @@
       "type_name": "Color Split",
       "id": 100,
       "pos": [
-        230.2122,
-        358.22955
+        141.53798,
+        423.58252
       ],
       "params": [
         {
@@ -1705,8 +1705,8 @@
       "type_name": "LFO",
       "id": 101,
       "pos": [
-        10.625553,
-        522.9316
+        -158.71063,
+        382.9025
       ],
       "params": [
         {
@@ -1724,39 +1724,11 @@
       ]
     },
     {
-      "type_name": "Color Split",
-      "id": 102,
-      "pos": [
-        447.7062,
-        619.4814
-      ],
-      "params": [
-        {
-          "index": 0,
-          "value": 5
-        }
-      ]
-    },
-    {
-      "type_name": "Color Merge",
-      "id": 103,
-      "pos": [
-        653.3589,
-        635.92206
-      ],
-      "params": [
-        {
-          "index": 0,
-          "value": 5
-        }
-      ]
-    },
-    {
       "type_name": "ADSR",
       "id": 104,
       "pos": [
-        -294.3839,
-        828.74243
+        -800.34735,
+        612.0081
       ],
       "size": [
         669.93335,
@@ -1785,8 +1757,8 @@
       "type_name": "Scope",
       "id": 105,
       "pos": [
-        620.9434,
-        905.5044
+        -43.41938,
+        598.5015
       ],
       "size": [
         703.9902,
@@ -1815,8 +1787,8 @@
       "type_name": "Fader",
       "id": 106,
       "pos": [
-        1226.9193,
-        166.61566
+        284.5652,
+        289.36102
       ],
       "params": [],
       "data": {
@@ -1828,8 +1800,8 @@
       "type_name": "Fader",
       "id": 107,
       "pos": [
-        1282.8671,
-        763.4263
+        290.04456,
+        443.87955
       ],
       "params": [],
       "data": {
@@ -1838,36 +1810,30 @@
       }
     },
     {
-      "type_name": "Counter",
-      "id": 108,
+      "type_name": "Input Controller",
+      "id": 110,
       "pos": [
-        -162.97142,
-        645.2775
+        -1280.663,
+        992.9526
+      ],
+      "params": [],
+      "data": {
+        "controller_id": 1
+      }
+    },
+    {
+      "type_name": "Change Detect",
+      "id": 111,
+      "pos": [
+        -1019.2319,
+        748.0818
       ],
       "params": [
         {
           "index": 0,
-          "value": 16
-        },
-        {
-          "index": 1,
-          "value": 0
+          "value": 0.0010000000474974513
         }
       ]
-    },
-    {
-      "type_name": "Button",
-      "id": 109,
-      "pos": [
-        -619.0008,
-        591.0341
-      ],
-      "params": [],
-      "data": {
-        "label": "Button",
-        "mode": "toggle",
-        "state": false
-      }
     }
   ],
   "connections": [
@@ -1944,36 +1910,6 @@
       "to_port": 1
     },
     {
-      "from_node": 94,
-      "from_port": 0,
-      "to_node": 102,
-      "to_port": 0
-    },
-    {
-      "from_node": 102,
-      "from_port": 0,
-      "to_node": 103,
-      "to_port": 0
-    },
-    {
-      "from_node": 102,
-      "from_port": 1,
-      "to_node": 103,
-      "to_port": 1
-    },
-    {
-      "from_node": 102,
-      "from_port": 2,
-      "to_node": 103,
-      "to_port": 2
-    },
-    {
-      "from_node": 102,
-      "from_port": 3,
-      "to_node": 103,
-      "to_port": 3
-    },
-    {
       "from_node": 89,
       "from_port": 0,
       "to_node": 75,
@@ -2004,22 +1940,10 @@
       "to_port": 0
     },
     {
-      "from_node": 76,
-      "from_port": 0,
-      "to_node": 108,
-      "to_port": 0
-    },
-    {
       "from_node": 104,
       "from_port": 0,
       "to_node": 99,
       "to_port": 3
-    },
-    {
-      "from_node": 109,
-      "from_port": 0,
-      "to_node": 104,
-      "to_port": 0
     }
   ]
 }

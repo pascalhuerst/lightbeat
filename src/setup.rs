@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
+use crate::input_controller::InputController;
 use crate::objects::color_palette::{ColorPalette, ColorPaletteGroup};
 use crate::objects::fixture::Fixture;
 use crate::objects::group::Group;
@@ -30,6 +31,9 @@ pub struct SetupFile {
     /// Groups of palettes.
     #[serde(default)]
     pub color_palette_groups: Vec<ColorPaletteGroup>,
+    /// Input controllers (MIDI etc.) — virtual slots that bind to hardware.
+    #[serde(default)]
+    pub input_controllers: Vec<InputController>,
 }
 
 #[derive(Serialize, Deserialize, Clone, PartialEq)]
