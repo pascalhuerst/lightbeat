@@ -113,6 +113,8 @@ struct LightBeatApp {
     color_palette_manager: widgets::color_palette_list::ColorPaletteManager,
     color_palette_group_manager: widgets::color_palette_group_list::ColorPaletteGroupManager,
     palette_ctx: widgets::nodes::math::palette_select::SharedPaletteContext,
+    project_undoer: egui::util::undoer::Undoer<project::ProjectFile>,
+    setup_undoer: egui::util::undoer::Undoer<setup::SetupFile>,
 }
 
 impl LightBeatApp {
@@ -159,6 +161,8 @@ impl LightBeatApp {
             color_palette_manager: widgets::color_palette_list::ColorPaletteManager::new(),
             color_palette_group_manager: widgets::color_palette_group_list::ColorPaletteGroupManager::new(),
             palette_ctx: new_shared_palette_context(),
+            project_undoer: egui::util::undoer::Undoer::default(),
+            setup_undoer: egui::util::undoer::Undoer::default(),
         };
 
         // Load hardware setup (fixtures + interfaces).
@@ -490,26 +494,23 @@ impl LightBeatApp {
     fn load_setup(&mut self) {
         match setup::load_setup() {
             Ok(s) => {
+                // Direct assignment here; engine/context syncs happen in `new`
+                // after this is called (avoids syncing before engine is ready).
                 self.fixture_manager = widgets::fixture_list::FixtureManager::from_fixtures(s.fixtures);
                 self.object_manager = widgets::object_list::ObjectManager::from_objects(s.objects);
                 self.interface_manager = widgets::interface_list::InterfaceManager::from_saved(s.interfaces);
                 self.group_manager = widgets::group_list::GroupManager::from_groups(s.groups);
                 self.color_palette_manager = widgets::color_palette_list::ColorPaletteManager::from_palettes(s.color_palettes);
                 self.color_palette_group_manager = widgets::color_palette_group_list::ColorPaletteGroupManager::from_groups(s.color_palette_groups);
+                // Reset history so undo doesn't go back to an empty setup.
+                self.setup_undoer = egui::util::undoer::Undoer::default();
             }
             Err(e) => eprintln!("Failed to load setup: {}", e),
         }
     }
 
     fn save_setup(&self) {
-        let setup = setup::SetupFile {
-            fixtures: self.fixture_manager.fixtures.clone(),
-            objects: self.object_manager.objects.clone(),
-            interfaces: self.interface_manager.to_saved(),
-            groups: self.group_manager.groups.clone(),
-            color_palettes: self.color_palette_manager.palettes.clone(),
-            color_palette_groups: self.color_palette_group_manager.groups.clone(),
-        };
+        let setup = self.current_setup();
         if let Err(e) = setup::save_setup(&setup) {
             eprintln!("Failed to save setup: {}", e);
         }
@@ -663,39 +664,66 @@ impl LightBeatApp {
         }
     }
 
+    /// Apply an in-memory ProjectFile, replacing the current graph & engine state.
+    /// Used both for file-load and for undo/redo. Preserves pan/zoom and the
+    /// active subgraph path across the rebuild.
+    fn apply_project(&mut self, proj: &project::ProjectFile) {
+        let view = self.graph.capture_view_state();
+
+        self.engine.send(EngineCommand::RemoveAllNodes);
+        self.graph = NodeGraph::new();
+        self.register_node_factories();
+
+        let indices = project::load_graph(&mut self.graph, proj);
+        self.wire_new_nodes();
+        for cmd in self.graph.drain_engine_commands() {
+            self.engine.send(cmd);
+        }
+        self.send_load_data_recursive(&proj.nodes, &indices, vec![]);
+
+        self.graph.restore_view_state(&view);
+    }
+
     fn load_project_from(&mut self, path: &std::path::Path) {
         match project::load_from_file(&path.to_path_buf()) {
             Ok(proj) => {
-                // Clear engine and UI graph.
-                self.engine.send(EngineCommand::RemoveAllNodes);
-                self.graph = NodeGraph::new();
-                self.register_node_factories();
-
-                // Load nodes and connections into UI graph.
-                let indices = project::load_graph(&mut self.graph, &proj);
-
-                // Create engine nodes (via wire_new_nodes mechanism).
-                // drain_new_nodes will pick them up.
-                // But we also need to send connections and load_data to the engine.
-
-                // Create engine nodes.
-                self.wire_new_nodes();
-
-                // Drain engine commands queued by add_connection during load.
-                for cmd in self.graph.drain_engine_commands() {
-                    self.engine.send(cmd);
-                }
-
-                // Send load_data for nodes that have custom data (recursively for subgraphs).
-                self.send_load_data_recursive(&proj.nodes, &indices, vec![]);
-
+                self.apply_project(&proj);
                 self.graph.fit_to_content();
                 self.project_path = Some(path.to_path_buf());
+                // Reset history so undo doesn't go back to the empty pre-load graph.
+                self.project_undoer = egui::util::undoer::Undoer::default();
             }
             Err(e) => {
                 eprintln!("Failed to open project: {}", e);
             }
         }
+    }
+
+    /// Build current SetupFile snapshot (used for both saving and feeding the undoer).
+    fn current_setup(&self) -> setup::SetupFile {
+        setup::SetupFile {
+            fixtures: self.fixture_manager.fixtures.clone(),
+            objects: self.object_manager.objects.clone(),
+            interfaces: self.interface_manager.to_saved(),
+            groups: self.group_manager.groups.clone(),
+            color_palettes: self.color_palette_manager.palettes.clone(),
+            color_palette_groups: self.color_palette_group_manager.groups.clone(),
+        }
+    }
+
+    /// Apply an in-memory SetupFile, rebuilding all managers and re-syncing engine state.
+    fn apply_setup(&mut self, s: &setup::SetupFile) {
+        self.fixture_manager = widgets::fixture_list::FixtureManager::from_fixtures(s.fixtures.clone());
+        self.object_manager = widgets::object_list::ObjectManager::from_objects(s.objects.clone());
+        self.interface_manager = widgets::interface_list::InterfaceManager::from_saved(s.interfaces.clone());
+        self.group_manager = widgets::group_list::GroupManager::from_groups(s.groups.clone());
+        self.color_palette_manager = widgets::color_palette_list::ColorPaletteManager::from_palettes(s.color_palettes.clone());
+        self.color_palette_group_manager = widgets::color_palette_group_list::ColorPaletteGroupManager::from_groups(s.color_palette_groups.clone());
+
+        self.sync_group_context();
+        self.sync_object_store();
+        self.sync_interfaces();
+        self.sync_palette_context();
     }
 
     fn window_title(&self) -> String {
@@ -716,6 +744,19 @@ impl eframe::App for LightBeatApp {
 
         // Poll background file dialog results.
         self.poll_file_dialog();
+
+        // Snapshot current state for the undoers and the Edit menu.
+        // Built once per frame; cheap (clones small structs).
+        let now = ctx.input(|i| i.time);
+        let current_project = project::save_graph(&self.graph);
+        let current_setup = self.current_setup();
+        self.project_undoer.feed_state(now, &current_project);
+        self.setup_undoer.feed_state(now, &current_setup);
+
+        let can_undo_proj = self.project_undoer.has_undo(&current_project);
+        let can_redo_proj = self.project_undoer.has_redo(&current_project);
+        let can_undo_setup = self.setup_undoer.has_undo(&current_setup);
+        let can_redo_setup = self.setup_undoer.has_redo(&current_setup);
 
         // Menu bar.
         egui::TopBottomPanel::top("menu_bar").show(ctx, |ui| {
@@ -738,6 +779,33 @@ impl eframe::App for LightBeatApp {
                     if ui.button("Quit").clicked() {
                         ui.close_menu();
                         self.quit_requested = true;
+                    }
+                });
+                ui.menu_button("Edit", |ui| {
+                    if ui.add_enabled(can_undo_proj, egui::Button::new("Undo Project")).clicked() {
+                        ui.close_menu();
+                        if let Some(p) = self.project_undoer.undo(&current_project).cloned() {
+                            self.apply_project(&p);
+                        }
+                    }
+                    if ui.add_enabled(can_redo_proj, egui::Button::new("Redo Project")).clicked() {
+                        ui.close_menu();
+                        if let Some(p) = self.project_undoer.redo(&current_project).cloned() {
+                            self.apply_project(&p);
+                        }
+                    }
+                    ui.separator();
+                    if ui.add_enabled(can_undo_setup, egui::Button::new("Undo Setup")).clicked() {
+                        ui.close_menu();
+                        if let Some(s) = self.setup_undoer.undo(&current_setup).cloned() {
+                            self.apply_setup(&s);
+                        }
+                    }
+                    if ui.add_enabled(can_redo_setup, egui::Button::new("Redo Setup")).clicked() {
+                        ui.close_menu();
+                        if let Some(s) = self.setup_undoer.redo(&current_setup).cloned() {
+                            self.apply_setup(&s);
+                        }
                     }
                 });
                 ui.menu_button("View", |ui| {
@@ -768,14 +836,24 @@ impl eframe::App for LightBeatApp {
             });
         });
 
+        // Track whether the pointer is over any setup window. This routes
+        // Ctrl+Z to the setup undoer instead of the project undoer.
+        let mut setup_hovered = false;
+        let mut mark_hovered = |r: Option<egui::InnerResponse<Option<()>>>| {
+            if let Some(ir) = r {
+                if ir.response.contains_pointer() { setup_hovered = true; }
+            }
+        };
+
         // Fixture templates window.
         if self.show_fixture_list {
-            egui::Window::new("Fixture Templates")
+            let r = egui::Window::new("Fixture Templates")
                 .open(&mut self.show_fixture_list)
                 .default_size([350.0, 400.0])
                 .show(ctx, |ui| {
                     self.fixture_manager.show(ui);
                 });
+            mark_hovered(r);
         }
 
         // Objects window.
@@ -784,52 +862,57 @@ impl eframe::App for LightBeatApp {
                 .iter()
                 .map(|e| (e.id, e.name.clone()))
                 .collect();
-            egui::Window::new("Objects")
+            let r = egui::Window::new("Objects")
                 .open(&mut self.show_object_list)
                 .default_size([400.0, 400.0])
                 .show(ctx, |ui| {
                     self.object_manager.show(ui, &self.fixture_manager.fixtures, &interface_names);
                 });
+            mark_hovered(r);
         }
 
         // Interface list window (toggled via View menu).
         if self.show_interface_list {
-            egui::Window::new("Interfaces")
+            let r = egui::Window::new("Interfaces")
                 .open(&mut self.show_interface_list)
                 .default_size([350.0, 300.0])
                 .show(ctx, |ui| {
                     self.interface_manager.show(ui);
                 });
+            mark_hovered(r);
         }
 
         // Groups window (toggled via View menu).
         if self.show_group_list {
-            egui::Window::new("Groups")
+            let r = egui::Window::new("Groups")
                 .open(&mut self.show_group_list)
                 .default_size([350.0, 400.0])
                 .show(ctx, |ui| {
                     self.group_manager.show(ui, &self.object_manager.objects);
                 });
+            mark_hovered(r);
         }
 
         // Color Palettes window.
         if self.show_color_palettes {
-            egui::Window::new("Color Palettes")
+            let r = egui::Window::new("Color Palettes")
                 .open(&mut self.show_color_palettes)
                 .default_size([300.0, 400.0])
                 .show(ctx, |ui| {
                     self.color_palette_manager.show(ui);
                 });
+            mark_hovered(r);
         }
 
         // Color Palette Groups window.
         if self.show_color_palette_groups {
-            egui::Window::new("Color Palette Groups")
+            let r = egui::Window::new("Color Palette Groups")
                 .open(&mut self.show_color_palette_groups)
                 .default_size([350.0, 400.0])
                 .show(ctx, |ui| {
                     self.color_palette_group_manager.show(ui, &self.color_palette_manager.palettes);
                 });
+            mark_hovered(r);
         }
 
         // Inspector panel.
@@ -958,6 +1041,37 @@ impl eframe::App for LightBeatApp {
         }
         if ctx.input(|i| i.modifiers.ctrl && i.key_pressed(egui::Key::O)) {
             self.open_project(ctx);
+        }
+
+        // Undo / Redo: Ctrl+Z / Ctrl+Shift+Z (and Ctrl+Y for redo).
+        // Routes to the setup undoer if the pointer is over a setup window,
+        // otherwise to the project undoer.
+        let undo_pressed = ctx.input(|i| {
+            i.modifiers.ctrl && !i.modifiers.shift && i.key_pressed(egui::Key::Z)
+        });
+        let redo_pressed = ctx.input(|i| {
+            i.modifiers.ctrl
+                && ((i.modifiers.shift && i.key_pressed(egui::Key::Z))
+                    || i.key_pressed(egui::Key::Y))
+        });
+
+        if undo_pressed {
+            if setup_hovered {
+                if let Some(s) = self.setup_undoer.undo(&current_setup).cloned() {
+                    self.apply_setup(&s);
+                }
+            } else if let Some(p) = self.project_undoer.undo(&current_project).cloned() {
+                self.apply_project(&p);
+            }
+        }
+        if redo_pressed {
+            if setup_hovered {
+                if let Some(s) = self.setup_undoer.redo(&current_setup).cloned() {
+                    self.apply_setup(&s);
+                }
+            } else if let Some(p) = self.project_undoer.redo(&current_project).cloned() {
+                self.apply_project(&p);
+            }
         }
 
         if self.quit_requested {

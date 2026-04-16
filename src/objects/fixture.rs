@@ -2,7 +2,7 @@ use super::channel::Channel;
 
 /// A fixture template — defines the channel layout for a type of light.
 /// Does NOT have an address. Instances (Objects) reference this.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Fixture {
     pub id: u32,
     pub name: String,
@@ -50,7 +50,7 @@ impl Fixture {
 }
 
 /// DMX address for an object instance.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct DmxAddress {
     pub net: u8,
     pub subnet: u8,

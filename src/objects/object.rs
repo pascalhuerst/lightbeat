@@ -4,7 +4,7 @@ use super::universe::DmxUniverse;
 
 /// An instance of a fixture — has a specific DMX address and interface assignment.
 /// Owns a clone of the fixture's channels (with runtime values).
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Object {
     pub id: u32,
     pub name: String,

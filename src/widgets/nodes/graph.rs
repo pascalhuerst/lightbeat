@@ -84,6 +84,13 @@ pub struct GraphLevel {
     pub label: String,
 }
 
+/// View state snapshot — pan/zoom per level + active navigation path.
+/// Used to preserve view across full graph rebuilds (undo/redo).
+pub struct ViewState {
+    per_level: Vec<(Option<NodeId>, Vec2, f32)>,
+    active_path: Vec<NodeId>,
+}
+
 /// A copied node snapshot for clipboard operations.
 #[allow(dead_code)]
 struct ClipboardNode {
@@ -376,6 +383,40 @@ impl NodeGraph {
     /// Find the inner level for a given subgraph node ID, if it exists.
     pub fn find_level_for_subgraph(&self, subgraph_id: NodeId) -> Option<&GraphLevel> {
         self.levels.iter().find(|l| l.subgraph_id == Some(subgraph_id))
+    }
+
+    /// Snapshot per-level pan/zoom keyed by subgraph_id (None = root) plus
+    /// the active subgraph navigation path. Used to preserve view state
+    /// across apply_project (undo/redo).
+    pub fn capture_view_state(&self) -> ViewState {
+        ViewState {
+            per_level: self.levels.iter()
+                .map(|l| (l.subgraph_id, l.pan, l.zoom))
+                .collect(),
+            active_path: self.current_subgraph_path(),
+        }
+    }
+
+    /// Restore pan/zoom on each existing level by matching subgraph_id,
+    /// then navigate to the saved active subgraph path (best effort).
+    pub fn restore_view_state(&mut self, state: &ViewState) {
+        for (sid, pan, zoom) in &state.per_level {
+            if let Some(level) = self.levels.iter_mut().find(|l| l.subgraph_id == *sid) {
+                level.pan = *pan;
+                level.zoom = *zoom;
+            }
+        }
+        // Walk the active path one subgraph at a time, navigating into each.
+        self.active_level = 0;
+        for sid in &state.active_path {
+            let idx = self.levels[self.active_level].nodes.iter()
+                .position(|n| n.node_id() == *sid);
+            if let Some(idx) = idx {
+                self.navigate_into(idx);
+            } else {
+                break;
+            }
+        }
     }
 
     /// Create a node from the registry by type name.

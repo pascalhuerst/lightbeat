@@ -8,7 +8,7 @@ use super::object::Object;
 /// Defines where the strip's first and last LED map onto the group's
 /// normalized 0..1 logical axis. If `logical_end < logical_start`,
 /// the strip is logically reversed (LED 0 at the high end).
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct StripLayout {
     pub object_id: u32,
     pub logical_start: f32,
@@ -52,7 +52,7 @@ impl GroupCapability {
 
 /// A group of objects that can be controlled together.
 /// Capabilities are the UNION of all member objects' channel types.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Group {
     pub id: u32,
     pub name: String,

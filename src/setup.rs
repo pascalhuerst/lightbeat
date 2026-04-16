@@ -14,7 +14,7 @@ const SETUP_FILENAME: &str = "setup.json";
 // Setup file format
 // ---------------------------------------------------------------------------
 
-#[derive(Serialize, Deserialize, Default)]
+#[derive(Serialize, Deserialize, Default, Clone, PartialEq)]
 pub struct SetupFile {
     /// Fixture templates (channel definitions).
     pub fixtures: Vec<Fixture>,
@@ -32,7 +32,7 @@ pub struct SetupFile {
     pub color_palette_groups: Vec<ColorPaletteGroup>,
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, PartialEq)]
 pub struct SavedInterface {
     pub id: u32,
     pub name: String,

@@ -5,7 +5,7 @@ pub const PALETTE_SIZE: usize = 4;
 pub const SLOT_NAMES: [&str; PALETTE_SIZE] = ["Primary", "Secondary", "Third", "Fourth"];
 
 /// A palette: a fixed set of 4 named colors.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ColorPalette {
     pub id: u32,
     pub name: String,
@@ -28,7 +28,7 @@ impl ColorPalette {
 }
 
 /// A named collection of palettes. A palette can appear in multiple groups.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ColorPaletteGroup {
     pub id: u32,
     pub name: String,

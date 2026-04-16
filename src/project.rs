@@ -14,13 +14,13 @@ use crate::widgets::nodes::output::group::GroupWidget;
 // Save format
 // ---------------------------------------------------------------------------
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct ProjectFile {
     pub nodes: Vec<SavedNode>,
     pub connections: Vec<SavedConnection>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct SavedNode {
     pub type_name: String,
     pub id: u64,
@@ -36,13 +36,13 @@ pub struct SavedNode {
     pub inner_graph: Option<ProjectFile>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct SavedParam {
     pub index: usize,
     pub value: SavedParamValue,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum SavedParamValue {
     Float(f64),
@@ -69,7 +69,7 @@ impl SavedParamValue {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct SavedConnection {
     pub from_node: u64,
     pub from_port: usize,

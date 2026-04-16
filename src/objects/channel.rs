@@ -143,7 +143,7 @@ impl PixelFormat {
 }
 
 /// The kind of channel, determining what value it holds and how it serializes to DMX.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum ChannelKind {
     /// Single intensity value (0.0–1.0) → 1 DMX channel.
     Dimmer,
@@ -172,7 +172,7 @@ impl ChannelKind {
 }
 
 /// A channel on a fixture. Holds its current value and knows how to write DMX bytes.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Channel {
     pub name: String,
     pub kind: ChannelKind,

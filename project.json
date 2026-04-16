@@ -1627,20 +1627,6 @@
       ]
     },
     {
-      "type_name": "Const Value",
-      "id": 96,
-      "pos": [
-        -194.06255,
-        296.81934
-      ],
-      "params": [
-        {
-          "index": 0,
-          "value": 0.9999997615814209
-        }
-      ]
-    },
-    {
       "type_name": "Color Split",
       "id": 97,
       "pos": [

@@ -2,7 +2,7 @@
 ///
 /// This is stored on the fixture itself. The actual output implementation
 /// lives in `crate::interfaces`.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum OutputConfig {
     /// Art-Net output.
     ArtNet {
