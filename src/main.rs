@@ -16,7 +16,7 @@ use std::sync::Arc;
 use eframe::egui;
 
 use beat_clock::{BeatClock, BeatPattern, SubscriptionHandle};
-use config::AppConfig;
+use config::{AppConfig, InspectorMode};
 use engine::types::{new_shared_state, EngineCommand, NodeId, PortType, ProcessNode, SubgraphInnerCmd};
 use engine::EngineHandle;
 use engine::nodes::display::color_display::ColorDisplayProcessNode;
@@ -851,6 +851,20 @@ impl eframe::App for LightBeatApp {
                     if ui.checkbox(&mut self.show_dmx_monitor, "DMX Monitor").changed() {
                         ui.close_menu();
                     }
+                    ui.separator();
+                    ui.menu_button("Inspector", |ui| {
+                        let mut changed = false;
+                        if ui.radio_value(&mut self.config.inspector_mode, InspectorMode::Show, "Show").clicked() {
+                            changed = true;
+                        }
+                        if ui.radio_value(&mut self.config.inspector_mode, InspectorMode::Auto, "Auto").clicked() {
+                            changed = true;
+                        }
+                        if ui.radio_value(&mut self.config.inspector_mode, InspectorMode::Hide, "Hide").clicked() {
+                            changed = true;
+                        }
+                        if changed { self.config.save(); }
+                    });
                 });
             });
         });
@@ -934,24 +948,32 @@ impl eframe::App for LightBeatApp {
             mark_hovered(r);
         }
 
-        // Inspector panel.
-        egui::SidePanel::right("inspector")
-            .default_width(250.0)
-            .show(ctx, |ui| {
-                let selected = self.graph.selected_nodes_mut();
-                if selected.is_empty() {
-                    ui.heading("Inspector");
-                    ui.separator();
-                    ui.label("Select a node to inspect.");
-                } else if selected.len() == 1 {
-                    let node = &mut *selected.into_iter().next().unwrap();
-                    widgets::inspector::show_inspector(ui, node.as_mut());
-                } else {
-                    ui.heading(format!("{} nodes selected", selected.len()));
-                    ui.separator();
-                    widgets::inspector::show_multi_inspector(ui, selected);
-                }
-            });
+        // Inspector panel — visibility gated by InspectorMode.
+        let has_selection = !self.graph.selected_nodes_mut().is_empty();
+        let show_inspector = match self.config.inspector_mode {
+            InspectorMode::Show => true,
+            InspectorMode::Hide => false,
+            InspectorMode::Auto => has_selection,
+        };
+        if show_inspector {
+            egui::SidePanel::right("inspector")
+                .default_width(250.0)
+                .show(ctx, |ui| {
+                    let selected = self.graph.selected_nodes_mut();
+                    if selected.is_empty() {
+                        ui.heading("Inspector");
+                        ui.separator();
+                        ui.label("Select a node to inspect.");
+                    } else if selected.len() == 1 {
+                        let node = &mut *selected.into_iter().next().unwrap();
+                        widgets::inspector::show_inspector(ui, node.as_mut());
+                    } else {
+                        ui.heading(format!("{} nodes selected", selected.len()));
+                        ui.separator();
+                        widgets::inspector::show_multi_inspector(ui, selected);
+                    }
+                });
+        }
 
         // DMX Monitor (floating window, toggled via View menu).
         if self.show_dmx_monitor {

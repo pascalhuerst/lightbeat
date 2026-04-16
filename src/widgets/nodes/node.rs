@@ -58,6 +58,9 @@ pub trait NodeWidget: Any {
     /// (button in a group, fader cell) is interacted with. Default: no highlight.
     fn output_highlight(&self, _port_idx: usize, _now: f64) -> f32 { 0.0 }
 
+    /// Same as `output_highlight` but for input ports.
+    fn input_highlight(&self, _port_idx: usize, _now: f64) -> f32 { 0.0 }
+
     fn as_any_mut(&mut self) -> &mut dyn Any;
 }
 

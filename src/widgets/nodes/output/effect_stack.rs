@@ -7,9 +7,12 @@ use crate::engine::nodes::output::effect_stack::{EffectLayerConfig, EffectStackD
 use crate::engine::patterns::{all_pattern_types, create_pattern, pattern_channel_count};
 use crate::engine::types::*;
 use crate::objects::channel::ChannelKind;
+use crate::widgets::fader::highlight_alpha;
 use crate::widgets::nodes::node::NodeWidget;
 use crate::widgets::nodes::output::group::SharedGroupContext;
 use crate::widgets::nodes::types::UiPortDef;
+
+const LAYER_HIGHLIGHT_DURATION: f64 = 0.6;
 
 pub struct EffectStackWidget {
     id: NodeId,
@@ -17,6 +20,8 @@ pub struct EffectStackWidget {
     group_ctx: SharedGroupContext,
     pub selected_group_ids: Vec<u32>,
     pub layers: Vec<EffectLayerConfig>,
+    /// Most-recent inspector hover timestamp per layer; drives port highlight.
+    layer_hover_time: Vec<Option<f64>>,
 }
 
 const BLEND_MODES: &[(&str, BlendMode)] = &[
@@ -39,7 +44,24 @@ impl EffectStackWidget {
             group_ctx,
             selected_group_ids: Vec::new(),
             layers: Vec::new(),
+            layer_hover_time: Vec::new(),
         }
+    }
+
+    /// For input port `port_idx`, return the index of the layer that owns it.
+    /// Walks the same per-layer port layout as `ui_inputs`.
+    fn layer_for_input(&self, port_idx: usize) -> Option<usize> {
+        let mut acc = 0usize;
+        for (li, layer) in self.layers.iter().enumerate() {
+            let n = create_pattern(&layer.pattern_type)
+                .map(|p| p.input_ports().len())
+                .unwrap_or(0);
+            if port_idx < acc + n {
+                return Some(li);
+            }
+            acc += n;
+        }
+        None
     }
 
     /// Resolve render targets for selected groups + push layers to engine.
@@ -130,6 +152,15 @@ impl NodeWidget for EffectStackWidget {
     fn min_content_height(&self) -> f32 { 24.0 }
     fn shared_state(&self) -> &SharedState { &self.shared }
 
+    fn input_highlight(&self, port_idx: usize, now: f64) -> f32 {
+        let layer = match self.layer_for_input(port_idx) {
+            Some(l) => l,
+            None => return 0.0,
+        };
+        let last = self.layer_hover_time.get(layer).copied().flatten();
+        highlight_alpha(last, now, LAYER_HIGHLIGHT_DURATION)
+    }
+
     fn show_content(&mut self, ui: &mut Ui, _zoom: f32) {
         let shared = self.shared.lock().unwrap();
         let display = shared.display.as_ref().and_then(|d| d.downcast_ref::<EffectStackDisplay>());
@@ -173,49 +204,62 @@ impl NodeWidget for EffectStackWidget {
         let mut remove_idx: Option<usize> = None;
         let mut move_up: Option<usize> = None;
         let mut move_down: Option<usize> = None;
+        let now = ui.ctx().input(|i| i.time);
+
+        // Resize hover-time vec to match layer count.
+        if self.layer_hover_time.len() != self.layers.len() {
+            self.layer_hover_time.resize(self.layers.len(), None);
+        }
 
         for (i, layer) in self.layers.iter_mut().enumerate() {
-            ui.push_id(("layer", i), |ui| {
-                ui.horizontal(|ui| {
-                    ui.label(format!("{}.", i + 1));
-                    // Pattern type dropdown.
-                    egui::ComboBox::from_id_salt(("pat_type", i))
-                        .width(80.0)
-                        .selected_text(&layer.pattern_type)
-                        .show_ui(ui, |ui| {
-                            for &pname in all_pattern_types() {
-                                if ui.selectable_label(layer.pattern_type == pname, pname).clicked() {
-                                    layer.pattern_type = pname.to_string();
-                                    layers_changed = true;
+            let row_resp = ui.scope(|ui| {
+                ui.push_id(("layer", i), |ui| {
+                    ui.horizontal(|ui| {
+                        ui.label(format!("{}.", i + 1));
+                        egui::ComboBox::from_id_salt(("pat_type", i))
+                            .width(80.0)
+                            .selected_text(&layer.pattern_type)
+                            .show_ui(ui, |ui| {
+                                for &pname in all_pattern_types() {
+                                    if ui.selectable_label(layer.pattern_type == pname, pname).clicked() {
+                                        layer.pattern_type = pname.to_string();
+                                        layers_changed = true;
+                                    }
                                 }
-                            }
-                        });
-                    // Blend mode dropdown.
-                    egui::ComboBox::from_id_salt(("blend", i))
-                        .width(80.0)
-                        .selected_text(blend_label(layer.blend))
-                        .show_ui(ui, |ui| {
-                            for (label, bm) in BLEND_MODES {
-                                if ui.selectable_label(layer.blend == *bm, *label).clicked() {
-                                    layer.blend = *bm;
-                                    layers_changed = true;
+                            });
+                        egui::ComboBox::from_id_salt(("blend", i))
+                            .width(80.0)
+                            .selected_text(blend_label(layer.blend))
+                            .show_ui(ui, |ui| {
+                                for (label, bm) in BLEND_MODES {
+                                    if ui.selectable_label(layer.blend == *bm, *label).clicked() {
+                                        layer.blend = *bm;
+                                        layers_changed = true;
+                                    }
                                 }
-                            }
-                        });
+                            });
+                    });
+                    ui.horizontal(|ui| {
+                        ui.label("Opacity:");
+                        if ui.add(
+                            egui::Slider::new(&mut layer.opacity, 0.0..=1.0).fixed_decimals(2)
+                        ).changed() {
+                            layers_changed = true;
+                        }
+                        if ui.small_button(egui_phosphor::regular::ARROW_UP).clicked() { move_up = Some(i); }
+                        if ui.small_button(egui_phosphor::regular::ARROW_DOWN).clicked() { move_down = Some(i); }
+                        if ui.small_button(egui_phosphor::regular::X).clicked() { remove_idx = Some(i); }
+                    });
+                    ui.separator();
                 });
-                ui.horizontal(|ui| {
-                    ui.label("Opacity:");
-                    if ui.add(
-                        egui::Slider::new(&mut layer.opacity, 0.0..=1.0).fixed_decimals(2)
-                    ).changed() {
-                        layers_changed = true;
-                    }
-                    if ui.small_button(egui_phosphor::regular::ARROW_UP).clicked() { move_up = Some(i); }
-                    if ui.small_button(egui_phosphor::regular::ARROW_DOWN).clicked() { move_down = Some(i); }
-                    if ui.small_button(egui_phosphor::regular::X).clicked() { remove_idx = Some(i); }
-                });
-                ui.separator();
             });
+            // Stamp the hover time whenever the pointer is over this layer's
+            // row — the corresponding input ports on the node will glow.
+            if row_resp.response.contains_pointer() {
+                if let Some(slot) = self.layer_hover_time.get_mut(i) {
+                    *slot = Some(now);
+                }
+            }
         }
 
         if let Some(i) = remove_idx {

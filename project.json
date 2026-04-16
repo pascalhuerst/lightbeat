@@ -50,6 +50,10 @@
         -711.4307,
         31.33544
       ],
+      "size": [
+        289.06686,
+        258.76184
+      ],
       "params": [],
       "data": {
         "label": "Start/Stop",
@@ -1641,25 +1645,11 @@
       ]
     },
     {
-      "type_name": "Const Value",
-      "id": 98,
-      "pos": [
-        170.17557,
-        501.62643
-      ],
-      "params": [
-        {
-          "index": 0,
-          "value": 0.09999977052211761
-        }
-      ]
-    },
-    {
       "type_name": "Effect Stack",
       "id": 99,
       "pos": [
-        648.22876,
-        402.61496
+        1495.6259,
+        512.89044
       ],
       "params": [],
       "data": {
@@ -1671,7 +1661,7 @@
         ],
         "layers": [
           {
-            "blend": "Add",
+            "blend": "Override",
             "opacity": 1.0,
             "pattern_type": "Bar"
           },
@@ -1715,8 +1705,8 @@
       "type_name": "LFO",
       "id": 101,
       "pos": [
-        84.3963,
-        629.0472
+        10.625553,
+        522.9316
       ],
       "params": [
         {
@@ -1760,6 +1750,124 @@
           "value": 5
         }
       ]
+    },
+    {
+      "type_name": "ADSR",
+      "id": 104,
+      "pos": [
+        -294.3839,
+        828.74243
+      ],
+      "size": [
+        669.93335,
+        305.63443
+      ],
+      "params": [
+        {
+          "index": 0,
+          "value": 0.5009999871253967
+        },
+        {
+          "index": 1,
+          "value": 3.800999879837036
+        },
+        {
+          "index": 2,
+          "value": 0.0
+        },
+        {
+          "index": 3,
+          "value": 0.0010000000474974513
+        }
+      ]
+    },
+    {
+      "type_name": "Scope",
+      "id": 105,
+      "pos": [
+        620.9434,
+        905.5044
+      ],
+      "size": [
+        703.9902,
+        394.1794
+      ],
+      "params": [
+        {
+          "index": 0,
+          "value": 0.25
+        },
+        {
+          "index": 1,
+          "value": 512
+        },
+        {
+          "index": 2,
+          "value": -1.0
+        },
+        {
+          "index": 3,
+          "value": 1.0
+        }
+      ]
+    },
+    {
+      "type_name": "Fader",
+      "id": 106,
+      "pos": [
+        1226.9193,
+        166.61566
+      ],
+      "params": [],
+      "data": {
+        "orientation": "vertical",
+        "value": 0.034767020493745804
+      }
+    },
+    {
+      "type_name": "Fader",
+      "id": 107,
+      "pos": [
+        1282.8671,
+        763.4263
+      ],
+      "params": [],
+      "data": {
+        "orientation": "vertical",
+        "value": 0.1260095238685608
+      }
+    },
+    {
+      "type_name": "Counter",
+      "id": 108,
+      "pos": [
+        -162.97142,
+        645.2775
+      ],
+      "params": [
+        {
+          "index": 0,
+          "value": 16
+        },
+        {
+          "index": 1,
+          "value": 0
+        }
+      ]
+    },
+    {
+      "type_name": "Button",
+      "id": 109,
+      "pos": [
+        -619.0008,
+        591.0341
+      ],
+      "params": [],
+      "data": {
+        "label": "Button",
+        "mode": "toggle",
+        "state": false
+      }
     }
   ],
   "connections": [
@@ -1818,18 +1926,6 @@
       "to_port": 2
     },
     {
-      "from_node": 98,
-      "from_port": 0,
-      "to_node": 99,
-      "to_port": 1
-    },
-    {
-      "from_node": 101,
-      "from_port": 0,
-      "to_node": 99,
-      "to_port": 0
-    },
-    {
       "from_node": 77,
       "from_port": 0,
       "to_node": 101,
@@ -1840,12 +1936,6 @@
       "from_port": 0,
       "to_node": 99,
       "to_port": 5
-    },
-    {
-      "from_node": 101,
-      "from_port": 0,
-      "to_node": 99,
-      "to_port": 3
     },
     {
       "from_node": 101,
@@ -1887,6 +1977,48 @@
       "from_node": 89,
       "from_port": 0,
       "to_node": 75,
+      "to_port": 0
+    },
+    {
+      "from_node": 104,
+      "from_port": 0,
+      "to_node": 105,
+      "to_port": 0
+    },
+    {
+      "from_node": 106,
+      "from_port": 0,
+      "to_node": 99,
+      "to_port": 1
+    },
+    {
+      "from_node": 107,
+      "from_port": 0,
+      "to_node": 99,
+      "to_port": 4
+    },
+    {
+      "from_node": 101,
+      "from_port": 0,
+      "to_node": 99,
+      "to_port": 0
+    },
+    {
+      "from_node": 76,
+      "from_port": 0,
+      "to_node": 108,
+      "to_port": 0
+    },
+    {
+      "from_node": 104,
+      "from_port": 0,
+      "to_node": 99,
+      "to_port": 3
+    },
+    {
+      "from_node": 109,
+      "from_port": 0,
+      "to_node": 104,
       "to_port": 0
     }
   ]

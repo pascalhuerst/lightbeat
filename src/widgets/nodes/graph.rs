@@ -667,6 +667,9 @@ impl NodeGraph {
             let out_highlights: Vec<f32> = (0..outputs.len())
                 .map(|pi| level.nodes[i].output_highlight(pi, now))
                 .collect();
+            let in_highlights: Vec<f32> = (0..inputs.len())
+                .map(|pi| level.nodes[i].input_highlight(pi, now))
+                .collect();
             draw_node_chrome(
                 &painter,
                 level.nodes[i].title(),
@@ -674,6 +677,7 @@ impl NodeGraph {
                 level.nodes[i].title_color(),
                 &inputs,
                 &outputs,
+                &in_highlights,
                 &out_highlights,
                 node_rects[i],
                 selected,
@@ -776,7 +780,11 @@ impl NodeGraph {
         }
 
         // -- Context menu --
-        self.show_context_menu(ui, canvas_rect);
+        // `just_opened` suppresses the "click outside" dismiss check for the
+        // very frame the menu opens (otherwise the right-click that triggered
+        // it would also count as an outside click).
+        let just_opened = response.secondary_clicked();
+        self.show_context_menu(ui, canvas_rect, just_opened);
     }
 
     fn delete_selected(&mut self) {
@@ -919,6 +927,22 @@ impl NodeGraph {
         self.paste(base);
     }
 
+    /// Close the open context menu when the user clicks outside its rect.
+    /// `just_opened` skips the check on the same frame the menu opens, so the
+    /// triggering right-click doesn't immediately count as an outside click.
+    fn dismiss_on_outside_click(&mut self, ui: &Ui, area_rect: Rect, just_opened: bool) {
+        if just_opened { return; }
+        let any_press = ui.input(|i| i.pointer.any_pressed());
+        if !any_press { return; }
+        let pos = ui.input(|i| i.pointer.interact_pos());
+        if let Some(p) = pos {
+            if !area_rect.contains(p) {
+                self.context_menu_pos = None;
+                self.context_menu_search.clear();
+            }
+        }
+    }
+
     /// True if `screen_pos` lies inside any currently-selected node's screen rect.
     fn is_pos_on_selected_node(&self, screen_pos: Pos2, canvas_rect: Rect) -> bool {
         let level = self.active();
@@ -945,7 +969,7 @@ impl NodeGraph {
         false
     }
 
-    fn show_context_menu(&mut self, ui: &mut Ui, canvas_rect: Rect) {
+    fn show_context_menu(&mut self, ui: &mut Ui, canvas_rect: Rect, just_opened: bool) {
         if self.context_menu_pos.is_none() {
             return;
         }
@@ -957,38 +981,29 @@ impl NodeGraph {
                 self.context_menu_pos = None;
                 return;
             }
-            let mut open = true;
             let mut move_to_sub = false;
-            egui::Window::new("Selection")
-                .id(egui::Id::new("selection_ctx_menu"))
-                .default_pos(menu_pos)
-                .auto_sized()
-                .collapsible(false)
-                .open(&mut open)
+            let area_resp = egui::Area::new(egui::Id::new("selection_ctx_menu"))
+                .order(egui::Order::Foreground)
+                .fixed_pos(menu_pos)
                 .show(ui.ctx(), |ui| {
-                    if ui.button("Move to Subgraph").clicked() {
-                        move_to_sub = true;
-                    }
+                    egui::Frame::popup(ui.style()).show(ui, |ui| {
+                        ui.set_min_width(160.0);
+                        if ui.button("Move to Subgraph").clicked() {
+                            move_to_sub = true;
+                        }
+                    });
                 });
             if move_to_sub {
                 self.move_selection_to_subgraph();
                 self.context_menu_pos = None;
                 self.context_menu_search.clear();
-            } else if !open {
-                self.context_menu_pos = None;
+                return;
             }
+            self.dismiss_on_outside_click(ui, area_resp.response.rect, just_opened);
             return;
         }
 
         // Add-node menu — default for right-clicks on empty canvas / unselected nodes.
-
-        // Group entries by category.
-        let mut categories: Vec<String> = Vec::new();
-        for e in &self.registry {
-            if !categories.contains(&e.category) {
-                categories.push(e.category.clone());
-            }
-        }
 
         if self.registry.is_empty() {
             self.context_menu_pos = None;
@@ -1009,81 +1024,87 @@ impl NodeGraph {
         let mut hovered_desc: Option<&'static str> =
             filtered.first().map(|&(_, _, _, d)| d);
 
-        let mut open = true;
-        let _win_resp = egui::Window::new("Add node")
-            .id(egui::Id::new("node_ctx_menu"))
-            .default_pos(menu_pos)
-            .default_size([260.0, 420.0])
-            .resizable(true)
-            .collapsible(false)
-            .open(&mut open)
+        let mut dismiss_via_esc = false;
+        let area_resp = egui::Area::new(egui::Id::new("node_ctx_menu"))
+            .order(egui::Order::Foreground)
+            .fixed_pos(menu_pos)
             .show(ui.ctx(), |ui| {
-                // Search field — auto-focused.
-                let search_resp = ui.add(
-                    egui::TextEdit::singleline(&mut self.context_menu_search)
-                        .hint_text("Search nodes...")
-                        .desired_width(ui.available_width()),
-                );
-                if search_resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
-                    self.context_menu_pos = None;
-                    self.context_menu_search.clear();
-                    return;
-                }
-                if search_resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
-                    if let Some(&(idx, _, _, _)) = filtered.first() {
-                        spawn = Some(idx);
+                egui::Frame::popup(ui.style()).show(ui, |ui| {
+                    ui.set_min_size(egui::Vec2::new(260.0, 420.0));
+                    ui.set_max_width(260.0);
+
+                    // Search field — auto-focused.
+                    let search_resp = ui.add(
+                        egui::TextEdit::singleline(&mut self.context_menu_search)
+                            .hint_text("Search nodes...")
+                            .desired_width(ui.available_width()),
+                    );
+                    if search_resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                        dismiss_via_esc = true;
+                        return;
                     }
-                }
-                search_resp.request_focus();
+                    if search_resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                        if let Some(&(idx, _, _, _)) = filtered.first() {
+                            spawn = Some(idx);
+                        }
+                    }
+                    search_resp.request_focus();
 
-                ui.separator();
+                    ui.separator();
 
-                // Reserve space at the bottom for the description preview.
-                let desc_h = 64.0;
-                let list_h = (ui.available_height() - desc_h).max(80.0);
+                    let desc_h = 64.0;
+                    let list_h = (ui.available_height() - desc_h).max(80.0);
 
-                egui::ScrollArea::vertical()
-                    .max_height(list_h)
-                    .show(ui, |ui| {
-                        if filtered.is_empty() {
-                            ui.colored_label(egui::Color32::from_gray(100), "No matches");
-                        } else {
-                            let mut last_cat = "";
-                            for &(idx, cat, label, desc) in &filtered {
-                                if cat != last_cat {
-                                    if !last_cat.is_empty() { ui.add_space(2.0); }
-                                    ui.colored_label(
-                                        egui::Color32::from_gray(120),
-                                        egui::RichText::new(cat).size(10.0),
-                                    );
-                                    last_cat = cat;
-                                }
-                                let resp = ui.button(label);
-                                if resp.hovered() {
-                                    hovered_desc = Some(desc);
-                                }
-                                if resp.clicked() {
-                                    spawn = Some(idx);
+                    egui::ScrollArea::vertical()
+                        .max_height(list_h)
+                        .show(ui, |ui| {
+                            if filtered.is_empty() {
+                                ui.colored_label(egui::Color32::from_gray(100), "No matches");
+                            } else {
+                                let mut last_cat = "";
+                                for &(idx, cat, label, desc) in &filtered {
+                                    if cat != last_cat {
+                                        if !last_cat.is_empty() { ui.add_space(2.0); }
+                                        ui.colored_label(
+                                            egui::Color32::from_gray(120),
+                                            egui::RichText::new(cat).size(10.0),
+                                        );
+                                        last_cat = cat;
+                                    }
+                                    let resp = ui.button(label);
+                                    if resp.hovered() {
+                                        hovered_desc = Some(desc);
+                                    }
+                                    if resp.clicked() {
+                                        spawn = Some(idx);
+                                    }
                                 }
                             }
+                        });
+
+                    ui.separator();
+                    // Description preview area.
+                    ui.allocate_ui(egui::Vec2::new(ui.available_width(), desc_h - 8.0), |ui| {
+                        let desc = hovered_desc.unwrap_or("");
+                        if desc.is_empty() {
+                            ui.colored_label(egui::Color32::from_gray(80), "Hover an entry for details.");
+                        } else {
+                            ui.colored_label(egui::Color32::from_gray(180), desc);
                         }
                     });
-
-                ui.separator();
-                // Description preview area.
-                ui.allocate_ui(egui::Vec2::new(ui.available_width(), desc_h - 8.0), |ui| {
-                    let desc = hovered_desc.unwrap_or("");
-                    if desc.is_empty() {
-                        ui.colored_label(egui::Color32::from_gray(80), "Hover an entry for details.");
-                    } else {
-                        ui.colored_label(egui::Color32::from_gray(180), desc);
-                    }
                 });
             });
 
-        if !open {
+        if dismiss_via_esc {
             self.context_menu_pos = None;
             self.context_menu_search.clear();
+            return;
+        }
+
+        // Spawn check happens before dismiss so the click on a list item
+        // doesn't get treated as "outside click then create node next frame".
+        if spawn.is_none() {
+            self.dismiss_on_outside_click(ui, area_resp.response.rect, just_opened);
         }
 
         if let Some(reg_idx) = spawn {
@@ -1811,6 +1832,7 @@ fn draw_node_chrome(
     title_color: Option<Color32>,
     inputs: &[UiPortDef],
     outputs: &[UiPortDef],
+    in_highlights: &[f32],
     out_highlights: &[f32],
     rect: Rect,
     selected: bool,
@@ -1846,7 +1868,8 @@ fn draw_node_chrome(
     // Input ports
     for (i, ui_port) in inputs.iter().enumerate() {
         let pos = port_pos_z(rect.min, rect.width(), PortDir::Input, i, zoom);
-        draw_port(painter, pos, ui_port, 0.0, zoom);
+        let hi = in_highlights.get(i).copied().unwrap_or(0.0);
+        draw_port(painter, pos, ui_port, hi, zoom);
     }
 
     // Output ports
