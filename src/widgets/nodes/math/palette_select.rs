@@ -144,13 +144,13 @@ impl NodeWidget for PaletteSelectWidget {
                 .map(|(_, n)| n.as_str()).unwrap_or("???");
             ui.horizontal(|ui| {
                 ui.label(format!("{}. {}", i, name));
-                if i > 0 && ui.small_button("↑").clicked() {
+                if i > 0 && ui.small_button(egui_phosphor::regular::ARROW_UP).clicked() {
                     swap = Some((i, i - 1));
                 }
-                if i + 1 < self.selected_group_ids.len() && ui.small_button("↓").clicked() {
+                if i + 1 < self.selected_group_ids.len() && ui.small_button(egui_phosphor::regular::ARROW_DOWN).clicked() {
                     swap = Some((i, i + 1));
                 }
-                if ui.small_button("x").clicked() {
+                if ui.small_button(egui_phosphor::regular::X).clicked() {
                     remove_idx = Some(i);
                 }
             });

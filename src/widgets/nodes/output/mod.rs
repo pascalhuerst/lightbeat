@@ -1,2 +1,2 @@
-pub mod bar_pattern;
+pub mod effect_stack;
 pub mod group;

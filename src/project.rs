@@ -7,7 +7,7 @@ use crate::engine::nodes::meta::subgraph::{BRIDGE_IN_NODE_ID, BRIDGE_OUT_NODE_ID
 use crate::engine::types::{NodeId, ParamDef, ParamValue, PortDir, PortId};
 use crate::widgets::nodes::{GraphLevel, NodeGraph};
 use crate::widgets::nodes::meta::subgraph::SubgraphWidget;
-use crate::widgets::nodes::output::bar_pattern::BarPatternWidget;
+use crate::widgets::nodes::output::effect_stack::EffectStackWidget;
 use crate::widgets::nodes::output::group::GroupWidget;
 
 // ---------------------------------------------------------------------------
@@ -243,17 +243,22 @@ pub fn load_graph(graph: &mut NodeGraph, project: &ProjectFile) -> Vec<usize> {
                 }
             }
 
-            // Restore Bar pattern widget state from save_data.
-            if saved.type_name == "Bar" {
+            // Restore Effect Stack widget state from save_data.
+            if saved.type_name == "Effect Stack" {
                 if let Some(data) = &saved.data {
                     let n = graph.node_mut(idx);
-                    if let Some(bar) = n.as_any_mut().downcast_mut::<BarPatternWidget>() {
+                    if let Some(stack) = n.as_any_mut().downcast_mut::<EffectStackWidget>() {
                         if let Some(ids) = data.get("group_ids").and_then(|v| v.as_array()) {
-                            bar.selected_group_ids = ids.iter()
+                            stack.selected_group_ids = ids.iter()
                                 .filter_map(|v| v.as_u64().map(|n| n as u32))
                                 .collect();
                         }
-                        bar.push_config_to_engine();
+                        if let Some(layers) = data.get("layers") {
+                            if let Ok(parsed) = serde_json::from_value(layers.clone()) {
+                                stack.layers = parsed;
+                            }
+                        }
+                        stack.push_config_to_engine();
                     }
                 }
             }

@@ -469,7 +469,7 @@ impl NodeGraph {
                     self.navigate_to_level(0);
                 }
                 for i in 1..=self.active_level {
-                    ui.label("\u{25B6}");
+                    ui.label(egui_phosphor::regular::CARET_RIGHT);
                     let label = self.levels[i].label.clone();
                     if i < self.active_level {
                         if ui.small_button(&label).clicked() {

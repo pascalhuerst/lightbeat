@@ -71,7 +71,7 @@ impl NodeWidget for SubgraphWidget {
         ui.horizontal(|ui| {
             ui.colored_label(Color32::from_gray(100), format!("{} nodes", inner_count));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui.small_button("\u{25B6}").on_hover_text("Open subgraph").clicked() {
+                if ui.small_button(egui_phosphor::regular::ARROW_SQUARE_OUT).on_hover_text("Open subgraph").clicked() {
                     self.wants_open = true;
                 }
             });
@@ -106,7 +106,7 @@ impl NodeWidget for SubgraphWidget {
                             }
                         }
                     });
-                if ui.small_button("x").clicked() { remove_input = Some(i); }
+                if ui.small_button(egui_phosphor::regular::X).clicked() { remove_input = Some(i); }
             });
         }
         if let Some(i) = remove_input { self.input_defs.remove(i); input_changed = true; }
@@ -134,7 +134,7 @@ impl NodeWidget for SubgraphWidget {
                             }
                         }
                     });
-                if ui.small_button("x").clicked() { remove_output = Some(i); }
+                if ui.small_button(egui_phosphor::regular::X).clicked() { remove_output = Some(i); }
             });
         }
         if let Some(i) = remove_output { self.output_defs.remove(i); output_changed = true; }

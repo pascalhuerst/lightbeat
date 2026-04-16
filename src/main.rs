@@ -38,7 +38,7 @@ use engine::nodes::meta::subgraph::SubgraphProcessNode;
 use engine::nodes::math::scaler::ScalerProcessNode;
 use engine::nodes::math::oscillator::{OscFunc, OscillatorProcessNode};
 use engine::nodes::math::position_ops::{PositionMergeProcessNode, PositionSplitProcessNode};
-use engine::nodes::output::bar_pattern::BarPatternProcessNode;
+use engine::nodes::output::effect_stack::EffectStackProcessNode;
 use engine::nodes::output::group::GroupProcessNode;
 use engine::nodes::transport::clock_divider::ClockDividerProcessNode;
 use engine::nodes::transport::clock_gen::ClockGenProcessNode;
@@ -67,7 +67,7 @@ use widgets::nodes::meta::subgraph::SubgraphWidget;
 use widgets::nodes::math::scaler::ScalerWidget;
 use widgets::nodes::math::oscillator::OscillatorWidget;
 use widgets::nodes::math::position_ops::{PositionMergeWidget, PositionSplitWidget};
-use widgets::nodes::output::bar_pattern::BarPatternWidget;
+use widgets::nodes::output::effect_stack::EffectStackWidget;
 use widgets::nodes::output::group::GroupWidget;
 use widgets::nodes::transport::clock_divider::ClockDividerWidget;
 use widgets::nodes::transport::clock_gen::ClockGenWidget;
@@ -116,7 +116,13 @@ struct LightBeatApp {
 }
 
 impl LightBeatApp {
-    fn new(_cc: &eframe::CreationContext<'_>) -> Self {
+    fn new(cc: &eframe::CreationContext<'_>) -> Self {
+        // Add Phosphor icons as a fallback font so we can use icon glyphs
+        // (constants like egui_phosphor::regular::ARROW_UP) anywhere in the UI.
+        let mut fonts = egui::FontDefinitions::default();
+        egui_phosphor::add_to_fonts(&mut fonts, egui_phosphor::Variant::Regular);
+        cc.egui_ctx.set_fonts(fonts);
+
         let config = AppConfig::load();
         let beat_clock = BeatClock::new(4.0);
         let snapshot = beat_clock.snapshot();
@@ -343,9 +349,9 @@ impl LightBeatApp {
             Box::new(GroupWidget::new(id, new_shared_state(13, 0), gctx.clone()))
         });
         let gctx2 = self.group_ctx.clone();
-        self.graph.register_node("Output", "Bar", move |id| {
-            // 5 input channels: position(1) + width(1) + color(3)
-            Box::new(BarPatternWidget::new(id, new_shared_state(5, 0), gctx2.clone()))
+        self.graph.register_node("Output", "Effect Stack", move |id| {
+            // Generous initial channel buffer; engine resizes as layers change.
+            Box::new(EffectStackWidget::new(id, new_shared_state(64, 0), gctx2.clone()))
         });
     }
 
@@ -453,7 +459,7 @@ impl LightBeatApp {
                 "Cos" => Some(Box::new(OscillatorProcessNode::new(id, OscFunc::Cos))),
                 "Subgraph" => Some(Box::new(SubgraphProcessNode::new(id))),
                 "Group Output" => Some(Box::new(GroupProcessNode::new(id, self.object_store.clone()))),
-                "Bar" => Some(Box::new(BarPatternProcessNode::new(id, self.object_store.clone()))),
+                "Effect Stack" => Some(Box::new(EffectStackProcessNode::new(id, self.object_store.clone()))),
                 _ => {
                     eprintln!("Unknown node type for engine: {}", type_name);
                     None

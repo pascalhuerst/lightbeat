@@ -65,7 +65,7 @@ impl ColorPaletteGroupManager {
                                         p.rect_filled(r.rect, 1.0, color);
                                     }
                                     ui.label(&palette.name);
-                                    if ui.small_button("x").clicked() {
+                                    if ui.small_button(egui_phosphor::regular::X).clicked() {
                                         remove_palette_id = Some(*pid);
                                     }
                                 });

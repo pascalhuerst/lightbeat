@@ -53,18 +53,30 @@ impl GroupManager {
                         }
 
                         ui.add_space(4.0);
-                        ui.label(egui::RichText::new("Members").strong());
+                        ui.label(egui::RichText::new("Members (order = position on the group's axis)").strong());
 
                         let mut remove_obj_id = None;
-                        for oid in &group.object_ids {
+                        let mut swap: Option<(usize, usize)> = None;
+                        let n = group.object_ids.len();
+                        for (i, oid) in group.object_ids.iter().enumerate() {
                             if let Some(obj) = objects.iter().find(|o| o.id == *oid) {
                                 ui.horizontal(|ui| {
-                                    ui.label(format!("  {}", obj.name));
-                                    if ui.small_button("x").clicked() {
+                                    ui.label(format!("{}. {}", i + 1, obj.name));
+                                    if i > 0 && ui.small_button(egui_phosphor::regular::ARROW_UP).clicked() {
+                                        swap = Some((i, i - 1));
+                                    }
+                                    if i + 1 < n && ui.small_button(egui_phosphor::regular::ARROW_DOWN).clicked() {
+                                        swap = Some((i, i + 1));
+                                    }
+                                    if ui.small_button(egui_phosphor::regular::X).clicked() {
                                         remove_obj_id = Some(*oid);
                                     }
                                 });
                             }
+                        }
+                        if let Some((a, b)) = swap {
+                            group.object_ids.swap(a, b);
+                            self.needs_refresh = true;
                         }
                         if let Some(oid) = remove_obj_id {
                             group.object_ids.retain(|id| *id != oid);
