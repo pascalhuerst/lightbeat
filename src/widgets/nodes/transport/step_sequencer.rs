@@ -4,6 +4,7 @@ use egui::{self, Color32, Rect, Sense, StrokeKind, Ui, Vec2};
 
 use crate::engine::nodes::transport::step_sequencer::StepSequencerDisplay;
 use crate::engine::types::*;
+use crate::widgets::fader::{self, FaderStyle, Orientation};
 use crate::widgets::nodes::node::NodeWidget;
 use crate::widgets::nodes::types::UiPortDef;
 
@@ -75,25 +76,23 @@ impl NodeWidget for StepSequencerWidget {
             ui.allocate_painter(Vec2::new(available_width, height), Sense::click_and_drag());
         let rect = response.rect;
 
-        let bg_color = Color32::from_gray(30);
-        let fill_color = Color32::from_rgb(80, 180, 240);
-        let active_fill = Color32::from_rgb(240, 160, 40);
+        let style = FaderStyle {
+            // Border off; we paint a single outer stroke below to avoid double-draws.
+            border: None,
+            ..FaderStyle::default()
+        };
+        let active_fill = style.fill_active;
         let line_color = Color32::from_gray(60);
-
-        painter.rect_filled(rect, 2.0, bg_color);
 
         for i in 0..num_steps {
             let x_min = rect.min.x + i as f32 * step_width;
             let x_max = x_min + step_width;
-
-            let fill_height = values[i] * height;
-            let fill_rect = Rect::from_min_max(
-                egui::pos2(x_min, rect.max.y - fill_height),
+            let cell = Rect::from_min_max(
+                egui::pos2(x_min, rect.min.y),
                 egui::pos2(x_max, rect.max.y),
             );
-
-            let color = if i == current_step && active { active_fill } else { fill_color };
-            painter.rect_filled(fill_rect, 0.0, color);
+            let is_active = i == current_step && active;
+            fader::draw_fader(&painter, cell, values[i], Orientation::Vertical, &style, is_active);
 
             if i < num_steps - 1 {
                 painter.line_segment(
@@ -116,16 +115,33 @@ impl NodeWidget for StepSequencerWidget {
             painter.rect_stroke(step_rect, 0.0, egui::Stroke::new(2.0, active_fill), StrokeKind::Inside);
         }
 
-        // Handle fader drag — send value edits to engine via shared state.
-        if response.dragged() || response.clicked() {
-            if let Some(pos) = response.interact_pointer_pos() {
-                if rect.contains(pos) {
-                    let step_index = ((pos.x - rect.min.x) / step_width).floor() as usize;
-                    let step_index = step_index.min(num_steps - 1);
-                    let value = 1.0 - ((pos.y - rect.min.y) / height).clamp(0.0, 1.0);
+        // Handle fader interaction — send value edits to engine via shared state.
+        // Uses the shared fader gesture conventions: double-click to reset,
+        // shift+drag for fine-grained (delta-based) adjustment, else absolute.
+        if let Some(pos) = response.interact_pointer_pos() {
+            if rect.contains(pos) {
+                let step_index = ((pos.x - rect.min.x) / step_width).floor() as usize;
+                let step_index = step_index.min(num_steps - 1);
 
-                    // Send as a custom data edit via the pending_params mechanism.
-                    // We use param index 100+ as a convention for step value edits.
+                let shift = ui.input(|i| i.modifiers.shift);
+                if response.double_clicked() {
+                    let mut shared = self.shared.lock().unwrap();
+                    shared.pending_params.push((100 + step_index, ParamValue::Float(0.0)));
+                } else if response.dragged() {
+                    if shift {
+                        let delta_y = response.drag_delta().y;
+                        let norm_delta = -delta_y / height.max(1.0) * 0.1;
+                        let current = values.get(step_index).copied().unwrap_or(0.0);
+                        let new_val = (current + norm_delta).clamp(0.0, 1.0);
+                        let mut shared = self.shared.lock().unwrap();
+                        shared.pending_params.push((100 + step_index, ParamValue::Float(new_val)));
+                    } else {
+                        let value = 1.0 - ((pos.y - rect.min.y) / height).clamp(0.0, 1.0);
+                        let mut shared = self.shared.lock().unwrap();
+                        shared.pending_params.push((100 + step_index, ParamValue::Float(value)));
+                    }
+                } else if response.clicked() && shift {
+                    let value = 1.0 - ((pos.y - rect.min.y) / height).clamp(0.0, 1.0);
                     let mut shared = self.shared.lock().unwrap();
                     shared.pending_params.push((100 + step_index, ParamValue::Float(value)));
                 }

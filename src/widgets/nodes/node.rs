@@ -53,6 +53,11 @@ pub trait NodeWidget: Any {
     /// Access the shared state for reading port values and pushing param changes.
     fn shared_state(&self) -> &SharedState;
 
+    /// Transient highlight intensity (0..=1) for output port `port_idx`.
+    /// Used to visually flash the corresponding port when a UI element
+    /// (button in a group, fader cell) is interacted with. Default: no highlight.
+    fn output_highlight(&self, _port_idx: usize, _now: f64) -> f32 { 0.0 }
+
     fn as_any_mut(&mut self) -> &mut dyn Any;
 }
 

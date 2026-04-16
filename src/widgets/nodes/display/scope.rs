@@ -74,10 +74,6 @@ impl NodeWidget for ScopeWidget {
         };
 
         let params = &shared.current_params;
-        let threshold = params.iter().find_map(|p| match p {
-            ParamDef::Float { name, value, .. } if name == "Threshold" => Some(*value),
-            _ => None,
-        }).unwrap_or(0.5);
         let width_samples = params.iter().find_map(|p| match p {
             ParamDef::Int { name, value, .. } if name == "Width" => Some(*value as usize),
             _ => None,
@@ -93,7 +89,7 @@ impl NodeWidget for ScopeWidget {
         drop(shared);
 
         let size = Vec2::new(ui.available_width(), ui.available_height().max(60.0));
-        draw_scope(ui, &buffers, &connected, width_samples, range_min, range_max, threshold, size);
+        draw_scope(ui, &buffers, &connected, width_samples, range_min, range_max, size);
     }
 
     fn show_inspector(&mut self, ui: &mut Ui) {
@@ -108,10 +104,6 @@ impl NodeWidget for ScopeWidget {
         };
 
         let params = &shared.current_params;
-        let threshold = params.iter().find_map(|p| match p {
-            ParamDef::Float { name, value, .. } if name == "Threshold" => Some(*value),
-            _ => None,
-        }).unwrap_or(0.5);
         let width_samples = params.iter().find_map(|p| match p {
             ParamDef::Int { name, value, .. } if name == "Width" => Some(*value as usize),
             _ => None,
@@ -128,7 +120,7 @@ impl NodeWidget for ScopeWidget {
 
         ui.heading("Waveform");
         let size = Vec2::new(ui.available_width(), 200.0);
-        draw_scope(ui, &buffers, &connected, width_samples, range_min, range_max, threshold, size);
+        draw_scope(ui, &buffers, &connected, width_samples, range_min, range_max, size);
     }
 
     fn as_any_mut(&mut self) -> &mut dyn Any { self }
@@ -141,7 +133,6 @@ fn draw_scope(
     width_samples: usize,
     range_min: f32,
     range_max: f32,
-    threshold: f32,
     size: Vec2,
 ) {
     let (response, painter) = ui.allocate_painter(size, Sense::hover());
@@ -149,21 +140,12 @@ fn draw_scope(
 
     let bg = Color32::from_gray(20);
     let grid_color = Color32::from_gray(40);
-    let threshold_color = Color32::from_rgb(240, 200, 40).linear_multiply(0.4);
 
     painter.rect_filled(rect, 2.0, bg);
     painter.rect_stroke(rect, 2.0, Stroke::new(1.0, Color32::from_gray(50)), StrokeKind::Inside);
 
     let range = range_max - range_min;
     if range.abs() < 1e-6 { return; }
-
-    let threshold_y = rect.max.y - ((threshold - range_min) / range) * rect.height();
-    if threshold_y > rect.min.y && threshold_y < rect.max.y {
-        painter.line_segment(
-            [Pos2::new(rect.min.x, threshold_y), Pos2::new(rect.max.x, threshold_y)],
-            Stroke::new(1.0, threshold_color),
-        );
-    }
 
     if range_min < 0.0 && range_max > 0.0 {
         let zero_y = rect.max.y - ((-range_min) / range) * rect.height();

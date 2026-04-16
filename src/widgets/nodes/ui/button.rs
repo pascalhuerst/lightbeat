@@ -53,6 +53,7 @@ impl NodeWidget for ButtonWidget {
 
     fn min_width(&self) -> f32 { 120.0 }
     fn min_content_height(&self) -> f32 { 30.0 }
+    fn resizable(&self) -> bool { true }
     fn shared_state(&self) -> &SharedState { &self.shared }
 
     fn show_content(&mut self, ui: &mut Ui, zoom: f32) {

@@ -30,6 +30,13 @@ impl DmxOverride {
         }
     }
 
+    pub fn clear(&mut self, channel: usize) {
+        if channel < 512 {
+            self.active[channel] = false;
+            self.values[channel] = 0;
+        }
+    }
+
     pub fn clear_all(&mut self) {
         self.active = [false; 512];
     }

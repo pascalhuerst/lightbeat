@@ -1,6 +1,7 @@
 use egui::{self, Color32, Rect, Sense, Stroke, StrokeKind, Ui, Vec2};
 
 use crate::dmx_io::{SharedDmxState, UniverseKey};
+use crate::widgets::fader::{self, Orientation};
 
 const COLS: usize = 32;
 const ROWS: usize = 16;
@@ -157,9 +158,12 @@ impl DmxMonitor {
 
         let mouse_pos = response.hover_pos();
         let ctrl = ui.input(|i| i.modifiers.ctrl || i.modifiers.command);
+        let shift = ui.input(|i| i.modifiers.shift);
 
-        // Ctrl+click/drag for overrides.
-        if ctrl && (response.dragged() || response.clicked()) {
+        // Ctrl-gated fader interaction: click/drag to set override value,
+        // double-click to clear the override, shift+drag for fine-grained.
+        // Shares gesture conventions with the widgets::fader module.
+        if ctrl {
             if let Some(pos) = response.interact_pointer_pos() {
                 if let Some(key) = &self.selected_key {
                     let col = ((pos.x - origin.x) / cell_w).floor() as usize;
@@ -167,12 +171,39 @@ impl DmxMonitor {
                     if col < COLS && row < ROWS {
                         let ch = row * COLS + col;
                         if ch < CHANNEL_COUNT {
-                            let cell_top = origin.y + row as f32 * cell_h;
-                            let norm = 1.0 - ((pos.y - cell_top) / cell_h).clamp(0.0, 1.0);
-                            let value = (norm * 255.0).round() as u8;
-                            let mut state = shared.lock().unwrap();
-                            if let Some(uni) = state.universes.get_mut(key) {
-                                uni.overrides.set(ch, value);
+                            let cell_top_left = origin + Vec2::new(col as f32 * cell_w, row as f32 * cell_h);
+                            let cell_rect = Rect::from_min_size(cell_top_left, cell_size);
+
+                            if response.double_clicked() {
+                                let mut state = shared.lock().unwrap();
+                                if let Some(uni) = state.universes.get_mut(key) {
+                                    uni.overrides.clear(ch);
+                                }
+                            } else if response.dragged() {
+                                if shift {
+                                    let delta = response.drag_delta().y;
+                                    let norm_delta = -delta / cell_h.max(1.0) * 0.1;
+                                    let mut state = shared.lock().unwrap();
+                                    if let Some(uni) = state.universes.get_mut(key) {
+                                        let cur = uni.overrides.values[ch] as f32 / 255.0;
+                                        let new_v = (cur + norm_delta).clamp(0.0, 1.0);
+                                        uni.overrides.set(ch, (new_v * 255.0).round() as u8);
+                                    }
+                                } else {
+                                    let norm = fader::value_from_pos(pos, cell_rect, Orientation::Vertical);
+                                    let value = (norm * 255.0).round() as u8;
+                                    let mut state = shared.lock().unwrap();
+                                    if let Some(uni) = state.universes.get_mut(key) {
+                                        uni.overrides.set(ch, value);
+                                    }
+                                }
+                            } else if response.clicked() && shift {
+                                let norm = fader::value_from_pos(pos, cell_rect, Orientation::Vertical);
+                                let value = (norm * 255.0).round() as u8;
+                                let mut state = shared.lock().unwrap();
+                                if let Some(uni) = state.universes.get_mut(key) {
+                                    uni.overrides.set(ch, value);
+                                }
                             }
                         }
                     }

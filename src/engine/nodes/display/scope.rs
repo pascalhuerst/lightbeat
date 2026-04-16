@@ -14,10 +14,15 @@ pub struct ScopeProcessNode {
     id: NodeId,
     buffers: [VecDeque<f32>; 2],
     input_values: [f32; 2],
-    trigger_threshold: f32,
     width_samples: usize,
     range_min: f32,
     range_max: f32,
+    /// Time-per-division multiplier. 1.0 = default sampling rate. Lower
+    /// values decimate sampling (slower cursor sweep), useful when watching
+    /// signals that change very slowly.
+    time_scale: f32,
+    /// Tick counter for decimation.
+    tick_counter: u32,
     inputs: Vec<PortDef>,
     connected_types: [Option<PortType>; 2],
 }
@@ -31,15 +36,24 @@ impl ScopeProcessNode {
                 VecDeque::with_capacity(MAX_SAMPLES),
             ],
             input_values: [0.0; 2],
-            trigger_threshold: 0.5,
             width_samples: 200,
             range_min: 0.0,
             range_max: 1.0,
+            time_scale: 1.0,
+            tick_counter: 0,
             inputs: vec![
                 PortDef::new("in 1", PortType::Any),
                 PortDef::new("in 2", PortType::Any),
             ],
             connected_types: [None, None],
+        }
+    }
+
+    fn decimation_period(&self) -> u32 {
+        if self.time_scale < 1.0 {
+            (1.0 / self.time_scale).round().max(1.0) as u32
+        } else {
+            1
         }
     }
 }
@@ -59,6 +73,11 @@ impl ProcessNode for ScopeProcessNode {
     }
 
     fn process(&mut self) {
+        let period = self.decimation_period();
+        self.tick_counter = self.tick_counter.wrapping_add(1);
+        if self.tick_counter % period != 0 {
+            return;
+        }
         for ch in 0..2 {
             self.buffers[ch].push_back(self.input_values[ch]);
             while self.buffers[ch].len() > MAX_SAMPLES {
@@ -92,7 +111,7 @@ impl ProcessNode for ScopeProcessNode {
 
     fn params(&self) -> Vec<ParamDef> {
         vec![
-            ParamDef::Float { name: "Threshold".into(), value: self.trigger_threshold, min: 0.0, max: 1.0, step: 0.01, unit: "" },
+            ParamDef::Float { name: "Time/Div".into(), value: self.time_scale, min: 0.125, max: 4.0, step: 0.125, unit: "x" },
             ParamDef::Int { name: "Width".into(), value: self.width_samples as i64, min: 50, max: MAX_SAMPLES as i64 },
             ParamDef::Float { name: "Range Min".into(), value: self.range_min, min: -2.0, max: 2.0, step: 0.05, unit: "" },
             ParamDef::Float { name: "Range Max".into(), value: self.range_max, min: -2.0, max: 2.0, step: 0.05, unit: "" },
@@ -101,7 +120,13 @@ impl ProcessNode for ScopeProcessNode {
 
     fn set_param(&mut self, index: usize, value: ParamValue) {
         match index {
-            0 => self.trigger_threshold = value.as_f32(),
+            0 => {
+                let new_scale = value.as_f32().clamp(0.125, 4.0);
+                if (new_scale - self.time_scale).abs() > f32::EPSILON {
+                    self.time_scale = new_scale;
+                    self.tick_counter = 0;
+                }
+            }
             1 => self.width_samples = value.as_i64() as usize,
             2 => self.range_min = value.as_f32(),
             3 => self.range_max = value.as_f32(),

@@ -1790,12 +1790,6 @@
     {
       "from_node": 89,
       "from_port": 0,
-      "to_node": 75,
-      "to_port": 0
-    },
-    {
-      "from_node": 89,
-      "from_port": 0,
       "to_node": 90,
       "to_port": 0
     },
@@ -1888,6 +1882,12 @@
       "from_port": 3,
       "to_node": 103,
       "to_port": 3
+    },
+    {
+      "from_node": 89,
+      "from_port": 0,
+      "to_node": 75,
+      "to_port": 0
     }
   ]
 }

@@ -91,6 +91,13 @@ pub struct ViewState {
     active_path: Vec<NodeId>,
 }
 
+/// Which context menu the right-click is currently showing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ContextMenuMode {
+    AddNode,
+    Selection,
+}
+
 /// A copied node snapshot for clipboard operations.
 #[allow(dead_code)]
 struct ClipboardNode {
@@ -112,6 +119,7 @@ pub struct NodeGraph {
     pending_engine_cmds: Vec<EngineCommand>,
     context_menu_pos: Option<Pos2>,
     context_menu_search: String,
+    context_menu_mode: ContextMenuMode,
     selected_nodes: Vec<usize>,
     canvas_rect: Rect,
     clipboard: Vec<ClipboardNode>,
@@ -139,6 +147,7 @@ impl NodeGraph {
             pending_engine_cmds: Vec::new(),
             context_menu_pos: None,
             context_menu_search: String::new(),
+            context_menu_mode: ContextMenuMode::AddNode,
             selected_nodes: Vec::new(),
             canvas_rect: Rect::NOTHING,
             clipboard: Vec::new(),
@@ -583,9 +592,17 @@ impl NodeGraph {
             self.active_mut().pan += response.drag_delta();
         }
 
-        // Right-click opens context menu (only on empty canvas, not on nodes).
+        // Right-click opens a context menu. The menu shown depends on whether
+        // the click landed on a selected node:
+        //   - selected node → selection actions ("Move to Subgraph", ...)
+        //   - empty canvas / unselected node → add-node selector
         if response.secondary_clicked() {
             if let Some(pos) = ui.input(|i| i.pointer.hover_pos()) {
+                self.context_menu_mode = if self.is_pos_on_selected_node(pos, canvas_rect) {
+                    ContextMenuMode::Selection
+                } else {
+                    ContextMenuMode::AddNode
+                };
                 self.context_menu_pos = Some(pos);
                 self.context_menu_search.clear();
             }
@@ -642,10 +659,14 @@ impl NodeGraph {
             .collect();
 
         // -- Draw node chrome (painter-based, immutable) --
+        let now = ui.ctx().input(|i| i.time);
         for i in 0..level.nodes.len() {
             let selected = self.selected_nodes.contains(&i);
             let inputs = level.nodes[i].ui_inputs();
             let outputs = level.nodes[i].ui_outputs();
+            let out_highlights: Vec<f32> = (0..outputs.len())
+                .map(|pi| level.nodes[i].output_highlight(pi, now))
+                .collect();
             draw_node_chrome(
                 &painter,
                 level.nodes[i].title(),
@@ -653,6 +674,7 @@ impl NodeGraph {
                 level.nodes[i].title_color(),
                 &inputs,
                 &outputs,
+                &out_highlights,
                 node_rects[i],
                 selected,
                 z,
@@ -772,19 +794,29 @@ impl NodeGraph {
             return;
         }
 
-        let level = self.active_mut();
-        let removed_ids: Vec<NodeId> = to_remove.iter().map(|&i| level.states[i].id).collect();
+        let removed_ids: Vec<NodeId> = to_remove.iter()
+            .map(|&i| self.active().states[i].id).collect();
 
-        level.connections
-            .retain(|c| !removed_ids.contains(&c.from.node) && !removed_ids.contains(&c.to.node));
+        // Drop every connection touching a removed node *through* the regular
+        // remove_connection_to path, so endpoint widgets get disconnect
+        // callbacks (e.g. Scope resets its port type back to Any). This keeps
+        // disconnect-on-delete behavior generic — widgets don't have to
+        // implement anything extra.
+        let affected_tos: Vec<PortId> = self.active().connections.iter()
+            .filter(|c| removed_ids.contains(&c.from.node) || removed_ids.contains(&c.to.node))
+            .map(|c| c.to)
+            .collect();
+        for to in affected_tos {
+            self.remove_connection_to(to);
+        }
 
         // Remove nodes in reverse order.
+        let level = self.active_mut();
         for &i in to_remove.iter().rev() {
             level.nodes.remove(i);
             level.states.remove(i);
         }
 
-        // Notify engine to remove these nodes.
         for &id in &removed_ids {
             self.push_engine_cmd(EngineCommand::RemoveNode(id));
         }
@@ -887,11 +919,68 @@ impl NodeGraph {
         self.paste(base);
     }
 
+    /// True if `screen_pos` lies inside any currently-selected node's screen rect.
+    fn is_pos_on_selected_node(&self, screen_pos: Pos2, canvas_rect: Rect) -> bool {
+        let level = self.active();
+        let z = level.zoom;
+        let origin = canvas_rect.min.to_vec2() + level.pan;
+        for &i in &self.selected_nodes {
+            if i >= level.nodes.len() { continue; }
+            let n = &level.nodes[i];
+            let min_w = n.min_width();
+            let inputs = n.ui_inputs();
+            let outputs = n.ui_outputs();
+            let port_h = ports_height(inputs.len(), outputs.len());
+            let content_h = PORT_START_Y + n.min_content_height() + NODE_PADDING;
+            let min_h = port_h.max(content_h);
+            let size = level.states[i].size_override
+                .map(|s| Vec2::new(s.x.max(min_w), s.y.max(min_h)))
+                .unwrap_or(Vec2::new(min_w, min_h));
+            let pos = Pos2::new(level.states[i].pos.x * z, level.states[i].pos.y * z) + origin;
+            let rect = Rect::from_min_size(pos, size * z);
+            if rect.contains(screen_pos) {
+                return true;
+            }
+        }
+        false
+    }
+
     fn show_context_menu(&mut self, ui: &mut Ui, canvas_rect: Rect) {
         if self.context_menu_pos.is_none() {
             return;
         }
         let menu_pos = self.context_menu_pos.unwrap();
+
+        // Selection actions menu — shown only for right-clicks on a selected node.
+        if self.context_menu_mode == ContextMenuMode::Selection {
+            if self.selected_nodes.is_empty() {
+                self.context_menu_pos = None;
+                return;
+            }
+            let mut open = true;
+            let mut move_to_sub = false;
+            egui::Window::new("Selection")
+                .id(egui::Id::new("selection_ctx_menu"))
+                .default_pos(menu_pos)
+                .auto_sized()
+                .collapsible(false)
+                .open(&mut open)
+                .show(ui.ctx(), |ui| {
+                    if ui.button("Move to Subgraph").clicked() {
+                        move_to_sub = true;
+                    }
+                });
+            if move_to_sub {
+                self.move_selection_to_subgraph();
+                self.context_menu_pos = None;
+                self.context_menu_search.clear();
+            } else if !open {
+                self.context_menu_pos = None;
+            }
+            return;
+        }
+
+        // Add-node menu — default for right-clicks on empty canvas / unselected nodes.
 
         // Group entries by category.
         let mut categories: Vec<String> = Vec::new();
@@ -995,27 +1084,6 @@ impl NodeGraph {
         if !open {
             self.context_menu_pos = None;
             self.context_menu_search.clear();
-        }
-
-        // "Move to Subgraph" option when nodes are selected.
-        if !self.selected_nodes.is_empty() && self.context_menu_pos.is_some() {
-            let mut move_to_sub = false;
-            egui::Window::new("Selection")
-                .id(egui::Id::new("selection_ctx_menu"))
-                .default_pos(menu_pos + Vec2::new(210.0, 0.0))
-                .auto_sized()
-                .collapsible(false)
-                .show(ui.ctx(), |ui| {
-                    if ui.button("Move to Subgraph").clicked() {
-                        move_to_sub = true;
-                    }
-                });
-            if move_to_sub {
-                self.move_selection_to_subgraph();
-                self.context_menu_pos = None;
-                self.context_menu_search.clear();
-                return;
-            }
         }
 
         if let Some(reg_idx) = spawn {
@@ -1743,6 +1811,7 @@ fn draw_node_chrome(
     title_color: Option<Color32>,
     inputs: &[UiPortDef],
     outputs: &[UiPortDef],
+    out_highlights: &[f32],
     rect: Rect,
     selected: bool,
     zoom: f32,
@@ -1777,13 +1846,14 @@ fn draw_node_chrome(
     // Input ports
     for (i, ui_port) in inputs.iter().enumerate() {
         let pos = port_pos_z(rect.min, rect.width(), PortDir::Input, i, zoom);
-        draw_port(painter, pos, ui_port, zoom);
+        draw_port(painter, pos, ui_port, 0.0, zoom);
     }
 
     // Output ports
     for (i, ui_port) in outputs.iter().enumerate() {
         let pos = port_pos_z(rect.min, rect.width(), PortDir::Output, i, zoom);
-        draw_port(painter, pos, ui_port, zoom);
+        let hi = out_highlights.get(i).copied().unwrap_or(0.0);
+        draw_port(painter, pos, ui_port, hi, zoom);
     }
 
     // Resize handle (small triangle in bottom-right corner)
@@ -1802,11 +1872,18 @@ fn draw_node_chrome(
     }
 }
 
-fn draw_port(painter: &Painter, pos: Pos2, ui_port: &UiPortDef, zoom: f32) {
+fn draw_port(painter: &Painter, pos: Pos2, ui_port: &UiPortDef, highlight: f32, zoom: f32) {
     let type_color = ui_port.def.port_type.color();
     let fill = ui_port.fill_color.unwrap_or(type_color);
     let stroke_width = if ui_port.fill_color.is_some() { 3.0 } else { 1.5 };
     let r = PORT_RADIUS * zoom;
+    // Outer glow when port is transiently highlighted.
+    if highlight > 0.0 {
+        let alpha = (highlight.clamp(0.0, 1.0) * 255.0) as u8;
+        let glow = Color32::from_rgba_unmultiplied(255, 255, 255, alpha);
+        painter.circle_filled(pos, r + 4.0 * zoom, glow.linear_multiply(0.25));
+        painter.circle_stroke(pos, r + 3.0 * zoom, Stroke::new(2.0, glow));
+    }
     painter.circle_filled(pos, r, fill);
     painter.circle_stroke(pos, r, Stroke::new(stroke_width, type_color));
 }

@@ -25,6 +25,9 @@ use engine::nodes::display::value_display::ValueDisplayProcessNode;
 use engine::nodes::io::clock::ClockProcessNode;
 use engine::nodes::io::internal_clock::InternalClockProcessNode;
 use engine::nodes::ui::button::ButtonProcessNode;
+use engine::nodes::ui::button_group::ButtonGroupProcessNode;
+use engine::nodes::ui::fader::FaderProcessNode;
+use engine::nodes::ui::fader_group::FaderGroupProcessNode;
 use engine::nodes::math::change_detect::ChangeDetectProcessNode;
 use engine::nodes::math::color_ops::{ColorMergeProcessNode, ColorSplitProcessNode};
 use engine::nodes::math::compare::{CompareOp, CompareProcessNode};
@@ -54,6 +57,9 @@ use widgets::nodes::display::value_display::ValueDisplayWidget;
 use widgets::nodes::io::clock::ClockWidget;
 use widgets::nodes::io::internal_clock::InternalClockWidget;
 use widgets::nodes::ui::button::ButtonWidget;
+use widgets::nodes::ui::button_group::ButtonGroupWidget;
+use widgets::nodes::ui::fader::FaderWidget;
+use widgets::nodes::ui::fader_group::FaderGroupWidget;
 use widgets::nodes::math::change_detect::ChangeDetectWidget;
 use widgets::nodes::math::color_ops::{ColorMergeWidget, ColorSplitWidget};
 use widgets::nodes::math::compare::CompareWidget;
@@ -208,6 +214,16 @@ impl LightBeatApp {
         // UI
         self.graph.register_node("UI", "Button", |id| {
             Box::new(ButtonWidget::new(id, new_shared_state(0, 1)))
+        });
+        self.graph.register_node("UI", "Fader", |id| {
+            Box::new(FaderWidget::new(id, new_shared_state(0, 1)))
+        });
+        self.graph.register_node("UI", "Button Group", |id| {
+            // Generous initial output channel budget; engine output port count drives actual routing.
+            Box::new(ButtonGroupWidget::new(id, new_shared_state(0, 256)))
+        });
+        self.graph.register_node("UI", "Fader Group", |id| {
+            Box::new(FaderGroupWidget::new(id, new_shared_state(0, 256)))
         });
 
         // Transport
@@ -412,6 +428,9 @@ impl LightBeatApp {
                 }
                 "Internal Clock" => Some(Box::new(InternalClockProcessNode::new(id))),
                 "Button" => Some(Box::new(ButtonProcessNode::new(id))),
+                "Fader" => Some(Box::new(FaderProcessNode::new(id))),
+                "Button Group" => Some(Box::new(ButtonGroupProcessNode::new(id))),
+                "Fader Group" => Some(Box::new(FaderGroupProcessNode::new(id))),
                 "Phase Scaler" => Some(Box::new(PhaseScalerProcessNode::new(id))),
                 "LFO" => Some(Box::new(LfoProcessNode::new(id))),
                 "Step Sequencer" => Some(Box::new(StepSequencerProcessNode::new(id))),
