@@ -618,7 +618,7 @@
                   "params": [
                     {
                       "index": 0,
-                      "value": 2
+                      "value": 3
                     },
                     {
                       "index": 1,
@@ -791,7 +791,7 @@
             "params": [
               {
                 "index": 0,
-                "value": 4
+                "value": 5
               }
             ]
           },
@@ -805,7 +805,7 @@
             "params": [
               {
                 "index": 0,
-                "value": 4
+                "value": 5
               }
             ]
           },
@@ -951,7 +951,7 @@
       "params": [
         {
           "index": 0,
-          "value": 1
+          "value": 2
         }
       ]
     },
@@ -1622,7 +1622,7 @@
       "params": [
         {
           "index": 0,
-          "value": 2.499999761581421
+          "value": 0.9999997615814209
         }
       ]
     },
@@ -1650,7 +1650,7 @@
       "params": [
         {
           "index": 0,
-          "value": 4
+          "value": 5
         }
       ]
     },
@@ -1672,8 +1672,8 @@
       "type_name": "Effect Stack",
       "id": 99,
       "pos": [
-        481.92697,
-        479.43396
+        648.22876,
+        402.61496
       ],
       "params": [],
       "data": {
@@ -1692,16 +1692,18 @@
           {
             "blend": "Add",
             "opacity": 1.0,
-            "pattern_type": "Solid"
+            "pattern_type": "Bar"
           }
         ],
         "strips": [
           {
+            "kind": "strip",
             "logical_end": 0.5,
             "logical_start": 0.0,
             "object_id": 11
           },
           {
+            "kind": "strip",
             "logical_end": 0.5,
             "logical_start": 1.0,
             "object_id": 12
@@ -1719,7 +1721,7 @@
       "params": [
         {
           "index": 0,
-          "value": 4
+          "value": 5
         }
       ]
     },
@@ -1742,6 +1744,34 @@
         {
           "index": 2,
           "value": true
+        }
+      ]
+    },
+    {
+      "type_name": "Color Split",
+      "id": 102,
+      "pos": [
+        447.7062,
+        619.4814
+      ],
+      "params": [
+        {
+          "index": 0,
+          "value": 5
+        }
+      ]
+    },
+    {
+      "type_name": "Color Merge",
+      "id": 103,
+      "pos": [
+        653.3589,
+        635.92206
+      ],
+      "params": [
+        {
+          "index": 0,
+          "value": 5
         }
       ]
     }
@@ -1790,12 +1820,6 @@
       "to_port": 0
     },
     {
-      "from_node": 96,
-      "from_port": 0,
-      "to_node": 94,
-      "to_port": 1
-    },
-    {
       "from_node": 89,
       "from_port": 0,
       "to_node": 97,
@@ -1835,6 +1859,48 @@
       "from_node": 97,
       "from_port": 0,
       "to_node": 99,
+      "to_port": 5
+    },
+    {
+      "from_node": 101,
+      "from_port": 0,
+      "to_node": 99,
+      "to_port": 3
+    },
+    {
+      "from_node": 101,
+      "from_port": 0,
+      "to_node": 94,
+      "to_port": 1
+    },
+    {
+      "from_node": 94,
+      "from_port": 0,
+      "to_node": 102,
+      "to_port": 0
+    },
+    {
+      "from_node": 102,
+      "from_port": 0,
+      "to_node": 103,
+      "to_port": 0
+    },
+    {
+      "from_node": 102,
+      "from_port": 1,
+      "to_node": 103,
+      "to_port": 1
+    },
+    {
+      "from_node": 102,
+      "from_port": 2,
+      "to_node": 103,
+      "to_port": 2
+    },
+    {
+      "from_node": 102,
+      "from_port": 3,
+      "to_node": 103,
       "to_port": 3
     }
   ]

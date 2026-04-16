@@ -15,7 +15,7 @@ pub struct TransitionWidget {
 
 impl TransitionWidget {
     pub fn new(id: NodeId, shared: SharedState) -> Self {
-        Self { id, shared, mode: TransitionMode::Color }
+        Self { id, shared, mode: TransitionMode::Neutral }
     }
 
     fn build_inputs(mode: TransitionMode) -> Vec<UiPortDef> {
@@ -28,6 +28,21 @@ impl TransitionWidget {
 
     fn build_outputs(mode: TransitionMode) -> Vec<UiPortDef> {
         vec![UiPortDef::from_def(&PortDef::new("out", mode.value_type()))]
+    }
+
+    fn push_mode(&self, mode: TransitionMode) {
+        let mut s = self.shared.lock().unwrap();
+        s.pending_params.push((0, ParamValue::Choice(mode.to_index())));
+    }
+
+    /// Map a port type seen on the value input or out output to a mode.
+    fn infer_mode(t: PortType) -> Option<TransitionMode> {
+        match t {
+            PortType::Untyped | PortType::Phase | PortType::Logic => Some(TransitionMode::Float),
+            PortType::Color => Some(TransitionMode::Color),
+            PortType::Palette => Some(TransitionMode::Palette),
+            _ => None,
+        }
     }
 }
 
@@ -47,6 +62,22 @@ impl NodeWidget for TransitionWidget {
     fn resizable(&self) -> bool { true }
 
     fn shared_state(&self) -> &SharedState { &self.shared }
+
+    fn on_ui_connect(&mut self, input_port: usize, source_type: PortType) {
+        // Only the `value` port (index 2) determines mode.
+        if input_port != 2 || self.mode != TransitionMode::Neutral { return; }
+        if let Some(new_mode) = Self::infer_mode(source_type) {
+            self.mode = new_mode;
+            self.push_mode(new_mode);
+        }
+    }
+    fn on_ui_output_connect(&mut self, output_port: usize, dest_type: PortType) {
+        if output_port != 0 || self.mode != TransitionMode::Neutral { return; }
+        if let Some(new_mode) = Self::infer_mode(dest_type) {
+            self.mode = new_mode;
+            self.push_mode(new_mode);
+        }
+    }
 
     fn show_content(&mut self, ui: &mut Ui, _zoom: f32) {
         let shared = self.shared.lock().unwrap();

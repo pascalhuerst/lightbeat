@@ -3,8 +3,12 @@ use crate::color::convert::{rgb_to_cmy, cmy_to_rgb, rgb_to_rgbw_naive};
 use crate::engine::types::*;
 
 /// Color merge/split mode.
+/// `Neutral` is the initial mode before anything is connected — ports are
+/// `Any` (white-ring) and the node does nothing. Connecting a wire on either
+/// side promotes the node to a concrete mode.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ColorMode {
+    Neutral,
     Rgb,
     Hsv,
     Rgbw,
@@ -12,11 +16,13 @@ pub enum ColorMode {
     Palette,
 }
 
-pub const COLOR_MODE_NAMES: &[&str] = &["RGB", "HSV", "RGBW", "CMY", "Palette"];
+/// Names visible in the inspector dropdown.
+pub const COLOR_MODE_NAMES: &[&str] = &["Auto", "RGB", "HSV", "RGBW", "CMY", "Palette"];
 
 impl ColorMode {
     pub fn label(&self) -> &'static str {
         match self {
+            ColorMode::Neutral => "Auto",
             ColorMode::Rgb => "RGB",
             ColorMode::Hsv => "HSV",
             ColorMode::Rgbw => "RGBW",
@@ -27,6 +33,7 @@ impl ColorMode {
 
     pub fn channel_count(&self) -> usize {
         match self {
+            ColorMode::Neutral => 1,
             ColorMode::Rgb | ColorMode::Hsv | ColorMode::Cmy => 3,
             ColorMode::Rgbw => 4,
             ColorMode::Palette => 4, // 4 Color ports (one per palette slot)
@@ -35,6 +42,7 @@ impl ColorMode {
 
     pub fn channel_names(&self) -> &[&'static str] {
         match self {
+            ColorMode::Neutral => &["?"],
             ColorMode::Rgb => &["R", "G", "B"],
             ColorMode::Hsv => &["H", "S", "V"],
             ColorMode::Rgbw => &["R", "G", "B", "W"],
@@ -45,28 +53,31 @@ impl ColorMode {
 
     pub fn from_index(i: usize) -> Self {
         match i {
-            0 => ColorMode::Rgb,
-            1 => ColorMode::Hsv,
-            2 => ColorMode::Rgbw,
-            3 => ColorMode::Cmy,
-            4 => ColorMode::Palette,
-            _ => ColorMode::Rgb,
+            0 => ColorMode::Neutral,
+            1 => ColorMode::Rgb,
+            2 => ColorMode::Hsv,
+            3 => ColorMode::Rgbw,
+            4 => ColorMode::Cmy,
+            5 => ColorMode::Palette,
+            _ => ColorMode::Neutral,
         }
     }
 
     pub fn to_index(&self) -> usize {
         match self {
-            ColorMode::Rgb => 0,
-            ColorMode::Hsv => 1,
-            ColorMode::Rgbw => 2,
-            ColorMode::Cmy => 3,
-            ColorMode::Palette => 4,
+            ColorMode::Neutral => 0,
+            ColorMode::Rgb => 1,
+            ColorMode::Hsv => 2,
+            ColorMode::Rgbw => 3,
+            ColorMode::Cmy => 4,
+            ColorMode::Palette => 5,
         }
     }
 
     /// Parse from the lowercase label name.
     pub fn from_str(s: &str) -> Option<Self> {
         match s.to_ascii_lowercase().as_str() {
+            "auto" | "neutral" => Some(ColorMode::Neutral),
             "rgb" => Some(ColorMode::Rgb),
             "hsv" => Some(ColorMode::Hsv),
             "rgbw" => Some(ColorMode::Rgbw),
@@ -101,7 +112,7 @@ pub struct ColorMergeProcessNode {
 
 impl ColorMergeProcessNode {
     pub fn new(id: NodeId) -> Self {
-        let mode = ColorMode::Rgb;
+        let mode = ColorMode::Neutral;
         Self {
             id,
             mode,
@@ -113,18 +124,18 @@ impl ColorMergeProcessNode {
     }
 
     fn make_inputs(mode: ColorMode) -> Vec<PortDef> {
-        if mode.is_palette() {
-            mode.channel_names().iter().map(|n| PortDef::new(*n, PortType::Color)).collect()
-        } else {
-            mode.channel_names().iter().map(|n| PortDef::new(*n, PortType::Untyped)).collect()
+        match mode {
+            ColorMode::Neutral => vec![PortDef::new("?", PortType::Any)],
+            ColorMode::Palette => mode.channel_names().iter().map(|n| PortDef::new(*n, PortType::Color)).collect(),
+            _ => mode.channel_names().iter().map(|n| PortDef::new(*n, PortType::Untyped)).collect(),
         }
     }
 
     fn make_outputs(mode: ColorMode) -> Vec<PortDef> {
-        if mode.is_palette() {
-            vec![PortDef::new("palette", PortType::Palette)]
-        } else {
-            vec![PortDef::new("color", PortType::Color)]
+        match mode {
+            ColorMode::Neutral => vec![PortDef::new("?", PortType::Any)],
+            ColorMode::Palette => vec![PortDef::new("palette", PortType::Palette)],
+            _ => vec![PortDef::new("color", PortType::Color)],
         }
     }
 
@@ -144,6 +155,7 @@ impl ColorMergeProcessNode {
                 [rgb.r, rgb.g, rgb.b]
             }
             ColorMode::Palette => [0.0; 3], // Not used in palette mode.
+            ColorMode::Neutral => [0.0; 3],
         }
     }
 }
@@ -162,17 +174,22 @@ impl ProcessNode for ColorMergeProcessNode {
     }
 
     fn process(&mut self) {
-        if !self.mode.is_palette() {
-            self.rgb_out = self.convert_to_rgb();
+        match self.mode {
+            ColorMode::Neutral | ColorMode::Palette => {} // pass-through / no-op
+            _ => { self.rgb_out = self.convert_to_rgb(); }
         }
     }
 
     fn read_output(&self, channel: usize) -> f32 {
-        if self.mode.is_palette() {
-            // Pass through: 4 Color inputs (12 channels) → 1 Palette output (12 channels).
-            if channel < 12 { self.channels[channel] } else { 0.0 }
-        } else {
-            match channel { 0 => self.rgb_out[0], 1 => self.rgb_out[1], 2 => self.rgb_out[2], _ => 0.0 }
+        match self.mode {
+            ColorMode::Neutral => 0.0,
+            ColorMode::Palette => {
+                // Pass through: 4 Color inputs (12 channels) → 1 Palette output (12 channels).
+                if channel < 12 { self.channels[channel] } else { 0.0 }
+            }
+            _ => match channel {
+                0 => self.rgb_out[0], 1 => self.rgb_out[1], 2 => self.rgb_out[2], _ => 0.0
+            },
         }
     }
 
@@ -222,7 +239,7 @@ pub struct ColorSplitProcessNode {
 
 impl ColorSplitProcessNode {
     pub fn new(id: NodeId) -> Self {
-        let mode = ColorMode::Rgb;
+        let mode = ColorMode::Neutral;
         Self {
             id,
             mode,
@@ -234,18 +251,18 @@ impl ColorSplitProcessNode {
     }
 
     fn make_inputs(mode: ColorMode) -> Vec<PortDef> {
-        if mode.is_palette() {
-            vec![PortDef::new("palette", PortType::Palette)]
-        } else {
-            vec![PortDef::new("color", PortType::Color)]
+        match mode {
+            ColorMode::Neutral => vec![PortDef::new("?", PortType::Any)],
+            ColorMode::Palette => vec![PortDef::new("palette", PortType::Palette)],
+            _ => vec![PortDef::new("color", PortType::Color)],
         }
     }
 
     fn make_outputs(mode: ColorMode) -> Vec<PortDef> {
-        if mode.is_palette() {
-            mode.channel_names().iter().map(|n| PortDef::new(*n, PortType::Color)).collect()
-        } else {
-            mode.channel_names().iter().map(|n| PortDef::new(*n, PortType::Untyped)).collect()
+        match mode {
+            ColorMode::Neutral => vec![PortDef::new("?", PortType::Any)],
+            ColorMode::Palette => mode.channel_names().iter().map(|n| PortDef::new(*n, PortType::Color)).collect(),
+            _ => mode.channel_names().iter().map(|n| PortDef::new(*n, PortType::Untyped)).collect(),
         }
     }
 
@@ -265,7 +282,7 @@ impl ColorSplitProcessNode {
                 let (c, m, y) = rgb_to_cmy(rgb);
                 [c, m, y, 0.0]
             }
-            ColorMode::Palette => [0.0; 4], // Not used in palette mode.
+            ColorMode::Palette | ColorMode::Neutral => [0.0; 4],
         }
     }
 }
@@ -284,17 +301,20 @@ impl ProcessNode for ColorSplitProcessNode {
     }
 
     fn process(&mut self) {
-        if !self.mode.is_palette() {
-            self.components_out = self.convert_from_rgb();
+        match self.mode {
+            ColorMode::Neutral | ColorMode::Palette => {} // pass-through / no-op
+            _ => { self.components_out = self.convert_from_rgb(); }
         }
     }
 
     fn read_output(&self, pi: usize) -> f32 {
-        if self.mode.is_palette() {
-            // Pass through: 1 Palette input (12 channels) → 4 Color outputs (12 channels).
-            if pi < 12 { self.channels[pi] } else { 0.0 }
-        } else {
-            if pi < 4 { self.components_out[pi] } else { 0.0 }
+        match self.mode {
+            ColorMode::Neutral => 0.0,
+            ColorMode::Palette => {
+                // Pass through: 1 Palette input (12 channels) → 4 Color outputs (12 channels).
+                if pi < 12 { self.channels[pi] } else { 0.0 }
+            }
+            _ => if pi < 4 { self.components_out[pi] } else { 0.0 },
         }
     }
 

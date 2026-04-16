@@ -1,7 +1,15 @@
 use crate::engine::types::*;
 
+/// Mode values stored in `ColorDisplayData::mode`:
+/// 0 = Auto/Neutral (input is `Any`, nothing rendered yet)
+/// 1 = Color  (single RGB swatch)
+/// 2 = Palette (4-color set)
+pub const MODE_NEUTRAL: usize = 0;
+pub const MODE_COLOR: usize = 1;
+pub const MODE_PALETTE: usize = 2;
+
 pub struct ColorDisplayData {
-    pub mode: usize, // 0=Color, 1=Palette
+    pub mode: usize,
     pub channels: [f32; 12], // up to 4×RGB
 }
 
@@ -16,16 +24,17 @@ impl ColorDisplayProcessNode {
     pub fn new(id: NodeId) -> Self {
         Self {
             id,
-            mode: 0,
+            mode: MODE_NEUTRAL,
             channels: [0.0; 12],
-            inputs: vec![PortDef::new("color", PortType::Color)],
+            inputs: vec![PortDef::new("?", PortType::Any)],
         }
     }
 
     fn rebuild_inputs(&mut self) {
         self.inputs = match self.mode {
-            1 => vec![PortDef::new("palette", PortType::Palette)],
-            _ => vec![PortDef::new("color", PortType::Color)],
+            MODE_PALETTE => vec![PortDef::new("palette", PortType::Palette)],
+            MODE_COLOR => vec![PortDef::new("color", PortType::Color)],
+            _ => vec![PortDef::new("?", PortType::Any)],
         };
     }
 }
@@ -50,7 +59,7 @@ impl ProcessNode for ColorDisplayProcessNode {
         vec![ParamDef::Choice {
             name: "Mode".into(),
             value: self.mode,
-            options: vec!["Color".into(), "Palette".into()],
+            options: vec!["Auto".into(), "Color".into(), "Palette".into()],
         }]
     }
 

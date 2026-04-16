@@ -2,7 +2,9 @@ use std::any::Any;
 
 use egui::{self, Sense, Ui, Vec2};
 
-use crate::engine::nodes::display::color_display::ColorDisplayData;
+use crate::engine::nodes::display::color_display::{
+    ColorDisplayData, MODE_COLOR, MODE_NEUTRAL, MODE_PALETTE,
+};
 use crate::engine::types::*;
 use crate::objects::color_palette::PALETTE_SIZE;
 use crate::widgets::nodes::node::NodeWidget;
@@ -16,14 +18,20 @@ pub struct ColorDisplayWidget {
 
 impl ColorDisplayWidget {
     pub fn new(id: NodeId, shared: SharedState) -> Self {
-        Self { id, shared, mode: 0 }
+        Self { id, shared, mode: MODE_NEUTRAL }
     }
 
     fn input_defs(&self) -> Vec<PortDef> {
         match self.mode {
-            1 => vec![PortDef::new("palette", PortType::Palette)],
-            _ => vec![PortDef::new("color", PortType::Color)],
+            MODE_PALETTE => vec![PortDef::new("palette", PortType::Palette)],
+            MODE_COLOR => vec![PortDef::new("color", PortType::Color)],
+            _ => vec![PortDef::new("?", PortType::Any)],
         }
+    }
+
+    fn push_mode(&self, mode: usize) {
+        let mut s = self.shared.lock().unwrap();
+        s.pending_params.push((0, ParamValue::Choice(mode)));
     }
 }
 
@@ -44,6 +52,17 @@ impl NodeWidget for ColorDisplayWidget {
 
     fn shared_state(&self) -> &SharedState { &self.shared }
 
+    fn on_ui_connect(&mut self, _input_port: usize, source_type: PortType) {
+        if self.mode != MODE_NEUTRAL { return; }
+        let new_mode = match source_type {
+            PortType::Palette => MODE_PALETTE,
+            PortType::Color => MODE_COLOR,
+            _ => return,
+        };
+        self.mode = new_mode;
+        self.push_mode(new_mode);
+    }
+
     fn show_content(&mut self, ui: &mut Ui, zoom: f32) {
         let shared = self.shared.lock().unwrap();
         let display = shared.display.as_ref()
@@ -52,7 +71,7 @@ impl NodeWidget for ColorDisplayWidget {
         let (mode, channels) = if let Some(d) = display {
             (d.mode, d.channels)
         } else {
-            (0, [0.0; 12])
+            (MODE_NEUTRAL, [0.0; 12])
         };
         drop(shared);
 
@@ -61,8 +80,13 @@ impl NodeWidget for ColorDisplayWidget {
         let w = ui.available_width();
         let h = ui.available_height().max(4.0);
 
+        if mode == MODE_NEUTRAL {
+            ui.colored_label(egui::Color32::from_gray(120), "Connect a color or palette");
+            return;
+        }
+
         match mode {
-            1 => {
+            MODE_PALETTE => {
                 // Palette mode: 4 color bars vertically.
                 let (response, painter) = ui.allocate_painter(Vec2::new(w, h), Sense::hover());
                 let rect = response.rect;

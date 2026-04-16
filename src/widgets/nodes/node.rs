@@ -40,9 +40,15 @@ pub trait NodeWidget: Any {
     /// Show extra info/visuals in the inspector (e.g. scope waveform).
     fn show_inspector(&mut self, _ui: &mut Ui) {}
 
-    /// Called by the UI when a connection is made/broken (for updating port colors).
+    /// Called by the UI when an INPUT connection is made/broken
+    /// (for updating port colors and auto-detecting node mode).
     fn on_ui_connect(&mut self, _input_port: usize, _source_type: crate::engine::types::PortType) {}
     fn on_ui_disconnect(&mut self, _input_port: usize) {}
+
+    /// Called by the UI when an OUTPUT connection is made/broken.
+    /// Enables auto-detection on the output side as well.
+    fn on_ui_output_connect(&mut self, _output_port: usize, _dest_type: crate::engine::types::PortType) {}
+    fn on_ui_output_disconnect(&mut self, _output_port: usize) {}
 
     /// Access the shared state for reading port values and pushing param changes.
     fn shared_state(&self) -> &SharedState;

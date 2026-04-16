@@ -392,7 +392,6 @@ impl NodeGraph {
         if !level.connections.contains(&conn) {
             level.connections.push(conn.clone());
 
-            // Notify target widget (UI side, e.g. scope port colors).
             if let (Some(src_idx), Some(dst_idx)) = (
                 level.states.iter().position(|s| s.id == from.node),
                 level.states.iter().position(|s| s.id == to.node),
@@ -402,7 +401,16 @@ impl NodeGraph {
                     .get(from.index)
                     .map(|p| p.def.port_type)
                     .unwrap_or(PortType::Untyped);
+                let dst_type = level.nodes[dst_idx]
+                    .ui_inputs()
+                    .get(to.index)
+                    .map(|p| p.def.port_type)
+                    .unwrap_or(PortType::Untyped);
+
+                // Notify destination widget (input got connected).
                 level.nodes[dst_idx].on_ui_connect(to.index, src_type);
+                // Notify source widget (output got connected).
+                level.nodes[src_idx].on_ui_output_connect(from.index, dst_type);
 
                 // Notify engine for on_connect callback.
                 self.push_engine_cmd(EngineCommand::NotifyConnect {
@@ -412,7 +420,6 @@ impl NodeGraph {
                 });
             }
 
-            // Notify engine.
             self.push_engine_cmd(EngineCommand::AddConnection(conn));
         }
     }
@@ -420,10 +427,23 @@ impl NodeGraph {
     fn remove_connection_to(&mut self, to: PortId) {
         let level = self.active_mut();
         let had = level.connections.iter().any(|c| c.to == to);
+        // Capture the source port before the connection is removed so we can
+        // notify the source widget that one of its outputs lost a connection.
+        let removed_from = level.connections.iter().find(|c| c.to == to).map(|c| c.from);
         level.connections.retain(|c| c.to != to);
         if had {
             if let Some(dst_idx) = level.states.iter().position(|s| s.id == to.node) {
                 level.nodes[dst_idx].on_ui_disconnect(to.index);
+            }
+            // Notify the source widget if its output is now unused (no other
+            // connections from the same output port).
+            if let Some(from) = removed_from {
+                let still_connected = level.connections.iter().any(|c| c.from == from);
+                if !still_connected {
+                    if let Some(src_idx) = level.states.iter().position(|s| s.id == from.node) {
+                        level.nodes[src_idx].on_ui_output_disconnect(from.index);
+                    }
+                }
             }
 
             // Notify engine.
@@ -439,21 +459,24 @@ impl NodeGraph {
     // Main draw
     // -----------------------------------------------------------------------
 
-    /// Remove connections that reference ports beyond a node's current port count.
+    /// Remove connections whose endpoints no longer exist (index out of range)
+    /// or whose port types have become incompatible (e.g. a node's mode changed
+    /// and a previously-matching wire is now of the wrong type).
     fn cleanup_stale_connections(&mut self) {
         let level = self.active();
         let stale: Vec<PortId> = level.connections.iter().filter(|conn| {
-            let from_ok = level.nodes.iter()
+            let src = level.nodes.iter()
                 .zip(level.states.iter())
                 .find(|(_, s)| s.id == conn.from.node)
-                .map(|(n, _)| conn.from.index < n.ui_outputs().len())
-                .unwrap_or(false);
-            let to_ok = level.nodes.iter()
+                .and_then(|(n, _)| n.ui_outputs().get(conn.from.index).map(|p| p.def.port_type));
+            let dst = level.nodes.iter()
                 .zip(level.states.iter())
                 .find(|(_, s)| s.id == conn.to.node)
-                .map(|(n, _)| conn.to.index < n.ui_inputs().len())
-                .unwrap_or(false);
-            !from_ok || !to_ok
+                .and_then(|(n, _)| n.ui_inputs().get(conn.to.index).map(|p| p.def.port_type));
+            match (src, dst) {
+                (Some(s), Some(d)) => !s.compatible_with(&d),
+                _ => true, // missing endpoint = stale
+            }
         }).map(|c| c.to).collect();
 
         for port_id in stale {
