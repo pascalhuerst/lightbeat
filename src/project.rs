@@ -7,6 +7,7 @@ use crate::engine::nodes::meta::subgraph::{BRIDGE_IN_NODE_ID, BRIDGE_OUT_NODE_ID
 use crate::engine::types::{NodeId, ParamDef, ParamValue, PortDir, PortId};
 use crate::widgets::nodes::{GraphLevel, NodeGraph};
 use crate::widgets::nodes::meta::subgraph::SubgraphWidget;
+use crate::widgets::nodes::output::group::GroupWidget;
 
 // ---------------------------------------------------------------------------
 // Save format
@@ -223,6 +224,21 @@ pub fn load_graph(graph: &mut NodeGraph, project: &ProjectFile) -> Vec<usize> {
 
                     // Navigate back to parent.
                     graph.navigate_up();
+                }
+            }
+
+            // Restore Group Output widget state from save_data.
+            if saved.type_name == "Group Output" {
+                if let Some(data) = &saved.data {
+                    let n = graph.node_mut(idx);
+                    if let Some(grp) = n.as_any_mut().downcast_mut::<GroupWidget>() {
+                        if let Some(ids) = data.get("group_ids").and_then(|v| v.as_array()) {
+                            grp.selected_group_ids = ids.iter()
+                                .filter_map(|v| v.as_u64().map(|n| n as u32))
+                                .collect();
+                        }
+                        grp.push_config_to_engine();
+                    }
                 }
             }
 

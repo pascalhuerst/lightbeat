@@ -8,5 +8,6 @@ pub mod math;
 pub mod meta;
 pub mod output;
 pub mod transport;
+pub mod ui;
 
 pub use graph::{NodeGraph, GraphLevel};

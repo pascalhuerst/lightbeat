@@ -30,7 +30,7 @@ pub struct GroupWidget {
     shared: SharedState,
     group_ctx: SharedGroupContext,
     /// Which group IDs are selected.
-    selected_group_ids: Vec<u32>,
+    pub selected_group_ids: Vec<u32>,
 }
 
 impl GroupWidget {
@@ -44,7 +44,7 @@ impl GroupWidget {
     }
 
     /// Push the current group selection to the engine via shared state.
-    fn push_config_to_engine(&self) {
+    pub fn push_config_to_engine(&self) {
         let ctx = self.group_ctx.lock().unwrap();
 
         let mut object_ids = Vec::new();
@@ -75,6 +75,7 @@ impl NodeWidget for GroupWidget {
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { "Group Output" }
     fn title(&self) -> &str { "Group Output" }
+    fn description(&self) -> &'static str { "Sends a palette and dimmer value to all fixtures in the selected groups." }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> {
         vec![

@@ -31,6 +31,7 @@ impl NodeWidget for ColorDisplayWidget {
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { "Color Display" }
     fn title(&self) -> &str { "Color Display" }
+    fn description(&self) -> &'static str { "Shows a color swatch or color stack as a preview." }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> {
         self.input_defs().iter().map(UiPortDef::from_def).collect()
@@ -79,7 +80,7 @@ impl NodeWidget for ColorDisplayWidget {
                         egui::pos2(rect.min.x, rect.min.y + i as f32 * bar_h),
                         Vec2::new(rect.width(), bar_h),
                     );
-                    painter.rect_filled(bar_rect, if i == 0 { 4.0 } else { 0.0 }, color);
+                    painter.rect_filled(bar_rect, 0.0, color);
                 }
             }
             _ => {

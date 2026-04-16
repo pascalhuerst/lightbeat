@@ -34,6 +34,7 @@ impl NodeWidget for OscillatorWidget {
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { self.func.label() }
     fn title(&self) -> &str { self.func.label() }
+    fn description(&self) -> &'static str { "Sine or cosine wave generator driven by phase, scaled by amplitude." }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> {
         self.inputs.iter().map(UiPortDef::from_def).collect()

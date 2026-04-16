@@ -62,6 +62,7 @@ impl NodeWidget for PaletteSelectWidget {
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { "Palette Select" }
     fn title(&self) -> &str { "Palette Select" }
+    fn description(&self) -> &'static str { "Picks a color stack from configured palette groups by group and stack index." }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> {
         vec![

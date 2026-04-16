@@ -22,6 +22,7 @@ impl NodeWidget for LookupWidget {
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { "Lookup" }
     fn title(&self) -> &str { "Lookup" }
+    fn description(&self) -> &'static str { "Maps an index to a value or color from an editable lookup table." }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> {
         vec![UiPortDef::from_def(&PortDef::new("index", PortType::Untyped))]

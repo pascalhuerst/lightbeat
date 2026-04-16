@@ -37,6 +37,7 @@ impl NodeWidget for TransitionWidget {
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { "Transition" }
     fn title(&self) -> &str { "Transition" }
+    fn description(&self) -> &'static str { "Smoothly interpolates between values using an easing curve when triggered." }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> { Self::build_inputs(self.mode) }
     fn ui_outputs(&self) -> Vec<UiPortDef> { Self::build_outputs(self.mode) }

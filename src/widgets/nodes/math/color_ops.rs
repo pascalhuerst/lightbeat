@@ -65,6 +65,7 @@ impl NodeWidget for ColorMergeWidget {
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { "Color Merge" }
     fn title(&self) -> &str { "Color Merge" }
+    fn description(&self) -> &'static str { "Combines components into a color in RGB, HSV, RGBW, CMY, or Stack mode." }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> {
         make_port_defs(self.mode, true).iter().map(UiPortDef::from_def).collect()
@@ -124,6 +125,7 @@ impl NodeWidget for ColorSplitWidget {
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { "Color Split" }
     fn title(&self) -> &str { "Color Split" }
+    fn description(&self) -> &'static str { "Splits a color into components in RGB, HSV, RGBW, CMY, or Stack mode." }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> {
         if self.mode.is_stack() {

@@ -35,6 +35,7 @@ impl NodeWidget for ScopeWidget {
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { "Scope" }
     fn title(&self) -> &str { "Scope" }
+    fn description(&self) -> &'static str { "Visualizes up to two input signals as waveforms over time." }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> { self.ui_inputs.clone() }
     fn ui_outputs(&self) -> Vec<UiPortDef> { vec![] }

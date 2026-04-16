@@ -20,6 +20,7 @@ impl NodeWidget for CounterWidget {
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { "Counter" }
     fn title(&self) -> &str { "Counter" }
+    fn description(&self) -> &'static str { "Counts trigger pulses and wraps at a configurable max, with a wrap signal output." }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> {
         vec![

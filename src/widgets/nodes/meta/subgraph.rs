@@ -41,6 +41,7 @@ impl NodeWidget for SubgraphWidget {
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { "Subgraph" }
     fn title(&self) -> &str { &self.name }
+    fn description(&self) -> &'static str { "Encapsulates an inner graph with custom input/output ports; double-click to enter." }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> {
         self.input_defs.iter().map(|p| UiPortDef::from_def(&p.to_port_def())).collect()

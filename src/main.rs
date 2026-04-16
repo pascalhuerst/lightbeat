@@ -24,6 +24,7 @@ use engine::nodes::display::scope::ScopeProcessNode;
 use engine::nodes::display::value_display::ValueDisplayProcessNode;
 use engine::nodes::io::clock::ClockProcessNode;
 use engine::nodes::io::internal_clock::InternalClockProcessNode;
+use engine::nodes::ui::button::ButtonProcessNode;
 use engine::nodes::math::change_detect::ChangeDetectProcessNode;
 use engine::nodes::math::color_ops::{ColorMergeProcessNode, ColorSplitProcessNode};
 use engine::nodes::math::compare::{CompareOp, CompareProcessNode};
@@ -44,6 +45,7 @@ use engine::nodes::transport::clock_gen::ClockGenProcessNode;
 use engine::nodes::transport::delay::TriggerDelayProcessNode;
 use engine::nodes::transport::envelope::EnvelopeProcessNode;
 use engine::nodes::transport::transition::TransitionProcessNode;
+use engine::nodes::transport::lfo::LfoProcessNode;
 use engine::nodes::transport::phase_scaler::PhaseScalerProcessNode;
 use engine::nodes::transport::step_sequencer::StepSequencerProcessNode;
 use widgets::nodes::display::color_display::ColorDisplayWidget;
@@ -51,6 +53,7 @@ use widgets::nodes::display::scope::ScopeWidget;
 use widgets::nodes::display::value_display::ValueDisplayWidget;
 use widgets::nodes::io::clock::ClockWidget;
 use widgets::nodes::io::internal_clock::InternalClockWidget;
+use widgets::nodes::ui::button::ButtonWidget;
 use widgets::nodes::math::change_detect::ChangeDetectWidget;
 use widgets::nodes::math::color_ops::{ColorMergeWidget, ColorSplitWidget};
 use widgets::nodes::math::compare::CompareWidget;
@@ -71,6 +74,7 @@ use widgets::nodes::transport::clock_gen::ClockGenWidget;
 use widgets::nodes::transport::delay::TriggerDelayWidget;
 use widgets::nodes::transport::envelope::EnvelopeWidget;
 use widgets::nodes::transport::transition::TransitionWidget;
+use widgets::nodes::transport::lfo::LfoWidget;
 use widgets::nodes::transport::phase_scaler::PhaseScalerWidget;
 use widgets::nodes::transport::step_sequencer::StepSequencerWidget;
 use widgets::nodes::NodeGraph;
@@ -191,9 +195,17 @@ impl LightBeatApp {
             Box::new(InternalClockWidget::new(id, new_shared_state(1, 3)))
         });
 
+        // UI
+        self.graph.register_node("UI", "Button", |id| {
+            Box::new(ButtonWidget::new(id, new_shared_state(0, 1)))
+        });
+
         // Transport
         self.graph.register_node("Transport", "Phase Scaler", |id| {
             Box::new(PhaseScalerWidget::new(id, new_shared_state(1, 1)))
+        });
+        self.graph.register_node("Transport", "LFO", |id| {
+            Box::new(LfoWidget::new(id, new_shared_state(1, 2)))
         });
         self.graph.register_node("Transport", "Step Sequencer", |id| {
             Box::new(StepSequencerWidget::new(id, new_shared_state(1, 3)))
@@ -391,7 +403,9 @@ impl LightBeatApp {
                     Some(Box::new(engine_node))
                 }
                 "Internal Clock" => Some(Box::new(InternalClockProcessNode::new(id))),
+                "Button" => Some(Box::new(ButtonProcessNode::new(id))),
                 "Phase Scaler" => Some(Box::new(PhaseScalerProcessNode::new(id))),
+                "LFO" => Some(Box::new(LfoProcessNode::new(id))),
                 "Step Sequencer" => Some(Box::new(StepSequencerProcessNode::new(id))),
                 "Scope" => Some(Box::new(ScopeProcessNode::new(id))),
                 "ADSR" => Some(Box::new(EnvelopeProcessNode::new(id))),
@@ -892,6 +906,14 @@ impl eframe::App for LightBeatApp {
                         "Live"
                     };
                     ui.colored_label(egui::Color32::from_gray(100), status);
+
+                    // Right-aligned zoom indicator.
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.colored_label(
+                            egui::Color32::from_gray(140),
+                            format!("Zoom: {:.0}%", self.graph.zoom() * 100.0),
+                        );
+                    });
                 });
             });
 

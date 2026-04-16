@@ -105,6 +105,10 @@ fn show_port_value(ui: &mut Ui, def: &PortDef, values: &[f32], base: usize) {
 /// Draw the inspector panel for a single selected node.
 pub fn show_inspector(ui: &mut Ui, node: &mut dyn NodeWidget) {
     ui.heading(node.title());
+    let desc = node.description();
+    if !desc.is_empty() {
+        ui.colored_label(egui::Color32::from_gray(140), desc);
+    }
     ui.separator();
 
     // Ports info

@@ -25,6 +25,7 @@ impl NodeWidget for StackSplitWidget {
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { "Stack Split" }
     fn title(&self) -> &str { "Stack Split" }
+    fn description(&self) -> &'static str { "Splits a ColorStack palette into its four individual color outputs." }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> {
         vec![UiPortDef::from_def(&PortDef::new("palette", PortType::ColorStack))]
@@ -71,6 +72,7 @@ impl NodeWidget for StackMergeWidget {
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { "Stack Merge" }
     fn title(&self) -> &str { "Stack Merge" }
+    fn description(&self) -> &'static str { "Combines four colors into a single ColorStack palette." }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> {
         vec![

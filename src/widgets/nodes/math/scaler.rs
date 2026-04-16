@@ -20,6 +20,7 @@ impl NodeWidget for ScalerWidget {
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { "Scaler" }
     fn title(&self) -> &str { "Scaler" }
+    fn description(&self) -> &'static str { "Linearly remaps an input range to an output range." }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> {
         vec![UiPortDef::from_def(&PortDef::new("in", PortType::Any))]

@@ -33,6 +33,10 @@ pub trait NodeWidget: Any {
     /// Optional custom title bar color. Return None for default.
     fn title_color(&self) -> Option<egui::Color32> { None }
 
+    /// Short human-readable description of what this node does.
+    /// Shown in the inspector and as a tooltip in the context menu.
+    fn description(&self) -> &'static str { "" }
+
     /// Show extra info/visuals in the inspector (e.g. scope waveform).
     fn show_inspector(&mut self, _ui: &mut Ui) {}
 

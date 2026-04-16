@@ -21,6 +21,7 @@ impl NodeWidget for ValueDisplayWidget {
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { "Value Display" }
     fn title(&self) -> &str { "Value Display" }
+    fn description(&self) -> &'static str { "Shows a numeric value as text or an LED indicator." }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> {
         vec![UiPortDef::from_def(&PortDef::new("in", PortType::Any))]

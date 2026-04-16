@@ -42,6 +42,7 @@ impl NodeWidget for MathWidget {
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { self.op.label() }
     fn title(&self) -> &str { self.op.label() }
+    fn description(&self) -> &'static str { "Arithmetic operation (add, subtract, multiply, divide) on two values." }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> { self.ui_inputs.clone() }
     fn ui_outputs(&self) -> Vec<UiPortDef> { self.ui_outputs.clone() }

@@ -1,24 +1,15 @@
 {
   "nodes": [
     {
-      "type_name": "Clock",
-      "id": 63,
-      "pos": [
-        -355.0948,
-        204.55257
-      ],
-      "params": []
-    },
-    {
       "type_name": "Color Display",
       "id": 73,
       "pos": [
-        203.88405,
-        -12.577564
+        144.97662,
+        -106.75462
       ],
       "size": [
-        100.0,
-        107.14221
+        123.79112,
+        173.33551
       ],
       "params": [
         {
@@ -56,8 +47,8 @@
             "type_name": "Palette Select",
             "id": 65,
             "pos": [
-              332.41254,
-              198.26071
+              452.70178,
+              -21.758904
             ],
             "params": [],
             "data": {
@@ -499,8 +490,8 @@
             "type_name": "Counter",
             "id": 68,
             "pos": [
-              165.64178,
-              45.215607
+              187.60448,
+              31.954958
             ],
             "params": [
               {
@@ -517,13 +508,13 @@
             "type_name": "Counter",
             "id": 69,
             "pos": [
-              165.41711,
-              153.42102
+              300.28027,
+              84.536606
             ],
             "params": [
               {
                 "index": 0,
-                "value": 4
+                "value": 8
               },
               {
                 "index": 1,
@@ -535,13 +526,13 @@
             "type_name": "Clock Gen",
             "id": 70,
             "pos": [
-              -33.585705,
-              -13.431249
+              94.854706,
+              -96.74618
             ],
             "params": [
               {
                 "index": 0,
-                "value": 2
+                "value": 4
               }
             ]
           },
@@ -573,7 +564,25 @@
             "params": [
               {
                 "index": 0,
-                "value": 2
+                "value": 0
+              },
+              {
+                "index": 1,
+                "value": 0.0
+              }
+            ]
+          },
+          {
+            "type_name": "Phase Scaler",
+            "id": 78,
+            "pos": [
+              -86.61476,
+              -125.89463
+            ],
+            "params": [
+              {
+                "index": 0,
+                "value": -2
               },
               {
                 "index": 1,
@@ -616,12 +625,6 @@
           {
             "from_node": 18446744073709551614,
             "from_port": 0,
-            "to_node": 70,
-            "to_port": 0
-          },
-          {
-            "from_node": 18446744073709551614,
-            "from_port": 0,
             "to_node": 72,
             "to_port": 0
           },
@@ -635,13 +638,25 @@
             "from_node": 69,
             "from_port": 0,
             "to_node": 65,
-            "to_port": 0
+            "to_port": 1
           },
           {
             "from_node": 68,
             "from_port": 0,
             "to_node": 65,
-            "to_port": 1
+            "to_port": 0
+          },
+          {
+            "from_node": 18446744073709551614,
+            "from_port": 0,
+            "to_node": 78,
+            "to_port": 0
+          },
+          {
+            "from_node": 78,
+            "from_port": 0,
+            "to_node": 70,
+            "to_port": 0
           }
         ]
       }
@@ -650,8 +665,8 @@
       "type_name": "Group Output",
       "id": 75,
       "pos": [
-        215.77185,
-        314.86166
+        206.75555,
+        115.93968
       ],
       "params": [],
       "data": {
@@ -674,6 +689,82 @@
           10
         ]
       }
+    },
+    {
+      "type_name": "Internal Clock",
+      "id": 76,
+      "pos": [
+        -348.59283,
+        114.28668
+      ],
+      "params": [
+        {
+          "index": 0,
+          "value": 80.0
+        }
+      ]
+    },
+    {
+      "type_name": "Button",
+      "id": 77,
+      "pos": [
+        -515.3317,
+        106.35366
+      ],
+      "params": [],
+      "data": {
+        "label": "Start/Stop",
+        "mode": "trigger",
+        "state": false
+      }
+    },
+    {
+      "type_name": "Scope",
+      "id": 80,
+      "pos": [
+        68.528564,
+        -286.96628
+      ],
+      "params": [
+        {
+          "index": 0,
+          "value": 0.5
+        },
+        {
+          "index": 1,
+          "value": 512
+        },
+        {
+          "index": 2,
+          "value": -0.2499999701976776
+        },
+        {
+          "index": 3,
+          "value": 1.2000000476837158
+        }
+      ]
+    },
+    {
+      "type_name": "LFO",
+      "id": 81,
+      "pos": [
+        -345.31982,
+        -89.02346
+      ],
+      "params": [
+        {
+          "index": 0,
+          "value": 0.25
+        },
+        {
+          "index": 1,
+          "value": 1
+        },
+        {
+          "index": 2,
+          "value": true
+        }
+      ]
     }
   ],
   "connections": [
@@ -684,16 +775,40 @@
       "to_port": 0
     },
     {
-      "from_node": 63,
+      "from_node": 74,
+      "from_port": 0,
+      "to_node": 75,
+      "to_port": 0
+    },
+    {
+      "from_node": 76,
       "from_port": 2,
       "to_node": 74,
       "to_port": 0
     },
     {
-      "from_node": 74,
+      "from_node": 77,
       "from_port": 0,
-      "to_node": 75,
+      "to_node": 76,
       "to_port": 0
+    },
+    {
+      "from_node": 76,
+      "from_port": 0,
+      "to_node": 80,
+      "to_port": 0
+    },
+    {
+      "from_node": 77,
+      "from_port": 0,
+      "to_node": 81,
+      "to_port": 0
+    },
+    {
+      "from_node": 81,
+      "from_port": 1,
+      "to_node": 80,
+      "to_port": 1
     }
   ]
 }

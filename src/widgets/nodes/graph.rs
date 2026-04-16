@@ -31,6 +31,10 @@ struct DragState {
     selection_rect_start: Option<Pos2>,
     /// Index of node being resized.
     resizing_node: Option<usize>,
+    /// Panning the canvas via left-click drag.
+    panning: bool,
+    /// Time and position of the last empty-canvas click (for manual double-click detection).
+    last_canvas_click: Option<(std::time::Instant, Pos2)>,
 }
 
 struct DrawingConnection {
@@ -49,6 +53,7 @@ struct DrawingConnection {
 pub struct NodeEntry {
     pub label: String,
     pub category: String,
+    pub description: &'static str,
     pub factory: Box<dyn Fn(NodeId) -> Box<dyn NodeWidget>>,
 }
 
@@ -251,9 +256,14 @@ impl NodeGraph {
 
     /// Register a node type that can be spawned from the context menu.
     pub fn register_node(&mut self, category: impl Into<String>, label: impl Into<String>, factory: impl Fn(NodeId) -> Box<dyn NodeWidget> + 'static) {
+        // Probe the widget's description by creating a sample instance.
+        let sample = factory(NodeId(0));
+        let description = sample.description();
+        drop(sample);
         self.registry.push(NodeEntry {
             label: label.into(),
             category: category.into(),
+            description,
             factory: Box::new(factory),
         });
     }
@@ -359,6 +369,9 @@ impl NodeGraph {
 
     /// Get root level mutably (for load_graph which needs to operate on root).
     pub fn root_level_mut(&mut self) -> &mut GraphLevel { &mut self.levels[0] }
+
+    /// Current zoom level of the active graph.
+    pub fn zoom(&self) -> f32 { self.active().zoom }
 
     /// Find the inner level for a given subgraph node ID, if it exists.
     pub fn find_level_for_subgraph(&self, subgraph_id: NodeId) -> Option<&GraphLevel> {
@@ -593,6 +606,8 @@ impl NodeGraph {
                         .max_rect(content_rect)
                         .layout(egui::Layout::top_down(egui::Align::LEFT)),
                 );
+                // Clip the content area so widgets can't paint outside the node.
+                content_ui.set_clip_rect(content_rect);
                 // Scale text and spacing for zoom.
                 if (z - 1.0).abs() > 0.01 {
                     let mut style = (**content_ui.style()).clone();
@@ -601,6 +616,13 @@ impl NodeGraph {
                     }
                     style.spacing.item_spacing *= z;
                     style.spacing.button_padding *= z;
+                    style.spacing.interact_size *= z;
+                    style.spacing.icon_width *= z;
+                    style.spacing.icon_width_inner *= z;
+                    style.spacing.icon_spacing *= z;
+                    style.spacing.slider_width *= z;
+                    style.spacing.combo_width *= z;
+                    style.spacing.text_edit_width *= z;
                     content_ui.set_style(style);
                 }
 
@@ -824,17 +846,21 @@ impl NodeGraph {
         let search = self.context_menu_search.to_lowercase();
 
         // Filter entries by search (exclude hidden categories).
-        let filtered: Vec<(usize, &str, &str)> = self.registry.iter().enumerate()
+        let filtered: Vec<(usize, &str, &str, &str)> = self.registry.iter().enumerate()
             .filter(|(_, e)| !e.category.starts_with('_'))
             .filter(|(_, e)| search.is_empty() || e.label.to_lowercase().contains(&search) || e.category.to_lowercase().contains(&search))
-            .map(|(i, e)| (i, e.category.as_str(), e.label.as_str()))
+            .map(|(i, e)| (i, e.category.as_str(), e.label.as_str(), e.description))
             .collect();
 
+        // Description shown for the currently hovered entry (defaults to first match).
+        let mut hovered_desc: Option<&'static str> =
+            filtered.first().map(|&(_, _, _, d)| d);
+
         let mut open = true;
-        let win_resp = egui::Window::new("Add node")
+        let _win_resp = egui::Window::new("Add node")
             .id(egui::Id::new("node_ctx_menu"))
             .default_pos(menu_pos)
-            .default_size([200.0, 400.0])
+            .default_size([260.0, 420.0])
             .resizable(true)
             .collapsible(false)
             .open(&mut open)
@@ -851,7 +877,7 @@ impl NodeGraph {
                     return;
                 }
                 if search_resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
-                    if let Some(&(idx, _, _)) = filtered.first() {
+                    if let Some(&(idx, _, _, _)) = filtered.first() {
                         spawn = Some(idx);
                     }
                 }
@@ -859,24 +885,45 @@ impl NodeGraph {
 
                 ui.separator();
 
-                egui::ScrollArea::vertical().show(ui, |ui| {
-                    if filtered.is_empty() {
-                        ui.colored_label(egui::Color32::from_gray(100), "No matches");
-                    } else {
-                        let mut last_cat = "";
-                        for &(idx, cat, label) in &filtered {
-                            if cat != last_cat {
-                                if !last_cat.is_empty() { ui.add_space(2.0); }
-                                ui.colored_label(
-                                    egui::Color32::from_gray(120),
-                                    egui::RichText::new(cat).size(10.0),
-                                );
-                                last_cat = cat;
-                            }
-                            if ui.button(label).clicked() {
-                                spawn = Some(idx);
+                // Reserve space at the bottom for the description preview.
+                let desc_h = 64.0;
+                let list_h = (ui.available_height() - desc_h).max(80.0);
+
+                egui::ScrollArea::vertical()
+                    .max_height(list_h)
+                    .show(ui, |ui| {
+                        if filtered.is_empty() {
+                            ui.colored_label(egui::Color32::from_gray(100), "No matches");
+                        } else {
+                            let mut last_cat = "";
+                            for &(idx, cat, label, desc) in &filtered {
+                                if cat != last_cat {
+                                    if !last_cat.is_empty() { ui.add_space(2.0); }
+                                    ui.colored_label(
+                                        egui::Color32::from_gray(120),
+                                        egui::RichText::new(cat).size(10.0),
+                                    );
+                                    last_cat = cat;
+                                }
+                                let resp = ui.button(label);
+                                if resp.hovered() {
+                                    hovered_desc = Some(desc);
+                                }
+                                if resp.clicked() {
+                                    spawn = Some(idx);
+                                }
                             }
                         }
+                    });
+
+                ui.separator();
+                // Description preview area.
+                ui.allocate_ui(egui::Vec2::new(ui.available_width(), desc_h - 8.0), |ui| {
+                    let desc = hovered_desc.unwrap_or("");
+                    if desc.is_empty() {
+                        ui.colored_label(egui::Color32::from_gray(80), "Hover an entry for details.");
+                    } else {
+                        ui.colored_label(egui::Color32::from_gray(180), desc);
                     }
                 });
             });
@@ -1170,10 +1217,33 @@ impl NodeGraph {
                         self.drag.dragging_nodes = true;
                     }
                 } else {
-                    if !ctrl {
-                        self.selected_nodes.clear();
+                    // Manual double-click detection on empty canvas:
+                    // egui's double_clicked may not fire reliably when the first click
+                    // started a drag (e.g., panning). We track our own timer.
+                    let now = std::time::Instant::now();
+                    let is_double = self.drag.last_canvas_click.map_or(false, |(t, p)| {
+                        now.duration_since(t) < std::time::Duration::from_millis(400)
+                            && pointer_pos.distance(p) < 6.0
+                    });
+
+                    if is_double && self.active_level > 0 {
+                        self.drag.panning = false;
+                        self.drag.selection_rect_start = None;
+                        self.drag.last_canvas_click = None;
+                        self.navigate_up();
+                        return;
                     }
-                    self.drag.selection_rect_start = Some(pointer_pos);
+
+                    self.drag.last_canvas_click = Some((now, pointer_pos));
+
+                    // Empty canvas: shift+drag = pan, plain drag = selection rect.
+                    let shift = ui.input(|i| i.modifiers.shift);
+                    if shift {
+                        self.drag.panning = true;
+                    } else {
+                        if !ctrl { self.selected_nodes.clear(); }
+                        self.drag.selection_rect_start = Some(pointer_pos);
+                    }
                 }
             }
 
@@ -1191,6 +1261,16 @@ impl NodeGraph {
                     ui.ctx().set_cursor_icon(CursorIcon::Grabbing);
                 } else {
                     self.drag.dragging_nodes = false;
+                }
+            }
+
+            // Panning the canvas via left-click drag.
+            if self.drag.panning {
+                if primary_down {
+                    self.active_mut().pan += drag_delta;
+                    ui.ctx().set_cursor_icon(CursorIcon::Grabbing);
+                } else {
+                    self.drag.panning = false;
                 }
             }
         }
@@ -1609,8 +1689,6 @@ fn draw_node_chrome(
 
     // Body
     painter.rect_filled(rect, NODE_CORNER_RADIUS, NODE_BG);
-    let border = if selected { Stroke::new(2.0, SELECTED_BORDER) } else { Stroke::new(1.0, NODE_BORDER) };
-    painter.rect_stroke(rect, NODE_CORNER_RADIUS, border, StrokeKind::Inside);
 
     // Title bar
     let title_bg = title_color.unwrap_or(NODE_TITLE_BG);
@@ -1627,6 +1705,10 @@ fn draw_node_chrome(
         egui::FontId::proportional(13.0 * zoom),
         Color32::WHITE,
     );
+
+    // Border (drawn after title bar so it isn't covered).
+    let border = if selected { Stroke::new(2.0, SELECTED_BORDER) } else { Stroke::new(1.0, NODE_BORDER) };
+    painter.rect_stroke(rect, NODE_CORNER_RADIUS, border, StrokeKind::Inside);
 
     // Input ports
     for (i, ui_port) in inputs.iter().enumerate() {

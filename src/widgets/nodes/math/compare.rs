@@ -31,6 +31,7 @@ impl NodeWidget for CompareWidget {
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { self.op.label() }
     fn title(&self) -> &str { self.op.label() }
+    fn description(&self) -> &'static str { "Compares two values (>=, <=, ==, !=) and outputs a logic signal." }
     fn ui_inputs(&self) -> Vec<UiPortDef> { self.inputs.iter().map(UiPortDef::from_def).collect() }
     fn ui_outputs(&self) -> Vec<UiPortDef> { self.outputs.iter().map(UiPortDef::from_def).collect() }
     fn min_width(&self) -> f32 { 80.0 }
