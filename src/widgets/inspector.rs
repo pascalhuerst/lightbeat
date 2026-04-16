@@ -79,7 +79,7 @@ fn show_port_value(ui: &mut Ui, def: &PortDef, values: &[f32], base: usize) {
                     format!("P:{:.2} T:{:.2}", pan, tilt),
                 );
             }
-            PortType::ColorStack => {
+            PortType::Palette => {
                 for slot in 0..4 {
                     let sb = base + slot * 3;
                     let rv = values.get(sb).copied().unwrap_or(0.0).clamp(0.0, 1.0);

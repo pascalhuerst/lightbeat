@@ -35,7 +35,7 @@ fn idx_to_port_type(idx: usize) -> PortType {
         2 => PortType::Untyped,
         3 => PortType::Color,
         4 => PortType::Position,
-        5 => PortType::ColorStack,
+        5 => PortType::Palette,
         _ => PortType::Untyped,
     }
 }
@@ -47,12 +47,12 @@ pub fn port_type_to_idx(pt: PortType) -> usize {
         PortType::Untyped => 2,
         PortType::Color => 3,
         PortType::Position => 4,
-        PortType::ColorStack => 5,
+        PortType::Palette => 5,
         PortType::Any => 2,
     }
 }
 
-pub const PORT_TYPE_NAMES: &[&str] = &["Logic", "Phase", "Untyped", "Color", "Position", "ColorStack"];
+pub const PORT_TYPE_NAMES: &[&str] = &["Logic", "Phase", "Untyped", "Color", "Position", "Palette"];
 
 // ---------------------------------------------------------------------------
 // Inner graph (owns nodes + connections, runs synchronously)

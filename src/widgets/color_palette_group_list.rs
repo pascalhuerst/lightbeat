@@ -1,28 +1,28 @@
 use egui::{self, Color32, Ui};
 
-use crate::objects::color_palette::{ColorGroup, ColorStack, STACK_SIZE};
+use crate::objects::color_palette::{ColorPalette, ColorPaletteGroup, PALETTE_SIZE};
 
-pub struct ColorGroupManager {
-    pub groups: Vec<ColorGroup>,
+pub struct ColorPaletteGroupManager {
+    pub groups: Vec<ColorPaletteGroup>,
     next_id: u32,
 }
 
-impl ColorGroupManager {
+impl ColorPaletteGroupManager {
     pub fn new() -> Self {
         Self { groups: Vec::new(), next_id: 1 }
     }
 
-    pub fn from_groups(groups: Vec<ColorGroup>) -> Self {
+    pub fn from_groups(groups: Vec<ColorPaletteGroup>) -> Self {
         let next_id = groups.iter().map(|g| g.id).max().unwrap_or(0) + 1;
         Self { groups, next_id }
     }
 
-    pub fn show(&mut self, ui: &mut Ui, stacks: &[ColorStack]) {
-        ui.heading("Color Groups");
+    pub fn show(&mut self, ui: &mut Ui, palettes: &[ColorPalette]) {
+        ui.heading("Color Palette Groups");
         ui.separator();
 
         if self.groups.is_empty() {
-            ui.colored_label(Color32::from_gray(120), "No color groups.");
+            ui.colored_label(Color32::from_gray(120), "No color palette groups.");
         }
 
         let mut remove_id = None;
@@ -42,17 +42,17 @@ impl ColorGroupManager {
                             ui.text_edit_singleline(&mut group.name);
                         });
 
-                        // Member stacks.
+                        // Member palettes.
                         ui.add_space(4.0);
-                        ui.label(egui::RichText::new("Stacks").strong());
+                        ui.label(egui::RichText::new("Palettes").strong());
 
-                        let mut remove_stack_id = None;
-                        for sid in &group.stack_ids {
-                            if let Some(stack) = stacks.iter().find(|s| s.id == *sid) {
+                        let mut remove_palette_id = None;
+                        for pid in &group.palette_ids {
+                            if let Some(palette) = palettes.iter().find(|s| s.id == *pid) {
                                 ui.horizontal(|ui| {
                                     // Mini swatches.
-                                    for i in 0..STACK_SIZE {
-                                        let c = stack.colors[i];
+                                    for i in 0..PALETTE_SIZE {
+                                        let c = palette.colors[i];
                                         let color = egui::Color32::from_rgb(
                                             (c.r.clamp(0.0, 1.0) * 255.0) as u8,
                                             (c.g.clamp(0.0, 1.0) * 255.0) as u8,
@@ -64,27 +64,27 @@ impl ColorGroupManager {
                                         );
                                         p.rect_filled(r.rect, 1.0, color);
                                     }
-                                    ui.label(&stack.name);
+                                    ui.label(&palette.name);
                                     if ui.small_button("x").clicked() {
-                                        remove_stack_id = Some(*sid);
+                                        remove_palette_id = Some(*pid);
                                     }
                                 });
                             }
                         }
-                        if let Some(sid) = remove_stack_id {
-                            group.stack_ids.retain(|id| *id != sid);
+                        if let Some(pid) = remove_palette_id {
+                            group.palette_ids.retain(|id| *id != pid);
                         }
 
-                        // Add stack.
-                        let available: Vec<&ColorStack> = stacks.iter()
-                            .filter(|s| !group.stack_ids.contains(&s.id))
+                        // Add palette.
+                        let available: Vec<&ColorPalette> = palettes.iter()
+                            .filter(|s| !group.palette_ids.contains(&s.id))
                             .collect();
                         if !available.is_empty() {
                             ui.horizontal_wrapped(|ui| {
                                 ui.label("Add:");
-                                for stack in &available {
-                                    if ui.small_button(&stack.name).clicked() {
-                                        group.stack_ids.push(stack.id);
+                                for palette in &available {
+                                    if ui.small_button(&palette.name).clicked() {
+                                        group.palette_ids.push(palette.id);
                                     }
                                 }
                             });
@@ -104,10 +104,10 @@ impl ColorGroupManager {
         }
 
         ui.separator();
-        if ui.button("Add Color Group").clicked() {
+        if ui.button("Add Color Palette Group").clicked() {
             let id = self.next_id;
             self.next_id += 1;
-            self.groups.push(ColorGroup::new(id, format!("Color Group {}", id)));
+            self.groups.push(ColorPaletteGroup::new(id, format!("Palette Group {}", id)));
         }
     }
 }

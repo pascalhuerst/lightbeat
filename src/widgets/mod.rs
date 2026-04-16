@@ -1,5 +1,5 @@
-pub mod color_group_list;
-pub mod color_stack_list;
+pub mod color_palette_group_list;
+pub mod color_palette_list;
 pub mod dmx_monitor;
 pub mod fixture_list;
 pub mod group_list;

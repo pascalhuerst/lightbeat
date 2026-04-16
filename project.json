@@ -59,7 +59,7 @@
               "groups": [
                 {
                   "name": "Warm Sunset",
-                  "stacks": [
+                  "palettes": [
                     {
                       "colors": [
                         {
@@ -272,7 +272,7 @@
                 },
                 {
                   "name": "Dark Moody",
-                  "stacks": [
+                  "palettes": [
                     {
                       "colors": [
                         {
@@ -665,8 +665,8 @@
       "type_name": "Group Output",
       "id": 75,
       "pos": [
-        206.75555,
-        115.93968
+        156.42592,
+        119.14699
       ],
       "params": [],
       "data": {

@@ -4,7 +4,7 @@ use egui::{self, Sense, Ui, Vec2};
 
 use crate::engine::nodes::display::color_display::ColorDisplayData;
 use crate::engine::types::*;
-use crate::objects::color_palette::STACK_SIZE;
+use crate::objects::color_palette::PALETTE_SIZE;
 use crate::widgets::nodes::node::NodeWidget;
 use crate::widgets::nodes::types::UiPortDef;
 
@@ -21,7 +21,7 @@ impl ColorDisplayWidget {
 
     fn input_defs(&self) -> Vec<PortDef> {
         match self.mode {
-            1 => vec![PortDef::new("palette", PortType::ColorStack)],
+            1 => vec![PortDef::new("palette", PortType::Palette)],
             _ => vec![PortDef::new("color", PortType::Color)],
         }
     }
@@ -31,7 +31,7 @@ impl NodeWidget for ColorDisplayWidget {
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { "Color Display" }
     fn title(&self) -> &str { "Color Display" }
-    fn description(&self) -> &'static str { "Shows a color swatch or color stack as a preview." }
+    fn description(&self) -> &'static str { "Shows a color swatch or a palette (4-color set) as a preview." }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> {
         self.input_defs().iter().map(UiPortDef::from_def).collect()
@@ -63,12 +63,12 @@ impl NodeWidget for ColorDisplayWidget {
 
         match mode {
             1 => {
-                // Stack mode: 4 color bars vertically.
+                // Palette mode: 4 color bars vertically.
                 let (response, painter) = ui.allocate_painter(Vec2::new(w, h), Sense::hover());
                 let rect = response.rect;
-                let bar_h = rect.height() / STACK_SIZE as f32;
+                let bar_h = rect.height() / PALETTE_SIZE as f32;
 
-                for i in 0..STACK_SIZE {
+                for i in 0..PALETTE_SIZE {
                     let base = i * 3;
                     let r = channels[base];
                     let g = channels[base + 1];

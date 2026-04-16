@@ -1,23 +1,22 @@
 use crate::engine::types::*;
-use crate::objects::color_palette::STACK_SIZE;
 
 // ---------------------------------------------------------------------------
-// Stack Split: ColorStack → 4 Color outputs
+// Palette Split: Palette → 4 Color outputs
 // ---------------------------------------------------------------------------
 
-pub struct StackSplitProcessNode {
+pub struct PaletteSplitProcessNode {
     id: NodeId,
     channels: [f32; 12], // 4 × RGB
     inputs: Vec<PortDef>,
     outputs: Vec<PortDef>,
 }
 
-impl StackSplitProcessNode {
+impl PaletteSplitProcessNode {
     pub fn new(id: NodeId) -> Self {
         Self {
             id,
             channels: [0.0; 12],
-            inputs: vec![PortDef::new("palette", PortType::ColorStack)],
+            inputs: vec![PortDef::new("palette", PortType::Palette)],
             outputs: vec![
                 PortDef::new("primary", PortType::Color),
                 PortDef::new("secondary", PortType::Color),
@@ -28,9 +27,9 @@ impl StackSplitProcessNode {
     }
 }
 
-impl ProcessNode for StackSplitProcessNode {
+impl ProcessNode for PaletteSplitProcessNode {
     fn node_id(&self) -> NodeId { self.id }
-    fn type_name(&self) -> &'static str { "Stack Split" }
+    fn type_name(&self) -> &'static str { "Palette Split" }
     fn inputs(&self) -> &[PortDef] { &self.inputs }
     fn outputs(&self) -> &[PortDef] { &self.outputs }
 
@@ -49,17 +48,17 @@ impl ProcessNode for StackSplitProcessNode {
 }
 
 // ---------------------------------------------------------------------------
-// Stack Merge: 4 Color inputs → ColorStack output
+// Palette Merge: 4 Color inputs → Palette output
 // ---------------------------------------------------------------------------
 
-pub struct StackMergeProcessNode {
+pub struct PaletteMergeProcessNode {
     id: NodeId,
     channels: [f32; 12],
     inputs: Vec<PortDef>,
     outputs: Vec<PortDef>,
 }
 
-impl StackMergeProcessNode {
+impl PaletteMergeProcessNode {
     pub fn new(id: NodeId) -> Self {
         Self {
             id,
@@ -70,14 +69,14 @@ impl StackMergeProcessNode {
                 PortDef::new("third", PortType::Color),
                 PortDef::new("fourth", PortType::Color),
             ],
-            outputs: vec![PortDef::new("palette", PortType::ColorStack)],
+            outputs: vec![PortDef::new("palette", PortType::Palette)],
         }
     }
 }
 
-impl ProcessNode for StackMergeProcessNode {
+impl ProcessNode for PaletteMergeProcessNode {
     fn node_id(&self) -> NodeId { self.id }
-    fn type_name(&self) -> &'static str { "Stack Merge" }
+    fn type_name(&self) -> &'static str { "Palette Merge" }
     fn inputs(&self) -> &[PortDef] { &self.inputs }
     fn outputs(&self) -> &[PortDef] { &self.outputs }
 

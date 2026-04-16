@@ -35,7 +35,7 @@ use engine::nodes::math::logic_gate::{LogicOp, LogicGateProcessNode};
 use engine::nodes::math::math_op::{MathOp, MathProcessNode};
 use engine::nodes::math::palette_select::PaletteSelectProcessNode;
 use engine::nodes::meta::subgraph::SubgraphProcessNode;
-use engine::nodes::math::stack_ops::{StackSplitProcessNode, StackMergeProcessNode};
+use engine::nodes::math::palette_ops::{PaletteSplitProcessNode, PaletteMergeProcessNode};
 use engine::nodes::math::scaler::ScalerProcessNode;
 use engine::nodes::math::oscillator::{OscFunc, OscillatorProcessNode};
 use engine::nodes::math::position_ops::{PositionMergeProcessNode, PositionSplitProcessNode};
@@ -64,7 +64,7 @@ use widgets::nodes::math::logic_gate::LogicGateWidget;
 use widgets::nodes::math::math_op::MathWidget;
 use widgets::nodes::math::palette_select::{PaletteSelectWidget, new_shared_palette_context};
 use widgets::nodes::meta::subgraph::SubgraphWidget;
-use widgets::nodes::math::stack_ops::{StackSplitWidget, StackMergeWidget};
+use widgets::nodes::math::palette_ops::{PaletteSplitWidget, PaletteMergeWidget};
 use widgets::nodes::math::scaler::ScalerWidget;
 use widgets::nodes::math::oscillator::OscillatorWidget;
 use widgets::nodes::math::position_ops::{PositionMergeWidget, PositionSplitWidget};
@@ -100,8 +100,8 @@ struct LightBeatApp {
     show_object_list: bool,
     show_interface_list: bool,
     show_group_list: bool,
-    show_color_stacks: bool,
-    show_color_groups: bool,
+    show_color_palettes: bool,
+    show_color_palette_groups: bool,
     dmx_monitor: widgets::dmx_monitor::DmxMonitor,
     dmx_shared: dmx_io::SharedDmxState,
     object_store: dmx_io::SharedObjectStore,
@@ -110,8 +110,8 @@ struct LightBeatApp {
     object_manager: widgets::object_list::ObjectManager,
     interface_manager: widgets::interface_list::InterfaceManager,
     group_manager: widgets::group_list::GroupManager,
-    color_stack_manager: widgets::color_stack_list::ColorStackManager,
-    color_group_manager: widgets::color_group_list::ColorGroupManager,
+    color_palette_manager: widgets::color_palette_list::ColorPaletteManager,
+    color_palette_group_manager: widgets::color_palette_group_list::ColorPaletteGroupManager,
     palette_ctx: widgets::nodes::math::palette_select::SharedPaletteContext,
 }
 
@@ -140,8 +140,8 @@ impl LightBeatApp {
             show_object_list: false,
             show_interface_list: false,
             show_group_list: false,
-            show_color_stacks: false,
-            show_color_groups: false,
+            show_color_palettes: false,
+            show_color_palette_groups: false,
             dmx_monitor: widgets::dmx_monitor::DmxMonitor::new(),
             dmx_shared,
             object_store,
@@ -150,8 +150,8 @@ impl LightBeatApp {
             object_manager: widgets::object_list::ObjectManager::new(),
             interface_manager: widgets::interface_list::InterfaceManager::new(),
             group_manager: widgets::group_list::GroupManager::new(),
-            color_stack_manager: widgets::color_stack_list::ColorStackManager::new(),
-            color_group_manager: widgets::color_group_list::ColorGroupManager::new(),
+            color_palette_manager: widgets::color_palette_list::ColorPaletteManager::new(),
+            color_palette_group_manager: widgets::color_palette_group_list::ColorPaletteGroupManager::new(),
             palette_ctx: new_shared_palette_context(),
         };
 
@@ -223,7 +223,7 @@ impl LightBeatApp {
             Box::new(ClockGenWidget::new(id, new_shared_state(1, 1)))
         });
         self.graph.register_node("Transport", "Transition", |id| {
-            // trigger(1) + phase(1) + colorstack(12) = 14 input channels, 12 output channels max
+            // trigger(1) + phase(1) + palette(12) = 14 input channels, 12 output channels max
             Box::new(TransitionWidget::new(id, new_shared_state(14, 12)))
         });
 
@@ -247,10 +247,10 @@ impl LightBeatApp {
             Box::new(OscillatorWidget::new(id, OscFunc::Cos, new_shared_state(2, 1)))
         });
         self.graph.register_node("Math", "Color Merge", |id| {
-            Box::new(ColorMergeWidget::new(id, new_shared_state(12, 12))) // Stack mode: 4×Color in, ColorStack out
+            Box::new(ColorMergeWidget::new(id, new_shared_state(12, 12))) // Palette mode: 4×Color in, Palette out
         });
         self.graph.register_node("Math", "Color Split", |id| {
-            Box::new(ColorSplitWidget::new(id, new_shared_state(12, 12))) // Stack mode: ColorStack in, 4×Color out
+            Box::new(ColorSplitWidget::new(id, new_shared_state(12, 12))) // Palette mode: Palette in, 4×Color out
         });
         self.graph.register_node("Math", "Lookup", |id| {
             Box::new(LookupWidget::new(id, new_shared_state(1, 3))) // 1 input, up to 3 output channels (Color)
@@ -327,15 +327,14 @@ impl LightBeatApp {
         // Palette
         let pctx = self.palette_ctx.clone();
         self.graph.register_node("Math", "Palette Select", move |id| {
-            // 2 inputs, ColorStack output = 12 channels
+            // 2 inputs, Palette output = 12 channels
             Box::new(PaletteSelectWidget::new(id, new_shared_state(2, 12), pctx.clone()))
         });
-        // Stack Split/Merge kept for backward compat with saved projects (hidden from menu).
-        self.graph.register_node("_hidden", "Stack Split", |id| {
-            Box::new(StackSplitWidget::new(id, new_shared_state(12, 12)))
+        self.graph.register_node("Math", "Palette Split", |id| {
+            Box::new(PaletteSplitWidget::new(id, new_shared_state(12, 12)))
         });
-        self.graph.register_node("_hidden", "Stack Merge", |id| {
-            Box::new(StackMergeWidget::new(id, new_shared_state(12, 12)))
+        self.graph.register_node("Math", "Palette Merge", |id| {
+            Box::new(PaletteMergeWidget::new(id, new_shared_state(12, 12)))
         });
 
         // Meta
@@ -360,8 +359,8 @@ impl LightBeatApp {
 
     fn sync_palette_context(&self) {
         let mut ctx = self.palette_ctx.lock().unwrap();
-        ctx.stacks = self.color_stack_manager.stacks.clone();
-        ctx.groups = self.color_group_manager.groups.clone();
+        ctx.palettes = self.color_palette_manager.palettes.clone();
+        ctx.groups = self.color_palette_group_manager.groups.clone();
     }
 
     fn create_default_clock(&mut self) {
@@ -424,8 +423,8 @@ impl LightBeatApp {
                 "Color Display" => Some(Box::new(ColorDisplayProcessNode::new(id))),
                 "Value Display" => Some(Box::new(ValueDisplayProcessNode::new(id))),
                 "Palette Select" => Some(Box::new(PaletteSelectProcessNode::new(id))),
-                "Stack Split" => Some(Box::new(StackSplitProcessNode::new(id))),
-                "Stack Merge" => Some(Box::new(StackMergeProcessNode::new(id))),
+                "Palette Split" => Some(Box::new(PaletteSplitProcessNode::new(id))),
+                "Palette Merge" => Some(Box::new(PaletteMergeProcessNode::new(id))),
                 "Scaler" => Some(Box::new(ScalerProcessNode::new(id))),
                 ">=" | "<=" | "==" | "!=" => {
                     let op = match type_name {
@@ -491,8 +490,8 @@ impl LightBeatApp {
                 self.object_manager = widgets::object_list::ObjectManager::from_objects(s.objects);
                 self.interface_manager = widgets::interface_list::InterfaceManager::from_saved(s.interfaces);
                 self.group_manager = widgets::group_list::GroupManager::from_groups(s.groups);
-                self.color_stack_manager = widgets::color_stack_list::ColorStackManager::from_stacks(s.color_stacks);
-                self.color_group_manager = widgets::color_group_list::ColorGroupManager::from_groups(s.color_groups);
+                self.color_palette_manager = widgets::color_palette_list::ColorPaletteManager::from_palettes(s.color_palettes);
+                self.color_palette_group_manager = widgets::color_palette_group_list::ColorPaletteGroupManager::from_groups(s.color_palette_groups);
             }
             Err(e) => eprintln!("Failed to load setup: {}", e),
         }
@@ -504,8 +503,8 @@ impl LightBeatApp {
             objects: self.object_manager.objects.clone(),
             interfaces: self.interface_manager.to_saved(),
             groups: self.group_manager.groups.clone(),
-            color_stacks: self.color_stack_manager.stacks.clone(),
-            color_groups: self.color_group_manager.groups.clone(),
+            color_palettes: self.color_palette_manager.palettes.clone(),
+            color_palette_groups: self.color_palette_group_manager.groups.clone(),
         };
         if let Err(e) = setup::save_setup(&setup) {
             eprintln!("Failed to save setup: {}", e);
@@ -751,10 +750,10 @@ impl eframe::App for LightBeatApp {
                         ui.close_menu();
                     }
                     ui.separator();
-                    if ui.checkbox(&mut self.show_color_stacks, "Color Stacks").changed() {
+                    if ui.checkbox(&mut self.show_color_palettes, "Color Palettes").changed() {
                         ui.close_menu();
                     }
-                    if ui.checkbox(&mut self.show_color_groups, "Color Groups").changed() {
+                    if ui.checkbox(&mut self.show_color_palette_groups, "Color Palette Groups").changed() {
                         ui.close_menu();
                     }
                     ui.separator();
@@ -809,23 +808,23 @@ impl eframe::App for LightBeatApp {
                 });
         }
 
-        // Color Stacks window.
-        if self.show_color_stacks {
-            egui::Window::new("Color Stacks")
-                .open(&mut self.show_color_stacks)
+        // Color Palettes window.
+        if self.show_color_palettes {
+            egui::Window::new("Color Palettes")
+                .open(&mut self.show_color_palettes)
                 .default_size([300.0, 400.0])
                 .show(ctx, |ui| {
-                    self.color_stack_manager.show(ui);
+                    self.color_palette_manager.show(ui);
                 });
         }
 
-        // Color Groups window.
-        if self.show_color_groups {
-            egui::Window::new("Color Groups")
-                .open(&mut self.show_color_groups)
+        // Color Palette Groups window.
+        if self.show_color_palette_groups {
+            egui::Window::new("Color Palette Groups")
+                .open(&mut self.show_color_palette_groups)
                 .default_size([350.0, 400.0])
                 .show(ctx, |ui| {
-                    self.color_group_manager.show(ui, &self.color_stack_manager.stacks);
+                    self.color_palette_group_manager.show(ui, &self.color_palette_manager.palettes);
                 });
         }
 

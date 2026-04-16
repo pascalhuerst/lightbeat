@@ -1,18 +1,18 @@
 use serde::{Deserialize, Serialize};
 use crate::color::Rgb;
 
-pub const STACK_SIZE: usize = 4;
-pub const SLOT_NAMES: [&str; STACK_SIZE] = ["Primary", "Secondary", "Third", "Fourth"];
+pub const PALETTE_SIZE: usize = 4;
+pub const SLOT_NAMES: [&str; PALETTE_SIZE] = ["Primary", "Secondary", "Third", "Fourth"];
 
-/// A fixed set of 4 named colors.
+/// A palette: a fixed set of 4 named colors.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ColorStack {
+pub struct ColorPalette {
     pub id: u32,
     pub name: String,
-    pub colors: [Rgb; STACK_SIZE],
+    pub colors: [Rgb; PALETTE_SIZE],
 }
 
-impl ColorStack {
+impl ColorPalette {
     pub fn new(id: u32, name: impl Into<String>) -> Self {
         Self {
             id,
@@ -27,20 +27,21 @@ impl ColorStack {
     }
 }
 
-/// A named collection of color stacks. A stack can appear in multiple groups.
+/// A named collection of palettes. A palette can appear in multiple groups.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ColorGroup {
+pub struct ColorPaletteGroup {
     pub id: u32,
     pub name: String,
-    pub stack_ids: Vec<u32>,
+    /// IDs of palettes belonging to this group.
+    pub palette_ids: Vec<u32>,
 }
 
-impl ColorGroup {
+impl ColorPaletteGroup {
     pub fn new(id: u32, name: impl Into<String>) -> Self {
         Self {
             id,
             name: name.into(),
-            stack_ids: Vec::new(),
+            palette_ids: Vec::new(),
         }
     }
 }

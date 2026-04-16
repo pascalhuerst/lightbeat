@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-use crate::objects::color_palette::{ColorStack, ColorGroup as PaletteColorGroup};
+use crate::objects::color_palette::{ColorPalette, ColorPaletteGroup};
 use crate::objects::fixture::Fixture;
 use crate::objects::group::Group;
 use crate::objects::object::Object;
@@ -24,10 +24,12 @@ pub struct SetupFile {
     pub interfaces: Vec<SavedInterface>,
     #[serde(default)]
     pub groups: Vec<Group>,
+    /// Color palettes (each palette is a set of 4 colors).
     #[serde(default)]
-    pub color_stacks: Vec<ColorStack>,
+    pub color_palettes: Vec<ColorPalette>,
+    /// Groups of palettes.
     #[serde(default)]
-    pub color_groups: Vec<PaletteColorGroup>,
+    pub color_palette_groups: Vec<ColorPaletteGroup>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]

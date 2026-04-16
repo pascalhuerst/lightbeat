@@ -1,30 +1,30 @@
 use super::easing::EasingCurve;
 use crate::engine::types::*;
 
-const MAX_CHANNELS: usize = 12; // ColorStack is the widest at 4×RGB
+const MAX_CHANNELS: usize = 12; // Palette is the widest at 4×RGB
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TransitionMode {
     Float,
     Color,
-    ColorStack,
+    Palette,
 }
 
 impl TransitionMode {
     pub fn label(&self) -> &'static str {
-        match self { Self::Float => "Float", Self::Color => "Color", Self::ColorStack => "Color Stack" }
+        match self { Self::Float => "Float", Self::Color => "Color", Self::Palette => "Palette" }
     }
     pub fn value_type(&self) -> PortType {
-        match self { Self::Float => PortType::Untyped, Self::Color => PortType::Color, Self::ColorStack => PortType::ColorStack }
+        match self { Self::Float => PortType::Untyped, Self::Color => PortType::Color, Self::Palette => PortType::Palette }
     }
     pub fn channels(&self) -> usize {
-        match self { Self::Float => 1, Self::Color => 3, Self::ColorStack => 12 }
+        match self { Self::Float => 1, Self::Color => 3, Self::Palette => 12 }
     }
     pub fn from_index(i: usize) -> Self {
-        match i { 1 => Self::Color, 2 => Self::ColorStack, _ => Self::Float }
+        match i { 1 => Self::Color, 2 => Self::Palette, _ => Self::Float }
     }
     pub fn to_index(&self) -> usize {
-        match self { Self::Float => 0, Self::Color => 1, Self::ColorStack => 2 }
+        match self { Self::Float => 0, Self::Color => 1, Self::Palette => 2 }
     }
 }
 
@@ -167,7 +167,7 @@ impl ProcessNode for TransitionProcessNode {
             ParamDef::Choice {
                 name: "Mode".into(),
                 value: self.mode.to_index(),
-                options: vec!["Float".into(), "Color".into(), "Color Stack".into()],
+                options: vec!["Float".into(), "Color".into(), "Palette".into()],
             },
             ParamDef::Choice {
                 name: "Curve".into(),

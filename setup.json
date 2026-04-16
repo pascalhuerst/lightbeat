@@ -378,7 +378,7 @@
       ]
     }
   ],
-  "color_stacks": [
+  "color_palettes": [
     {
       "id": 1,
       "name": "Sunset 1",
@@ -1420,11 +1420,11 @@
       ]
     }
   ],
-  "color_groups": [
+  "color_palette_groups": [
     {
       "id": 1,
       "name": "Warm Sunset",
-      "stack_ids": [
+      "palette_ids": [
         1,
         2,
         3,
@@ -1438,7 +1438,7 @@
     {
       "id": 2,
       "name": "Ocean Blues",
-      "stack_ids": [
+      "palette_ids": [
         9,
         10,
         11,
@@ -1452,7 +1452,7 @@
     {
       "id": 3,
       "name": "Neon Party",
-      "stack_ids": [
+      "palette_ids": [
         17,
         18,
         19,
@@ -1466,7 +1466,7 @@
     {
       "id": 4,
       "name": "Pastel Dream",
-      "stack_ids": [
+      "palette_ids": [
         25,
         26,
         27,
@@ -1480,7 +1480,7 @@
     {
       "id": 5,
       "name": "Dark Moody",
-      "stack_ids": [
+      "palette_ids": [
         33,
         34,
         35,

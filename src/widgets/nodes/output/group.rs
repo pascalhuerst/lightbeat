@@ -75,11 +75,11 @@ impl NodeWidget for GroupWidget {
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { "Group Output" }
     fn title(&self) -> &str { "Group Output" }
-    fn description(&self) -> &'static str { "Sends a palette and dimmer value to all fixtures in the selected groups." }
+    fn description(&self) -> &'static str { "Sends a palette (a set of 4 colors) and a dimmer value to all fixtures in the selected groups." }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> {
         vec![
-            UiPortDef::from_def(&PortDef::new("palette", PortType::ColorStack)),
+            UiPortDef::from_def(&PortDef::new("palette", PortType::Palette)),
             UiPortDef::from_def(&PortDef::new("dimmer", PortType::Untyped)),
         ]
     }

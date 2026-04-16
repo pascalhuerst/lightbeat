@@ -19,7 +19,7 @@ fn show_color_swatch(ui: &mut Ui, rgb: [f32; 3]) {
     painter.rect_filled(resp.rect, 2.0, color);
 }
 
-fn show_stack_swatches(ui: &mut Ui, channels: &[f32]) {
+fn show_palette_swatches(ui: &mut Ui, channels: &[f32]) {
     for i in 0..4 {
         let base = i * 3;
         let r = channels.get(base).copied().unwrap_or(0.0).clamp(0.0, 1.0);
@@ -36,7 +36,7 @@ fn show_stack_swatches(ui: &mut Ui, channels: &[f32]) {
 }
 
 fn make_port_defs(mode: ColorMode, is_component_side: bool) -> Vec<PortDef> {
-    if mode.is_stack() {
+    if mode.is_palette() {
         mode.channel_names().iter().map(|n| PortDef::new(*n, PortType::Color)).collect()
     } else if is_component_side {
         mode.channel_names().iter().map(|n| PortDef::new(*n, PortType::Untyped)).collect()
@@ -65,21 +65,21 @@ impl NodeWidget for ColorMergeWidget {
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { "Color Merge" }
     fn title(&self) -> &str { "Color Merge" }
-    fn description(&self) -> &'static str { "Combines components into a color in RGB, HSV, RGBW, CMY, or Stack mode." }
+    fn description(&self) -> &'static str { "Combines components into a color in RGB, HSV, RGBW, CMY, or Palette mode. Palette mode merges 4 colors into a single palette (4-color set)." }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> {
         make_port_defs(self.mode, true).iter().map(UiPortDef::from_def).collect()
     }
     fn ui_outputs(&self) -> Vec<UiPortDef> {
-        if self.mode.is_stack() {
-            vec![UiPortDef::from_def(&PortDef::new("palette", PortType::ColorStack))]
+        if self.mode.is_palette() {
+            vec![UiPortDef::from_def(&PortDef::new("palette", PortType::Palette))]
         } else {
             vec![UiPortDef::from_def(&PortDef::new("color", PortType::Color))]
         }
     }
 
     fn min_width(&self) -> f32 { 100.0 }
-    fn min_content_height(&self) -> f32 { if self.mode.is_stack() { 40.0 } else { 25.0 } }
+    fn min_content_height(&self) -> f32 { if self.mode.is_palette() { 40.0 } else { 25.0 } }
     fn shared_state(&self) -> &SharedState { &self.shared }
 
     fn show_content(&mut self, ui: &mut Ui, _zoom: f32) {
@@ -90,13 +90,13 @@ impl NodeWidget for ColorMergeWidget {
         } else {
             (self.mode, [0.0; 3])
         };
-        let stack_channels = if mode.is_stack() { shared.outputs.clone() } else { vec![] };
+        let palette_channels = if mode.is_palette() { shared.outputs.clone() } else { vec![] };
         drop(shared);
 
         if mode != self.mode { self.mode = mode; }
 
-        if mode.is_stack() {
-            show_stack_swatches(ui, &stack_channels);
+        if mode.is_palette() {
+            show_palette_swatches(ui, &palette_channels);
         } else {
             show_color_swatch(ui, rgb);
         }
@@ -125,11 +125,11 @@ impl NodeWidget for ColorSplitWidget {
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { "Color Split" }
     fn title(&self) -> &str { "Color Split" }
-    fn description(&self) -> &'static str { "Splits a color into components in RGB, HSV, RGBW, CMY, or Stack mode." }
+    fn description(&self) -> &'static str { "Splits a color into components in RGB, HSV, RGBW, CMY, or Palette mode. Palette mode splits a palette (4-color set) into 4 individual colors." }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> {
-        if self.mode.is_stack() {
-            vec![UiPortDef::from_def(&PortDef::new("palette", PortType::ColorStack))]
+        if self.mode.is_palette() {
+            vec![UiPortDef::from_def(&PortDef::new("palette", PortType::Palette))]
         } else {
             vec![UiPortDef::from_def(&PortDef::new("color", PortType::Color))]
         }
@@ -139,7 +139,7 @@ impl NodeWidget for ColorSplitWidget {
     }
 
     fn min_width(&self) -> f32 { 100.0 }
-    fn min_content_height(&self) -> f32 { if self.mode.is_stack() { 40.0 } else { 25.0 } }
+    fn min_content_height(&self) -> f32 { if self.mode.is_palette() { 40.0 } else { 25.0 } }
     fn shared_state(&self) -> &SharedState { &self.shared }
 
     fn show_content(&mut self, ui: &mut Ui, _zoom: f32) {
@@ -150,13 +150,13 @@ impl NodeWidget for ColorSplitWidget {
         } else {
             (self.mode, [0.0; 3])
         };
-        let stack_channels = if mode.is_stack() { shared.inputs.clone() } else { vec![] };
+        let palette_channels = if mode.is_palette() { shared.inputs.clone() } else { vec![] };
         drop(shared);
 
         if mode != self.mode { self.mode = mode; }
 
-        if mode.is_stack() {
-            show_stack_swatches(ui, &stack_channels);
+        if mode.is_palette() {
+            show_palette_swatches(ui, &palette_channels);
         } else {
             show_color_swatch(ui, rgb);
         }

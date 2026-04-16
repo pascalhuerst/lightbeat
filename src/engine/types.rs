@@ -40,8 +40,8 @@ pub enum PortType {
     Color,
     /// Pan/Tilt position (2 floats: pan, tilt in 0..1). Green-blue.
     Position,
-    /// A stack of 4 colors (12 floats: 4 × RGB). Warm white.
-    ColorStack,
+    /// A palette: a set of 4 colors (12 floats: 4 × RGB). Warm white.
+    Palette,
 }
 
 impl PortType {
@@ -53,7 +53,7 @@ impl PortType {
             PortType::Any => (-1.0, 1.0),
             PortType::Color => (0.0, 1.0),
             PortType::Position => (0.0, 1.0),
-            PortType::ColorStack => (0.0, 1.0),
+            PortType::Palette => (0.0, 1.0),
         }
     }
 
@@ -62,7 +62,7 @@ impl PortType {
         match self {
             PortType::Color => 3,      // R, G, B
             PortType::Position => 2,   // Pan, Tilt
-            PortType::ColorStack => 12, // 4 × RGB
+            PortType::Palette => 12,   // 4 × RGB
             _ => 1,
         }
     }

@@ -17,7 +17,7 @@ pub struct GroupProcessNode {
     /// Object IDs collected from all targeted groups.
     object_ids: Vec<u32>,
     object_store: SharedObjectStore,
-    /// ColorStack input: 12 floats (4 × RGB) + 1 dimmer.
+    /// Palette input: 12 floats (4 × RGB) + 1 dimmer.
     input_values: [f32; 13],
     inputs: Vec<PortDef>,
     /// Group names for display.
@@ -33,7 +33,7 @@ impl GroupProcessNode {
             object_store,
             input_values: [0.0; 13],
             inputs: vec![
-                PortDef::new("palette", PortType::ColorStack),
+                PortDef::new("palette", PortType::Palette),
                 PortDef::new("dimmer", PortType::Untyped),
             ],
             group_names: Vec::new(),
@@ -67,7 +67,7 @@ impl ProcessNode for GroupProcessNode {
 
         // For now, apply the primary color (first in palette) to all fixtures.
         // Palette layout: [R0,G0,B0, R1,G1,B1, R2,G2,B2, R3,G3,B3]
-        // Dimmer is at channel 12 (after the 12-channel ColorStack).
+        // Dimmer is at channel 12 (after the 12-channel palette).
         let r = self.input_values[0];
         let g = self.input_values[1];
         let b = self.input_values[2];

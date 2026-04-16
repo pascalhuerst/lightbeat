@@ -5,20 +5,20 @@ use egui::{self, Color32, Sense, Ui, Vec2};
 
 use crate::engine::nodes::math::palette_select::PaletteSelectDisplay;
 use crate::engine::types::*;
-use crate::objects::color_palette::{ColorGroup, ColorStack, STACK_SIZE, SLOT_NAMES};
+use crate::objects::color_palette::{ColorPalette, ColorPaletteGroup, PALETTE_SIZE};
 use crate::widgets::nodes::node::NodeWidget;
 use crate::widgets::nodes::types::UiPortDef;
 
 pub struct PaletteContext {
-    pub stacks: Vec<ColorStack>,
-    pub groups: Vec<ColorGroup>,
+    pub palettes: Vec<ColorPalette>,
+    pub groups: Vec<ColorPaletteGroup>,
 }
 
 pub type SharedPaletteContext = Arc<Mutex<PaletteContext>>;
 
 pub fn new_shared_palette_context() -> SharedPaletteContext {
     Arc::new(Mutex::new(PaletteContext {
-        stacks: Vec::new(),
+        palettes: Vec::new(),
         groups: Vec::new(),
     }))
 }
@@ -40,12 +40,12 @@ impl PaletteSelectWidget {
         let ctx = self.palette_ctx.lock().unwrap();
         let groups_data: Vec<serde_json::Value> = self.selected_group_ids.iter().filter_map(|gid| {
             let group = ctx.groups.iter().find(|g| g.id == *gid)?;
-            let stacks: Vec<&ColorStack> = group.stack_ids.iter()
-                .filter_map(|sid| ctx.stacks.iter().find(|s| s.id == *sid))
+            let palettes: Vec<&ColorPalette> = group.palette_ids.iter()
+                .filter_map(|pid| ctx.palettes.iter().find(|s| s.id == *pid))
                 .collect();
             Some(serde_json::json!({
                 "name": group.name,
-                "stacks": stacks,
+                "palettes": palettes,
             }))
         }).collect();
         drop(ctx);
@@ -62,16 +62,16 @@ impl NodeWidget for PaletteSelectWidget {
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { "Palette Select" }
     fn title(&self) -> &str { "Palette Select" }
-    fn description(&self) -> &'static str { "Picks a color stack from configured palette groups by group and stack index." }
+    fn description(&self) -> &'static str { "Picks a palette (a set of 4 colors) from a palette group, indexed by group and palette index." }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> {
         vec![
             UiPortDef::from_def(&PortDef::new("group", PortType::Untyped)),
-            UiPortDef::from_def(&PortDef::new("stack", PortType::Untyped)),
+            UiPortDef::from_def(&PortDef::new("palette", PortType::Untyped)),
         ]
     }
     fn ui_outputs(&self) -> Vec<UiPortDef> {
-        vec![UiPortDef::from_def(&PortDef::new("palette", PortType::ColorStack))]
+        vec![UiPortDef::from_def(&PortDef::new("palette", PortType::Palette))]
     }
 
     fn min_width(&self) -> f32 { 140.0 }
@@ -84,13 +84,13 @@ impl NodeWidget for PaletteSelectWidget {
         let display = shared.display.as_ref()
             .and_then(|d| d.downcast_ref::<PaletteSelectDisplay>());
 
-        let (colors, group_idx, stack_idx, stack_count, group_count, restored_ids) = if let Some(d) = display {
+        let (colors, group_idx, palette_idx, palette_count, group_count, restored_ids) = if let Some(d) = display {
             let ids = if self.selected_group_ids.is_empty() && !d.group_ids.is_empty() {
                 Some(d.group_ids.clone())
             } else { None };
-            (d.current_colors, d.current_group_index, d.current_stack_index, d.stack_count, d.group_names.len(), ids)
+            (d.current_colors, d.current_group_index, d.current_palette_index, d.palette_count, d.group_names.len(), ids)
         } else {
-            ([crate::color::Rgb::BLACK; STACK_SIZE], 0, 0, 0, 0, None)
+            ([crate::color::Rgb::BLACK; PALETTE_SIZE], 0, 0, 0, 0, None)
         };
         drop(shared);
 
@@ -106,8 +106,8 @@ impl NodeWidget for PaletteSelectWidget {
 
         // Current colors — single painter, no layout spacing issues.
         let w = ui.available_width();
-        let swatch_h = (w / STACK_SIZE as f32 * 0.6).clamp(4.0, 20.0);
-        let swatch_w = w / STACK_SIZE as f32;
+        let swatch_h = (w / PALETTE_SIZE as f32 * 0.6).clamp(4.0, 20.0);
+        let swatch_w = w / PALETTE_SIZE as f32;
         let (resp, painter) = ui.allocate_painter(Vec2::new(w, swatch_h), Sense::hover());
         for (i, c) in colors.iter().enumerate() {
             let color = Color32::from_rgb(
@@ -122,7 +122,7 @@ impl NodeWidget for PaletteSelectWidget {
             painter.rect_filled(rect, 1.0, color);
         }
         ui.colored_label(Color32::from_gray(120),
-            format!("G:{}/{} S:{}/{}", group_idx + 1, group_count, stack_idx + 1, stack_count));
+            format!("G:{}/{} P:{}/{}", group_idx + 1, group_count, palette_idx + 1, palette_count));
     }
 
     fn show_inspector(&mut self, ui: &mut Ui) {
@@ -132,7 +132,7 @@ impl NodeWidget for PaletteSelectWidget {
             .collect();
         drop(ctx);
 
-        ui.label(egui::RichText::new("Color Groups (ordered)").strong());
+        ui.label(egui::RichText::new("Palette Groups (ordered)").strong());
 
         // Show selected groups with remove + move buttons.
         let mut changed = false;

@@ -1,8 +1,7 @@
 use crate::engine::types::*;
-use crate::objects::color_palette::STACK_SIZE;
 
 pub struct ColorDisplayData {
-    pub mode: usize, // 0=Color, 1=ColorStack
+    pub mode: usize, // 0=Color, 1=Palette
     pub channels: [f32; 12], // up to 4×RGB
 }
 
@@ -25,7 +24,7 @@ impl ColorDisplayProcessNode {
 
     fn rebuild_inputs(&mut self) {
         self.inputs = match self.mode {
-            1 => vec![PortDef::new("palette", PortType::ColorStack)],
+            1 => vec![PortDef::new("palette", PortType::Palette)],
             _ => vec![PortDef::new("color", PortType::Color)],
         };
     }
@@ -51,7 +50,7 @@ impl ProcessNode for ColorDisplayProcessNode {
         vec![ParamDef::Choice {
             name: "Mode".into(),
             value: self.mode,
-            options: vec!["Color".into(), "Color Stack".into()],
+            options: vec!["Color".into(), "Palette".into()],
         }]
     }
 
