@@ -22,8 +22,8 @@
       "type_name": "Subgraph",
       "id": 74,
       "pos": [
-        -145.06516,
-        161.52698
+        -325.0562,
+        194.23766
       ],
       "params": [],
       "data": {
@@ -665,8 +665,8 @@
       "type_name": "Group Output",
       "id": 75,
       "pos": [
-        156.42592,
-        119.14699
+        432.62936,
+        25.149544
       ],
       "params": [],
       "data": {
@@ -694,8 +694,8 @@
       "type_name": "Internal Clock",
       "id": 76,
       "pos": [
-        -348.59283,
-        114.28668
+        -528.58386,
+        146.99734
       ],
       "params": [
         {
@@ -708,8 +708,8 @@
       "type_name": "Button",
       "id": 77,
       "pos": [
-        -515.3317,
-        106.35366
+        -711.4307,
+        31.33544
       ],
       "params": [],
       "data": {
@@ -722,8 +722,8 @@
       "type_name": "Scope",
       "id": 80,
       "pos": [
-        68.528564,
-        -286.96628
+        333.0129,
+        -243.3018
       ],
       "params": [
         {
@@ -748,8 +748,8 @@
       "type_name": "LFO",
       "id": 81,
       "pos": [
-        -345.31982,
-        -89.02346
+        -85.45483,
+        192.85896
       ],
       "params": [
         {
@@ -763,6 +763,71 @@
         {
           "index": 2,
           "value": true
+        }
+      ]
+    },
+    {
+      "type_name": "Color Split",
+      "id": 84,
+      "pos": [
+        -40.43321,
+        299.0074
+      ],
+      "params": [
+        {
+          "index": 0,
+          "value": 4
+        }
+      ]
+    },
+    {
+      "type_name": "Color Merge",
+      "id": 85,
+      "pos": [
+        504.85052,
+        271.44217
+      ],
+      "params": [
+        {
+          "index": 0,
+          "value": 4
+        }
+      ]
+    },
+    {
+      "type_name": "Color Split",
+      "id": 86,
+      "pos": [
+        81.75457,
+        173.35852
+      ],
+      "params": [
+        {
+          "index": 0,
+          "value": 1
+        }
+      ]
+    },
+    {
+      "type_name": "Mul",
+      "id": 87,
+      "pos": [
+        219.22551,
+        240.48418
+      ],
+      "params": []
+    },
+    {
+      "type_name": "Color Merge",
+      "id": 88,
+      "pos": [
+        348.04184,
+        138.06189
+      ],
+      "params": [
+        {
+          "index": 0,
+          "value": 1
         }
       ]
     }
@@ -808,6 +873,72 @@
       "from_node": 81,
       "from_port": 1,
       "to_node": 80,
+      "to_port": 1
+    },
+    {
+      "from_node": 74,
+      "from_port": 0,
+      "to_node": 84,
+      "to_port": 0
+    },
+    {
+      "from_node": 84,
+      "from_port": 3,
+      "to_node": 85,
+      "to_port": 3
+    },
+    {
+      "from_node": 84,
+      "from_port": 2,
+      "to_node": 85,
+      "to_port": 2
+    },
+    {
+      "from_node": 84,
+      "from_port": 1,
+      "to_node": 85,
+      "to_port": 1
+    },
+    {
+      "from_node": 84,
+      "from_port": 0,
+      "to_node": 86,
+      "to_port": 0
+    },
+    {
+      "from_node": 86,
+      "from_port": 0,
+      "to_node": 88,
+      "to_port": 0
+    },
+    {
+      "from_node": 86,
+      "from_port": 1,
+      "to_node": 88,
+      "to_port": 1
+    },
+    {
+      "from_node": 87,
+      "from_port": 0,
+      "to_node": 88,
+      "to_port": 2
+    },
+    {
+      "from_node": 88,
+      "from_port": 0,
+      "to_node": 85,
+      "to_port": 0
+    },
+    {
+      "from_node": 86,
+      "from_port": 2,
+      "to_node": 87,
+      "to_port": 0
+    },
+    {
+      "from_node": 81,
+      "from_port": 0,
+      "to_node": 87,
       "to_port": 1
     }
   ]

@@ -35,7 +35,6 @@ use engine::nodes::math::logic_gate::{LogicOp, LogicGateProcessNode};
 use engine::nodes::math::math_op::{MathOp, MathProcessNode};
 use engine::nodes::math::palette_select::PaletteSelectProcessNode;
 use engine::nodes::meta::subgraph::SubgraphProcessNode;
-use engine::nodes::math::palette_ops::{PaletteSplitProcessNode, PaletteMergeProcessNode};
 use engine::nodes::math::scaler::ScalerProcessNode;
 use engine::nodes::math::oscillator::{OscFunc, OscillatorProcessNode};
 use engine::nodes::math::position_ops::{PositionMergeProcessNode, PositionSplitProcessNode};
@@ -64,7 +63,6 @@ use widgets::nodes::math::logic_gate::LogicGateWidget;
 use widgets::nodes::math::math_op::MathWidget;
 use widgets::nodes::math::palette_select::{PaletteSelectWidget, new_shared_palette_context};
 use widgets::nodes::meta::subgraph::SubgraphWidget;
-use widgets::nodes::math::palette_ops::{PaletteSplitWidget, PaletteMergeWidget};
 use widgets::nodes::math::scaler::ScalerWidget;
 use widgets::nodes::math::oscillator::OscillatorWidget;
 use widgets::nodes::math::position_ops::{PositionMergeWidget, PositionSplitWidget};
@@ -246,10 +244,10 @@ impl LightBeatApp {
         self.graph.register_node("Math", "Cos", |id| {
             Box::new(OscillatorWidget::new(id, OscFunc::Cos, new_shared_state(2, 1)))
         });
-        self.graph.register_node("Math", "Color Merge", |id| {
+        self.graph.register_node("Color", "Color Merge", |id| {
             Box::new(ColorMergeWidget::new(id, new_shared_state(12, 12))) // Palette mode: 4×Color in, Palette out
         });
-        self.graph.register_node("Math", "Color Split", |id| {
+        self.graph.register_node("Color", "Color Split", |id| {
             Box::new(ColorSplitWidget::new(id, new_shared_state(12, 12))) // Palette mode: Palette in, 4×Color out
         });
         self.graph.register_node("Math", "Lookup", |id| {
@@ -312,7 +310,7 @@ impl LightBeatApp {
         self.graph.register_node("Display", "Scope", |id| {
             Box::new(ScopeWidget::new(id, new_shared_state(2, 0)))
         });
-        self.graph.register_node("Display", "Color Display", |id| {
+        self.graph.register_node("Color", "Color Display", |id| {
             Box::new(ColorDisplayWidget::new(id, new_shared_state(12, 0)))
         });
         self.graph.register_node("Display", "Value Display", |id| {
@@ -324,17 +322,11 @@ impl LightBeatApp {
             Box::new(ScalerWidget::new(id, new_shared_state(1, 1)))
         });
 
-        // Palette
+        // Color (palette)
         let pctx = self.palette_ctx.clone();
-        self.graph.register_node("Math", "Palette Select", move |id| {
+        self.graph.register_node("Color", "Palette Select", move |id| {
             // 2 inputs, Palette output = 12 channels
             Box::new(PaletteSelectWidget::new(id, new_shared_state(2, 12), pctx.clone()))
-        });
-        self.graph.register_node("Math", "Palette Split", |id| {
-            Box::new(PaletteSplitWidget::new(id, new_shared_state(12, 12)))
-        });
-        self.graph.register_node("Math", "Palette Merge", |id| {
-            Box::new(PaletteMergeWidget::new(id, new_shared_state(12, 12)))
         });
 
         // Meta
@@ -423,8 +415,6 @@ impl LightBeatApp {
                 "Color Display" => Some(Box::new(ColorDisplayProcessNode::new(id))),
                 "Value Display" => Some(Box::new(ValueDisplayProcessNode::new(id))),
                 "Palette Select" => Some(Box::new(PaletteSelectProcessNode::new(id))),
-                "Palette Split" => Some(Box::new(PaletteSplitProcessNode::new(id))),
-                "Palette Merge" => Some(Box::new(PaletteMergeProcessNode::new(id))),
                 "Scaler" => Some(Box::new(ScalerProcessNode::new(id))),
                 ">=" | "<=" | "==" | "!=" => {
                     let op = match type_name {

@@ -10,4 +10,3 @@ pub mod oscillator;
 pub mod palette_select;
 pub mod position_ops;
 pub mod scaler;
-pub mod palette_ops;
