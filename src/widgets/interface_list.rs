@@ -1,4 +1,5 @@
 use egui::{self, Color32, Ui};
+use egui_extras::{Column, TableBuilder};
 
 use crate::objects::output::OutputConfig;
 
@@ -58,70 +59,62 @@ impl InterfaceManager {
 
         if self.interfaces.is_empty() {
             ui.colored_label(Color32::from_gray(120), "No interfaces configured.");
-        }
+        } else {
+            let mut remove_id = None;
+            let mut dirty = false;
 
-        let mut remove_id = None;
-
-        egui::ScrollArea::vertical().show(ui, |ui| {
-            for entry in &mut self.interfaces {
-                ui.push_id(entry.id, |ui| {
-                    egui::CollapsingHeader::new(
-                        egui::RichText::new(&entry.name).strong(),
-                    )
-                    .id_salt(entry.id)
-                    .default_open(true)
-                    .show(ui, |ui| {
-                        // Name
-                        ui.horizontal(|ui| {
-                            ui.label("Name:");
-                            ui.text_edit_singleline(&mut entry.name);
+            // Name and Config split the leftover space; everything else auto-sizes.
+            TableBuilder::new(ui)
+                .striped(true)
+                .column(Column::remainder().at_least(140.0).clip(true)) // Name
+                .column(Column::exact(30.0))                              // On
+                .column(Column::auto())                                   // Kind
+                .column(Column::remainder().at_least(180.0).clip(true)) // Config
+                .column(Column::exact(24.0))                              // delete
+                .header(20.0, |mut header| {
+                    header.col(|ui| { ui.strong("Name"); });
+                    header.col(|ui| { ui.strong("On"); });
+                    header.col(|ui| { ui.strong("Kind"); });
+                    header.col(|ui| { ui.strong("Config"); });
+                    header.col(|_ui| {});
+                })
+                .body(|mut body| {
+                    for entry in &mut self.interfaces {
+                        body.row(22.0, |mut row| {
+                            row.col(|ui| {
+                                ui.add_sized(
+                                    [ui.available_width(), 20.0],
+                                    egui::TextEdit::singleline(&mut entry.name)
+                                        .id_salt(("name", entry.id)),
+                                );
+                            });
+                            row.col(|ui| {
+                                if ui.checkbox(&mut entry.enabled, "").changed() {
+                                    dirty = true;
+                                }
+                            });
+                            row.col(|ui| {
+                                ui.label(kind_label(&entry.config));
+                            });
+                            row.col(|ui| {
+                                show_config_editor(ui, entry.id, &mut entry.config);
+                            });
+                            row.col(|ui| {
+                                if ui.small_button(egui_phosphor::regular::X).clicked() {
+                                    remove_id = Some(entry.id);
+                                }
+                            });
                         });
-
-                        // Enabled
-                        if ui.checkbox(&mut entry.enabled, "Enabled").changed() {
-                            self.needs_sync = true;
-                        }
-
-                        // Config
-                        match &mut entry.config {
-                            OutputConfig::ArtNet { host, port } => {
-                                ui.label("Art-Net");
-                                ui.horizontal(|ui| {
-                                    ui.label("Host:");
-                                    ui.text_edit_singleline(host);
-                                });
-                                ui.horizontal(|ui| {
-                                    ui.label("Port:");
-                                    let mut p = *port as i32;
-                                    if ui.add(egui::DragValue::new(&mut p).range(1..=65535)).changed() {
-                                        *port = p as u16;
-                                    }
-                                });
-                            }
-                            OutputConfig::Sacn { source_name } => {
-                                ui.label("sACN (E1.31)");
-                                ui.horizontal(|ui| {
-                                    ui.label("Source:");
-                                    ui.text_edit_singleline(source_name);
-                                });
-                            }
-                            OutputConfig::None => {
-                                ui.colored_label(Color32::from_gray(120), "Preview only");
-                            }
-                        }
-
-                        ui.add_space(4.0);
-                        if ui.small_button("Delete").clicked() {
-                            remove_id = Some(entry.id);
-                        }
-                    });
+                    }
                 });
-            }
-        });
 
-        if let Some(id) = remove_id {
-            self.interfaces.retain(|e| e.id != id);
-            self.needs_sync = true;
+            if let Some(id) = remove_id {
+                self.interfaces.retain(|e| e.id != id);
+                self.needs_sync = true;
+            }
+            if dirty {
+                self.needs_sync = true;
+            }
         }
 
         ui.separator();
@@ -154,5 +147,42 @@ impl InterfaceManager {
                 self.needs_sync = true;
             }
         });
+    }
+}
+
+fn kind_label(cfg: &OutputConfig) -> &'static str {
+    match cfg {
+        OutputConfig::ArtNet { .. } => "Art-Net",
+        OutputConfig::Sacn { .. } => "sACN",
+        OutputConfig::None => "Preview",
+    }
+}
+
+fn show_config_editor(ui: &mut Ui, id: u32, cfg: &mut OutputConfig) {
+    match cfg {
+        OutputConfig::ArtNet { host, port } => {
+            ui.horizontal(|ui| {
+                let mut p = *port as i32;
+                let port_w = 70.0;
+                let host_w = (ui.available_width() - port_w - 20.0).max(60.0);
+                ui.add_sized(
+                    [host_w, 20.0],
+                    egui::TextEdit::singleline(host).id_salt(("host", id)),
+                );
+                ui.label(":");
+                if ui.add(egui::DragValue::new(&mut p).range(1..=65535)).changed() {
+                    *port = p as u16;
+                }
+            });
+        }
+        OutputConfig::Sacn { source_name } => {
+            ui.add_sized(
+                [ui.available_width(), 20.0],
+                egui::TextEdit::singleline(source_name).id_salt(("src", id)),
+            );
+        }
+        OutputConfig::None => {
+            ui.colored_label(Color32::from_gray(120), "preview only");
+        }
     }
 }

@@ -9,15 +9,23 @@ use serde::{Deserialize, Serialize};
 
 use midir::{MidiInput, MidiInputConnection, MidiOutput, MidiOutputConnection};
 
-use super::{InputSource, SharedControllers};
+use super::{InputSource, MidiLogEntry, SharedControllers, MIDI_LOG_CAPACITY};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum MidiSource {
     /// Continuous controller. Channel 1..=16, controller 0..=127.
     Cc { channel: u8, controller: u8 },
+    /// Relative-1 continuous controller (Push 1 / BCF "Relative 1"). Incoming
+    /// values decode to a signed delta: 1..=63 = +delta, 65..=127 = -(128−v),
+    /// 0 ignored. The MIDI handler accumulates into `values[i]` in 0..1.
+    CcRelative { channel: u8, controller: u8 },
     /// Note (binary). Channel 1..=16, note 0..=127. Velocity is ignored for
     /// matching; we only care about on/off transitions.
     Note { channel: u8, note: u8 },
+    /// Pad-style note with velocity preserved as a 0..1 continuous value on
+    /// press (release goes to 0). Matches Push 1 / Push 2 pad behaviour where
+    /// the velocity encodes impact strength rather than being a binary gate.
+    NoteVelocity { channel: u8, note: u8 },
     /// 14-bit pitch bend, normalized to 0..1 with 0.5 = center.
     PitchBend { channel: u8 },
 }
@@ -27,10 +35,22 @@ impl MidiSource {
         matches!(self, MidiSource::Note { .. })
     }
 
+    pub fn channel(&self) -> u8 {
+        match self {
+            MidiSource::Cc { channel, .. }
+            | MidiSource::CcRelative { channel, .. }
+            | MidiSource::Note { channel, .. }
+            | MidiSource::NoteVelocity { channel, .. }
+            | MidiSource::PitchBend { channel } => *channel,
+        }
+    }
+
     pub fn label(&self) -> String {
         match self {
             MidiSource::Cc { channel, controller } => format!("CC ch{} #{}", channel, controller),
+            MidiSource::CcRelative { channel, controller } => format!("CC~ ch{} #{}", channel, controller),
             MidiSource::Note { channel, note } => format!("Note ch{} #{}", channel, note),
+            MidiSource::NoteVelocity { channel, note } => format!("NoteV ch{} #{}", channel, note),
             MidiSource::PitchBend { channel } => format!("Pitch ch{}", channel),
         }
     }
@@ -142,14 +162,27 @@ impl MidiSession {
 /// (or push onto the learn buffer if the controller is in learn mode).
 fn handle_midi_message(controller_id: u32, msg: &[u8], shared: &SharedControllers) {
     let parsed = parse_midi(msg);
-    let (source, value) = match parsed {
-        Some(x) => x,
-        None => return,
-    };
 
     let mut state = shared.lock().unwrap();
     let c = match state.iter_mut().find(|c| c.id == controller_id) {
         Some(c) => c,
+        None => return,
+    };
+
+    // Always log — debug panel reads this; cost is negligible.
+    let log_entry = MidiLogEntry {
+        raw: msg.to_vec(),
+        decoded: parsed.as_ref().map(|(s, v)| (InputSource::Midi(s.clone()), *v)),
+        matched_input_idx: None, // filled in below once we know the match
+        instant: std::time::Instant::now(),
+    };
+    c.midi_log.push_back(log_entry);
+    while c.midi_log.len() > MIDI_LOG_CAPACITY {
+        c.midi_log.pop_front();
+    }
+
+    let (source, value) = match parsed {
+        Some(x) => x,
         None => return,
     };
 
@@ -161,18 +194,82 @@ fn handle_midi_message(controller_id: u32, msg: &[u8], shared: &SharedController
         return;
     }
 
-    if let Some(idx) = c.inputs.iter().position(|i| match &i.source {
-        InputSource::Midi(s) => s == &source,
-    }) {
-        if let Some(slot) = c.values.get_mut(idx) {
-            *slot = value;
+    // Lookup allows a Cc message to match either `Cc` or `CcRelative` with
+    // the same channel/controller — the learned source decides semantics.
+    let idx = c.inputs.iter().position(|i| match (&source, &i.source) {
+        (MidiSource::Cc { channel: sc, controller: scc },
+         InputSource::Midi(MidiSource::Cc { channel, controller })) =>
+            sc == channel && scc == controller,
+        (MidiSource::Cc { channel: sc, controller: scc },
+         InputSource::Midi(MidiSource::CcRelative { channel, controller })) =>
+            sc == channel && scc == controller,
+        (MidiSource::Note { channel: sc, note: sn },
+         InputSource::Midi(MidiSource::Note { channel, note })) =>
+            sc == channel && sn == note,
+        (MidiSource::Note { channel: sc, note: sn },
+         InputSource::Midi(MidiSource::NoteVelocity { channel, note })) =>
+            sc == channel && sn == note,
+        (s, InputSource::Midi(t)) => s == t,
+    });
+    let Some(idx) = idx else { return };
+
+    let (raw_cc_val, raw_note_vel) = match &source {
+        MidiSource::Cc { .. } | MidiSource::CcRelative { .. } => {
+            (msg.get(2).copied().unwrap_or(0), 0)
         }
-        // Mirror into out_values so parameter-feedback-aware hardware stays
-        // in sync even without the graph pushing a value — avoids fighting
-        // the user when they first touch a control.
+        MidiSource::Note { .. } | MidiSource::NoteVelocity { .. } => {
+            (0, msg.get(2).copied().unwrap_or(0))
+        }
+        _ => (0, 0),
+    };
+
+    // Compute stored value per the *learned* source type.
+    let stored = match &c.inputs[idx].source {
+        InputSource::Midi(MidiSource::CcRelative { .. }) => {
+            // Relative-1: 1..63 positive, 65..127 negative, 0 ignored.
+            let delta = match raw_cc_val {
+                0 => 0i32,
+                v @ 1..=63 => v as i32,
+                v => v as i32 - 128,
+            };
+            // Normalize deltas so ~24 clicks ≈ 1.0 — Push/BCF encoders both
+            // feel like this at the default detent density.
+            let step = 1.0 / 24.0;
+            let cur = c.values.get(idx).copied().unwrap_or(0.0);
+            (cur + delta as f32 * step).clamp(0.0, 1.0)
+        }
+        InputSource::Midi(MidiSource::NoteVelocity { .. }) => {
+            // Note On with vel 0 = release, else velocity 0..1.
+            if raw_note_vel == 0 { 0.0 } else { raw_note_vel as f32 / 127.0 }
+        }
+        _ => value,
+    };
+
+    if let Some(slot) = c.values.get_mut(idx) {
+        *slot = stored;
+    }
+    // Mirror into out_values so hardware stays in sync. Skip for relative
+    // encoders — echoing the delta back would spin the value endlessly.
+    // Also skip when the debug panel has taken over — the user is driving
+    // the hardware from the UI and doesn't want device input to stomp it.
+    let mirror = !matches!(c.inputs[idx].source, InputSource::Midi(MidiSource::CcRelative { .. }))
+        && !c.debug_feedback_override;
+    if mirror {
         if let Some(slot) = c.out_values.get_mut(idx) {
-            *slot = value;
+            *slot = stored;
         }
+    }
+
+    // Backfill the matched index on the most recent log entry so the debug
+    // panel can show "→ Fader 3" next to the raw bytes.
+    if let Some(last) = c.midi_log.back_mut() {
+        last.matched_input_idx = Some(idx);
+    }
+
+    // Record for the "jump to touched row" highlight.
+    if c.debug_highlight_on_touch {
+        c.last_match_idx = Some(idx);
+        c.last_match_instant = Some(std::time::Instant::now());
     }
 }
 
@@ -264,6 +361,8 @@ fn run_feedback_worker(
 }
 
 /// Encode a 0..1 value into a MIDI message matching the source kind.
+/// Returns None when the source kind doesn't accept feedback (e.g. relative
+/// encoders — the host can't push a value back that way).
 fn encode_midi(source: Option<&InputSource>, value: f32) -> Option<[u8; 3]> {
     let src = source?;
     let v = value.clamp(0.0, 1.0);
@@ -273,11 +372,18 @@ fn encode_midi(source: Option<&InputSource>, value: f32) -> Option<[u8; 3]> {
             let data = (v * 127.0).round() as u8;
             Some([status, *controller & 0x7F, data & 0x7F])
         }
+        InputSource::Midi(MidiSource::CcRelative { .. }) => None,
         InputSource::Midi(MidiSource::Note { channel, note }) => {
             let status = 0x90 | ((*channel - 1) & 0x0F);
-            // For button LEDs: velocity 127 = on, 0 = off.
             let vel = if v >= 0.5 { 127 } else { 0 };
             Some([status, *note & 0x7F, vel])
+        }
+        InputSource::Midi(MidiSource::NoteVelocity { channel, note }) => {
+            // Used by Push pads for LED color lighting — velocity is a 0..127
+            // palette index / brightness, pass through scaled.
+            let status = 0x90 | ((*channel - 1) & 0x0F);
+            let vel = (v * 127.0).round() as u8;
+            Some([status, *note & 0x7F, vel & 0x7F])
         }
         InputSource::Midi(MidiSource::PitchBend { channel }) => {
             let status = 0xE0 | ((*channel - 1) & 0x0F);

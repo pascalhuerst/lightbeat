@@ -144,8 +144,10 @@ impl ProcessNode for InputControllerProcessNode {
 
         // Forward pending graph → device values into shared out_values so
         // the MIDI feedback worker thread picks them up. Only when the
-        // controller actually supports feedback; otherwise writes are ignored.
-        if self.has_feedback {
+        // controller actually supports feedback AND the debug panel hasn't
+        // taken over manual control. Otherwise we'd stomp the test slider
+        // every tick.
+        if self.has_feedback && !c.debug_feedback_override {
             let copy_n = self.input_values.len().min(c.out_values.len());
             c.out_values[..copy_n].copy_from_slice(&self.input_values[..copy_n]);
         }

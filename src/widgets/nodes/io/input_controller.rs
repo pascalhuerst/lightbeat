@@ -129,9 +129,17 @@ impl NodeWidget for InputControllerWidget {
     }
 
     fn show_inspector(&mut self, ui: &mut Ui) {
+        // Push 1 is too complex (120+ controls, LEDs, relative encoders) to
+        // expose usefully through the generic per-input port layout. It has
+        // its own dedicated node; hide it from this picker so users don't
+        // bind it here by mistake.
         let controllers: Vec<(u32, String)> = {
+            use crate::input_controller::InputControllerKind;
             let state = self.controllers.lock().unwrap();
-            state.iter().map(|c| (c.id, c.name.clone())).collect()
+            state.iter()
+                .filter(|c| !matches!(c.kind, InputControllerKind::Push1 { .. }))
+                .map(|c| (c.id, c.name.clone()))
+                .collect()
         };
 
         ui.horizontal(|ui| {

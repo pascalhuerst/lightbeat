@@ -33,6 +33,7 @@ use engine::nodes::display::value_display::ValueDisplayProcessNode;
 use engine::nodes::io::audio_input::AudioInputProcessNode;
 use engine::nodes::io::clock::ClockProcessNode;
 use engine::nodes::io::input_controller::InputControllerProcessNode;
+use engine::nodes::io::push1::Push1ProcessNode;
 use engine::nodes::io::internal_clock::InternalClockProcessNode;
 use engine::nodes::ui::button::ButtonProcessNode;
 use engine::nodes::ui::button_group::ButtonGroupProcessNode;
@@ -73,6 +74,7 @@ use widgets::nodes::display::value_display::ValueDisplayWidget;
 use widgets::nodes::io::audio_input::AudioInputWidget;
 use widgets::nodes::io::clock::ClockWidget;
 use widgets::nodes::io::input_controller::InputControllerWidget;
+use widgets::nodes::io::push1::Push1Widget;
 use widgets::nodes::io::internal_clock::InternalClockWidget;
 use widgets::nodes::ui::button::ButtonWidget;
 use widgets::nodes::ui::button_group::ButtonGroupWidget;
@@ -278,9 +280,15 @@ impl LightBeatApp {
         let ic_shared = self.input_controllers.shared.clone();
         self.graph.register_node("IO", "Input Controller", move |id| {
             // Generous channel budget on both sides — the engine resizes its
-            // active port list as the bound controller's layout changes. 64
-            // covers BCF2000's 44 inputs + feedback outputs comfortably.
-            Box::new(InputControllerWidget::new(id, new_shared_state(64, 64), ic_shared.clone()))
+            // active port list as the bound controller's layout changes. 192
+            // covers generic MIDI and BCF2000 with headroom; Push 1 uses its
+            // own dedicated node.
+            Box::new(InputControllerWidget::new(id, new_shared_state(192, 192), ic_shared.clone()))
+        });
+        let ic_shared_push = self.input_controllers.shared.clone();
+        self.graph.register_node("IO", "Push 1", move |id| {
+            // 25 outputs, 21 inputs (see push1.rs). 32/32 gives headroom.
+            Box::new(Push1Widget::new(id, new_shared_state(32, 32), ic_shared_push.clone()))
         });
         let ai_shared = self.audio_inputs.shared.clone();
         self.graph.register_node("IO", "Audio Input", move |id| {
@@ -526,6 +534,9 @@ impl LightBeatApp {
                 }
                 "Internal Clock" => Some(Box::new(InternalClockProcessNode::new(id))),
                 "Input Controller" => Some(Box::new(InputControllerProcessNode::new(
+                    id, self.input_controllers.shared.clone(),
+                ))),
+                "Push 1" => Some(Box::new(Push1ProcessNode::new(
                     id, self.input_controllers.shared.clone(),
                 ))),
                 "Audio Input" => Some(Box::new(AudioInputProcessNode::new(

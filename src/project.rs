@@ -9,6 +9,7 @@ use crate::widgets::nodes::display::led_display::LedDisplayWidget;
 use crate::widgets::nodes::display::value_display::ValueDisplayWidget;
 use crate::widgets::nodes::io::audio_input::AudioInputWidget;
 use crate::widgets::nodes::io::input_controller::InputControllerWidget;
+use crate::widgets::nodes::io::push1::Push1Widget;
 use crate::widgets::nodes::meta::subgraph::SubgraphWidget;
 use crate::widgets::nodes::output::effect_stack::EffectStackWidget;
 use crate::widgets::nodes::output::group::GroupWidget;
@@ -298,6 +299,14 @@ pub fn load_graph(graph: &mut NodeGraph, project: &ProjectFile) -> Vec<usize> {
                 if let Some(data) = &saved.data {
                     let n = graph.node_mut(idx);
                     if let Some(w) = n.as_any_mut().downcast_mut::<InputControllerWidget>() {
+                        w.restore_from_save_data(data);
+                    }
+                }
+            }
+            if saved.type_name == "Push 1" {
+                if let Some(data) = &saved.data {
+                    let n = graph.node_mut(idx);
+                    if let Some(w) = n.as_any_mut().downcast_mut::<Push1Widget>() {
                         w.restore_from_save_data(data);
                     }
                 }

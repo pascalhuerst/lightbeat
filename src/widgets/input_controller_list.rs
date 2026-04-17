@@ -1,8 +1,10 @@
 use egui::{self, Color32, Ui};
+use egui_extras::{Column, TableBuilder};
 
 use crate::input_controller::{
-    ConnectionStatus, InputBindingMode, InputControllerKind, InputControllerManager,
+    ConnectionStatus, InputBindingMode, InputControllerKind, InputControllerManager, InputSource,
 };
+use crate::input_controller::midi::MidiSource;
 
 pub fn show(ui: &mut Ui, mgr: &mut InputControllerManager) {
     ui.heading("Input Controllers");
@@ -22,6 +24,15 @@ pub fn show(ui: &mut Ui, mgr: &mut InputControllerManager) {
     let mut set_port: Vec<(u32, String)> = Vec::new();
     let mut set_output_port: Vec<(u32, String)> = Vec::new();
     let mut set_learning: Vec<(u32, bool)> = Vec::new();
+    // Debug: (controller_id, input_index, value). Applied directly to
+    // out_values (and values when loopback is on) after the read lock is released.
+    let mut debug_set_out: Vec<(u32, usize, f32)> = Vec::new();
+    // (controller_id, debug_open)
+    let mut set_debug_open: Vec<(u32, bool)> = Vec::new();
+    // (controller_id, debug_feedback_override, debug_loopback, debug_highlight_on_touch)
+    let mut set_debug_flags: Vec<(u32, Option<bool>, Option<bool>, Option<bool>)> = Vec::new();
+    // (controller_id) — clear log
+    let mut clear_midi_log: Vec<u32> = Vec::new();
 
     {
         let state = mgr.shared.lock().unwrap();
@@ -124,56 +135,38 @@ pub fn show(ui: &mut Ui, mgr: &mut InputControllerManager) {
 
                             ui.separator();
 
-                            // Inputs list
+                            // Inputs table — one row per input, columns are
+                            // the editable/readable properties. Wrapped in a
+                            // ScrollArea so 120+ Push-sized layouts stay
+                            // manageable.
                             ui.label(egui::RichText::new("Inputs").strong());
                             if c.inputs.is_empty() {
                                 ui.colored_label(Color32::from_gray(120), "No inputs yet.");
+                            } else {
+                                show_inputs_table(
+                                    ui,
+                                    c,
+                                    is_fixed_layout,
+                                    &mut rename_input,
+                                    &mut set_mode,
+                                    &mut remove_input,
+                                );
                             }
-                            for (idx, input) in c.inputs.iter().enumerate() {
-                                ui.push_id(("input", input.id), |ui| {
-                                    ui.horizontal(|ui| {
-                                        let mut name = input.name.clone();
-                                        let name_editor = egui::TextEdit::singleline(&mut name)
-                                            .desired_width(100.0);
-                                        let editor = if is_fixed_layout {
-                                            // Name is canonical — don't let it drift.
-                                            name_editor.interactive(false)
-                                        } else {
-                                            name_editor
-                                        };
-                                        if ui.add(editor).changed() {
-                                            rename_input.push((c.id, input.id, name));
-                                        }
-                                        ui.colored_label(
-                                            Color32::from_gray(150),
-                                            input.source.label(),
-                                        );
-                                        let v = c.values.get(idx).copied().unwrap_or(0.0);
-                                        ui.colored_label(
-                                            Color32::from_gray(180),
-                                            format!("{:.2}", v),
-                                        );
-                                        if !is_fixed_layout && ui.small_button(egui_phosphor::regular::X).clicked() {
-                                            remove_input.push((c.id, input.id));
-                                        }
-                                    });
-                                    if !is_fixed_layout {
-                                        ui.horizontal(|ui| {
-                                            ui.label("    Mode:");
-                                            let binary = input.source.is_binary();
-                                            let mut mode = input.mode;
-                                            let prev = mode;
-                                            if ui.radio_value(&mut mode, InputBindingMode::Value, "Value").clicked() {}
-                                            if binary {
-                                                if ui.radio_value(&mut mode, InputBindingMode::TriggerOnPress, "Press").clicked() {}
-                                                if ui.radio_value(&mut mode, InputBindingMode::TriggerOnRelease, "Release").clicked() {}
-                                            }
-                                            if mode != prev {
-                                                set_mode.push((c.id, input.id, mode));
-                                            }
-                                        });
-                                    }
-                                });
+
+                            ui.add_space(4.0);
+                            // Debug / test panel.
+                            let mut dbg_open = c.debug_open;
+                            if ui.toggle_value(&mut dbg_open, "Debug / Test").changed() {
+                                set_debug_open.push((c.id, dbg_open));
+                            }
+                            if c.debug_open {
+                                show_debug_panel(
+                                    ui,
+                                    c,
+                                    &mut debug_set_out,
+                                    &mut set_debug_flags,
+                                    &mut clear_midi_log,
+                                );
                             }
 
                             ui.add_space(4.0);
@@ -194,6 +187,9 @@ pub fn show(ui: &mut Ui, mgr: &mut InputControllerManager) {
         if ui.button("+ Add BCF2000").clicked() {
             mgr.add_bcf2000("BCF2000".to_string());
         }
+        if ui.button("+ Add Push 1").clicked() {
+            mgr.add_push1("Push 1".to_string());
+        }
     });
 
     // Apply queued mutations (lock was released above).
@@ -205,5 +201,324 @@ pub fn show(ui: &mut Ui, mgr: &mut InputControllerManager) {
     for (cid, iid, name) in rename_input { mgr.rename_input(cid, iid, name); }
     for (cid, iid, mode) in set_mode { mgr.set_input_mode(cid, iid, mode); }
     for (cid, iid) in remove_input { mgr.remove_input(cid, iid); }
+    // Debug panel writes: apply by taking the shared lock once.
+    if !debug_set_out.is_empty() || !set_debug_open.is_empty()
+        || !set_debug_flags.is_empty() || !clear_midi_log.is_empty()
+    {
+        let mut state = mgr.shared.lock().unwrap();
+        for (cid, open) in set_debug_open {
+            if let Some(c) = state.iter_mut().find(|c| c.id == cid) {
+                c.debug_open = open;
+            }
+        }
+        for (cid, override_flag, loopback, highlight) in set_debug_flags {
+            if let Some(c) = state.iter_mut().find(|c| c.id == cid) {
+                if let Some(v) = override_flag { c.debug_feedback_override = v; }
+                if let Some(v) = loopback { c.debug_loopback = v; }
+                if let Some(v) = highlight {
+                    c.debug_highlight_on_touch = v;
+                    if !v {
+                        c.last_match_idx = None;
+                        c.last_match_instant = None;
+                    }
+                }
+            }
+        }
+        for cid in clear_midi_log {
+            if let Some(c) = state.iter_mut().find(|c| c.id == cid) {
+                c.midi_log.clear();
+            }
+        }
+        for (cid, idx, v) in debug_set_out {
+            if let Some(c) = state.iter_mut().find(|c| c.id == cid) {
+                if let Some(slot) = c.out_values.get_mut(idx) { *slot = v; }
+                if c.debug_loopback {
+                    if let Some(slot) = c.values.get_mut(idx) { *slot = v; }
+                }
+            }
+        }
+    }
     if let Some(id) = remove_controller { mgr.remove_controller(id); }
+}
+
+fn lerp_color(a: Color32, b: Color32, t: f32) -> Color32 {
+    let t = t.clamp(0.0, 1.0);
+    let mix = |x: u8, y: u8| (x as f32 * (1.0 - t) + y as f32 * t).round() as u8;
+    Color32::from_rgba_unmultiplied(
+        mix(a.r(), b.r()),
+        mix(a.g(), b.g()),
+        mix(a.b(), b.b()),
+        mix(a.a(), b.a()),
+    )
+}
+
+fn show_inputs_table(
+    ui: &mut Ui,
+    c: &crate::input_controller::ControllerRuntime,
+    is_fixed_layout: bool,
+    rename_input: &mut Vec<(u32, u32, String)>,
+    set_mode: &mut Vec<(u32, u32, InputBindingMode)>,
+    remove_input: &mut Vec<(u32, u32)>,
+) {
+    let now = std::time::Instant::now();
+    /// Time the highlight stays visible after a match, in seconds. After
+    /// this many seconds the row fades back to normal colors. Scroll-to only
+    /// fires during the first `SCROLL_WINDOW` seconds so later touches of
+    /// the same control don't fight the user's own scrolling.
+    const HIGHLIGHT_SECS: f32 = 1.5;
+    const SCROLL_WINDOW: f32 = 0.1;
+
+    let highlight_row_age = if c.debug_highlight_on_touch {
+        c.last_match_instant
+            .map(|t| now.duration_since(t).as_secs_f32())
+    } else {
+        None
+    };
+    let highlight_idx = c.last_match_idx;
+
+    // Keep repainting while the highlight is fading so the color animates
+    // even when the user isn't moving the mouse.
+    if matches!(highlight_row_age, Some(age) if age < HIGHLIGHT_SECS) {
+        ui.ctx().request_repaint();
+    }
+
+    let mut table = TableBuilder::new(ui)
+        .striped(true)
+        .resizable(true)
+        .vscroll(true)
+        .max_scroll_height(260.0)
+        .column(Column::remainder().at_least(120.0).clip(true)) // Name
+        .column(Column::remainder().at_least(120.0).clip(true)) // Source
+        .column(Column::initial(140.0).at_least(80.0))          // Mode
+        .column(Column::exact(60.0))                             // Value
+        .column(Column::exact(24.0));                            // delete
+
+    // Scroll the table to the matched row during the short post-touch
+    // window. `scroll_to_row` works on TableBuilder's internal scroll area.
+    if let (Some(idx), Some(age)) = (highlight_idx, highlight_row_age) {
+        if age < SCROLL_WINDOW {
+            table = table.scroll_to_row(idx + 1, Some(egui::Align::Center));
+        }
+    }
+
+    table
+        .header(20.0, |mut header| {
+            header.col(|ui| { ui.strong("Name"); });
+            header.col(|ui| { ui.strong("Source"); });
+            header.col(|ui| { ui.strong("Mode"); });
+            header.col(|ui| { ui.strong("Value"); });
+            header.col(|_ui| {});
+        })
+        .body(|mut body| {
+            for (idx, input) in c.inputs.iter().enumerate() {
+                let hl = match (highlight_idx, highlight_row_age) {
+                    (Some(m), Some(age)) if m == idx && age < HIGHLIGHT_SECS => {
+                        1.0 - (age / HIGHLIGHT_SECS)
+                    }
+                    _ => 0.0,
+                };
+                let hl_text_color = if hl > 0.0 {
+                    Some(lerp_color(
+                        Color32::from_gray(220),
+                        Color32::from_rgb(255, 220, 90),
+                        hl,
+                    ))
+                } else {
+                    None
+                };
+
+                body.row(22.0, |mut row| {
+                    row.col(|ui| {
+                        if is_fixed_layout {
+                            let mut rt = egui::RichText::new(&input.name)
+                                .monospace()
+                                .size(11.0);
+                            if let Some(cc) = hl_text_color { rt = rt.color(cc); }
+                            ui.label(rt);
+                        } else {
+                            let mut name = input.name.clone();
+                            if ui.add_sized(
+                                [ui.available_width(), 20.0],
+                                egui::TextEdit::singleline(&mut name)
+                                    .id_salt(("name", input.id)),
+                            ).changed() {
+                                rename_input.push((c.id, input.id, name));
+                            }
+                        }
+                    });
+                    row.col(|ui| {
+                        ui.colored_label(
+                            hl_text_color.unwrap_or(Color32::from_gray(160)),
+                            egui::RichText::new(input.source.label())
+                                .monospace()
+                                .size(11.0),
+                        );
+                    });
+                    row.col(|ui| {
+                        if is_fixed_layout {
+                            ui.colored_label(
+                                hl_text_color.unwrap_or(Color32::from_gray(160)),
+                                input.mode.label(),
+                            );
+                        } else {
+                            let binary = input.source.is_binary();
+                            let mut mode = input.mode;
+                            let prev = mode;
+                            egui::ComboBox::from_id_salt(("mode", input.id))
+                                .width(ui.available_width())
+                                .selected_text(mode.label())
+                                .show_ui(ui, |ui| {
+                                    ui.selectable_value(
+                                        &mut mode,
+                                        InputBindingMode::Value,
+                                        InputBindingMode::Value.label(),
+                                    );
+                                    if binary {
+                                        ui.selectable_value(
+                                            &mut mode,
+                                            InputBindingMode::TriggerOnPress,
+                                            InputBindingMode::TriggerOnPress.label(),
+                                        );
+                                        ui.selectable_value(
+                                            &mut mode,
+                                            InputBindingMode::TriggerOnRelease,
+                                            InputBindingMode::TriggerOnRelease.label(),
+                                        );
+                                    }
+                                });
+                            if mode != prev {
+                                set_mode.push((c.id, input.id, mode));
+                            }
+                        }
+                    });
+                    row.col(|ui| {
+                        let v = c.values.get(idx).copied().unwrap_or(0.0);
+                        ui.colored_label(
+                            hl_text_color.unwrap_or(Color32::from_gray(200)),
+                            egui::RichText::new(format!("{:.2}", v))
+                                .monospace()
+                                .size(11.0),
+                        );
+                    });
+                    row.col(|ui| {
+                        if !is_fixed_layout
+                            && ui.small_button(egui_phosphor::regular::X).clicked()
+                        {
+                            remove_input.push((c.id, input.id));
+                        }
+                    });
+                });
+            }
+        });
+}
+
+fn show_debug_panel(
+    ui: &mut Ui,
+    c: &crate::input_controller::ControllerRuntime,
+    debug_set_out: &mut Vec<(u32, usize, f32)>,
+    set_debug_flags: &mut Vec<(u32, Option<bool>, Option<bool>, Option<bool>)>,
+    clear_midi_log: &mut Vec<u32>,
+) {
+    egui::Frame::group(ui.style()).show(ui, |ui| {
+        // Flags row.
+        let has_feedback = c.kind.has_feedback();
+        ui.horizontal_wrapped(|ui| {
+            let mut highlight = c.debug_highlight_on_touch;
+            if ui.checkbox(&mut highlight, "Highlight on touch").on_hover_text(
+                "Jump to and briefly highlight the row in the inputs table when a matching MIDI message comes in. Useful for mapping out a physical control to its CC/note."
+            ).changed() {
+                set_debug_flags.push((c.id, None, None, Some(highlight)));
+            }
+            if has_feedback {
+                let mut override_flag = c.debug_feedback_override;
+                if ui.checkbox(&mut override_flag, "Override feedback").on_hover_text(
+                    "Block the graph from writing to the device — the test sliders below take over."
+                ).changed() {
+                    set_debug_flags.push((c.id, Some(override_flag), None, None));
+                }
+                let mut loopback = c.debug_loopback;
+                if ui.checkbox(&mut loopback, "Loopback to input").on_hover_text(
+                    "Also mirror slider writes into the device's input values, so the engine node's output ports reflect them without moving the hardware."
+                ).changed() {
+                    set_debug_flags.push((c.id, None, Some(loopback), None));
+                }
+            } else {
+                ui.colored_label(
+                    Color32::from_gray(140),
+                    "No feedback path; test sliders disabled.",
+                );
+            }
+        });
+
+        // Rolling MIDI log.
+        ui.separator();
+        ui.horizontal(|ui| {
+            ui.label(egui::RichText::new("MIDI In").strong());
+            ui.colored_label(Color32::from_gray(140), format!("{} msgs", c.midi_log.len()));
+            if ui.small_button("Clear").clicked() {
+                clear_midi_log.push(c.id);
+            }
+        });
+        egui::ScrollArea::vertical()
+            .id_salt(("midi_log", c.id))
+            .max_height(140.0)
+            .auto_shrink([false, false])
+            .stick_to_bottom(true)
+            .show(ui, |ui| {
+                for entry in c.midi_log.iter() {
+                    let hex: String = entry.raw.iter()
+                        .map(|b| format!("{:02X}", b))
+                        .collect::<Vec<_>>()
+                        .join(" ");
+                    let (label, color) = match (&entry.decoded, entry.matched_input_idx) {
+                        (Some((_, v)), Some(idx)) => {
+                            let name = c.inputs.get(idx)
+                                .map(|i| i.name.as_str())
+                                .unwrap_or("?");
+                            (format!("{:<10} → {} = {:.3}", hex, name, v), Color32::from_gray(220))
+                        }
+                        (Some((src, v)), None) => {
+                            (format!("{:<10} → {} = {:.3} (unmatched)", hex, src.label(), v),
+                             Color32::from_rgb(200, 170, 90))
+                        }
+                        (None, _) => {
+                            (format!("{:<10} (unparsed)", hex), Color32::from_gray(140))
+                        }
+                    };
+                    ui.colored_label(color, egui::RichText::new(label).monospace().size(11.0));
+                }
+            });
+
+        // Test sliders.
+        if has_feedback && c.debug_feedback_override {
+            ui.separator();
+            ui.label(egui::RichText::new("Feedback test").strong());
+            egui::ScrollArea::vertical()
+                .id_salt(("fb_sliders", c.id))
+                .max_height(240.0)
+                .auto_shrink([false, false])
+                .show(ui, |ui| {
+                    for (i, input) in c.inputs.iter().enumerate() {
+                        // Skip sources we can't send back anyway.
+                        let sendable = matches!(
+                            &input.source,
+                            InputSource::Midi(MidiSource::Cc { .. })
+                                | InputSource::Midi(MidiSource::Note { .. })
+                                | InputSource::Midi(MidiSource::NoteVelocity { .. })
+                                | InputSource::Midi(MidiSource::PitchBend { .. })
+                        );
+                        if !sendable { continue; }
+                        let mut v = c.out_values.get(i).copied().unwrap_or(0.0);
+                        ui.horizontal(|ui| {
+                            ui.add(egui::Label::new(
+                                egui::RichText::new(&input.name).monospace().size(11.0),
+                            ).truncate());
+                        });
+                        if ui.add(egui::Slider::new(&mut v, 0.0..=1.0).step_by(0.01).show_value(true)).changed() {
+                            debug_set_out.push((c.id, i, v));
+                        }
+                    }
+                });
+        }
+    });
 }

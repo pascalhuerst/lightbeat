@@ -1,4 +1,5 @@
 use egui::{self, Color32, Ui};
+use egui_extras::{Column, TableBuilder};
 
 use crate::objects::fixture::{DmxAddress, Fixture};
 use crate::objects::object::Object;
@@ -47,101 +48,118 @@ impl ObjectManager {
 
         if self.objects.is_empty() {
             ui.colored_label(Color32::from_gray(120), "No objects. Create one from a fixture template.");
-        }
+        } else {
+            let mut remove_id = None;
+            let mut dirty = false;
 
-        let mut remove_id = None;
-
-        egui::ScrollArea::vertical().show(ui, |ui| {
-            for obj in &mut self.objects {
-                ui.push_id(obj.id, |ui| {
-                    let fixture_name = fixtures.iter()
-                        .find(|f| f.id == obj.fixture_id)
-                        .map(|f| f.name.as_str())
-                        .unwrap_or("???");
-
-                    egui::CollapsingHeader::new(
-                        egui::RichText::new(format!("{} ({})", obj.name, fixture_name)).strong(),
-                    )
-                    .id_salt(obj.id)
-                    .default_open(false)
-                    .show(ui, |ui| {
-                        // Name
-                        ui.horizontal(|ui| {
-                            ui.label("Name:");
-                            ui.text_edit_singleline(&mut obj.name);
-                        });
-
-                        // Fixture type (read-only)
-                        ui.colored_label(Color32::from_gray(140), format!("Type: {}", fixture_name));
-
-                        // Address
-                        ui.horizontal(|ui| {
-                            ui.label("Address:");
-                            let mut addr = obj.address.start_channel as i32;
-                            if ui.add(egui::DragValue::new(&mut addr).range(1..=512)).changed() {
-                                obj.address.start_channel = addr as u16;
-                                self.needs_sync = true;
-                            }
-                        });
-                        ui.horizontal(|ui| {
-                            ui.label("Universe:");
-                            let mut u = obj.address.universe as i32;
-                            if ui.add(egui::DragValue::new(&mut u).range(0..=15)).changed() {
-                                obj.address.universe = u as u8;
-                                self.needs_sync = true;
-                            }
-                            ui.label("Subnet:");
-                            let mut s = obj.address.subnet as i32;
-                            if ui.add(egui::DragValue::new(&mut s).range(0..=15)).changed() {
-                                obj.address.subnet = s as u8;
-                                self.needs_sync = true;
-                            }
-                            ui.label("Net:");
-                            let mut n = obj.address.net as i32;
-                            if ui.add(egui::DragValue::new(&mut n).range(0..=127)).changed() {
-                                obj.address.net = n as u8;
-                                self.needs_sync = true;
-                            }
-                        });
-
-                        // Interface assignment
-                        ui.horizontal(|ui| {
-                            ui.label("Interface:");
-                            let current = interface_names.iter()
-                                .find(|(id, _)| *id == obj.interface_id)
-                                .map(|(_, name)| name.as_str())
-                                .unwrap_or("None");
-                            egui::ComboBox::from_id_salt(("iface", obj.id))
-                                .selected_text(current)
-                                .show_ui(ui, |ui| {
-                                    if ui.selectable_value(&mut obj.interface_id, 0, "None").changed() {
-                                        self.needs_sync = true;
-                                    }
-                                    for (iid, iname) in interface_names {
-                                        if ui.selectable_value(&mut obj.interface_id, *iid, iname).changed() {
-                                            self.needs_sync = true;
+            TableBuilder::new(ui)
+                .striped(true)
+                .column(Column::remainder().at_least(120.0).clip(true)) // Name
+                .column(Column::remainder().at_least(120.0).clip(true)) // Template
+                .column(Column::exact(60.0))   // Ch
+                .column(Column::exact(50.0))   // Univ
+                .column(Column::exact(50.0))   // Sub
+                .column(Column::exact(50.0))   // Net
+                .column(Column::initial(140.0).at_least(100.0).clip(true)) // Interface
+                .column(Column::exact(50.0))   // Foot
+                .column(Column::exact(24.0))   // delete
+                .header(20.0, |mut header| {
+                    header.col(|ui| { ui.strong("Name"); });
+                    header.col(|ui| { ui.strong("Template"); });
+                    header.col(|ui| { ui.strong("Ch").on_hover_text("Start channel"); });
+                    header.col(|ui| { ui.strong("Univ"); });
+                    header.col(|ui| { ui.strong("Sub"); });
+                    header.col(|ui| { ui.strong("Net"); });
+                    header.col(|ui| { ui.strong("Interface"); });
+                    header.col(|ui| { ui.strong("Foot").on_hover_text("DMX footprint in channels"); });
+                    header.col(|_ui| {});
+                })
+                .body(|mut body| {
+                    for obj in &mut self.objects {
+                        body.row(22.0, |mut row| {
+                            row.col(|ui| {
+                                ui.add_sized(
+                                    [ui.available_width(), 20.0],
+                                    egui::TextEdit::singleline(&mut obj.name)
+                                        .id_salt(("name", obj.id)),
+                                );
+                            });
+                            row.col(|ui| {
+                                let fixture_name = fixtures.iter()
+                                    .find(|f| f.id == obj.fixture_id)
+                                    .map(|f| f.name.as_str())
+                                    .unwrap_or("???");
+                                ui.colored_label(Color32::from_gray(180), fixture_name);
+                            });
+                            row.col(|ui| {
+                                let mut addr = obj.address.start_channel as i32;
+                                if ui.add(egui::DragValue::new(&mut addr).range(1..=512)).changed() {
+                                    obj.address.start_channel = addr as u16;
+                                    dirty = true;
+                                }
+                            });
+                            row.col(|ui| {
+                                let mut u = obj.address.universe as i32;
+                                if ui.add(egui::DragValue::new(&mut u).range(0..=15)).changed() {
+                                    obj.address.universe = u as u8;
+                                    dirty = true;
+                                }
+                            });
+                            row.col(|ui| {
+                                let mut s = obj.address.subnet as i32;
+                                if ui.add(egui::DragValue::new(&mut s).range(0..=15)).changed() {
+                                    obj.address.subnet = s as u8;
+                                    dirty = true;
+                                }
+                            });
+                            row.col(|ui| {
+                                let mut n = obj.address.net as i32;
+                                if ui.add(egui::DragValue::new(&mut n).range(0..=127)).changed() {
+                                    obj.address.net = n as u8;
+                                    dirty = true;
+                                }
+                            });
+                            row.col(|ui| {
+                                let current = interface_names.iter()
+                                    .find(|(id, _)| *id == obj.interface_id)
+                                    .map(|(_, name)| name.as_str())
+                                    .unwrap_or("None");
+                                egui::ComboBox::from_id_salt(("iface", obj.id))
+                                    .width(ui.available_width())
+                                    .selected_text(current)
+                                    .show_ui(ui, |ui| {
+                                        if ui.selectable_value(&mut obj.interface_id, 0, "None").changed() {
+                                            dirty = true;
                                         }
-                                    }
-                                });
+                                        for (iid, iname) in interface_names {
+                                            if ui.selectable_value(&mut obj.interface_id, *iid, iname).changed() {
+                                                dirty = true;
+                                            }
+                                        }
+                                    });
+                            });
+                            row.col(|ui| {
+                                ui.colored_label(
+                                    Color32::from_gray(140),
+                                    format!("{}", obj.dmx_footprint()),
+                                );
+                            });
+                            row.col(|ui| {
+                                if ui.small_button(egui_phosphor::regular::X).clicked() {
+                                    remove_id = Some(obj.id);
+                                }
+                            });
                         });
-
-                        ui.colored_label(
-                            Color32::from_gray(100),
-                            format!("Footprint: {} DMX ch", obj.dmx_footprint()),
-                        );
-
-                        ui.add_space(4.0);
-                        if ui.small_button("Delete object").clicked() {
-                            remove_id = Some(obj.id);
-                        }
-                    });
+                    }
                 });
-            }
-        });
 
-        if let Some(id) = remove_id {
-            self.objects.retain(|o| o.id != id);
-            self.needs_sync = true;
+            if let Some(id) = remove_id {
+                self.objects.retain(|o| o.id != id);
+                self.needs_sync = true;
+            }
+            if dirty {
+                self.needs_sync = true;
+            }
         }
 
         // Batch creation.

@@ -56,6 +56,14 @@ pub enum InputControllerKind {
         #[serde(default)]
         hw_output_port: String,
     },
+    /// Ableton Push 1 in User mode. Fixed layout covering pads (64),
+    /// encoders (11 relative-1), transport, navigation, row buttons, and the
+    /// touch strip. `hw_output_port` drives pad + button LEDs.
+    Push1 {
+        hw_input_port: String,
+        #[serde(default)]
+        hw_output_port: String,
+    },
 }
 
 impl InputControllerKind {
@@ -63,6 +71,7 @@ impl InputControllerKind {
         match self {
             InputControllerKind::Midi { .. } => "MIDI",
             InputControllerKind::Bcf2000 { .. } => "BCF2000",
+            InputControllerKind::Push1 { .. } => "Push 1",
         }
     }
 
@@ -71,6 +80,7 @@ impl InputControllerKind {
         match self {
             InputControllerKind::Midi { hw_port_name } => hw_port_name,
             InputControllerKind::Bcf2000 { hw_input_port, .. } => hw_input_port,
+            InputControllerKind::Push1 { hw_input_port, .. } => hw_input_port,
         }
     }
 
@@ -79,12 +89,16 @@ impl InputControllerKind {
         match self {
             InputControllerKind::Midi { .. } => "",
             InputControllerKind::Bcf2000 { hw_output_port, .. } => hw_output_port,
+            InputControllerKind::Push1 { hw_output_port, .. } => hw_output_port,
         }
     }
 
-    /// True if the kind supports graph → device feedback (echo CC out).
+    /// True if the kind supports graph → device feedback.
     pub fn has_feedback(&self) -> bool {
-        matches!(self, InputControllerKind::Bcf2000 { .. })
+        matches!(
+            self,
+            InputControllerKind::Bcf2000 { .. } | InputControllerKind::Push1 { .. }
+        )
     }
 }
 
@@ -144,6 +158,19 @@ impl InputBindingMode {
 // Runtime shared state
 // ---------------------------------------------------------------------------
 
+/// One entry in the MIDI activity log — used by the debug panel to show
+/// what the device is actually sending. Capped to a small ring in
+/// `ControllerRuntime::midi_log`.
+#[derive(Debug, Clone)]
+pub struct MidiLogEntry {
+    pub raw: Vec<u8>,
+    /// None when the message couldn't be parsed to a known source.
+    pub decoded: Option<(InputSource, f32)>,
+    /// Index into `inputs` of the learned input this matched, if any.
+    pub matched_input_idx: Option<usize>,
+    pub instant: std::time::Instant,
+}
+
 /// Per-controller live state. Shared between midir callback, engine, and UI.
 pub struct ControllerRuntime {
     pub id: u32,
@@ -163,14 +190,43 @@ pub struct ControllerRuntime {
     /// the UI to pick the next as a new learned input.
     pub learning: bool,
     pub learn_buffer: VecDeque<InputSource>,
+    /// Rolling log of the most recent MIDI messages. Used by the debug panel
+    /// to verify what the hardware is sending. Always populated; cheap
+    /// (a few pushes per message), capped via `MIDI_LOG_CAPACITY`.
+    pub midi_log: VecDeque<MidiLogEntry>,
+    /// Debug panel open/closed in the UI. Purely cosmetic; the log itself is
+    /// always collected.
+    pub debug_open: bool,
+    /// When true, the engine input-controller node stops writing the graph's
+    /// inputs into `out_values` — leaving the debug panel's test sliders in
+    /// sole control. Flip off to hand control back to the graph.
+    pub debug_feedback_override: bool,
+    /// When true (and `debug_feedback_override` is on), debug-slider writes
+    /// to `out_values` are also mirrored into `values` so the engine node's
+    /// *output* ports reflect the slider — lets you probe graph consumers
+    /// without moving the hardware.
+    pub debug_loopback: bool,
+    /// When true, touching a control on the device causes the inputs table
+    /// to jump to the matching row and highlight it briefly. Useful for
+    /// discovering which Pad / Encoder / CC the hardware is sending.
+    pub debug_highlight_on_touch: bool,
+    /// Last matched input index (for highlighting). Updated by the MIDI
+    /// handler whenever `debug_highlight_on_touch` is on.
+    pub last_match_idx: Option<usize>,
+    pub last_match_instant: Option<std::time::Instant>,
 }
+
+/// Keep the log small so UI rendering stays cheap on Push-class devices that
+/// can blast hundreds of messages per second during a pad sweep.
+pub const MIDI_LOG_CAPACITY: usize = 128;
 
 impl ControllerRuntime {
     pub fn from_persistent(c: &InputController) -> Self {
         let inputs = match &c.kind {
-            // BCF2000 is hardwired to preset 1 — saved `inputs` are ignored
-            // so the layout stays in lock-step with the code.
+            // Fixed-layout kinds regenerate their inputs from code — ignores
+            // saved entries so mapping fixes propagate to existing setups.
             InputControllerKind::Bcf2000 { .. } => bcf2000_preset1_inputs(),
+            InputControllerKind::Push1 { .. } => push1_preset_inputs(),
             _ => c.inputs.clone(),
         };
         let n = inputs.len();
@@ -184,14 +240,21 @@ impl ControllerRuntime {
             status: ConnectionStatus::Disconnected,
             learning: false,
             learn_buffer: VecDeque::new(),
+            midi_log: VecDeque::with_capacity(MIDI_LOG_CAPACITY),
+            debug_open: false,
+            debug_feedback_override: false,
+            debug_loopback: false,
+            debug_highlight_on_touch: false,
+            last_match_idx: None,
+            last_match_instant: None,
         }
     }
 
     pub fn to_persistent(&self) -> InputController {
-        // Don't serialize the BCF2000 canonical input list — we regenerate it
-        // on load so any mapping fix in code propagates to existing setups.
+        // Don't serialize the canonical input lists for fixed-layout kinds —
+        // we regenerate them on load.
         let inputs = match &self.kind {
-            InputControllerKind::Bcf2000 { .. } => Vec::new(),
+            InputControllerKind::Bcf2000 { .. } | InputControllerKind::Push1 { .. } => Vec::new(),
             _ => self.inputs.clone(),
         };
         InputController {
@@ -245,6 +308,150 @@ pub fn bcf2000_preset1_inputs() -> Vec<LearnedInput> {
     for i in 0..8 { push_cc(&mut inputs, &mut id, &format!("Btn Bot {}", i + 1), 73 + i as u8, true); }
     // 4 free buttons → CC 89..92 (binary).
     for i in 0..4 { push_cc(&mut inputs, &mut id, &format!("Btn Free {}", i + 1), 89 + i as u8, true); }
+
+    inputs
+}
+
+// ---------------------------------------------------------------------------
+// Ableton Push 1 — User Mode layout
+// ---------------------------------------------------------------------------
+
+/// Canonical Push 1 User Mode mapping. Notes and CCs match the Push 2 MIDI
+/// map (Ableton kept the layout identical across hardware where possible);
+/// the pushmod firmware and Carlborg/hardpush confirm the same numbers on
+/// Push 1. All messages on MIDI channel 1.
+///
+/// Pads are laid out with row 1 = bottom row (as shipped), so pad 0 is
+/// bottom-left and pad 63 is top-right. Inner layout: `Pad r{row}c{col}`
+/// where row 1 is the bottom row.
+pub fn push1_preset_inputs() -> Vec<LearnedInput> {
+    use self::midi::MidiSource;
+    let ch = 1u8;
+    let mut inputs = Vec::with_capacity(120);
+    let mut id: u32 = 1;
+
+    let mut push = |inputs: &mut Vec<LearnedInput>, id: &mut u32, name: String, source: MidiSource| {
+        inputs.push(LearnedInput {
+            id: *id,
+            name,
+            source: InputSource::Midi(source),
+            mode: InputBindingMode::Value,
+        });
+        *id += 1;
+    };
+
+    // Pads — 64 notes (36..99). Velocity-preserving.
+    for row in 1..=8u8 {
+        for col in 1..=8u8 {
+            let note = 36 + (row - 1) * 8 + (col - 1);
+            push(
+                &mut inputs, &mut id,
+                format!("Pad r{}c{}", row, col),
+                MidiSource::NoteVelocity { channel: ch, note },
+            );
+        }
+    }
+
+    // Relative encoders.
+    let encoders: &[(u8, &str)] = &[
+        (14, "Enc Tempo"),
+        (15, "Enc Swing"),
+        (71, "Enc Track 1"),
+        (72, "Enc Track 2"),
+        (73, "Enc Track 3"),
+        (74, "Enc Track 4"),
+        (75, "Enc Track 5"),
+        (76, "Enc Track 6"),
+        (77, "Enc Track 7"),
+        (78, "Enc Track 8"),
+        (79, "Enc Master"),
+    ];
+    for (cc, name) in encoders {
+        push(
+            &mut inputs, &mut id,
+            (*name).to_string(),
+            MidiSource::CcRelative { channel: ch, controller: *cc },
+        );
+    }
+
+    // Encoder touch sensors (Notes 0..10).
+    let touches: &[(u8, &str)] = &[
+        (0, "Touch Track 1"),
+        (1, "Touch Track 2"),
+        (2, "Touch Track 3"),
+        (3, "Touch Track 4"),
+        (4, "Touch Track 5"),
+        (5, "Touch Track 6"),
+        (6, "Touch Track 7"),
+        (7, "Touch Track 8"),
+        (8, "Touch Master"),
+        (9, "Touch Swing"),
+        (10, "Touch Tempo"),
+    ];
+    for (note, name) in touches {
+        push(
+            &mut inputs, &mut id,
+            (*name).to_string(),
+            MidiSource::Note { channel: ch, note: *note },
+        );
+    }
+
+    // Touch strip / ribbon — 14-bit pitch bend.
+    push(
+        &mut inputs, &mut id,
+        "Slider".to_string(),
+        MidiSource::PitchBend { channel: ch },
+    );
+
+    // Row buttons.
+    for i in 0..8u8 {
+        push(
+            &mut inputs, &mut id,
+            format!("Btn Top {}", i + 1),
+            MidiSource::Cc { channel: ch, controller: 102 + i },
+        );
+    }
+    for i in 0..8u8 {
+        push(
+            &mut inputs, &mut id,
+            format!("Btn Bot {}", i + 1),
+            MidiSource::Cc { channel: ch, controller: 20 + i },
+        );
+    }
+
+    // Transport + navigation + a few common control buttons. Mapping per
+    // Push2-map.json (identical for Push 1 where the button exists).
+    let buttons: &[(u8, &str)] = &[
+        (85, "Play"),
+        (86, "Record"),
+        (29, "Stop"),
+        (49, "Shift"),
+        (48, "Select"),
+        (46, "Up"),
+        (47, "Down"),
+        (44, "Left"),
+        (45, "Right"),
+        (55, "Octave Up"),
+        (54, "Octave Down"),
+        (62, "Page Left"),
+        (63, "Page Right"),
+        (50, "Note"),
+        (51, "Session"),
+        (60, "Mute"),
+        (61, "Solo"),
+        (28, "Master"),
+        (9, "Metronome"),
+        (3, "Tap Tempo"),
+        (119, "Undo"),
+        (118, "Delete"),
+    ];
+    for (cc, name) in buttons {
+        push(
+            &mut inputs, &mut id,
+            (*name).to_string(),
+            MidiSource::Cc { channel: ch, controller: *cc },
+        );
+    }
 
     inputs
 }
@@ -321,6 +528,49 @@ impl InputControllerManager {
             status: ConnectionStatus::Disconnected,
             learning: false,
             learn_buffer: VecDeque::new(),
+            midi_log: VecDeque::with_capacity(MIDI_LOG_CAPACITY),
+            debug_open: false,
+            debug_feedback_override: false,
+            debug_loopback: false,
+            debug_highlight_on_touch: false,
+            last_match_idx: None,
+            last_match_instant: None,
+        });
+        drop(state);
+        self.reconcile_sessions();
+        id
+    }
+
+    /// Add an Ableton Push 1 controller — fixed layout for User Mode.
+    pub fn add_push1(&mut self, name: String) -> u32 {
+        let mut state = self.shared.lock().unwrap();
+        let id = state.iter().map(|c| c.id).max().unwrap_or(0) + 1;
+        let inputs = push1_preset_inputs();
+        let n = inputs.len();
+        let max_input_id = inputs.iter().map(|i| i.id).max().unwrap_or(0);
+        if max_input_id >= self.next_input_id {
+            self.next_input_id = max_input_id + 1;
+        }
+        state.push(ControllerRuntime {
+            id,
+            name,
+            kind: InputControllerKind::Push1 {
+                hw_input_port: String::new(),
+                hw_output_port: String::new(),
+            },
+            inputs,
+            values: vec![0.0; n],
+            out_values: vec![0.0; n],
+            status: ConnectionStatus::Disconnected,
+            learning: false,
+            learn_buffer: VecDeque::new(),
+            midi_log: VecDeque::with_capacity(MIDI_LOG_CAPACITY),
+            debug_open: false,
+            debug_feedback_override: false,
+            debug_loopback: false,
+            debug_highlight_on_touch: false,
+            last_match_idx: None,
+            last_match_instant: None,
         });
         drop(state);
         self.reconcile_sessions();
@@ -352,6 +602,13 @@ impl InputControllerManager {
             status: ConnectionStatus::Disconnected,
             learning: false,
             learn_buffer: VecDeque::new(),
+            midi_log: VecDeque::with_capacity(MIDI_LOG_CAPACITY),
+            debug_open: false,
+            debug_feedback_override: false,
+            debug_loopback: false,
+            debug_highlight_on_touch: false,
+            last_match_idx: None,
+            last_match_instant: None,
         });
         drop(state);
         self.reconcile_sessions();
@@ -375,6 +632,7 @@ impl InputControllerManager {
                 match &mut c.kind {
                     InputControllerKind::Midi { hw_port_name } => *hw_port_name = port,
                     InputControllerKind::Bcf2000 { hw_input_port, .. } => *hw_input_port = port,
+                    InputControllerKind::Push1 { hw_input_port, .. } => *hw_input_port = port,
                 }
                 c.status = ConnectionStatus::Disconnected;
             }
@@ -383,13 +641,15 @@ impl InputControllerManager {
     }
 
     /// Change the hardware output port (used for motor fader / LED feedback
-    /// on BCF2000 and other feedback-capable kinds). No-op for plain MIDI.
+    /// on BCF2000 / Push 1 / any feedback-capable kinds). No-op for plain MIDI.
     pub fn set_hw_output_port(&mut self, id: u32, port: String) {
         {
             let mut state = self.shared.lock().unwrap();
             if let Some(c) = state.iter_mut().find(|c| c.id == id) {
-                if let InputControllerKind::Bcf2000 { hw_output_port, .. } = &mut c.kind {
-                    *hw_output_port = port;
+                match &mut c.kind {
+                    InputControllerKind::Bcf2000 { hw_output_port, .. } => *hw_output_port = port,
+                    InputControllerKind::Push1 { hw_output_port, .. } => *hw_output_port = port,
+                    _ => {}
                 }
                 c.status = ConnectionStatus::Disconnected;
             }

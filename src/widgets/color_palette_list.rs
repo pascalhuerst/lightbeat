@@ -1,4 +1,5 @@
 use egui::{self, Color32, Ui};
+use egui_extras::{Column, TableBuilder};
 
 use crate::color::Rgb;
 use crate::objects::color_palette::{ColorPalette, SLOT_NAMES, PALETTE_SIZE};
@@ -24,69 +25,58 @@ impl ColorPaletteManager {
 
         if self.palettes.is_empty() {
             ui.colored_label(Color32::from_gray(120), "No color palettes.");
-        }
+        } else {
+            let mut remove_id = None;
+            let swatch_w = 28.0;
 
-        let mut remove_id = None;
-
-        egui::ScrollArea::vertical().show(ui, |ui| {
-            for palette in &mut self.palettes {
-                ui.push_id(palette.id, |ui| {
-                    // Show color swatches inline in the header.
-                    egui::CollapsingHeader::new(
-                        egui::RichText::new(&palette.name).strong(),
-                    )
-                    .id_salt(palette.id)
-                    .default_open(false)
-                    .show(ui, |ui| {
-                        // Name
-                        ui.horizontal(|ui| {
-                            ui.label("Name:");
-                            ui.text_edit_singleline(&mut palette.name);
-                        });
-
-                        // Color swatches with pickers.
-                        for i in 0..PALETTE_SIZE {
-                            ui.horizontal(|ui| {
-                                ui.label(SLOT_NAMES[i]);
-                                let mut color = [
-                                    palette.colors[i].r,
-                                    palette.colors[i].g,
-                                    palette.colors[i].b,
-                                ];
-                                if ui.color_edit_button_rgb(&mut color).changed() {
-                                    palette.colors[i] = Rgb::new(color[0], color[1], color[2]);
+            let mut builder = TableBuilder::new(ui)
+                .striped(true)
+                .column(Column::remainder().clip(true)); // name fills
+            for _ in 0..PALETTE_SIZE {
+                builder = builder.column(Column::exact(swatch_w));
+            }
+            builder
+                .column(Column::exact(24.0)) // delete button
+                .header(20.0, |mut header| {
+                    header.col(|ui| { ui.strong("Name"); });
+                    for i in 0..PALETTE_SIZE {
+                        header.col(|ui| { ui.strong(SLOT_NAMES[i]); });
+                    }
+                    header.col(|_ui| {});
+                })
+                .body(|mut body| {
+                    for palette in &mut self.palettes {
+                        body.row(22.0, |mut row| {
+                            row.col(|ui| {
+                                ui.add_sized(
+                                    [ui.available_width(), 20.0],
+                                    egui::TextEdit::singleline(&mut palette.name)
+                                        .id_salt(("name", palette.id)),
+                                );
+                            });
+                            for i in 0..PALETTE_SIZE {
+                                row.col(|ui| {
+                                    let mut color = [
+                                        palette.colors[i].r,
+                                        palette.colors[i].g,
+                                        palette.colors[i].b,
+                                    ];
+                                    if ui.color_edit_button_rgb(&mut color).changed() {
+                                        palette.colors[i] = Rgb::new(color[0], color[1], color[2]);
+                                    }
+                                });
+                            }
+                            row.col(|ui| {
+                                if ui.small_button(egui_phosphor::regular::X).clicked() {
+                                    remove_id = Some(palette.id);
                                 }
                             });
-                        }
-
-                        ui.add_space(4.0);
-                        if ui.small_button("Delete palette").clicked() {
-                            remove_id = Some(palette.id);
-                        }
-                    });
-
-                    // Show mini swatches next to collapsed header.
-                    ui.horizontal(|ui| {
-                        for i in 0..PALETTE_SIZE {
-                            let c = palette.colors[i];
-                            let color = egui::Color32::from_rgb(
-                                (c.r.clamp(0.0, 1.0) * 255.0) as u8,
-                                (c.g.clamp(0.0, 1.0) * 255.0) as u8,
-                                (c.b.clamp(0.0, 1.0) * 255.0) as u8,
-                            );
-                            let (r, p) = ui.allocate_painter(
-                                egui::Vec2::new(14.0, 14.0),
-                                egui::Sense::hover(),
-                            );
-                            p.rect_filled(r.rect, 2.0, color);
-                        }
-                    });
+                        });
+                    }
                 });
+            if let Some(id) = remove_id {
+                self.palettes.retain(|s| s.id != id);
             }
-        });
-
-        if let Some(id) = remove_id {
-            self.palettes.retain(|s| s.id != id);
         }
 
         ui.separator();

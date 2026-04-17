@@ -2521,7 +2521,7 @@
   "input_controllers": [
     {
       "id": 1,
-      "name": "TestController",
+      "name": "nanoKONTROL",
       "kind": {
         "Midi": {
           "hw_port_name": "nanoKONTROL:nanoKONTROL _ CTRL 24:0"
@@ -2633,6 +2633,17 @@
           "mode": "Value"
         }
       ]
+    },
+    {
+      "id": 2,
+      "name": "Push 1",
+      "kind": {
+        "Push1": {
+          "hw_input_port": "Ableton Push:Ableton Push User Port 24:1",
+          "hw_output_port": "Ableton Push:Ableton Push User Port 24:1"
+        }
+      },
+      "inputs": []
     }
   ],
   "audio_inputs": [
