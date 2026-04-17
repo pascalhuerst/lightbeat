@@ -14,6 +14,11 @@ pub struct SubgraphWidget {
     pub output_defs: Vec<SubgraphPortDef>,
     /// Set to true to signal the app to open this subgraph for editing.
     pub wants_open: bool,
+    /// When true, the subgraph is treated as an opaque "macro instance":
+    /// users can't navigate into it, the Open button is hidden, and the
+    /// title bar shows a lock glyph. Set when instantiating from the macro
+    /// library; cleared via the right-click "Embed" action.
+    pub locked: bool,
 }
 
 impl SubgraphWidget {
@@ -24,6 +29,7 @@ impl SubgraphWidget {
             input_defs: Vec::new(),
             output_defs: Vec::new(),
             wants_open: false,
+            locked: false,
         }
     }
 
@@ -33,6 +39,7 @@ impl SubgraphWidget {
             "name": self.name,
             "inputs": self.input_defs,
             "outputs": self.output_defs,
+            "locked": self.locked,
         }));
     }
 }
@@ -63,15 +70,25 @@ impl NodeWidget for SubgraphWidget {
         let display = shared.display.as_ref()
             .and_then(|d| d.downcast_ref::<SubgraphDisplay>());
 
-        let inner_count = if let Some(d) = display {
-            d.inner_node_count
-        } else { 0 };
+        let (inner_count, locked) = if let Some(d) = display {
+            (d.inner_node_count, d.locked)
+        } else { (0, self.locked) };
         drop(shared);
+        self.locked = locked;
 
         ui.horizontal(|ui| {
+            if self.locked {
+                ui.colored_label(Color32::from_rgb(180, 160, 220), egui_phosphor::regular::LOCK)
+                    .on_hover_text("Macro (locked). Right-click → Embed to edit.");
+            }
             ui.colored_label(Color32::from_gray(100), format!("{} nodes", inner_count));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui.small_button(egui_phosphor::regular::ARROW_SQUARE_OUT).on_hover_text("Open subgraph").clicked() {
+                // Open button is hidden when locked — match navigation gating.
+                if !self.locked
+                    && ui.small_button(egui_phosphor::regular::ARROW_SQUARE_OUT)
+                        .on_hover_text("Open subgraph")
+                        .clicked()
+                {
                     self.wants_open = true;
                 }
             });

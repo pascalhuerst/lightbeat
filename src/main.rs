@@ -5,6 +5,7 @@ mod config;
 mod dmx_io;
 mod engine;
 mod input_controller;
+mod macros;
 mod setup;
 mod interfaces;
 mod link_controller;
@@ -20,6 +21,8 @@ use eframe::egui;
 use beat_clock::{BeatClock, BeatPattern, SubscriptionHandle};
 use audio::manager::AudioInputManager;
 use config::{AppConfig, InspectorMode};
+use macros::library::LibraryManager;
+use macros::Macro;
 use engine::types::{new_shared_state, EngineCommand, NodeId, PortType, ProcessNode, SubgraphInnerCmd};
 use engine::EngineHandle;
 use input_controller::InputControllerManager;
@@ -93,6 +96,7 @@ use widgets::nodes::transport::transition::TransitionWidget;
 use widgets::nodes::transport::lfo::LfoWidget;
 use widgets::nodes::transport::phase_scaler::PhaseScalerWidget;
 use widgets::nodes::transport::step_sequencer::StepSequencerWidget;
+use widgets::nodes::graph::MacroRequest;
 use widgets::nodes::NodeGraph;
 
 /// Result from a background file dialog.
@@ -133,8 +137,27 @@ struct LightBeatApp {
     show_input_controllers: bool,
     audio_inputs: AudioInputManager,
     show_audio_inputs: bool,
+    library: LibraryManager,
+    show_library: bool,
+    library_search: String,
+    save_macro_dialog: Option<SaveMacroDialog>,
     project_undoer: egui::util::undoer::Undoer<project::ProjectFile>,
     setup_undoer: egui::util::undoer::Undoer<setup::SetupFile>,
+}
+
+/// State for the modal "Save as macro" dialog.
+struct SaveMacroDialog {
+    /// Subgraph node id whose inner graph we're saving.
+    target_node: NodeId,
+    /// Subgraph path to the target's *parent* level (i.e., the level the
+    /// target node lives in). Empty = root.
+    parent_path: Vec<NodeId>,
+    name: String,
+    group: String,
+    description: String,
+    /// Comma-separated tag input.
+    tags: String,
+    error: Option<String>,
 }
 
 impl LightBeatApp {
@@ -185,6 +208,10 @@ impl LightBeatApp {
             show_input_controllers: false,
             audio_inputs: AudioInputManager::new(),
             show_audio_inputs: false,
+            library: LibraryManager::new(macros::default_library_root()),
+            show_library: true,
+            library_search: String::new(),
+            save_macro_dialog: None,
             project_undoer: egui::util::undoer::Undoer::default(),
             setup_undoer: egui::util::undoer::Undoer::default(),
         };
@@ -789,6 +816,259 @@ impl LightBeatApp {
         self.sync_palette_context();
     }
 
+    // -- Macro library helpers ----------------------------------------------
+
+    fn show_library_panel(&mut self, ui: &mut egui::Ui) {
+        ui.horizontal(|ui| {
+            ui.heading("Macros");
+            if ui.small_button(egui_phosphor::regular::ARROWS_CLOCKWISE)
+                .on_hover_text("Refresh library")
+                .clicked()
+            {
+                self.library.rescan();
+            }
+        });
+        ui.separator();
+
+        ui.horizontal(|ui| {
+            ui.label(egui_phosphor::regular::MAGNIFYING_GLASS);
+            ui.add(egui::TextEdit::singleline(&mut self.library_search)
+                .hint_text("search name/tag/group")
+                .desired_width(ui.available_width()));
+        });
+        ui.separator();
+
+        if let Some(err) = &self.library.last_error {
+            ui.colored_label(egui::Color32::LIGHT_RED, err);
+        }
+        if self.library.entries.is_empty() {
+            ui.colored_label(egui::Color32::from_gray(140),
+                format!("No macros yet.\nSave one via right-click on a Subgraph.\n\nLibrary at: {}",
+                    self.library.root.display()));
+            return;
+        }
+
+        let q = self.library_search.to_lowercase();
+        let entries: Vec<_> = self.library.entries.iter().enumerate()
+            .filter(|(_, e)| {
+                if q.is_empty() { return true; }
+                e.name.to_lowercase().contains(&q)
+                    || e.group.to_lowercase().contains(&q)
+                    || e.tags.iter().any(|t| t.to_lowercase().contains(&q))
+            })
+            .map(|(i, e)| (i, e.clone()))
+            .collect();
+
+        let mut instantiate: Option<usize> = None;
+        let mut delete: Option<std::path::PathBuf> = None;
+
+        egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
+            // Group entries by their group path.
+            let mut current_group: Option<String> = None;
+            for (idx, e) in &entries {
+                if Some(&e.group) != current_group.as_ref() {
+                    if current_group.is_some() { ui.add_space(4.0); }
+                    let label = if e.group.is_empty() { "(root)".to_string() } else { e.group.clone() };
+                    ui.colored_label(egui::Color32::from_gray(150),
+                        egui::RichText::new(label).strong().size(11.0));
+                    current_group = Some(e.group.clone());
+                }
+                let resp = ui.add(egui::Button::new(&e.name).wrap_mode(egui::TextWrapMode::Extend));
+                let mut hover = format!("Double-click to add.\n\n{}", e.description);
+                if !e.tags.is_empty() {
+                    hover.push_str(&format!("\n\nTags: {}", e.tags.join(", ")));
+                }
+                let resp = resp.on_hover_text(hover);
+                if resp.double_clicked() {
+                    instantiate = Some(*idx);
+                }
+                resp.context_menu(|ui| {
+                    if ui.button("Add to canvas").clicked() {
+                        instantiate = Some(*idx);
+                        ui.close_menu();
+                    }
+                    ui.separator();
+                    if ui.button("Delete from library").clicked() {
+                        delete = Some(e.path.clone());
+                        ui.close_menu();
+                    }
+                });
+            }
+        });
+
+        if let Some(idx) = instantiate {
+            let entry = self.library.entries[idx].clone();
+            self.instantiate_macro_from_path(&entry.path);
+        }
+        if let Some(p) = delete {
+            if let Err(e) = self.library.delete(&p) {
+                eprintln!("delete macro: {}", e);
+            }
+        }
+    }
+
+    /// Handle a macro request emitted by the right-click menu in the graph.
+    fn handle_macro_request(&mut self, req: MacroRequest) {
+        match req {
+            MacroRequest::SaveAs { node_id, subgraph_path } => {
+                // The selected subgraph's parent level is the current
+                // subgraph_path; the inner graph we want to save belongs to
+                // the target node itself.
+                let _ = node_id;
+                self.save_macro_dialog = Some(SaveMacroDialog {
+                    target_node: node_id,
+                    parent_path: subgraph_path,
+                    name: String::new(),
+                    group: String::new(),
+                    description: String::new(),
+                    tags: String::new(),
+                    error: None,
+                });
+            }
+        }
+    }
+
+    /// Validate dialog input, build the .lbm file, write it. Returns Err on
+    /// failure (kept open in the dialog).
+    fn save_pending_macro(&mut self) -> Result<(), String> {
+        let dlg = self.save_macro_dialog.as_ref()
+            .ok_or_else(|| "no dialog state".to_string())?;
+        let target_id = dlg.target_node;
+        let group = dlg.group.trim().trim_matches('/').to_string();
+        let name = dlg.name.trim().to_string();
+        if name.is_empty() {
+            return Err("Name is required".to_string());
+        }
+        let tags: Vec<String> = dlg.tags.split(',')
+            .map(|t| t.trim().to_string())
+            .filter(|t| !t.is_empty())
+            .collect();
+
+        // Find the inner graph for the target subgraph.
+        let level = self.graph.find_level_for_subgraph(target_id)
+            .ok_or_else(|| "subgraph has no inner level (yet)".to_string())?;
+        let inner = project::save_level(level, &self.graph);
+
+        // Capture the subgraph's external port defs so the macro can
+        // re-instantiate with the same I/O shape.
+        let (inputs, outputs) = self.subgraph_port_defs(target_id, &dlg.parent_path);
+
+        let m = Macro {
+            format_version: macros::MACRO_FORMAT_VERSION,
+            name: name.clone(),
+            creator: String::new(),
+            date: macros::now_timestamp(),
+            description: dlg.description.clone(),
+            tags,
+            inputs,
+            outputs,
+            graph: inner,
+        };
+        let path = self.library.path_for(&group, &name);
+        if path.exists() {
+            return Err(format!("File already exists: {}", path.display()));
+        }
+        m.save_to_file(&path)?;
+        self.library.rescan();
+        Ok(())
+    }
+
+    /// Read the subgraph's external port defs out of its widget at the
+    /// given parent path. Returns `(inputs, outputs)` — empty if not found.
+    fn subgraph_port_defs(
+        &self,
+        target_id: NodeId,
+        _parent_path: &[NodeId],
+    ) -> (
+        Vec<engine::nodes::meta::subgraph::SubgraphPortDef>,
+        Vec<engine::nodes::meta::subgraph::SubgraphPortDef>,
+    ) {
+        // The macro's port defs come from the `find_level_for_subgraph` we
+        // already used for the inner graph: the bridge nodes inside that
+        // level mirror the subgraph's external ports.
+        // But simpler: walk up to the parent level and read SubgraphWidget
+        // directly. We rely on the SubgraphWidget being in the active
+        // graph somewhere with the matching node id.
+        for level in self.graph.all_levels() {
+            for (i, n) in level.nodes.iter().enumerate() {
+                if level.states[i].id != target_id { continue; }
+                // Can't downcast through &dyn; need &mut. Use a different
+                // route: serialize the subgraph's pending shared.save_data
+                // which contains the port defs JSON.
+                let shared = n.shared_state().lock().unwrap();
+                if let Some(data) = &shared.save_data {
+                    use engine::nodes::meta::subgraph::SubgraphPortDef;
+                    let inputs = data.get("inputs")
+                        .and_then(|v| v.as_array())
+                        .map(|arr| arr.iter()
+                            .filter_map(|v| serde_json::from_value::<SubgraphPortDef>(v.clone()).ok())
+                            .collect())
+                        .unwrap_or_default();
+                    let outputs = data.get("outputs")
+                        .and_then(|v| v.as_array())
+                        .map(|arr| arr.iter()
+                            .filter_map(|v| serde_json::from_value::<SubgraphPortDef>(v.clone()).ok())
+                            .collect())
+                        .unwrap_or_default();
+                    return (inputs, outputs);
+                }
+            }
+        }
+        (Vec::new(), Vec::new())
+    }
+
+    /// Load a macro file and add it as a locked Subgraph at the current
+    /// canvas position. All NodeIds in the inner graph are remapped to
+    /// fresh ones to avoid collisions with existing project nodes.
+    fn instantiate_macro_from_path(&mut self, path: &std::path::Path) {
+        let m = match Macro::load_from_file(path) {
+            Ok(m) => m,
+            Err(e) => { eprintln!("load macro: {}", e); return; }
+        };
+        if m.format_version != macros::MACRO_FORMAT_VERSION {
+            eprintln!("macro '{}': unsupported format_version {}", m.name, m.format_version);
+        }
+
+        // Remap all inner-graph NodeIds (recursively into nested subgraphs)
+        // to fresh ones from the graph's allocator.
+        let mut inner = m.graph;
+        remap_project_ids(&mut inner, || self.graph.alloc_id());
+
+        // Wrap as a SavedNode of type Subgraph at the current canvas center.
+        let canvas_pos = egui::Pos2::new(40.0, 40.0); // TODO: spawn at viewport center.
+        let new_id = self.graph.alloc_id();
+        let data = serde_json::json!({
+            "name": m.name,
+            "inputs": m.inputs,
+            "outputs": m.outputs,
+            "locked": true,
+        });
+        let saved = project::SavedNode {
+            type_name: "Subgraph".to_string(),
+            id: new_id.0,
+            pos: [canvas_pos.x, canvas_pos.y],
+            size: None,
+            params: Vec::new(),
+            data: Some(data),
+            inner_graph: Some(inner),
+        };
+
+        // Load this single node into the active level via the existing
+        // project loader machinery (handles inner-graph descent + bridges).
+        let pf = project::ProjectFile { nodes: vec![saved.clone()], connections: Vec::new() };
+        let _indices = project::load_graph(&mut self.graph, &pf);
+
+        // Spawn engine nodes + send queued commands + load_data, same as
+        // load_project_from / undo apply_project does.
+        self.wire_new_nodes();
+        for cmd in self.graph.drain_engine_commands() {
+            self.engine.send(cmd);
+        }
+        // The macro's nodes need their per-node data restored too (inner
+        // subgraphs have data fields, etc.).
+        self.send_load_data_recursive(&pf.nodes, &_indices, vec![]);
+    }
+
     fn window_title(&self) -> String {
         let name = self
             .project_path
@@ -896,6 +1176,10 @@ impl eframe::App for LightBeatApp {
                         ui.close_menu();
                     }
                     if ui.checkbox(&mut self.show_audio_inputs, "Audio Inputs").changed() {
+                        ui.close_menu();
+                    }
+                    ui.separator();
+                    if ui.checkbox(&mut self.show_library, "Macro Library").changed() {
                         ui.close_menu();
                     }
                     ui.separator();
@@ -1023,6 +1307,77 @@ impl eframe::App for LightBeatApp {
         // Periodic reconnect / port availability checks.
         self.input_controllers.tick_reconnect();
         self.audio_inputs.tick_reconnect();
+
+        // Library side panel (left).
+        if self.show_library {
+            egui::SidePanel::left("library_panel")
+                .default_width(220.0)
+                .show(ctx, |ui| {
+                    self.show_library_panel(ui);
+                });
+        }
+
+        // Pump pending macro requests from the graph (right-click actions).
+        if let Some(req) = self.graph.take_macro_request() {
+            self.handle_macro_request(req);
+        }
+
+        // Save-as-macro modal dialog.
+        let mut close_dialog = false;
+        let mut save_action: Option<()> = None;
+        if let Some(dlg) = &mut self.save_macro_dialog {
+            let mut open = true;
+            egui::Window::new("Save as macro")
+                .open(&mut open)
+                .resizable(false)
+                .collapsible(false)
+                .default_size([360.0, 0.0])
+                .show(ctx, |ui| {
+                    egui::Grid::new("save_macro_grid")
+                        .num_columns(2)
+                        .spacing([8.0, 4.0])
+                        .show(ui, |ui| {
+                            ui.label("Name:");
+                            ui.text_edit_singleline(&mut dlg.name);
+                            ui.end_row();
+                            ui.label("Group:");
+                            ui.text_edit_singleline(&mut dlg.group)
+                                .on_hover_text("Optional. Use '/' for nested groups, e.g. \"audio/triggers\".");
+                            ui.end_row();
+                            ui.label("Tags:");
+                            ui.text_edit_singleline(&mut dlg.tags)
+                                .on_hover_text("Comma-separated.");
+                            ui.end_row();
+                            ui.label("Description:");
+                            ui.text_edit_multiline(&mut dlg.description);
+                            ui.end_row();
+                        });
+                    if let Some(err) = &dlg.error {
+                        ui.colored_label(egui::Color32::LIGHT_RED, err);
+                    }
+                    ui.separator();
+                    ui.horizontal(|ui| {
+                        let can_save = !dlg.name.trim().is_empty();
+                        if ui.add_enabled(can_save, egui::Button::new("Save")).clicked() {
+                            save_action = Some(());
+                        }
+                        if ui.button("Cancel").clicked() {
+                            close_dialog = true;
+                        }
+                    });
+                });
+            if !open { close_dialog = true; }
+        }
+        if save_action.is_some() {
+            if let Err(e) = self.save_pending_macro() {
+                if let Some(dlg) = &mut self.save_macro_dialog {
+                    dlg.error = Some(e);
+                }
+            } else {
+                close_dialog = true;
+            }
+        }
+        if close_dialog { self.save_macro_dialog = None; }
 
         // Inspector panel — visibility gated by InspectorMode.
         let has_selection = !self.graph.selected_nodes_mut().is_empty();
@@ -1202,6 +1557,39 @@ impl eframe::App for LightBeatApp {
             self.save_setup();
         }
     }
+}
+
+/// Walk a `ProjectFile` (recursively into nested subgraphs) and rewrite
+/// every node id + connection endpoint to a fresh id allocated via `alloc`.
+/// Bridge sentinel ids (`u64::MAX` / `u64::MAX-1`) are left intact — they're
+/// position-based, not identity-based.
+fn remap_project_ids<F: FnMut() -> NodeId>(pf: &mut project::ProjectFile, mut alloc: F) {
+    use std::collections::HashMap;
+    use engine::nodes::meta::subgraph::{BRIDGE_IN_NODE_ID, BRIDGE_OUT_NODE_ID};
+
+    fn is_bridge(id: u64) -> bool {
+        id == BRIDGE_IN_NODE_ID.0 || id == BRIDGE_OUT_NODE_ID.0
+    }
+
+    fn walk<F: FnMut() -> NodeId>(pf: &mut project::ProjectFile, alloc: &mut F) {
+        let mut map: HashMap<u64, u64> = HashMap::new();
+        for n in &mut pf.nodes {
+            if is_bridge(n.id) { continue; }
+            let new = alloc().0;
+            map.insert(n.id, new);
+            n.id = new;
+        }
+        for c in &mut pf.connections {
+            if let Some(&n) = map.get(&c.from_node) { c.from_node = n; }
+            if let Some(&n) = map.get(&c.to_node) { c.to_node = n; }
+        }
+        for n in &mut pf.nodes {
+            if let Some(inner) = n.inner_graph.as_mut() {
+                walk(inner, alloc);
+            }
+        }
+    }
+    walk(pf, &mut alloc);
 }
 
 fn main() -> eframe::Result {

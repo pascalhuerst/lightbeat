@@ -110,39 +110,28 @@ impl EngineGraph {
         }
     }
 
+    /// Defensive recursion guard — prevents accidental runaway descent if the
+    /// path is malformed. The user is unlikely to nest this deep manually.
+    const MAX_SUBGRAPH_NEST_DEPTH: usize = 32;
+
     fn apply_subgraph_inner_cmd(&mut self, path: &[NodeId], cmd: SubgraphInnerCmd) {
-        if path.is_empty() {
+        if path.is_empty() { return; }
+        if path.len() > Self::MAX_SUBGRAPH_NEST_DEPTH {
+            eprintln!(
+                "Subgraph nesting depth {} exceeds limit {}; dropping command",
+                path.len(), Self::MAX_SUBGRAPH_NEST_DEPTH,
+            );
             return;
         }
-        // Find the subgraph node at the first path element.
-        let target_id = path[0];
-        let Some(node) = self.nodes.iter_mut().find(|n| n.node_id() == target_id) else {
+
+        // Find the outermost target subgraph.
+        let Some(node) = self.nodes.iter_mut().find(|n| n.node_id() == path[0]) else {
             return;
         };
         let Some(sg) = node.as_any_mut().downcast_mut::<SubgraphProcessNode>() else {
             return;
         };
-
-        if path.len() == 1 {
-            // This is the target subgraph — apply the command.
-            sg.apply_inner_cmd(cmd);
-        } else {
-            // Nested subgraph — recurse into inner graph.
-            let inner_target = path[1];
-            let Some(inner_node) = sg.inner.nodes.iter_mut().find(|n| n.node_id() == inner_target) else {
-                return;
-            };
-            let Some(inner_sg) = inner_node.as_any_mut().downcast_mut::<SubgraphProcessNode>() else {
-                return;
-            };
-            if path.len() == 2 {
-                inner_sg.apply_inner_cmd(cmd);
-            } else {
-                // For deeper nesting, we'd need a recursive approach.
-                // For now, support up to 2 levels of nesting.
-                eprintln!("Subgraph nesting deeper than 2 levels not yet supported");
-            }
-        }
+        sg.apply_inner_cmd_at_path(&path[1..], cmd);
     }
 
     /// One tick of the engine: process all nodes, propagate signals, update shared state.

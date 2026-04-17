@@ -98,6 +98,15 @@ enum ContextMenuMode {
     Selection,
 }
 
+/// Right-click action on a Subgraph node that the app needs to handle
+/// (because it requires interaction outside the graph itself — opening a
+/// dialog, walking the graph for serialization, etc.).
+#[derive(Debug, Clone)]
+pub enum MacroRequest {
+    /// Open "Save as macro" dialog for this Subgraph.
+    SaveAs { node_id: NodeId, subgraph_path: Vec<NodeId> },
+}
+
 /// A copied node snapshot for clipboard operations.
 #[allow(dead_code)]
 struct ClipboardNode {
@@ -120,6 +129,9 @@ pub struct NodeGraph {
     context_menu_pos: Option<Pos2>,
     context_menu_search: String,
     context_menu_mode: ContextMenuMode,
+    /// Pending macro action emitted by the right-click menu, consumed by the
+    /// app each frame.
+    pending_macro_request: Option<MacroRequest>,
     selected_nodes: Vec<usize>,
     canvas_rect: Rect,
     clipboard: Vec<ClipboardNode>,
@@ -148,6 +160,7 @@ impl NodeGraph {
             context_menu_pos: None,
             context_menu_search: String::new(),
             context_menu_mode: ContextMenuMode::AddNode,
+            pending_macro_request: None,
             selected_nodes: Vec::new(),
             canvas_rect: Rect::NOTHING,
             clipboard: Vec::new(),
@@ -289,7 +302,7 @@ impl NodeGraph {
         self.registry.retain(|e| e.category != category);
     }
 
-    fn alloc_id(&mut self) -> NodeId {
+    pub fn alloc_id(&mut self) -> NodeId {
         let id = NodeId(self.next_id);
         self.next_id += 1;
         id
@@ -388,6 +401,16 @@ impl NodeGraph {
 
     /// Current zoom level of the active graph.
     pub fn zoom(&self) -> f32 { self.active().zoom }
+
+    /// Take any pending macro action emitted by the right-click menu.
+    pub fn take_macro_request(&mut self) -> Option<MacroRequest> {
+        self.pending_macro_request.take()
+    }
+
+    /// Iterate over all graph levels (root + open subgraph inner levels).
+    pub fn all_levels(&self) -> impl Iterator<Item = &GraphLevel> {
+        self.levels.iter()
+    }
 
     /// Find the inner level for a given subgraph node ID, if it exists.
     pub fn find_level_for_subgraph(&self, subgraph_id: NodeId) -> Option<&GraphLevel> {
@@ -1032,8 +1055,26 @@ impl NodeGraph {
             // and there's at least one valid pairwise connection).
             let plan = self.auto_connect_plan();
 
+            // Macro-context info: when exactly one Subgraph is selected,
+            // show "Save as macro..." + "Embed". Embed is a no-op if the
+            // subgraph isn't actually locked (cheap and harmless).
+            let single_subgraph: Option<(NodeId, bool)> = if self.selected_nodes.len() == 1 {
+                let i = self.selected_nodes[0];
+                let level = self.active_mut();
+                if i < level.nodes.len() && level.nodes[i].type_name() == "Subgraph" {
+                    let id = level.states[i].id;
+                    let locked = level.nodes[i].as_any_mut()
+                        .downcast_mut::<SubgraphWidget>()
+                        .map(|w| w.locked)
+                        .unwrap_or(false);
+                    Some((id, locked))
+                } else { None }
+            } else { None };
+
             let mut move_to_sub = false;
             let mut do_auto_connect = false;
+            let mut do_save_macro: Option<NodeId> = None;
+            let mut do_embed: Option<NodeId> = None;
             let area_resp = egui::Area::new(egui::Id::new("selection_ctx_menu"))
                 .order(egui::Order::Foreground)
                 .fixed_pos(menu_pos)
@@ -1054,6 +1095,15 @@ impl NodeGraph {
                         if ui.button("Move to Subgraph").clicked() {
                             move_to_sub = true;
                         }
+                        if let Some((id, locked)) = single_subgraph {
+                            ui.separator();
+                            if ui.button("Save as macro...").clicked() {
+                                do_save_macro = Some(id);
+                            }
+                            if locked && ui.button("Embed").clicked() {
+                                do_embed = Some(id);
+                            }
+                        }
                     });
                 });
             if do_auto_connect {
@@ -1070,6 +1120,29 @@ impl NodeGraph {
             }
             if move_to_sub {
                 self.move_selection_to_subgraph();
+                self.context_menu_pos = None;
+                self.context_menu_search.clear();
+                return;
+            }
+            if let Some(id) = do_save_macro {
+                let path = self.current_subgraph_path();
+                self.pending_macro_request = Some(MacroRequest::SaveAs {
+                    node_id: id,
+                    subgraph_path: path,
+                });
+                self.context_menu_pos = None;
+                self.context_menu_search.clear();
+                return;
+            }
+            if let Some(id) = do_embed {
+                // Find the subgraph widget and clear its locked flag.
+                let level = self.active_mut();
+                if let Some(idx) = level.states.iter().position(|s| s.id == id) {
+                    if let Some(w) = level.nodes[idx].as_any_mut().downcast_mut::<SubgraphWidget>() {
+                        w.locked = false;
+                        w.push_config();
+                    }
+                }
                 self.context_menu_pos = None;
                 self.context_menu_search.clear();
                 return;
@@ -1438,11 +1511,14 @@ impl NodeGraph {
                         self.selected_nodes.clear();
                         self.selected_nodes.push(i);
                     }
-                    // Double-click on a subgraph node to open it.
+                    // Double-click on a subgraph node to open it (unless
+                    // the subgraph is locked — i.e. a macro instance).
                     if double_clicked {
                         if self.active().nodes[i].type_name() == "Subgraph" {
                             if let Some(sub) = self.active_mut().nodes[i].as_any_mut().downcast_mut::<SubgraphWidget>() {
-                                sub.wants_open = true;
+                                if !sub.locked {
+                                    sub.wants_open = true;
+                                }
                             }
                         }
                     }

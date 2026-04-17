@@ -1,4 +1,4 @@
-mod graph;
+pub mod graph;
 pub mod node;
 pub mod types;
 

@@ -86,7 +86,7 @@ pub struct SavedConnection {
 // ---------------------------------------------------------------------------
 
 /// Save a single graph level to a ProjectFile.
-fn save_level(level: &GraphLevel, graph: &NodeGraph) -> ProjectFile {
+pub fn save_level(level: &GraphLevel, graph: &NodeGraph) -> ProjectFile {
     let mut nodes = Vec::new();
 
     for i in 0..level.nodes.len() {
@@ -215,6 +215,9 @@ pub fn load_graph(graph: &mut NodeGraph, project: &ProjectFile) -> Vec<usize> {
                             sub.output_defs = outputs.iter()
                                 .filter_map(|v| serde_json::from_value::<SubgraphPortDef>(v.clone()).ok())
                                 .collect();
+                        }
+                        if let Some(b) = data.get("locked").and_then(|v| v.as_bool()) {
+                            sub.locked = b;
                         }
                         sub.push_config();
                     }

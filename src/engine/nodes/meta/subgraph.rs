@@ -10,6 +10,7 @@ pub struct SubgraphDisplay {
     pub inner_node_count: usize,
     pub input_ports: Vec<PortDef>,
     pub output_ports: Vec<PortDef>,
+    pub locked: bool,
 }
 
 // ---------------------------------------------------------------------------
@@ -199,6 +200,9 @@ pub struct SubgraphProcessNode {
     ext_outputs: Vec<PortDef>,
     ext_input_values: Vec<f32>,
     pub inner: InnerGraph,
+    /// UI-only flag (round-tripped through save/load + display so the
+    /// widget side can mirror it).
+    pub locked: bool,
 }
 
 impl SubgraphProcessNode {
@@ -210,6 +214,7 @@ impl SubgraphProcessNode {
             ext_outputs: Vec::new(),
             ext_input_values: Vec::new(),
             inner: InnerGraph::new(),
+            locked: false,
         }
     }
 
@@ -265,6 +270,9 @@ impl ProcessNode for SubgraphProcessNode {
                 .map(|p| p.to_port_def())
                 .collect();
         }
+        if let Some(b) = data.get("locked").and_then(|v| v.as_bool()) {
+            self.locked = b;
+        }
         self.rebuild_from_port_defs();
     }
 
@@ -279,7 +287,7 @@ impl ProcessNode for SubgraphProcessNode {
             "name": self.name,
             "inputs": inputs,
             "outputs": outputs,
-            // TODO: serialize inner nodes + connections for full save
+            "locked": self.locked,
         }))
     }
 
@@ -289,6 +297,7 @@ impl ProcessNode for SubgraphProcessNode {
             inner_node_count: self.inner.nodes.len(),
             input_ports: self.ext_inputs.clone(),
             output_ports: self.ext_outputs.clone(),
+            locked: self.locked,
         }));
     }
 
@@ -296,6 +305,25 @@ impl ProcessNode for SubgraphProcessNode {
 }
 
 impl SubgraphProcessNode {
+    /// Apply an inner command at the given remaining sub-path. An empty
+    /// `path` targets this subgraph; any further elements descend into
+    /// nested subgraphs by `NodeId`. Used by `EngineGraph::apply_subgraph_inner_cmd`
+    /// for arbitrarily-deep nesting.
+    pub fn apply_inner_cmd_at_path(&mut self, path: &[NodeId], cmd: SubgraphInnerCmd) {
+        if path.is_empty() {
+            self.apply_inner_cmd(cmd);
+            return;
+        }
+        let next_id = path[0];
+        let Some(node) = self.inner.nodes.iter_mut().find(|n| n.node_id() == next_id) else {
+            return;
+        };
+        let Some(sg) = node.as_any_mut().downcast_mut::<SubgraphProcessNode>() else {
+            return;
+        };
+        sg.apply_inner_cmd_at_path(&path[1..], cmd);
+    }
+
     /// Apply an inner command to this subgraph's inner graph.
     pub fn apply_inner_cmd(&mut self, cmd: SubgraphInnerCmd) {
         match cmd {
