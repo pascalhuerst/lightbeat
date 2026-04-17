@@ -33,6 +33,13 @@ pub trait NodeWidget: Any {
     /// Optional custom title bar color. Return None for default.
     fn title_color(&self) -> Option<egui::Color32> { None }
 
+    /// Nodes that belong to a "linked set" (currently just portals) return
+    /// the key that identifies the set. When the user selects a node with a
+    /// portal key, the graph renderer draws a matching outline around every
+    /// other node sharing the same key, so you can see the "wireless" peers
+    /// at a glance. Default: not part of any linked set.
+    fn portal_key(&self) -> Option<String> { None }
+
     /// Short human-readable description of what this node does.
     /// Shown in the inspector and as a tooltip in the context menu.
     fn description(&self) -> &'static str { "" }

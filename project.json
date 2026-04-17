@@ -2,10 +2,10 @@
   "nodes": [
     {
       "type_name": "Input Controller",
-      "id": 114,
+      "id": 1,
       "pos": [
-        -1924.238,
-        763.019
+        649.3151,
+        14.61841
       ],
       "params": [],
       "data": {
@@ -13,11 +13,457 @@
       }
     },
     {
-      "type_name": "Fader Group",
-      "id": 115,
+      "type_name": "Internal Clock",
+      "id": 3,
       "pos": [
-        -1640.3203,
-        799.373
+        10.803793,
+        546.2203
+      ],
+      "params": [
+        {
+          "index": 0,
+          "value": 120.0
+        }
+      ]
+    },
+    {
+      "type_name": "Counter",
+      "id": 6,
+      "pos": [
+        282.78995,
+        273.16562
+      ],
+      "params": [
+        {
+          "index": 0,
+          "value": 8
+        },
+        {
+          "index": 1,
+          "value": 0
+        }
+      ]
+    },
+    {
+      "type_name": "Fader Group",
+      "id": 8,
+      "pos": [
+        1024.7511,
+        -129.59583
+      ],
+      "params": [],
+      "data": {
+        "bipolar": [
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false
+        ],
+        "cols": 8,
+        "inputs_enabled": [
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true
+        ],
+        "mouse_override": [
+          "no",
+          "no",
+          "no",
+          "no",
+          "no",
+          "no",
+          "no",
+          "no"
+        ],
+        "mouse_values": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "name": "Main Faders",
+        "outputs_enabled": [
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true
+        ],
+        "override_values": [
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null
+        ],
+        "rows": 1
+      }
+    },
+    {
+      "type_name": "Portal In",
+      "id": 9,
+      "pos": [
+        1314.5286,
+        -129.13383
+      ],
+      "params": [],
+      "data": {
+        "name": "Main Faders",
+        "ports": [
+          {
+            "name": "Fader 1",
+            "port_type_idx": 2
+          },
+          {
+            "name": "Fader 2",
+            "port_type_idx": 2
+          },
+          {
+            "name": "Fader 3",
+            "port_type_idx": 2
+          },
+          {
+            "name": "Fader 4",
+            "port_type_idx": 2
+          },
+          {
+            "name": "Fader 5",
+            "port_type_idx": 2
+          },
+          {
+            "name": "Fader 6",
+            "port_type_idx": 2
+          },
+          {
+            "name": "Fader 7",
+            "port_type_idx": 2
+          },
+          {
+            "name": "Fader 8",
+            "port_type_idx": 2
+          }
+        ]
+      }
+    },
+    {
+      "type_name": "Fader Group",
+      "id": 11,
+      "pos": [
+        1010.7311,
+        118.668846
+      ],
+      "params": [],
+      "data": {
+        "bipolar": [
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false
+        ],
+        "cols": 8,
+        "inputs_enabled": [
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true
+        ],
+        "mouse_override": [
+          "no",
+          "no",
+          "no",
+          "no",
+          "no",
+          "no",
+          "no",
+          "no"
+        ],
+        "mouse_values": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "name": "Main Encoders",
+        "outputs_enabled": [
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true
+        ],
+        "override_values": [
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null
+        ],
+        "rows": 1
+      }
+    },
+    {
+      "type_name": "Portal In",
+      "id": 12,
+      "pos": [
+        1309.0995,
+        117.27744
+      ],
+      "params": [],
+      "data": {
+        "name": "Main Encoders",
+        "ports": [
+          {
+            "name": "Encoder 1",
+            "port_type_idx": 2
+          },
+          {
+            "name": "Encoder 2",
+            "port_type_idx": 2
+          },
+          {
+            "name": "Encoder 3",
+            "port_type_idx": 2
+          },
+          {
+            "name": "Encoder 4",
+            "port_type_idx": 2
+          },
+          {
+            "name": "Encoder 5",
+            "port_type_idx": 2
+          },
+          {
+            "name": "Encoder 6",
+            "port_type_idx": 2
+          },
+          {
+            "name": "Encoder 7",
+            "port_type_idx": 2
+          },
+          {
+            "name": "Encoder 8",
+            "port_type_idx": 2
+          }
+        ]
+      }
+    },
+    {
+      "type_name": "Portal Out",
+      "id": 13,
+      "pos": [
+        1953.7657,
+        -1.984978
+      ],
+      "params": [],
+      "data": {
+        "bound_name": "Main Faders",
+        "ports": [
+          {
+            "name": "Fader 1",
+            "port_type_idx": 2
+          },
+          {
+            "name": "Fader 2",
+            "port_type_idx": 2
+          },
+          {
+            "name": "Fader 3",
+            "port_type_idx": 2
+          },
+          {
+            "name": "Fader 4",
+            "port_type_idx": 2
+          },
+          {
+            "name": "Fader 5",
+            "port_type_idx": 2
+          },
+          {
+            "name": "Fader 6",
+            "port_type_idx": 2
+          },
+          {
+            "name": "Fader 7",
+            "port_type_idx": 2
+          },
+          {
+            "name": "Fader 8",
+            "port_type_idx": 2
+          }
+        ]
+      }
+    },
+    {
+      "type_name": "Fader Group",
+      "id": 14,
+      "pos": [
+        2188.218,
+        12.597303
+      ],
+      "size": [
+        620.8073,
+        222.0
+      ],
+      "params": [],
+      "data": {
+        "bipolar": [
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false
+        ],
+        "cols": 8,
+        "inputs_enabled": [
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true
+        ],
+        "mouse_override": [
+          "no",
+          "no",
+          "no",
+          "no",
+          "no",
+          "no",
+          "no",
+          "no"
+        ],
+        "mouse_values": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "name": "Main Faders",
+        "outputs_enabled": [
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true
+        ],
+        "override_values": [
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null
+        ],
+        "rows": 1
+      }
+    },
+    {
+      "type_name": "Portal Out",
+      "id": 15,
+      "pos": [
+        1960.5073,
+        281.0044
+      ],
+      "params": [],
+      "data": {
+        "bound_name": "Main Encoders",
+        "ports": [
+          {
+            "name": "Encoder 1",
+            "port_type_idx": 2
+          },
+          {
+            "name": "Encoder 2",
+            "port_type_idx": 2
+          },
+          {
+            "name": "Encoder 3",
+            "port_type_idx": 2
+          },
+          {
+            "name": "Encoder 4",
+            "port_type_idx": 2
+          },
+          {
+            "name": "Encoder 5",
+            "port_type_idx": 2
+          },
+          {
+            "name": "Encoder 6",
+            "port_type_idx": 2
+          },
+          {
+            "name": "Encoder 7",
+            "port_type_idx": 2
+          },
+          {
+            "name": "Encoder 8",
+            "port_type_idx": 2
+          }
+        ]
+      }
+    },
+    {
+      "type_name": "Fader Group",
+      "id": 16,
+      "pos": [
+        2195.6135,
+        288.94376
+      ],
+      "size": [
+        621.62244,
+        222.0
       ],
       "params": [],
       "data": {
@@ -44,13 +490,13 @@
         ],
         "mouse_override": [
           "clear_on_reset",
-          "pickup_decrease",
-          "pickup_increase",
           "clear_on_reset",
-          "pickup_decrease",
-          "pickup_increase",
           "clear_on_reset",
-          "pickup_decrease"
+          "clear_on_reset",
+          "clear_on_reset",
+          "clear_on_reset",
+          "clear_on_reset",
+          "clear_on_reset"
         ],
         "mouse_values": [
           0.0,
@@ -62,6 +508,7 @@
           0.0,
           0.0
         ],
+        "name": "",
         "outputs_enabled": [
           true,
           true,
@@ -73,170 +520,37 @@
           true
         ],
         "override_values": [
-          0.6180039048194885,
           null,
+          0.8241145014762878,
           null,
-          0.5600957274436951,
+          0.6436316967010498,
           null,
-          null,
-          0.9248133897781372,
-          null
-        ],
-        "rows": 1
-      }
-    },
-    {
-      "type_name": "Fader Group",
-      "id": 116,
-      "pos": [
-        -1289.4287,
-        794.69635
-      ],
-      "params": [],
-      "data": {
-        "bipolar": [
-          false,
-          false,
-          false,
-          false
-        ],
-        "cols": 4,
-        "inputs_enabled": [
-          false,
-          false,
-          false,
-          false
-        ],
-        "mouse_override": [
-          "no",
-          "no",
-          "no",
-          "no"
-        ],
-        "mouse_values": [
-          0.0,
-          0.0,
-          0.0,
-          0.0
-        ],
-        "outputs_enabled": [
-          true,
-          true,
-          true,
-          true
-        ],
-        "override_values": [
-          null,
-          null,
+          0.38425248861312866,
           null,
           null
         ],
         "rows": 1
-      }
-    },
-    {
-      "type_name": "Audio Input",
-      "id": 117,
-      "pos": [
-        -2940.5154,
-        1950.0215
-      ],
-      "size": [
-        264.55157,
-        217.03807
-      ],
-      "params": [
-        {
-          "index": 0,
-          "value": 2
-        },
-        {
-          "index": 1,
-          "value": 0
-        },
-        {
-          "index": 2,
-          "value": true
-        },
-        {
-          "index": 3,
-          "value": -80.0
-        },
-        {
-          "index": 4,
-          "value": 0.14999999105930328
-        },
-        {
-          "index": 5,
-          "value": 370.0
-        },
-        {
-          "index": 6,
-          "value": 500.0
-        },
-        {
-          "index": 7,
-          "value": 5.099999904632568
-        },
-        {
-          "index": 8,
-          "value": 100.0999984741211
-        },
-        {
-          "index": 9,
-          "value": 1
-        },
-        {
-          "index": 10,
-          "value": -90.0
-        },
-        {
-          "index": 11,
-          "value": 0.7699999809265137
-        },
-        {
-          "index": 12,
-          "value": 350.0
-        }
-      ],
-      "data": {
-        "input_id": 1,
-        "params": {
-          "a0.cgd_smooth": true,
-          "a0.min_ioi_ms": 370.0,
-          "a0.odf": 2,
-          "a0.picker": 0,
-          "a0.silence_db": -80.0,
-          "a0.threshold": 0.14999999105930328,
-          "a1.release_ms": 500.0,
-          "a2.attack_ms": 5.099999904632568,
-          "a2.release_ms": 100.0999984741211,
-          "a3.method": 1,
-          "a3.min_ioi_ms": 350.0,
-          "a3.silence_db": -90.0,
-          "a3.threshold": 0.7699999809265137
-        }
       }
     },
     {
       "type_name": "Scope",
-      "id": 121,
+      "id": 17,
       "pos": [
-        -2096.9119,
-        2001.7687
+        1413.0675,
+        -485.41528
       ],
       "size": [
-        879.76825,
-        278.4084
+        395.5974,
+        268.56268
       ],
       "params": [
         {
           "index": 0,
-          "value": 0.375
+          "value": 1.0
         },
         {
           "index": 1,
-          "value": 512
+          "value": 200
         },
         {
           "index": 2,
@@ -249,1566 +563,333 @@
       ]
     },
     {
-      "type_name": "Scope",
-      "id": 155,
+      "type_name": "Fader",
+      "id": 18,
       "pos": [
-        -2099.7278,
-        2317.389
+        -261.69797,
+        -70.73757
       ],
       "size": [
-        879.76825,
-        278.4084
-      ],
-      "params": [
-        {
-          "index": 0,
-          "value": 0.375
-        },
-        {
-          "index": 1,
-          "value": 512
-        },
-        {
-          "index": 2,
-          "value": 0.0
-        },
-        {
-          "index": 3,
-          "value": 1.0
-        }
-      ]
-    },
-    {
-      "type_name": "Step Sequencer",
-      "id": 159,
-      "pos": [
-        -1948.6356,
-        1473.9403
-      ],
-      "size": [
-        596.3166,
-        167.14891
-      ],
-      "params": [
-        {
-          "index": 0,
-          "value": 16
-        },
-        {
-          "index": 1,
-          "value": 1
-        }
-      ],
-      "data": {
-        "mode": "trigger",
-        "values": [
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0
-        ]
-      }
-    },
-    {
-      "type_name": "Step Sequencer",
-      "id": 160,
-      "pos": [
-        -1948.7045,
-        1289.7499
-      ],
-      "size": [
-        596.3166,
-        167.14891
-      ],
-      "params": [
-        {
-          "index": 0,
-          "value": 4
-        },
-        {
-          "index": 1,
-          "value": 1
-        }
-      ],
-      "data": {
-        "mode": "trigger",
-        "values": [
-          0.0,
-          0.0,
-          0.0,
-          0.0
-        ]
-      }
-    },
-    {
-      "type_name": "Button",
-      "id": 163,
-      "pos": [
-        -3196.508,
-        828.7656
+        157.58963,
+        384.7164
       ],
       "params": [],
       "data": {
+        "bipolar": true,
         "inputs_enabled": false,
-        "label": "Set",
-        "mode": "trigger",
-        "override_enabled": false,
-        "override_state": null,
-        "reset_mode": "clear_on_reset",
-        "state": false
+        "mouse_override": "no",
+        "mouse_value": 0.9227011203765869,
+        "orientation": "vertical",
+        "override_value": null
       }
-    },
-    {
-      "type_name": "Button",
-      "id": 164,
-      "pos": [
-        -3193.1177,
-        946.9713
-      ],
-      "params": [],
-      "data": {
-        "inputs_enabled": false,
-        "label": "Trigger",
-        "mode": "trigger",
-        "override_enabled": false,
-        "override_state": null,
-        "reset_mode": "clear_on_reset",
-        "state": false
-      }
-    },
-    {
-      "type_name": "Subgraph",
-      "id": 224,
-      "pos": [
-        -2849.26,
-        788.14233
-      ],
-      "size": [
-        120.0,
-        113.08887
-      ],
-      "params": [],
-      "data": {
-        "inputs": [
-          {
-            "name": "arm",
-            "port_type_idx": 0
-          },
-          {
-            "name": "trigger",
-            "port_type_idx": 0
-          }
-        ],
-        "locked": true,
-        "macro_description": "Synced Trigger has an arm input and a trigger input. When there was a trigger on the arm input, it will output a trigger, whenever there is a trigger on the trigger input. When unarmed, triggers on the input have no effect.",
-        "macro_path": "/home/paso/.local/share/lightbeat/macros/tool/trigger/Synced Trigger.lbm",
-        "name": "Synced Trigger",
-        "outputs": [
-          {
-            "name": "trigger",
-            "port_type_idx": 0
-          }
-        ]
-      },
-      "inner_graph": {
-        "nodes": [
-          {
-            "type_name": "Flip-Flop",
-            "id": 219,
-            "pos": [
-              51.05298,
-              131.50226
-            ],
-            "params": [],
-            "data": {
-              "state": false
-            }
-          },
-          {
-            "type_name": "AND",
-            "id": 220,
-            "pos": [
-              212.84888,
-              131.34454
-            ],
-            "params": [],
-            "data": {
-              "input_count": 2
-            }
-          },
-          {
-            "type_name": "LED Display",
-            "id": 221,
-            "pos": [
-              350.91864,
-              -57.947662
-            ],
-            "size": [
-              90.27328,
-              138.54713
-            ],
-            "params": [],
-            "data": {
-              "name": "armed"
-            }
-          },
-          {
-            "type_name": "LED Display",
-            "id": 222,
-            "pos": [
-              596.42633,
-              262.29657
-            ],
-            "size": [
-              95.744896,
-              96.274994
-            ],
-            "params": [],
-            "data": {
-              "name": "trigger"
-            }
-          },
-          {
-            "type_name": "Trigger Hold",
-            "id": 223,
-            "pos": [
-              349.46152,
-              307.50238
-            ],
-            "params": [
-              {
-                "index": 0,
-                "value": 75
-              }
-            ],
-            "data": {
-              "default_duration": 75
-            }
-          }
-        ],
-        "connections": [
-          {
-            "from_node": 219,
-            "from_port": 0,
-            "to_node": 220,
-            "to_port": 0
-          },
-          {
-            "from_node": 220,
-            "from_port": 0,
-            "to_node": 219,
-            "to_port": 1
-          },
-          {
-            "from_node": 18446744073709551614,
-            "from_port": 0,
-            "to_node": 219,
-            "to_port": 0
-          },
-          {
-            "from_node": 18446744073709551614,
-            "from_port": 1,
-            "to_node": 220,
-            "to_port": 1
-          },
-          {
-            "from_node": 220,
-            "from_port": 0,
-            "to_node": 18446744073709551615,
-            "to_port": 0
-          },
-          {
-            "from_node": 219,
-            "from_port": 0,
-            "to_node": 221,
-            "to_port": 0
-          },
-          {
-            "from_node": 220,
-            "from_port": 0,
-            "to_node": 223,
-            "to_port": 0
-          },
-          {
-            "from_node": 223,
-            "from_port": 0,
-            "to_node": 222,
-            "to_port": 0
-          }
-        ]
-      }
-    },
-    {
-      "type_name": "Value Display",
-      "id": 225,
-      "pos": [
-        -2410.2478,
-        2004.6943
-      ],
-      "size": [
-        271.86905,
-        250.30582
-      ],
-      "params": [],
-      "data": {
-        "name": ""
-      }
-    },
-    {
-      "type_name": "Value Display",
-      "id": 226,
-      "pos": [
-        -2401.3103,
-        2332.3987
-      ],
-      "size": [
-        271.86905,
-        250.30582
-      ],
-      "params": [],
-      "data": {
-        "name": ""
-      }
-    },
-    {
-      "type_name": "Counter",
-      "id": 227,
-      "pos": [
-        -2299.0422,
-        1394.3378
-      ],
-      "params": [
-        {
-          "index": 0,
-          "value": 4
-        },
-        {
-          "index": 1,
-          "value": 0
-        }
-      ]
-    },
-    {
-      "type_name": "Subgraph",
-      "id": 234,
-      "pos": [
-        -2315.979,
-        1501.706
-      ],
-      "size": [
-        140.18846,
-        120.7618
-      ],
-      "params": [],
-      "data": {
-        "inputs": [
-          {
-            "name": "arm",
-            "port_type_idx": 0
-          },
-          {
-            "name": "trigger",
-            "port_type_idx": 0
-          }
-        ],
-        "locked": true,
-        "macro_description": "Synced Trigger has an arm input and a trigger input. When there was a trigger on the arm input, it will output a trigger, whenever there is a trigger on the trigger input. When unarmed, triggers on the input have no effect.",
-        "macro_path": "/home/paso/.local/share/lightbeat/macros/tool/trigger/Synced Trigger.lbm",
-        "name": "Synced Trigger",
-        "outputs": [
-          {
-            "name": "trigger",
-            "port_type_idx": 0
-          }
-        ]
-      },
-      "inner_graph": {
-        "nodes": [
-          {
-            "type_name": "Flip-Flop",
-            "id": 229,
-            "pos": [
-              51.05298,
-              131.50226
-            ],
-            "params": [],
-            "data": {
-              "state": true
-            }
-          },
-          {
-            "type_name": "AND",
-            "id": 230,
-            "pos": [
-              212.84888,
-              131.34454
-            ],
-            "params": [],
-            "data": {
-              "input_count": 2
-            }
-          },
-          {
-            "type_name": "LED Display",
-            "id": 231,
-            "pos": [
-              350.91864,
-              -57.947662
-            ],
-            "size": [
-              90.27328,
-              138.54713
-            ],
-            "params": [],
-            "data": {
-              "name": "armed"
-            }
-          },
-          {
-            "type_name": "LED Display",
-            "id": 232,
-            "pos": [
-              596.42633,
-              262.29657
-            ],
-            "size": [
-              95.744896,
-              96.274994
-            ],
-            "params": [],
-            "data": {
-              "name": "trigger"
-            }
-          },
-          {
-            "type_name": "Trigger Hold",
-            "id": 233,
-            "pos": [
-              349.46152,
-              307.50238
-            ],
-            "params": [
-              {
-                "index": 0,
-                "value": 75
-              }
-            ],
-            "data": {
-              "default_duration": 75
-            }
-          }
-        ],
-        "connections": [
-          {
-            "from_node": 229,
-            "from_port": 0,
-            "to_node": 230,
-            "to_port": 0
-          },
-          {
-            "from_node": 230,
-            "from_port": 0,
-            "to_node": 229,
-            "to_port": 1
-          },
-          {
-            "from_node": 18446744073709551614,
-            "from_port": 0,
-            "to_node": 229,
-            "to_port": 0
-          },
-          {
-            "from_node": 18446744073709551614,
-            "from_port": 1,
-            "to_node": 230,
-            "to_port": 1
-          },
-          {
-            "from_node": 230,
-            "from_port": 0,
-            "to_node": 18446744073709551615,
-            "to_port": 0
-          },
-          {
-            "from_node": 229,
-            "from_port": 0,
-            "to_node": 231,
-            "to_port": 0
-          },
-          {
-            "from_node": 230,
-            "from_port": 0,
-            "to_node": 233,
-            "to_port": 0
-          },
-          {
-            "from_node": 233,
-            "from_port": 0,
-            "to_node": 232,
-            "to_port": 0
-          }
-        ]
-      }
-    },
-    {
-      "type_name": "Const Value",
-      "id": 236,
-      "pos": [
-        -2134.1987,
-        1737.8099
-      ],
-      "params": [
-        {
-          "index": 0,
-          "value": 5.999999523162842
-        }
-      ]
-    },
-    {
-      "type_name": "Const Value",
-      "id": 237,
-      "pos": [
-        -2145.5674,
-        1818.152
-      ],
-      "params": [
-        {
-          "index": 0,
-          "value": 10.0
-        }
-      ]
-    },
-    {
-      "type_name": "Mul",
-      "id": 238,
-      "pos": [
-        -2009.7068,
-        1723.8419
-      ],
-      "params": [],
-      "data": {
-        "input_count": 2
-      }
-    },
-    {
-      "type_name": "Div",
-      "id": 239,
-      "pos": [
-        -1866.4766,
-        1721.6815
-      ],
-      "params": [],
-      "data": {
-        "input_count": 2
-      }
-    },
-    {
-      "type_name": "Mul",
-      "id": 240,
-      "pos": [
-        -1660.833,
-        1714.5316
-      ],
-      "params": [],
-      "data": {
-        "input_count": 2
-      }
-    },
-    {
-      "type_name": "Const Value",
-      "id": 241,
-      "pos": [
-        -1875.8662,
-        1886.0969
-      ],
-      "params": [
-        {
-          "index": 0,
-          "value": 0.9499997496604919
-        }
-      ]
-    },
-    {
-      "type_name": "Value Display",
-      "id": 242,
-      "pos": [
-        -1511.8037,
-        1720.8632
-      ],
-      "size": [
-        396.82965,
-        244.70387
-      ],
-      "params": [],
-      "data": {
-        "name": ""
-      }
-    },
-    {
-      "type_name": "Const Value",
-      "id": 243,
-      "pos": [
-        -2313.3455,
-        2669.7322
-      ],
-      "params": [
-        {
-          "index": 0,
-          "value": 5.999999523162842
-        }
-      ]
-    },
-    {
-      "type_name": "Const Value",
-      "id": 244,
-      "pos": [
-        -2324.714,
-        2750.0742
-      ],
-      "params": [
-        {
-          "index": 0,
-          "value": 10.0
-        }
-      ]
-    },
-    {
-      "type_name": "Mul",
-      "id": 245,
-      "pos": [
-        -2188.8538,
-        2655.7642
-      ],
-      "params": [],
-      "data": {
-        "input_count": 2
-      }
-    },
-    {
-      "type_name": "Div",
-      "id": 246,
-      "pos": [
-        -2045.6223,
-        2653.6038
-      ],
-      "params": [],
-      "data": {
-        "input_count": 2
-      }
-    },
-    {
-      "type_name": "Mul",
-      "id": 247,
-      "pos": [
-        -1839.9788,
-        2646.4539
-      ],
-      "params": [],
-      "data": {
-        "input_count": 2
-      }
-    },
-    {
-      "type_name": "Const Value",
-      "id": 248,
-      "pos": [
-        -2055.012,
-        2818.019
-      ],
-      "params": [
-        {
-          "index": 0,
-          "value": 0.9499997496604919
-        }
-      ]
-    },
-    {
-      "type_name": "Value Display",
-      "id": 249,
-      "pos": [
-        -1690.9495,
-        2652.7854
-      ],
-      "size": [
-        396.82965,
-        244.70387
-      ],
-      "params": [],
-      "data": {
-        "name": ""
-      }
-    },
-    {
-      "type_name": "Step Sequencer",
-      "id": 250,
-      "pos": [
-        -1822.0184,
-        3131.936
-      ],
-      "size": [
-        596.3166,
-        167.14891
-      ],
-      "params": [
-        {
-          "index": 0,
-          "value": 16
-        },
-        {
-          "index": 1,
-          "value": 1
-        }
-      ],
-      "data": {
-        "mode": "trigger",
-        "values": [
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0
-        ]
-      }
-    },
-    {
-      "type_name": "Step Sequencer",
-      "id": 251,
-      "pos": [
-        -1830.5098,
-        2931.3835
-      ],
-      "size": [
-        596.3166,
-        167.14891
-      ],
-      "params": [
-        {
-          "index": 0,
-          "value": 4
-        },
-        {
-          "index": 1,
-          "value": 1
-        }
-      ],
-      "data": {
-        "mode": "trigger",
-        "values": [
-          0.0,
-          0.0,
-          0.0,
-          0.0
-        ]
-      }
-    },
-    {
-      "type_name": "Counter",
-      "id": 252,
-      "pos": [
-        -2172.4248,
-        3052.3335
-      ],
-      "params": [
-        {
-          "index": 0,
-          "value": 4
-        },
-        {
-          "index": 1,
-          "value": 0
-        }
-      ]
-    },
-    {
-      "type_name": "Button",
-      "id": 253,
-      "pos": [
-        -2951.0862,
-        2548.7258
-      ],
-      "size": [
-        176.71053,
-        187.66074
-      ],
-      "params": [],
-      "data": {
-        "inputs_enabled": false,
-        "label": "Button",
-        "mode": "trigger",
-        "override_enabled": false,
-        "override_state": null,
-        "reset_mode": "clear_on_reset",
-        "state": false
-      }
-    },
-    {
-      "type_name": "Subgraph",
-      "id": 260,
-      "pos": [
-        -2214.6472,
-        3188.194
-      ],
-      "size": [
-        162.62395,
-        150.91296
-      ],
-      "params": [],
-      "data": {
-        "inputs": [
-          {
-            "name": "arm",
-            "port_type_idx": 0
-          },
-          {
-            "name": "trigger",
-            "port_type_idx": 0
-          }
-        ],
-        "locked": true,
-        "macro_description": "Synced Trigger has an arm input and a trigger input. When there was a trigger on the arm input, it will output a trigger, whenever there is a trigger on the trigger input. When unarmed, triggers on the input have no effect.",
-        "macro_path": "/home/paso/.local/share/lightbeat/macros/tool/trigger/Synced Trigger.lbm",
-        "name": "Synced Trigger",
-        "outputs": [
-          {
-            "name": "trigger",
-            "port_type_idx": 0
-          }
-        ]
-      },
-      "inner_graph": {
-        "nodes": [
-          {
-            "type_name": "Flip-Flop",
-            "id": 255,
-            "pos": [
-              51.05298,
-              131.50226
-            ],
-            "params": [],
-            "data": {
-              "state": true
-            }
-          },
-          {
-            "type_name": "AND",
-            "id": 256,
-            "pos": [
-              212.84888,
-              131.34454
-            ],
-            "params": [],
-            "data": {
-              "input_count": 2
-            }
-          },
-          {
-            "type_name": "LED Display",
-            "id": 257,
-            "pos": [
-              350.91864,
-              -57.947662
-            ],
-            "size": [
-              90.27328,
-              138.54713
-            ],
-            "params": [],
-            "data": {
-              "name": "armed"
-            }
-          },
-          {
-            "type_name": "LED Display",
-            "id": 258,
-            "pos": [
-              596.42633,
-              262.29657
-            ],
-            "size": [
-              95.744896,
-              96.274994
-            ],
-            "params": [],
-            "data": {
-              "name": "trigger"
-            }
-          },
-          {
-            "type_name": "Trigger Hold",
-            "id": 259,
-            "pos": [
-              349.46152,
-              307.50238
-            ],
-            "params": [
-              {
-                "index": 0,
-                "value": 75
-              }
-            ],
-            "data": {
-              "default_duration": 75
-            }
-          }
-        ],
-        "connections": [
-          {
-            "from_node": 255,
-            "from_port": 0,
-            "to_node": 256,
-            "to_port": 0
-          },
-          {
-            "from_node": 256,
-            "from_port": 0,
-            "to_node": 255,
-            "to_port": 1
-          },
-          {
-            "from_node": 18446744073709551614,
-            "from_port": 0,
-            "to_node": 255,
-            "to_port": 0
-          },
-          {
-            "from_node": 18446744073709551614,
-            "from_port": 1,
-            "to_node": 256,
-            "to_port": 1
-          },
-          {
-            "from_node": 256,
-            "from_port": 0,
-            "to_node": 18446744073709551615,
-            "to_port": 0
-          },
-          {
-            "from_node": 255,
-            "from_port": 0,
-            "to_node": 257,
-            "to_port": 0
-          },
-          {
-            "from_node": 256,
-            "from_port": 0,
-            "to_node": 259,
-            "to_port": 0
-          },
-          {
-            "from_node": 259,
-            "from_port": 0,
-            "to_node": 258,
-            "to_port": 0
-          }
-        ]
-      }
-    },
-    {
-      "type_name": "Internal Clock",
-      "id": 261,
-      "pos": [
-        -1016.8487,
-        2994.112
-      ],
-      "params": [
-        {
-          "index": 0,
-          "value": 139.13291931152344
-        }
-      ]
-    },
-    {
-      "type_name": "Internal Clock",
-      "id": 262,
-      "pos": [
-        -1066.7484,
-        1494.2722
-      ],
-      "params": [
-        {
-          "index": 0,
-          "value": 139.8888397216797
-        }
-      ]
-    },
-    {
-      "type_name": "Button",
-      "id": 263,
-      "pos": [
-        -3393.9941,
-        2353.5237
-      ],
-      "size": [
-        178.22781,
-        232.63124
-      ],
-      "params": [],
-      "data": {
-        "inputs_enabled": false,
-        "label": "StartStop",
-        "mode": "trigger",
-        "override_enabled": false,
-        "override_state": null,
-        "reset_mode": "clear_on_reset",
-        "state": false
-      }
-    },
-    {
-      "type_name": "OR",
-      "id": 264,
-      "pos": [
-        -1148.7292,
-        3057.6575
-      ],
-      "params": [],
-      "data": {
-        "input_count": 2
-      }
-    },
-    {
-      "type_name": "OR",
-      "id": 266,
-      "pos": [
-        -1261.9392,
-        1581.7958
-      ],
-      "params": [],
-      "data": {
-        "input_count": 2
-      }
-    },
-    {
-      "type_name": "Step Sequencer",
-      "id": 267,
-      "pos": [
-        -679.8885,
-        2970.2605
-      ],
-      "size": [
-        596.3166,
-        167.14891
-      ],
-      "params": [
-        {
-          "index": 0,
-          "value": 4
-        },
-        {
-          "index": 1,
-          "value": 1
-        }
-      ],
-      "data": {
-        "mode": "trigger",
-        "values": [
-          0.0,
-          0.0,
-          0.0,
-          0.0
-        ]
-      }
-    },
-    {
-      "type_name": "Step Sequencer",
-      "id": 268,
-      "pos": [
-        -671.3973,
-        3170.813
-      ],
-      "size": [
-        596.3166,
-        167.14891
-      ],
-      "params": [
-        {
-          "index": 0,
-          "value": 16
-        },
-        {
-          "index": 1,
-          "value": 1
-        }
-      ],
-      "data": {
-        "mode": "trigger",
-        "values": [
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0
-        ]
-      }
-    },
-    {
-      "type_name": "Counter",
-      "id": 269,
-      "pos": [
-        -829.8558,
-        3112.7715
-      ],
-      "params": [
-        {
-          "index": 0,
-          "value": 4
-        },
-        {
-          "index": 1,
-          "value": 0
-        }
-      ]
-    },
-    {
-      "type_name": "Step Sequencer",
-      "id": 270,
-      "pos": [
-        -660.5791,
-        1340.816
-      ],
-      "size": [
-        596.3166,
-        167.14891
-      ],
-      "params": [
-        {
-          "index": 0,
-          "value": 4
-        },
-        {
-          "index": 1,
-          "value": 1
-        }
-      ],
-      "data": {
-        "mode": "trigger",
-        "values": [
-          0.0,
-          0.0,
-          0.0,
-          0.0
-        ]
-      }
-    },
-    {
-      "type_name": "Step Sequencer",
-      "id": 271,
-      "pos": [
-        -652.0879,
-        1541.369
-      ],
-      "size": [
-        596.3166,
-        167.14891
-      ],
-      "params": [
-        {
-          "index": 0,
-          "value": 16
-        },
-        {
-          "index": 1,
-          "value": 1
-        }
-      ],
-      "data": {
-        "mode": "trigger",
-        "values": [
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0
-        ]
-      }
-    },
-    {
-      "type_name": "Counter",
-      "id": 272,
-      "pos": [
-        -810.54645,
-        1483.3274
-      ],
-      "params": [
-        {
-          "index": 0,
-          "value": 4
-        },
-        {
-          "index": 1,
-          "value": 0
-        }
-      ]
     }
   ],
   "connections": [
     {
-      "from_node": 114,
-      "from_port": 1,
-      "to_node": 115,
+      "from_node": 3,
+      "from_port": 0,
+      "to_node": 6,
       "to_port": 0
     },
     {
-      "from_node": 114,
+      "from_node": 1,
+      "from_port": 1,
+      "to_node": 8,
+      "to_port": 0
+    },
+    {
+      "from_node": 1,
       "from_port": 2,
-      "to_node": 115,
+      "to_node": 8,
       "to_port": 1
     },
     {
-      "from_node": 114,
+      "from_node": 1,
       "from_port": 3,
-      "to_node": 115,
+      "to_node": 8,
       "to_port": 2
     },
     {
-      "from_node": 114,
+      "from_node": 1,
       "from_port": 4,
-      "to_node": 115,
+      "to_node": 8,
       "to_port": 3
     },
     {
-      "from_node": 114,
+      "from_node": 1,
       "from_port": 5,
-      "to_node": 115,
+      "to_node": 8,
       "to_port": 4
     },
     {
-      "from_node": 114,
+      "from_node": 1,
       "from_port": 6,
-      "to_node": 115,
+      "to_node": 8,
       "to_port": 5
     },
     {
-      "from_node": 114,
+      "from_node": 1,
       "from_port": 7,
-      "to_node": 115,
+      "to_node": 8,
       "to_port": 6
     },
     {
-      "from_node": 163,
+      "from_node": 1,
+      "from_port": 8,
+      "to_node": 8,
+      "to_port": 7
+    },
+    {
+      "from_node": 8,
       "from_port": 0,
-      "to_node": 224,
+      "to_node": 9,
       "to_port": 0
     },
     {
-      "from_node": 164,
-      "from_port": 0,
-      "to_node": 224,
+      "from_node": 8,
+      "from_port": 1,
+      "to_node": 9,
       "to_port": 1
     },
     {
-      "from_node": 236,
-      "from_port": 0,
-      "to_node": 238,
-      "to_port": 0
-    },
-    {
-      "from_node": 237,
-      "from_port": 0,
-      "to_node": 238,
-      "to_port": 1
-    },
-    {
-      "from_node": 238,
-      "from_port": 0,
-      "to_node": 239,
-      "to_port": 0
-    },
-    {
-      "from_node": 239,
-      "from_port": 0,
-      "to_node": 240,
-      "to_port": 0
-    },
-    {
-      "from_node": 241,
-      "from_port": 0,
-      "to_node": 240,
-      "to_port": 1
-    },
-    {
-      "from_node": 240,
-      "from_port": 0,
-      "to_node": 242,
-      "to_port": 0
-    },
-    {
-      "from_node": 243,
-      "from_port": 0,
-      "to_node": 245,
-      "to_port": 0
-    },
-    {
-      "from_node": 244,
-      "from_port": 0,
-      "to_node": 245,
-      "to_port": 1
-    },
-    {
-      "from_node": 245,
-      "from_port": 0,
-      "to_node": 246,
-      "to_port": 0
-    },
-    {
-      "from_node": 248,
-      "from_port": 0,
-      "to_node": 247,
-      "to_port": 1
-    },
-    {
-      "from_node": 246,
-      "from_port": 0,
-      "to_node": 247,
-      "to_port": 0
-    },
-    {
-      "from_node": 247,
-      "from_port": 0,
-      "to_node": 249,
-      "to_port": 0
-    },
-    {
-      "from_node": 253,
-      "from_port": 0,
-      "to_node": 260,
-      "to_port": 0
-    },
-    {
-      "from_node": 263,
-      "from_port": 0,
-      "to_node": 262,
-      "to_port": 0
-    },
-    {
-      "from_node": 263,
-      "from_port": 0,
-      "to_node": 261,
-      "to_port": 0
-    },
-    {
-      "from_node": 251,
-      "from_port": 0,
-      "to_node": 261,
+      "from_node": 8,
+      "from_port": 2,
+      "to_node": 9,
       "to_port": 2
     },
     {
-      "from_node": 160,
+      "from_node": 8,
+      "from_port": 3,
+      "to_node": 9,
+      "to_port": 3
+    },
+    {
+      "from_node": 8,
+      "from_port": 4,
+      "to_node": 9,
+      "to_port": 4
+    },
+    {
+      "from_node": 8,
+      "from_port": 5,
+      "to_node": 9,
+      "to_port": 5
+    },
+    {
+      "from_node": 8,
+      "from_port": 6,
+      "to_node": 9,
+      "to_port": 6
+    },
+    {
+      "from_node": 8,
+      "from_port": 7,
+      "to_node": 9,
+      "to_port": 7
+    },
+    {
+      "from_node": 11,
       "from_port": 0,
-      "to_node": 262,
+      "to_node": 12,
+      "to_port": 0
+    },
+    {
+      "from_node": 11,
+      "from_port": 1,
+      "to_node": 12,
+      "to_port": 1
+    },
+    {
+      "from_node": 11,
+      "from_port": 2,
+      "to_node": 12,
       "to_port": 2
     },
     {
-      "from_node": 262,
-      "from_port": 2,
-      "to_node": 121,
-      "to_port": 0
-    },
-    {
-      "from_node": 261,
-      "from_port": 2,
-      "to_node": 155,
-      "to_port": 0
-    },
-    {
-      "from_node": 260,
-      "from_port": 0,
-      "to_node": 264,
-      "to_port": 0
-    },
-    {
-      "from_node": 250,
-      "from_port": 0,
-      "to_node": 264,
-      "to_port": 1
-    },
-    {
-      "from_node": 264,
-      "from_port": 0,
-      "to_node": 261,
+      "from_node": 11,
+      "from_port": 3,
+      "to_node": 12,
       "to_port": 3
     },
     {
-      "from_node": 234,
-      "from_port": 0,
-      "to_node": 266,
+      "from_node": 11,
+      "from_port": 4,
+      "to_node": 12,
+      "to_port": 4
+    },
+    {
+      "from_node": 11,
+      "from_port": 5,
+      "to_node": 12,
+      "to_port": 5
+    },
+    {
+      "from_node": 11,
+      "from_port": 6,
+      "to_node": 12,
+      "to_port": 6
+    },
+    {
+      "from_node": 11,
+      "from_port": 7,
+      "to_node": 12,
+      "to_port": 7
+    },
+    {
+      "from_node": 1,
+      "from_port": 9,
+      "to_node": 11,
+      "to_port": 0
+    },
+    {
+      "from_node": 1,
+      "from_port": 10,
+      "to_node": 11,
       "to_port": 1
     },
     {
-      "from_node": 266,
-      "from_port": 0,
-      "to_node": 262,
+      "from_node": 1,
+      "from_port": 11,
+      "to_node": 11,
+      "to_port": 2
+    },
+    {
+      "from_node": 1,
+      "from_port": 12,
+      "to_node": 11,
       "to_port": 3
     },
     {
-      "from_node": 253,
+      "from_node": 1,
+      "from_port": 13,
+      "to_node": 11,
+      "to_port": 4
+    },
+    {
+      "from_node": 1,
+      "from_port": 14,
+      "to_node": 11,
+      "to_port": 5
+    },
+    {
+      "from_node": 1,
+      "from_port": 15,
+      "to_node": 11,
+      "to_port": 6
+    },
+    {
+      "from_node": 1,
+      "from_port": 16,
+      "to_node": 11,
+      "to_port": 7
+    },
+    {
+      "from_node": 13,
       "from_port": 0,
-      "to_node": 234,
+      "to_node": 14,
       "to_port": 0
     },
     {
-      "from_node": 261,
-      "from_port": 0,
-      "to_node": 269,
-      "to_port": 0
-    },
-    {
-      "from_node": 262,
-      "from_port": 0,
-      "to_node": 272,
-      "to_port": 0
-    },
-    {
-      "from_node": 117,
-      "from_port": 0,
-      "to_node": 121,
-      "to_port": 1
-    },
-    {
-      "from_node": 117,
-      "from_port": 5,
-      "to_node": 155,
-      "to_port": 1
-    },
-    {
-      "from_node": 117,
+      "from_node": 13,
       "from_port": 1,
-      "to_node": 239,
+      "to_node": 14,
       "to_port": 1
     },
     {
-      "from_node": 117,
+      "from_node": 13,
+      "from_port": 2,
+      "to_node": 14,
+      "to_port": 2
+    },
+    {
+      "from_node": 13,
+      "from_port": 3,
+      "to_node": 14,
+      "to_port": 3
+    },
+    {
+      "from_node": 13,
+      "from_port": 4,
+      "to_node": 14,
+      "to_port": 4
+    },
+    {
+      "from_node": 13,
+      "from_port": 5,
+      "to_node": 14,
+      "to_port": 5
+    },
+    {
+      "from_node": 13,
       "from_port": 6,
-      "to_node": 246,
-      "to_port": 1
+      "to_node": 14,
+      "to_port": 6
     },
     {
-      "from_node": 117,
-      "from_port": 1,
-      "to_node": 225,
+      "from_node": 13,
+      "from_port": 7,
+      "to_node": 14,
+      "to_port": 7
+    },
+    {
+      "from_node": 15,
+      "from_port": 0,
+      "to_node": 16,
       "to_port": 0
     },
     {
-      "from_node": 117,
+      "from_node": 15,
+      "from_port": 1,
+      "to_node": 16,
+      "to_port": 1
+    },
+    {
+      "from_node": 15,
+      "from_port": 2,
+      "to_node": 16,
+      "to_port": 2
+    },
+    {
+      "from_node": 15,
+      "from_port": 3,
+      "to_node": 16,
+      "to_port": 3
+    },
+    {
+      "from_node": 15,
+      "from_port": 4,
+      "to_node": 16,
+      "to_port": 4
+    },
+    {
+      "from_node": 15,
+      "from_port": 5,
+      "to_node": 16,
+      "to_port": 5
+    },
+    {
+      "from_node": 15,
       "from_port": 6,
-      "to_node": 226,
-      "to_port": 0
+      "to_node": 16,
+      "to_port": 6
     },
     {
-      "from_node": 117,
+      "from_node": 15,
+      "from_port": 7,
+      "to_node": 16,
+      "to_port": 7
+    },
+    {
+      "from_node": 1,
       "from_port": 0,
-      "to_node": 260,
-      "to_port": 1
+      "to_node": 17,
+      "to_port": 0
     },
     {
-      "from_node": 117,
-      "from_port": 5,
-      "to_node": 234,
-      "to_port": 1
-    },
-    {
-      "from_node": 117,
+      "from_node": 18,
       "from_port": 0,
-      "to_node": 227,
-      "to_port": 0
-    },
-    {
-      "from_node": 117,
-      "from_port": 0,
-      "to_node": 160,
-      "to_port": 0
-    },
-    {
-      "from_node": 117,
-      "from_port": 5,
-      "to_node": 252,
-      "to_port": 0
-    },
-    {
-      "from_node": 117,
-      "from_port": 5,
-      "to_node": 251,
-      "to_port": 0
-    },
-    {
-      "from_node": 252,
-      "from_port": 1,
-      "to_node": 250,
-      "to_port": 0
-    },
-    {
-      "from_node": 227,
-      "from_port": 1,
-      "to_node": 159,
-      "to_port": 0
-    },
-    {
-      "from_node": 269,
-      "from_port": 1,
-      "to_node": 268,
-      "to_port": 0
-    },
-    {
-      "from_node": 261,
-      "from_port": 0,
-      "to_node": 267,
-      "to_port": 0
-    },
-    {
-      "from_node": 262,
-      "from_port": 0,
-      "to_node": 270,
-      "to_port": 0
-    },
-    {
-      "from_node": 272,
-      "from_port": 1,
-      "to_node": 271,
-      "to_port": 0
+      "to_node": 1,
+      "to_port": 8
     }
   ]
 }

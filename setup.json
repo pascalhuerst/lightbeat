@@ -2521,16 +2521,134 @@
   "input_controllers": [
     {
       "id": 1,
-      "name": "nanoKONTROL",
+      "name": "BCF2000",
       "kind": {
-        "Midi": {
-          "hw_port_name": "nanoKONTROL:nanoKONTROL _ CTRL 24:0"
+        "Bcf2000": {
+          "hw_input_port": "BCF2000:BCF2000 MIDI 1 24:0",
+          "hw_output_port": "BCF2000:BCF2000 MIDI 1 24:0"
         }
       },
       "inputs": [
         {
+          "id": 1,
+          "name": "Fader 1",
+          "source": {
+            "Midi": {
+              "Cc": {
+                "channel": 1,
+                "controller": 81
+              }
+            }
+          },
+          "mode": "Value"
+        },
+        {
+          "id": 2,
+          "name": "Fader 2",
+          "source": {
+            "Midi": {
+              "Cc": {
+                "channel": 1,
+                "controller": 82
+              }
+            }
+          },
+          "mode": "Value"
+        },
+        {
+          "id": 3,
+          "name": "Fader 3",
+          "source": {
+            "Midi": {
+              "Cc": {
+                "channel": 1,
+                "controller": 83
+              }
+            }
+          },
+          "mode": "Value"
+        },
+        {
+          "id": 4,
+          "name": "Fader 4",
+          "source": {
+            "Midi": {
+              "Cc": {
+                "channel": 1,
+                "controller": 84
+              }
+            }
+          },
+          "mode": "Value"
+        },
+        {
           "id": 5,
-          "name": "Fader1",
+          "name": "Fader 5",
+          "source": {
+            "Midi": {
+              "Cc": {
+                "channel": 1,
+                "controller": 85
+              }
+            }
+          },
+          "mode": "Value"
+        },
+        {
+          "id": 6,
+          "name": "Fader 6",
+          "source": {
+            "Midi": {
+              "Cc": {
+                "channel": 1,
+                "controller": 86
+              }
+            }
+          },
+          "mode": "Value"
+        },
+        {
+          "id": 7,
+          "name": "Fader 7",
+          "source": {
+            "Midi": {
+              "Cc": {
+                "channel": 1,
+                "controller": 87
+              }
+            }
+          },
+          "mode": "Value"
+        },
+        {
+          "id": 8,
+          "name": "Fader 8",
+          "source": {
+            "Midi": {
+              "Cc": {
+                "channel": 1,
+                "controller": 88
+              }
+            }
+          },
+          "mode": "Value"
+        },
+        {
+          "id": 9,
+          "name": "Enc 1",
+          "source": {
+            "Midi": {
+              "Cc": {
+                "channel": 1,
+                "controller": 1
+              }
+            }
+          },
+          "mode": "Value"
+        },
+        {
+          "id": 10,
+          "name": "Enc 2",
           "source": {
             "Midi": {
               "Cc": {
@@ -2542,8 +2660,8 @@
           "mode": "Value"
         },
         {
-          "id": 6,
-          "name": "Fader2",
+          "id": 11,
+          "name": "Enc 3",
           "source": {
             "Midi": {
               "Cc": {
@@ -2555,8 +2673,8 @@
           "mode": "Value"
         },
         {
-          "id": 7,
-          "name": "Fader3",
+          "id": 12,
+          "name": "Enc 4",
           "source": {
             "Midi": {
               "Cc": {
@@ -2568,8 +2686,8 @@
           "mode": "Value"
         },
         {
-          "id": 8,
-          "name": "Fader4",
+          "id": 13,
+          "name": "Enc 5",
           "source": {
             "Midi": {
               "Cc": {
@@ -2581,8 +2699,34 @@
           "mode": "Value"
         },
         {
-          "id": 9,
-          "name": "Fader5",
+          "id": 14,
+          "name": "Enc 6",
+          "source": {
+            "Midi": {
+              "Cc": {
+                "channel": 1,
+                "controller": 6
+              }
+            }
+          },
+          "mode": "Value"
+        },
+        {
+          "id": 15,
+          "name": "Enc 7",
+          "source": {
+            "Midi": {
+              "Cc": {
+                "channel": 1,
+                "controller": 7
+              }
+            }
+          },
+          "mode": "Value"
+        },
+        {
+          "id": 16,
+          "name": "Enc 8",
           "source": {
             "Midi": {
               "Cc": {
@@ -2594,56 +2738,370 @@
           "mode": "Value"
         },
         {
-          "id": 10,
-          "name": "Fader6",
+          "id": 17,
+          "name": "Enc 1 Push",
           "source": {
             "Midi": {
               "Cc": {
                 "channel": 1,
-                "controller": 9
+                "controller": 33
               }
             }
           },
           "mode": "Value"
         },
         {
-          "id": 11,
-          "name": "Fader7",
+          "id": 18,
+          "name": "Enc 2 Push",
           "source": {
             "Midi": {
               "Cc": {
                 "channel": 1,
-                "controller": 12
+                "controller": 34
               }
             }
           },
           "mode": "Value"
         },
         {
-          "id": 12,
-          "name": "Fader8",
+          "id": 19,
+          "name": "Enc 3 Push",
           "source": {
             "Midi": {
               "Cc": {
                 "channel": 1,
-                "controller": 13
+                "controller": 35
+              }
+            }
+          },
+          "mode": "Value"
+        },
+        {
+          "id": 20,
+          "name": "Enc 4 Push",
+          "source": {
+            "Midi": {
+              "Cc": {
+                "channel": 1,
+                "controller": 36
+              }
+            }
+          },
+          "mode": "Value"
+        },
+        {
+          "id": 21,
+          "name": "Enc 5 Push",
+          "source": {
+            "Midi": {
+              "Cc": {
+                "channel": 1,
+                "controller": 37
+              }
+            }
+          },
+          "mode": "Value"
+        },
+        {
+          "id": 22,
+          "name": "Enc 6 Push",
+          "source": {
+            "Midi": {
+              "Cc": {
+                "channel": 1,
+                "controller": 38
+              }
+            }
+          },
+          "mode": "Value"
+        },
+        {
+          "id": 23,
+          "name": "Enc 7 Push",
+          "source": {
+            "Midi": {
+              "Cc": {
+                "channel": 1,
+                "controller": 39
+              }
+            }
+          },
+          "mode": "Value"
+        },
+        {
+          "id": 24,
+          "name": "Enc 8 Push",
+          "source": {
+            "Midi": {
+              "Cc": {
+                "channel": 1,
+                "controller": 40
+              }
+            }
+          },
+          "mode": "Value"
+        },
+        {
+          "id": 25,
+          "name": "Btn Top 1",
+          "source": {
+            "Midi": {
+              "Cc": {
+                "channel": 1,
+                "controller": 65
+              }
+            }
+          },
+          "mode": "Value"
+        },
+        {
+          "id": 26,
+          "name": "Btn Top 2",
+          "source": {
+            "Midi": {
+              "Cc": {
+                "channel": 1,
+                "controller": 66
+              }
+            }
+          },
+          "mode": "Value"
+        },
+        {
+          "id": 27,
+          "name": "Btn Top 3",
+          "source": {
+            "Midi": {
+              "Cc": {
+                "channel": 1,
+                "controller": 67
+              }
+            }
+          },
+          "mode": "Value"
+        },
+        {
+          "id": 28,
+          "name": "Btn Top 4",
+          "source": {
+            "Midi": {
+              "Cc": {
+                "channel": 1,
+                "controller": 68
+              }
+            }
+          },
+          "mode": "Value"
+        },
+        {
+          "id": 29,
+          "name": "Btn Top 5",
+          "source": {
+            "Midi": {
+              "Cc": {
+                "channel": 1,
+                "controller": 69
+              }
+            }
+          },
+          "mode": "Value"
+        },
+        {
+          "id": 30,
+          "name": "Btn Top 6",
+          "source": {
+            "Midi": {
+              "Cc": {
+                "channel": 1,
+                "controller": 70
+              }
+            }
+          },
+          "mode": "Value"
+        },
+        {
+          "id": 31,
+          "name": "Btn Top 7",
+          "source": {
+            "Midi": {
+              "Cc": {
+                "channel": 1,
+                "controller": 71
+              }
+            }
+          },
+          "mode": "Value"
+        },
+        {
+          "id": 32,
+          "name": "Btn Top 8",
+          "source": {
+            "Midi": {
+              "Cc": {
+                "channel": 1,
+                "controller": 72
+              }
+            }
+          },
+          "mode": "Value"
+        },
+        {
+          "id": 33,
+          "name": "Btn Bot 1",
+          "source": {
+            "Midi": {
+              "Cc": {
+                "channel": 1,
+                "controller": 73
+              }
+            }
+          },
+          "mode": "Value"
+        },
+        {
+          "id": 34,
+          "name": "Btn Bot 2",
+          "source": {
+            "Midi": {
+              "Cc": {
+                "channel": 1,
+                "controller": 74
+              }
+            }
+          },
+          "mode": "Value"
+        },
+        {
+          "id": 35,
+          "name": "Btn Bot 3",
+          "source": {
+            "Midi": {
+              "Cc": {
+                "channel": 1,
+                "controller": 75
+              }
+            }
+          },
+          "mode": "Value"
+        },
+        {
+          "id": 36,
+          "name": "Btn Bot 4",
+          "source": {
+            "Midi": {
+              "Cc": {
+                "channel": 1,
+                "controller": 76
+              }
+            }
+          },
+          "mode": "Value"
+        },
+        {
+          "id": 37,
+          "name": "Btn Bot 5",
+          "source": {
+            "Midi": {
+              "Cc": {
+                "channel": 1,
+                "controller": 77
+              }
+            }
+          },
+          "mode": "Value"
+        },
+        {
+          "id": 38,
+          "name": "Btn Bot 6",
+          "source": {
+            "Midi": {
+              "Cc": {
+                "channel": 1,
+                "controller": 78
+              }
+            }
+          },
+          "mode": "Value"
+        },
+        {
+          "id": 39,
+          "name": "Btn Bot 7",
+          "source": {
+            "Midi": {
+              "Cc": {
+                "channel": 1,
+                "controller": 79
+              }
+            }
+          },
+          "mode": "Value"
+        },
+        {
+          "id": 40,
+          "name": "Btn Bot 8",
+          "source": {
+            "Midi": {
+              "Cc": {
+                "channel": 1,
+                "controller": 80
+              }
+            }
+          },
+          "mode": "Value"
+        },
+        {
+          "id": 41,
+          "name": "Btn Free 1",
+          "source": {
+            "Midi": {
+              "Cc": {
+                "channel": 1,
+                "controller": 89
+              }
+            }
+          },
+          "mode": "Value"
+        },
+        {
+          "id": 42,
+          "name": "Btn Free 2",
+          "source": {
+            "Midi": {
+              "Cc": {
+                "channel": 1,
+                "controller": 90
+              }
+            }
+          },
+          "mode": "Value"
+        },
+        {
+          "id": 43,
+          "name": "Btn Free 3",
+          "source": {
+            "Midi": {
+              "Cc": {
+                "channel": 1,
+                "controller": 91
+              }
+            }
+          },
+          "mode": "Value"
+        },
+        {
+          "id": 44,
+          "name": "Btn Free 4",
+          "source": {
+            "Midi": {
+              "Cc": {
+                "channel": 1,
+                "controller": 92
               }
             }
           },
           "mode": "Value"
         }
       ]
-    },
-    {
-      "id": 2,
-      "name": "Push 1",
-      "kind": {
-        "Push1": {
-          "hw_input_port": "Ableton Push:Ableton Push User Port 24:1",
-          "hw_output_port": "Ableton Push:Ableton Push User Port 24:1"
-        }
-      },
-      "inputs": []
     }
   ],
   "audio_inputs": [

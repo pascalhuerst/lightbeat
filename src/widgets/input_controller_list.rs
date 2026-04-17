@@ -33,6 +33,10 @@ pub fn show(ui: &mut Ui, mgr: &mut InputControllerManager) {
     let mut set_debug_flags: Vec<(u32, Option<bool>, Option<bool>, Option<bool>)> = Vec::new();
     // (controller_id) — clear log
     let mut clear_midi_log: Vec<u32> = Vec::new();
+    // (controller_id, input_id or None to cancel) — arm per-row relearn
+    let mut set_relearn: Vec<(u32, Option<u32>)> = Vec::new();
+    // controller_id — reset inputs to factory defaults
+    let mut reset_factory: Vec<u32> = Vec::new();
 
     {
         let state = mgr.shared.lock().unwrap();
@@ -111,27 +115,38 @@ pub fn show(ui: &mut Ui, mgr: &mut InputControllerManager) {
                                 });
                             }
 
-                            // Learn mode (only for generic MIDI — BCF2000's
-                            // layout is fixed and shipped with the code).
-                            let is_fixed_layout = matches!(c.kind, InputControllerKind::Bcf2000 { .. });
-                            if !is_fixed_layout {
-                                ui.horizontal(|ui| {
-                                    let mut learning = c.learning;
-                                    let label = if learning { "Stop Learning" } else { "Learn" };
-                                    if ui.toggle_value(&mut learning, label).changed() {
-                                        set_learning.push((c.id, learning));
+                            // For factory-preset kinds (BCF2000 / Push 1) the
+                            // shipping CC numbers are just a starting point;
+                            // the user can re-learn per row, add / delete,
+                            // or reset to factory.
+                            let is_factory_kind = matches!(
+                                c.kind,
+                                InputControllerKind::Bcf2000 { .. } | InputControllerKind::Push1 { .. },
+                            );
+                            ui.horizontal(|ui| {
+                                let mut learning = c.learning;
+                                let label = if learning { "Stop Learning" } else { "Learn" };
+                                if ui.toggle_value(&mut learning, label).changed() {
+                                    set_learning.push((c.id, learning));
+                                }
+                                if c.learning {
+                                    ui.colored_label(
+                                        Color32::from_rgb(220, 180, 60),
+                                        "Move a fader / press a button on the device...",
+                                    );
+                                    if !c.learn_buffer.is_empty() {
+                                        consume_learn_for.push(c.id);
                                     }
-                                    if c.learning {
-                                        ui.colored_label(
-                                            Color32::from_rgb(220, 180, 60),
-                                            "Move a fader / press a button on the device...",
-                                        );
-                                        if !c.learn_buffer.is_empty() {
-                                            consume_learn_for.push(c.id);
-                                        }
+                                }
+                                if is_factory_kind {
+                                    if ui.button("Reset to factory preset")
+                                        .on_hover_text("Replace all inputs with the shipped factory defaults.")
+                                        .clicked()
+                                    {
+                                        reset_factory.push(c.id);
                                     }
-                                });
-                            }
+                                }
+                            });
 
                             ui.separator();
 
@@ -146,10 +161,11 @@ pub fn show(ui: &mut Ui, mgr: &mut InputControllerManager) {
                                 show_inputs_table(
                                     ui,
                                     c,
-                                    is_fixed_layout,
+                                    is_factory_kind,
                                     &mut rename_input,
                                     &mut set_mode,
                                     &mut remove_input,
+                                    &mut set_relearn,
                                 );
                             }
 
@@ -201,6 +217,8 @@ pub fn show(ui: &mut Ui, mgr: &mut InputControllerManager) {
     for (cid, iid, name) in rename_input { mgr.rename_input(cid, iid, name); }
     for (cid, iid, mode) in set_mode { mgr.set_input_mode(cid, iid, mode); }
     for (cid, iid) in remove_input { mgr.remove_input(cid, iid); }
+    for (cid, iid) in set_relearn { mgr.set_relearn(cid, iid); }
+    for cid in reset_factory { mgr.reset_factory_layout(cid); }
     // Debug panel writes: apply by taking the shared lock once.
     if !debug_set_out.is_empty() || !set_debug_open.is_empty()
         || !set_debug_flags.is_empty() || !clear_midi_log.is_empty()
@@ -255,10 +273,11 @@ fn lerp_color(a: Color32, b: Color32, t: f32) -> Color32 {
 fn show_inputs_table(
     ui: &mut Ui,
     c: &crate::input_controller::ControllerRuntime,
-    is_fixed_layout: bool,
+    is_factory_kind: bool,
     rename_input: &mut Vec<(u32, u32, String)>,
     set_mode: &mut Vec<(u32, u32, InputBindingMode)>,
     remove_input: &mut Vec<(u32, u32)>,
+    set_relearn: &mut Vec<(u32, Option<u32>)>,
 ) {
     let now = std::time::Instant::now();
     /// Time the highlight stays visible after a match, in seconds. After
@@ -291,15 +310,16 @@ fn show_inputs_table(
         .column(Column::remainder().at_least(120.0).clip(true)) // Source
         .column(Column::initial(140.0).at_least(80.0))          // Mode
         .column(Column::exact(60.0))                             // Value
+        .column(Column::exact(44.0))                             // Learn
         .column(Column::exact(24.0));                            // delete
 
-    // Scroll the table to the matched row during the short post-touch
-    // window. `scroll_to_row` works on TableBuilder's internal scroll area.
     if let (Some(idx), Some(age)) = (highlight_idx, highlight_row_age) {
         if age < SCROLL_WINDOW {
             table = table.scroll_to_row(idx + 1, Some(egui::Align::Center));
         }
     }
+
+    let armed_relearn = c.relearn_input_id;
 
     table
         .header(20.0, |mut header| {
@@ -307,6 +327,7 @@ fn show_inputs_table(
             header.col(|ui| { ui.strong("Source"); });
             header.col(|ui| { ui.strong("Mode"); });
             header.col(|ui| { ui.strong("Value"); });
+            header.col(|ui| { ui.strong("Learn"); });
             header.col(|_ui| {});
         })
         .body(|mut body| {
@@ -326,69 +347,70 @@ fn show_inputs_table(
                 } else {
                     None
                 };
+                let this_armed = armed_relearn == Some(input.id);
 
                 body.row(22.0, |mut row| {
+                    // Name — always editable so the user can tidy up factory
+                    // labels to match their workflow.
                     row.col(|ui| {
-                        if is_fixed_layout {
-                            let mut rt = egui::RichText::new(&input.name)
-                                .monospace()
-                                .size(11.0);
-                            if let Some(cc) = hl_text_color { rt = rt.color(cc); }
-                            ui.label(rt);
-                        } else {
-                            let mut name = input.name.clone();
-                            if ui.add_sized(
-                                [ui.available_width(), 20.0],
-                                egui::TextEdit::singleline(&mut name)
-                                    .id_salt(("name", input.id)),
-                            ).changed() {
-                                rename_input.push((c.id, input.id, name));
-                            }
+                        let mut name = input.name.clone();
+                        let mut edit = egui::TextEdit::singleline(&mut name)
+                            .id_salt(("name", input.id));
+                        if let Some(cc) = hl_text_color {
+                            edit = edit.text_color(cc);
+                        }
+                        if ui.add_sized([ui.available_width(), 20.0], edit).changed() {
+                            rename_input.push((c.id, input.id, name));
                         }
                     });
+                    // Source label. Highlighted text when the row is armed
+                    // for relearn so it's obvious what will change.
                     row.col(|ui| {
+                        let color = if this_armed {
+                            Color32::from_rgb(220, 180, 60)
+                        } else {
+                            hl_text_color.unwrap_or(Color32::from_gray(160))
+                        };
                         ui.colored_label(
-                            hl_text_color.unwrap_or(Color32::from_gray(160)),
-                            egui::RichText::new(input.source.label())
+                            color,
+                            egui::RichText::new(if this_armed {
+                                "waiting for MIDI...".to_string()
+                            } else {
+                                input.source.label()
+                            })
                                 .monospace()
                                 .size(11.0),
                         );
                     });
+                    // Mode combo — also editable for factory kinds now.
                     row.col(|ui| {
-                        if is_fixed_layout {
-                            ui.colored_label(
-                                hl_text_color.unwrap_or(Color32::from_gray(160)),
-                                input.mode.label(),
-                            );
-                        } else {
-                            let binary = input.source.is_binary();
-                            let mut mode = input.mode;
-                            let prev = mode;
-                            egui::ComboBox::from_id_salt(("mode", input.id))
-                                .width(ui.available_width())
-                                .selected_text(mode.label())
-                                .show_ui(ui, |ui| {
+                        let binary = input.source.is_binary();
+                        let mut mode = input.mode;
+                        let prev = mode;
+                        egui::ComboBox::from_id_salt(("mode", input.id))
+                            .width(ui.available_width())
+                            .selected_text(mode.label())
+                            .show_ui(ui, |ui| {
+                                ui.selectable_value(
+                                    &mut mode,
+                                    InputBindingMode::Value,
+                                    InputBindingMode::Value.label(),
+                                );
+                                if binary {
                                     ui.selectable_value(
                                         &mut mode,
-                                        InputBindingMode::Value,
-                                        InputBindingMode::Value.label(),
+                                        InputBindingMode::TriggerOnPress,
+                                        InputBindingMode::TriggerOnPress.label(),
                                     );
-                                    if binary {
-                                        ui.selectable_value(
-                                            &mut mode,
-                                            InputBindingMode::TriggerOnPress,
-                                            InputBindingMode::TriggerOnPress.label(),
-                                        );
-                                        ui.selectable_value(
-                                            &mut mode,
-                                            InputBindingMode::TriggerOnRelease,
-                                            InputBindingMode::TriggerOnRelease.label(),
-                                        );
-                                    }
-                                });
-                            if mode != prev {
-                                set_mode.push((c.id, input.id, mode));
-                            }
+                                    ui.selectable_value(
+                                        &mut mode,
+                                        InputBindingMode::TriggerOnRelease,
+                                        InputBindingMode::TriggerOnRelease.label(),
+                                    );
+                                }
+                            });
+                        if mode != prev {
+                            set_mode.push((c.id, input.id, mode));
                         }
                     });
                     row.col(|ui| {
@@ -400,10 +422,29 @@ fn show_inputs_table(
                                 .size(11.0),
                         );
                     });
+                    // Learn column — single toggle. When armed, clicking
+                    // again cancels. When any row is armed, the next MIDI
+                    // message replaces that row's source (handled engine-side).
                     row.col(|ui| {
-                        if !is_fixed_layout
-                            && ui.small_button(egui_phosphor::regular::X).clicked()
+                        let btn = egui::SelectableLabel::new(this_armed, "⟳");
+                        if ui.add(btn)
+                            .on_hover_text(if this_armed {
+                                "Cancel relearn"
+                            } else {
+                                "Click, then move the physical control to rebind this row"
+                            })
+                            .clicked()
                         {
+                            let target = if this_armed { None } else { Some(input.id) };
+                            set_relearn.push((c.id, target));
+                        }
+                    });
+                    // Delete column — enabled for all kinds. Factory-preset
+                    // users sometimes want to trim rows they don't use, or
+                    // clean up entries added via Learn. Re-add is always
+                    // possible via Learn (generic) or Reset to factory.
+                    row.col(|ui| {
+                        if ui.small_button(egui_phosphor::regular::X).clicked() {
                             remove_input.push((c.id, input.id));
                         }
                     });

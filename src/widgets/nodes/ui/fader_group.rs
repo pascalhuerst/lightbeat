@@ -17,6 +17,9 @@ const CENTER_LINE_COLOR: Color32 = Color32::from_gray(110);
 pub struct FaderGroupWidget {
     id: NodeId,
     shared: SharedState,
+    /// User-given label. Shown in the node title bar; empty falls back to
+    /// the generic "Fader Group" text.
+    name: String,
     rows: usize,
     cols: usize,
     output_values: Vec<f32>,
@@ -38,7 +41,9 @@ impl FaderGroupWidget {
         let cols = 4;
         let n = rows * cols;
         Self {
-            id, shared, rows, cols,
+            id, shared,
+            name: String::new(),
+            rows, cols,
             output_values: vec![0.0; n],
             input_values: vec![0.0; n],
             override_active: vec![false; n],
@@ -63,6 +68,7 @@ impl FaderGroupWidget {
         let mut shared = self.shared.lock().unwrap();
         let mo_strs: Vec<&str> = self.mouse_override.iter().map(|m| m.as_str()).collect();
         let mut cfg = serde_json::json!({
+            "name": self.name,
             "rows": self.rows,
             "cols": self.cols,
             "inputs_enabled": self.inputs_enabled,
@@ -105,6 +111,9 @@ impl FaderGroupWidget {
     /// `ui_outputs` already reflect the saved port layout when
     /// `cleanup_stale_connections` runs on the first frame.
     pub fn restore_from_save_data(&mut self, data: &serde_json::Value) {
+        if let Some(n) = data.get("name").and_then(|v| v.as_str()) {
+            self.name = n.to_string();
+        }
         if let Some(r) = data.get("rows").and_then(|v| v.as_u64()) {
             self.rows = (r as usize).clamp(1, 16);
         }
@@ -135,7 +144,9 @@ impl FaderGroupWidget {
 impl NodeWidget for FaderGroupWidget {
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { "Fader Group" }
-    fn title(&self) -> &str { "Fader Group" }
+    fn title(&self) -> &str {
+        if self.name.is_empty() { "Fader Group" } else { self.name.as_str() }
+    }
     fn description(&self) -> &'static str {
         "Grid of faders. Each cell has its own input enable, mouse override mode, and bipolar setting."
     }
@@ -182,6 +193,7 @@ impl NodeWidget for FaderGroupWidget {
             shared.display.as_ref()
                 .and_then(|d| d.downcast_ref::<FaderGroupDisplay>())
                 .map(|d| (
+                    d.name.clone(),
                     d.rows, d.cols,
                     d.outputs.clone(), d.inputs.clone(),
                     d.override_active.clone(), d.override_values.clone(),
@@ -190,7 +202,8 @@ impl NodeWidget for FaderGroupWidget {
                     d.bipolar.clone(), d.any_input_enabled, d.any_output_enabled,
                 ))
         };
-        if let Some((rows, cols, outs, ins, ovsa, ovsv, ie, oe, mo, bp, anyi, anyo)) = snapshot {
+        if let Some((name, rows, cols, outs, ins, ovsa, ovsv, ie, oe, mo, bp, anyi, anyo)) = snapshot {
+            self.name = name;
             let resized = rows != self.rows || cols != self.cols;
             self.rows = rows;
             self.cols = cols;
@@ -312,6 +325,12 @@ impl NodeWidget for FaderGroupWidget {
 
     fn show_inspector(&mut self, ui: &mut Ui) {
         let mut changed = false;
+        ui.horizontal(|ui| {
+            ui.label("Name:");
+            if ui.text_edit_singleline(&mut self.name).changed() {
+                changed = true;
+            }
+        });
         ui.horizontal(|ui| {
             ui.label("Rows:");
             let mut r = self.rows as i32;

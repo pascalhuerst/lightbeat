@@ -10,6 +10,7 @@ use crate::widgets::nodes::display::value_display::ValueDisplayWidget;
 use crate::widgets::nodes::io::audio_input::AudioInputWidget;
 use crate::widgets::nodes::io::input_controller::InputControllerWidget;
 use crate::widgets::nodes::io::push1::Push1Widget;
+use crate::widgets::nodes::meta::portal::{PortalInWidget, PortalOutWidget};
 use crate::widgets::nodes::meta::subgraph::SubgraphWidget;
 use crate::widgets::nodes::output::effect_stack::EffectStackWidget;
 use crate::widgets::nodes::output::group::GroupWidget;
@@ -278,6 +279,26 @@ pub fn load_graph(graph: &mut NodeGraph, project: &ProjectFile) -> Vec<usize> {
                     let n = graph.node_mut(idx);
                     if let Some(f) = n.as_any_mut().downcast_mut::<FaderWidget>() {
                         f.restore_from_save_data(data);
+                    }
+                }
+            }
+
+            // Portal widgets need their port defs restored before
+            // `cleanup_stale_connections` runs, otherwise wires targeting
+            // the portal's input/output ports get dropped on the first frame.
+            if saved.type_name == "Portal In" {
+                if let Some(data) = &saved.data {
+                    let n = graph.node_mut(idx);
+                    if let Some(w) = n.as_any_mut().downcast_mut::<PortalInWidget>() {
+                        w.restore_from_save_data(data);
+                    }
+                }
+            }
+            if saved.type_name == "Portal Out" {
+                if let Some(data) = &saved.data {
+                    let n = graph.node_mut(idx);
+                    if let Some(w) = n.as_any_mut().downcast_mut::<PortalOutWidget>() {
+                        w.restore_from_save_data(data);
                     }
                 }
             }

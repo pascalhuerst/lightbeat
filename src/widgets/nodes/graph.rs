@@ -710,10 +710,22 @@ impl NodeGraph {
             })
             .collect();
 
+        // Figure out which portal keys are currently selected so we can
+        // outline their peers — the "wireless cable" hint.
+        let highlighted_portal_keys: std::collections::HashSet<String> = self
+            .selected_nodes
+            .iter()
+            .filter_map(|&i| level.nodes.get(i).and_then(|n| n.portal_key()))
+            .collect();
+
         // -- Draw node chrome (painter-based, immutable) --
         let now = ui.ctx().input(|i| i.time);
         for i in 0..level.nodes.len() {
             let selected = self.selected_nodes.contains(&i);
+            let portal_peer = !selected
+                && level.nodes[i].portal_key()
+                    .map(|k| highlighted_portal_keys.contains(&k))
+                    .unwrap_or(false);
             let inputs = level.nodes[i].ui_inputs();
             let outputs = level.nodes[i].ui_outputs();
             let out_highlights: Vec<f32> = (0..outputs.len())
@@ -733,6 +745,7 @@ impl NodeGraph {
                 &out_highlights,
                 node_rects[i],
                 selected,
+                portal_peer,
                 z,
             );
         }
@@ -2205,6 +2218,7 @@ fn node_content_rect(rect: Rect, zoom: f32) -> Rect {
 }
 
 const SELECTED_BORDER: Color32 = Color32::from_rgb(100, 160, 255);
+const PORTAL_PEER_BORDER: Color32 = Color32::from_rgb(220, 180, 80);
 
 fn draw_node_chrome(
     painter: &Painter,
@@ -2217,11 +2231,23 @@ fn draw_node_chrome(
     out_highlights: &[f32],
     rect: Rect,
     selected: bool,
+    portal_peer: bool,
     zoom: f32,
 ) {
     // Shadow
     let shadow_rect = rect.translate(Vec2::new(3.0, 3.0));
     painter.rect_filled(shadow_rect, NODE_CORNER_RADIUS, Color32::from_black_alpha(60));
+
+    // Portal-peer glow: a soft amber halo behind the node so linked portals
+    // stand out even when they aren't selected.
+    if portal_peer {
+        let halo = rect.expand(3.0);
+        painter.rect_filled(
+            halo,
+            NODE_CORNER_RADIUS + 3.0,
+            Color32::from_rgba_unmultiplied(220, 180, 80, 40),
+        );
+    }
 
     // Body
     painter.rect_filled(rect, NODE_CORNER_RADIUS, NODE_BG);
@@ -2242,8 +2268,14 @@ fn draw_node_chrome(
         Color32::WHITE,
     );
 
-    // Border (drawn after title bar so it isn't covered).
-    let border = if selected { Stroke::new(2.0, SELECTED_BORDER) } else { Stroke::new(1.0, NODE_BORDER) };
+    // Border. Priority: selected > portal_peer > default.
+    let border = if selected {
+        Stroke::new(2.0, SELECTED_BORDER)
+    } else if portal_peer {
+        Stroke::new(2.0, PORTAL_PEER_BORDER)
+    } else {
+        Stroke::new(1.0, NODE_BORDER)
+    };
     painter.rect_stroke(rect, NODE_CORNER_RADIUS, border, StrokeKind::Inside);
 
     // Input ports

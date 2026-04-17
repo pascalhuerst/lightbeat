@@ -2,6 +2,7 @@ use crate::engine::nodes::ui::common::MouseOverrideMode;
 use crate::engine::types::*;
 
 pub struct FaderGroupDisplay {
+    pub name: String,
     pub rows: usize,
     pub cols: usize,
     /// Current output values, one per cell.
@@ -26,6 +27,9 @@ pub struct FaderGroupDisplay {
 
 pub struct FaderGroupProcessNode {
     id: NodeId,
+    /// User-given label shown as the node title and in inspector. Round-trips
+    /// through save_data; empty means "use the default Fader Group title".
+    name: String,
     rows: usize,
     cols: usize,
     /// Local mouse values when inputs disabled.
@@ -54,7 +58,9 @@ impl FaderGroupProcessNode {
         let cols = 4;
         let n = rows * cols;
         let mut node = Self {
-            id, rows, cols,
+            id,
+            name: String::new(),
+            rows, cols,
             mouse_values: vec![0.0; n],
             input_values: vec![0.0; n],
             prev_input_values: vec![0.0; n],
@@ -171,6 +177,7 @@ impl ProcessNode for FaderGroupProcessNode {
             .collect();
         let mouse_override_strs: Vec<&str> = self.mouse_override.iter().map(|m| m.as_str()).collect();
         Some(serde_json::json!({
+            "name": self.name,
             "rows": self.rows,
             "cols": self.cols,
             "mouse_values": self.mouse_values,
@@ -183,6 +190,9 @@ impl ProcessNode for FaderGroupProcessNode {
     }
 
     fn load_data(&mut self, data: &serde_json::Value) {
+        if let Some(n) = data.get("name").and_then(|v| v.as_str()) {
+            self.name = n.to_string();
+        }
         let mut dims_changed = false;
         if let Some(r) = data.get("rows").and_then(|v| v.as_u64()) {
             let r = (r as usize).clamp(1, 16);
@@ -252,6 +262,7 @@ impl ProcessNode for FaderGroupProcessNode {
 
     fn update_display(&self, shared: &mut NodeSharedState) {
         shared.display = Some(Box::new(FaderGroupDisplay {
+            name: self.name.clone(),
             rows: self.rows,
             cols: self.cols,
             outputs: self.output_values.clone(),

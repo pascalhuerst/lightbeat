@@ -63,7 +63,7 @@ impl SubgraphPortDef {
     }
 }
 
-fn idx_to_port_type(idx: usize) -> PortType {
+pub fn idx_to_port_type(idx: usize) -> PortType {
     match idx {
         0 => PortType::Logic,
         1 => PortType::Phase,

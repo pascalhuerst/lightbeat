@@ -148,6 +148,10 @@ struct LightBeatApp {
     input_controllers: InputControllerManager,
     show_input_controllers: bool,
     audio_inputs: AudioInputManager,
+    /// Shared map of published Portal In names → values. Referenced by both
+    /// Portal In and Portal Out process nodes so data flows between them
+    /// without visible wires.
+    portals: engine::nodes::meta::portal::SharedPortalRegistry,
     show_audio_inputs: bool,
     library: LibraryManager,
     show_library: bool,
@@ -229,6 +233,9 @@ impl LightBeatApp {
             show_input_controllers: false,
             audio_inputs: AudioInputManager::new(),
             show_audio_inputs: false,
+            portals: std::sync::Arc::new(std::sync::Mutex::new(
+                engine::nodes::meta::portal::PortalRegistry::default(),
+            )),
             library: LibraryManager::new(macros::default_library_root()),
             show_library: true,
             library_search: String::new(),
@@ -468,6 +475,18 @@ impl LightBeatApp {
             // Start with generous shared state; will resize as ports are added.
             Box::new(SubgraphWidget::new(id, new_shared_state(12, 12)))
         });
+        self.graph.register_node("Meta", "Portal In", |id| {
+            // Generous channel budget — user can add many ports of any type.
+            Box::new(widgets::nodes::meta::portal::PortalInWidget::new(
+                id, new_shared_state(64, 0),
+            ))
+        });
+        let portals_for_out = self.portals.clone();
+        self.graph.register_node("Meta", "Portal Out", move |id| {
+            Box::new(widgets::nodes::meta::portal::PortalOutWidget::new(
+                id, new_shared_state(0, 64), portals_for_out.clone(),
+            ))
+        });
 
         // Output
         let gctx = self.group_ctx.clone();
@@ -603,6 +622,12 @@ impl LightBeatApp {
                 "Sin" => Some(Box::new(OscillatorProcessNode::new(id, OscFunc::Sin))),
                 "Cos" => Some(Box::new(OscillatorProcessNode::new(id, OscFunc::Cos))),
                 "Subgraph" => Some(Box::new(SubgraphProcessNode::new(id))),
+                "Portal In" => Some(Box::new(
+                    engine::nodes::meta::portal::PortalInProcessNode::new(id, self.portals.clone()),
+                )),
+                "Portal Out" => Some(Box::new(
+                    engine::nodes::meta::portal::PortalOutProcessNode::new(id, self.portals.clone()),
+                )),
                 "Group Output" => Some(Box::new(GroupProcessNode::new(id, self.object_store.clone()))),
                 "Effect Stack" => Some(Box::new(EffectStackProcessNode::new(id, self.object_store.clone()))),
                 _ => {
@@ -840,6 +865,22 @@ impl LightBeatApp {
                 eprintln!("Failed to open project: {}", e);
             }
         }
+    }
+
+    /// Clear the graph to an empty project and forget the current file path.
+    /// The Setup (fixtures, interfaces, palettes, etc.) is left alone —
+    /// that's a separate file and the user may want to keep working with
+    /// the same hardware set-up across projects.
+    fn new_project(&mut self) {
+        let empty = project::ProjectFile {
+            nodes: Vec::new(),
+            connections: Vec::new(),
+        };
+        self.apply_project(&empty);
+        self.project_path = None;
+        // Drop undo history so the first undo doesn't resurrect the previous
+        // project's graph.
+        self.project_undoer = egui::util::undoer::Undoer::default();
     }
 
     /// Build current SetupFile snapshot (used for both saving and feeding the undoer).
@@ -1175,6 +1216,10 @@ impl eframe::App for LightBeatApp {
         egui::TopBottomPanel::top("menu_bar").show(ctx, |ui| {
             egui::menu::bar(ui, |ui| {
                 ui.menu_button("File", |ui| {
+                    if ui.button("New").clicked() {
+                        ui.close_menu();
+                        self.new_project();
+                    }
                     if ui.button("Open...").clicked() {
                         ui.close_menu();
                         self.open_project(ctx);

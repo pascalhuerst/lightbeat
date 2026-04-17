@@ -186,6 +186,24 @@ fn handle_midi_message(controller_id: u32, msg: &[u8], shared: &SharedController
         None => return,
     };
 
+    // Per-row relearn: intercept before routing. Replaces the target input's
+    // source with the incoming one, then clears the flag. Ignores duplicate
+    // sources — reassigning a CC that's already bound to another row would
+    // silently break that row.
+    if let Some(target_id) = c.relearn_input_id {
+        let src = InputSource::Midi(source.clone());
+        let duplicate_of = c.inputs.iter()
+            .find(|i| i.id != target_id && i.source == src)
+            .map(|i| i.id);
+        if duplicate_of.is_none() {
+            if let Some(input) = c.inputs.iter_mut().find(|i| i.id == target_id) {
+                input.source = src;
+            }
+        }
+        c.relearn_input_id = None;
+        return;
+    }
+
     if c.learning {
         c.learn_buffer.push_back(InputSource::Midi(source.clone()));
         while c.learn_buffer.len() > 32 {

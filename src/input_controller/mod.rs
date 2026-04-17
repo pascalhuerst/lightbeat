@@ -214,6 +214,10 @@ pub struct ControllerRuntime {
     /// handler whenever `debug_highlight_on_touch` is on.
     pub last_match_idx: Option<usize>,
     pub last_match_instant: Option<std::time::Instant>,
+    /// When set, the next MIDI message replaces the source of the input
+    /// with this id. Cleared on first match. Used by the per-row "Learn"
+    /// button to fix mis-mapped factory preset CCs.
+    pub relearn_input_id: Option<u32>,
 }
 
 /// Keep the log small so UI rendering stays cheap on Push-class devices that
@@ -222,11 +226,14 @@ pub const MIDI_LOG_CAPACITY: usize = 128;
 
 impl ControllerRuntime {
     pub fn from_persistent(c: &InputController) -> Self {
+        // Kinds that ship with a canonical layout: use the saved inputs if
+        // the user has customised anything (non-empty list from a previous
+        // session), otherwise fall back to the factory defaults. This means
+        // the shipped CC numbers are just the starting point — once the
+        // user re-learns a row, that edit sticks.
         let inputs = match &c.kind {
-            // Fixed-layout kinds regenerate their inputs from code — ignores
-            // saved entries so mapping fixes propagate to existing setups.
-            InputControllerKind::Bcf2000 { .. } => bcf2000_preset1_inputs(),
-            InputControllerKind::Push1 { .. } => push1_preset_inputs(),
+            InputControllerKind::Bcf2000 { .. } if c.inputs.is_empty() => bcf2000_preset1_inputs(),
+            InputControllerKind::Push1 { .. } if c.inputs.is_empty() => push1_preset_inputs(),
             _ => c.inputs.clone(),
         };
         let n = inputs.len();
@@ -247,16 +254,15 @@ impl ControllerRuntime {
             debug_highlight_on_touch: false,
             last_match_idx: None,
             last_match_instant: None,
+            relearn_input_id: None,
         }
     }
 
     pub fn to_persistent(&self) -> InputController {
-        // Don't serialize the canonical input lists for fixed-layout kinds —
-        // we regenerate them on load.
-        let inputs = match &self.kind {
-            InputControllerKind::Bcf2000 { .. } | InputControllerKind::Push1 { .. } => Vec::new(),
-            _ => self.inputs.clone(),
-        };
+        // Always serialize the inputs — including for kinds that ship with a
+        // factory preset. If the user re-learned CCs or renamed rows those
+        // edits must persist across app restarts.
+        let inputs = self.inputs.clone();
         InputController {
             id: self.id,
             name: self.name.clone(),
@@ -535,6 +541,7 @@ impl InputControllerManager {
             debug_highlight_on_touch: false,
             last_match_idx: None,
             last_match_instant: None,
+            relearn_input_id: None,
         });
         drop(state);
         self.reconcile_sessions();
@@ -571,6 +578,7 @@ impl InputControllerManager {
             debug_highlight_on_touch: false,
             last_match_idx: None,
             last_match_instant: None,
+            relearn_input_id: None,
         });
         drop(state);
         self.reconcile_sessions();
@@ -609,6 +617,7 @@ impl InputControllerManager {
             debug_highlight_on_touch: false,
             last_match_idx: None,
             last_match_instant: None,
+            relearn_input_id: None,
         });
         drop(state);
         self.reconcile_sessions();
@@ -720,6 +729,39 @@ impl InputControllerManager {
         if let Some(c) = state.iter_mut().find(|c| c.id == controller_id) {
             if let Some(i) = c.inputs.iter_mut().find(|i| i.id == input_id) {
                 i.name = name;
+            }
+        }
+    }
+
+    /// Arm per-row relearn: the next MIDI message that controller receives
+    /// will replace the source of the input with `input_id`. Pass `None` to
+    /// cancel.
+    pub fn set_relearn(&mut self, controller_id: u32, input_id: Option<u32>) {
+        let mut state = self.shared.lock().unwrap();
+        if let Some(c) = state.iter_mut().find(|c| c.id == controller_id) {
+            c.relearn_input_id = input_id;
+        }
+    }
+
+    /// Reset a factory-preset controller's inputs back to the code defaults.
+    /// No-op for generic MIDI (their layout is learned, not factory).
+    pub fn reset_factory_layout(&mut self, controller_id: u32) {
+        let mut state = self.shared.lock().unwrap();
+        if let Some(c) = state.iter_mut().find(|c| c.id == controller_id) {
+            let factory = match &c.kind {
+                InputControllerKind::Bcf2000 { .. } => Some(bcf2000_preset1_inputs()),
+                InputControllerKind::Push1 { .. } => Some(push1_preset_inputs()),
+                _ => None,
+            };
+            if let Some(inputs) = factory {
+                let n = inputs.len();
+                c.inputs = inputs;
+                c.values = vec![0.0; n];
+                c.out_values = vec![0.0; n];
+                let max_id = c.inputs.iter().map(|i| i.id).max().unwrap_or(0);
+                if max_id >= self.next_input_id {
+                    self.next_input_id = max_id + 1;
+                }
             }
         }
     }
