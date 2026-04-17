@@ -277,8 +277,10 @@ impl LightBeatApp {
         });
         let ic_shared = self.input_controllers.shared.clone();
         self.graph.register_node("IO", "Input Controller", move |id| {
-            // Generous output channel budget; engine resizes as inputs change.
-            Box::new(InputControllerWidget::new(id, new_shared_state(0, 64), ic_shared.clone()))
+            // Generous channel budget on both sides — the engine resizes its
+            // active port list as the bound controller's layout changes. 64
+            // covers BCF2000's 44 inputs + feedback outputs comfortably.
+            Box::new(InputControllerWidget::new(id, new_shared_state(64, 64), ic_shared.clone()))
         });
         let ai_shared = self.audio_inputs.shared.clone();
         self.graph.register_node("IO", "Audio Input", move |id| {

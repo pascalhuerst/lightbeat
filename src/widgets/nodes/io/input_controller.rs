@@ -15,6 +15,9 @@ pub struct InputControllerWidget {
     controller_id: u32,
     /// Mirror of engine display: per-output (name, type, value).
     outputs: Vec<(String, PortType, f32)>,
+    /// Mirror of engine feedback inputs. Empty when the bound controller
+    /// doesn't support graph → device feedback.
+    feedback_inputs: Vec<(String, PortType)>,
     /// Pointer to the live controller registry so the inspector dropdown
     /// can list available controllers.
     controllers: SharedControllers,
@@ -27,6 +30,7 @@ impl InputControllerWidget {
             shared,
             controller_id: 0,
             outputs: Vec::new(),
+            feedback_inputs: Vec::new(),
             controllers,
         }
     }
@@ -48,15 +52,25 @@ impl InputControllerWidget {
         if self.controller_id == 0 { return; }
         let state = self.controllers.lock().unwrap();
         if let Some(c) = state.iter().find(|c| c.id == self.controller_id) {
-            // The "any change" trigger port is at index 0 in the engine
-            // node's output layout, but the InputControllerProcessNode does
-            // not actually expose it (only Beat / button-style triggers do).
-            // Match what `InputControllerProcessNode::process` builds: one
-            // port per learned input, typed by source.
-            self.outputs = c.inputs.iter().map(|i| {
+            // Match what `InputControllerProcessNode::process` builds: the
+            // "any change" trigger at index 0, then one port per learned
+            // input, typed by source.
+            self.outputs = std::iter::once((
+                "any change".to_string(),
+                PortType::Logic,
+                0.0,
+            )).chain(c.inputs.iter().map(|i| {
                 let ty = if i.source.is_binary() { PortType::Logic } else { PortType::Untyped };
                 (i.name.clone(), ty, 0.0)
-            }).collect();
+            })).collect();
+            self.feedback_inputs = if c.kind.has_feedback() {
+                c.inputs.iter().map(|i| {
+                    let ty = if i.source.is_binary() { PortType::Logic } else { PortType::Untyped };
+                    (i.name.clone(), ty)
+                }).collect()
+            } else {
+                Vec::new()
+            };
         }
     }
 }
@@ -69,7 +83,11 @@ impl NodeWidget for InputControllerWidget {
         "Outputs the current value of each learned input on the selected controller."
     }
 
-    fn ui_inputs(&self) -> Vec<UiPortDef> { vec![] }
+    fn ui_inputs(&self) -> Vec<UiPortDef> {
+        self.feedback_inputs.iter().map(|(name, ty)| {
+            UiPortDef::from_def(&PortDef::new(name.clone(), *ty))
+        }).collect()
+    }
     fn ui_outputs(&self) -> Vec<UiPortDef> {
         self.outputs.iter().map(|(name, ty, _)| {
             UiPortDef::from_def(&PortDef::new(name.clone(), *ty))
@@ -81,15 +99,21 @@ impl NodeWidget for InputControllerWidget {
     fn shared_state(&self) -> &SharedState { &self.shared }
 
     fn show_content(&mut self, ui: &mut Ui, _zoom: f32) {
-        let snapshot: Option<(u32, String, Vec<(String, PortType, f32)>)> = {
+        let snapshot: Option<(u32, String, Vec<(String, PortType, f32)>, Vec<(String, PortType)>)> = {
             let shared = self.shared.lock().unwrap();
             shared.display.as_ref()
                 .and_then(|d| d.downcast_ref::<InputControllerDisplay>())
-                .map(|d| (d.controller_id, d.controller_name.clone(), d.outputs.clone()))
+                .map(|d| (
+                    d.controller_id,
+                    d.controller_name.clone(),
+                    d.outputs.clone(),
+                    d.feedback_inputs.clone(),
+                ))
         };
-        if let Some((cid, _name, outs)) = snapshot {
+        if let Some((cid, _name, outs, ins)) = snapshot {
             self.controller_id = cid;
             self.outputs = outs;
+            self.feedback_inputs = ins;
         }
 
         if self.controller_id == 0 {

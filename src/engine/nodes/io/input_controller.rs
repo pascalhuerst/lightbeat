@@ -8,6 +8,10 @@ pub struct InputControllerDisplay {
     /// Per-output (name, port_type, current value) — UI uses this to label
     /// outputs and show meters. Order matches ProcessNode outputs.
     pub outputs: Vec<(String, PortType, f32)>,
+    /// Per-input (name, port_type) — for kinds that support graph → device
+    /// feedback (BCF2000). Empty for input-only kinds. Order matches
+    /// ProcessNode inputs.
+    pub feedback_inputs: Vec<(String, PortType)>,
 }
 
 /// Per-input cached state for trigger detection.
@@ -23,6 +27,14 @@ pub struct InputControllerProcessNode {
     /// Output port layout. Index 0 is always the "any change" trigger port,
     /// followed by one port per learned input.
     outputs: Vec<PortDef>,
+    /// Input port layout — only populated for feedback-capable controllers
+    /// (BCF2000). Order matches the learned inputs; writes are forwarded to
+    /// `ControllerRuntime.out_values` which the MIDI feedback worker sends
+    /// back to the device.
+    inputs: Vec<PortDef>,
+    /// Pending graph → device values, mirrored from `write_input` into
+    /// shared `out_values` every tick.
+    input_values: Vec<f32>,
     /// Output values for the learned inputs (parallel to inputs[]).
     output_values: Vec<f32>,
     /// Output values from the previous tick — used to detect changes.
@@ -34,9 +46,13 @@ pub struct InputControllerProcessNode {
     /// Snapshot of current display info (for `update_display`).
     /// Includes the "any change" entry as the first element.
     display_outputs: Vec<(String, PortType, f32)>,
+    display_feedback_inputs: Vec<(String, PortType)>,
     display_name: String,
     /// Shared input controller state.
     controllers: SharedControllers,
+    /// Whether the bound controller supports graph → device feedback.
+    /// Updated each tick. Drives the presence of input ports.
+    has_feedback: bool,
 }
 
 impl InputControllerProcessNode {
@@ -45,13 +61,17 @@ impl InputControllerProcessNode {
             id,
             controller_id: 0,
             outputs: vec![PortDef::new("any change", PortType::Logic)],
+            inputs: Vec::new(),
+            input_values: Vec::new(),
             output_values: Vec::new(),
             prev_output_values: Vec::new(),
             any_changed: false,
             cache: Vec::new(),
             display_outputs: Vec::new(),
+            display_feedback_inputs: Vec::new(),
             display_name: String::new(),
             controllers,
+            has_feedback: false,
         }
     }
 }
@@ -59,34 +79,43 @@ impl InputControllerProcessNode {
 impl ProcessNode for InputControllerProcessNode {
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { "Input Controller" }
-    fn inputs(&self) -> &[PortDef] { &[] }
+    fn inputs(&self) -> &[PortDef] { &self.inputs }
     fn outputs(&self) -> &[PortDef] { &self.outputs }
 
+    fn write_input(&mut self, port_index: usize, value: f32) {
+        if let Some(slot) = self.input_values.get_mut(port_index) {
+            *slot = value;
+        }
+    }
+
     fn process(&mut self) {
-        let state = self.controllers.lock().unwrap();
-        let c = state.iter().find(|c| c.id == self.controller_id);
+        let mut state = self.controllers.lock().unwrap();
+        let c = state.iter_mut().find(|c| c.id == self.controller_id);
         let Some(c) = c else {
-            // No bound controller — clear outputs.
             for v in &mut self.output_values { *v = 0.0; }
             self.any_changed = false;
             self.prev_output_values.clear();
             self.display_outputs.clear();
+            self.display_feedback_inputs.clear();
             self.display_name.clear();
-            // Keep just the "any change" port present.
             if self.outputs.len() != 1 || self.outputs[0].name != "any change" {
                 self.outputs = vec![PortDef::new("any change", PortType::Logic)];
             }
+            self.inputs.clear();
+            self.input_values.clear();
+            self.has_feedback = false;
             return;
         };
 
-        // Rebuild port layout if the input set changed. Layout: index 0 is
-        // the always-present "any change" trigger; learned inputs follow.
+        self.has_feedback = c.kind.has_feedback();
+
+        // Rebuild output port layout if the input set changed.
         let n = c.inputs.len();
-        let expected_len = n + 1;
-        let layout_changed = self.outputs.len() != expected_len
+        let expected_out_len = n + 1;
+        let out_layout_changed = self.outputs.len() != expected_out_len
             || self.outputs.iter().skip(1).zip(c.inputs.iter())
                 .any(|(p, i)| p.name != i.name || p.port_type != port_type_for(&i.source));
-        if layout_changed {
+        if out_layout_changed {
             self.outputs = std::iter::once(PortDef::new("any change", PortType::Logic))
                 .chain(c.inputs.iter().map(|i| {
                     PortDef::new(i.name.clone(), port_type_for(&i.source))
@@ -95,6 +124,30 @@ impl ProcessNode for InputControllerProcessNode {
             self.output_values = vec![0.0; n];
             self.prev_output_values = vec![0.0; n];
             self.cache = vec![InputCache::default(); n];
+        }
+
+        // Feedback inputs: present iff the bound controller supports feedback.
+        let expected_in_len = if self.has_feedback { n } else { 0 };
+        let in_layout_changed = self.inputs.len() != expected_in_len
+            || self.inputs.iter().zip(c.inputs.iter())
+                .any(|(p, i)| p.name != i.name || p.port_type != port_type_for(&i.source));
+        if in_layout_changed {
+            self.inputs = if self.has_feedback {
+                c.inputs.iter().map(|i| {
+                    PortDef::new(i.name.clone(), port_type_for(&i.source))
+                }).collect()
+            } else {
+                Vec::new()
+            };
+            self.input_values = vec![0.0; expected_in_len];
+        }
+
+        // Forward pending graph → device values into shared out_values so
+        // the MIDI feedback worker thread picks them up. Only when the
+        // controller actually supports feedback; otherwise writes are ignored.
+        if self.has_feedback {
+            let copy_n = self.input_values.len().min(c.out_values.len());
+            c.out_values[..copy_n].copy_from_slice(&self.input_values[..copy_n]);
         }
 
         // Compute outputs by mode.
@@ -114,7 +167,6 @@ impl ProcessNode for InputControllerProcessNode {
             self.cache[idx].prev_value = raw;
         }
 
-        // Detect any change vs. previous tick — fires for one tick.
         self.any_changed = self.output_values.iter()
             .zip(self.prev_output_values.iter())
             .any(|(cur, prev)| cur != prev);
@@ -128,6 +180,11 @@ impl ProcessNode for InputControllerProcessNode {
         )).chain(c.inputs.iter().enumerate().map(|(i, input)| {
             (input.name.clone(), port_type_for(&input.source), self.output_values[i])
         })).collect();
+        self.display_feedback_inputs = if self.has_feedback {
+            c.inputs.iter().map(|i| (i.name.clone(), port_type_for(&i.source))).collect()
+        } else {
+            Vec::new()
+        };
     }
 
     fn read_output(&self, pi: usize) -> f32 {
@@ -147,8 +204,9 @@ impl ProcessNode for InputControllerProcessNode {
     fn load_data(&mut self, data: &serde_json::Value) {
         if let Some(id) = data.get("controller_id").and_then(|v| v.as_u64()) {
             self.controller_id = id as u32;
-            // Force port rebuild on next process tick by clearing.
             self.outputs.clear();
+            self.inputs.clear();
+            self.input_values.clear();
             self.output_values.clear();
             self.cache.clear();
         }
@@ -159,6 +217,7 @@ impl ProcessNode for InputControllerProcessNode {
             controller_id: self.controller_id,
             controller_name: self.display_name.clone(),
             outputs: self.display_outputs.clone(),
+            feedback_inputs: self.display_feedback_inputs.clone(),
         }));
     }
 }

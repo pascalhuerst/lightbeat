@@ -48,13 +48,43 @@ pub enum InputControllerKind {
         /// ports at reconnect time). Empty = no mapping.
         hw_port_name: String,
     },
+    /// Behringer BCF2000 with factory preset 1. Fixed 44-input layout,
+    /// bidirectional CC (motor faders, LED rings, button LEDs driven by the
+    /// graph). `hw_output_port` is required for any of the feedback to work.
+    Bcf2000 {
+        hw_input_port: String,
+        #[serde(default)]
+        hw_output_port: String,
+    },
 }
 
 impl InputControllerKind {
     pub fn label(&self) -> &'static str {
         match self {
             InputControllerKind::Midi { .. } => "MIDI",
+            InputControllerKind::Bcf2000 { .. } => "BCF2000",
         }
+    }
+
+    /// MIDI input port name (empty when not configured).
+    pub fn input_port(&self) -> &str {
+        match self {
+            InputControllerKind::Midi { hw_port_name } => hw_port_name,
+            InputControllerKind::Bcf2000 { hw_input_port, .. } => hw_input_port,
+        }
+    }
+
+    /// MIDI output port name, if the kind supports feedback (empty string if not set).
+    pub fn output_port(&self) -> &str {
+        match self {
+            InputControllerKind::Midi { .. } => "",
+            InputControllerKind::Bcf2000 { hw_output_port, .. } => hw_output_port,
+        }
+    }
+
+    /// True if the kind supports graph → device feedback (echo CC out).
+    pub fn has_feedback(&self) -> bool {
+        matches!(self, InputControllerKind::Bcf2000 { .. })
     }
 }
 
@@ -123,6 +153,10 @@ pub struct ControllerRuntime {
     /// One entry per input, same order as `inputs`. Raw current value:
     /// continuous 0..1, or 0.0/1.0 for binary (1 while held).
     pub values: Vec<f32>,
+    /// Graph → device feedback values, same length as `inputs`. Only used by
+    /// kinds where `has_feedback()` is true. The session's feedback worker
+    /// thread polls this and emits MIDI CC when values change.
+    pub out_values: Vec<f32>,
     /// Connection status for UI badges.
     pub status: ConnectionStatus,
     /// When Some, incoming raw events are captured into `learn_buffer` for
@@ -133,12 +167,20 @@ pub struct ControllerRuntime {
 
 impl ControllerRuntime {
     pub fn from_persistent(c: &InputController) -> Self {
+        let inputs = match &c.kind {
+            // BCF2000 is hardwired to preset 1 — saved `inputs` are ignored
+            // so the layout stays in lock-step with the code.
+            InputControllerKind::Bcf2000 { .. } => bcf2000_preset1_inputs(),
+            _ => c.inputs.clone(),
+        };
+        let n = inputs.len();
         Self {
             id: c.id,
             name: c.name.clone(),
             kind: c.kind.clone(),
-            inputs: c.inputs.clone(),
-            values: vec![0.0; c.inputs.len()],
+            inputs,
+            values: vec![0.0; n],
+            out_values: vec![0.0; n],
             status: ConnectionStatus::Disconnected,
             learning: false,
             learn_buffer: VecDeque::new(),
@@ -146,17 +188,65 @@ impl ControllerRuntime {
     }
 
     pub fn to_persistent(&self) -> InputController {
+        // Don't serialize the BCF2000 canonical input list — we regenerate it
+        // on load so any mapping fix in code propagates to existing setups.
+        let inputs = match &self.kind {
+            InputControllerKind::Bcf2000 { .. } => Vec::new(),
+            _ => self.inputs.clone(),
+        };
         InputController {
             id: self.id,
             name: self.name.clone(),
             kind: self.kind.clone(),
-            inputs: self.inputs.clone(),
+            inputs,
         }
     }
 
     pub fn resize_values(&mut self) {
         self.values.resize(self.inputs.len(), 0.0);
+        self.out_values.resize(self.inputs.len(), 0.0);
     }
+}
+
+// ---------------------------------------------------------------------------
+// BCF2000 factory preset 1 layout
+// ---------------------------------------------------------------------------
+
+/// Canonical BCF2000 preset 1 control map. All channel 1. Widely documented as
+/// the out-of-the-box factory default; the device manual doesn't spell it out
+/// per-control but Behringer's community preset library and decades of
+/// DAW-template work converge on these CC numbers.
+pub fn bcf2000_preset1_inputs() -> Vec<LearnedInput> {
+    use self::midi::MidiSource;
+    let ch = 1u8;
+    let mut inputs = Vec::with_capacity(44);
+    let mut id: u32 = 1;
+
+    let mut push_cc = |inputs: &mut Vec<LearnedInput>, id: &mut u32, name: &str, cc: u8, binary: bool| {
+        inputs.push(LearnedInput {
+            id: *id,
+            name: name.to_string(),
+            source: InputSource::Midi(MidiSource::Cc { channel: ch, controller: cc }),
+            mode: if binary { InputBindingMode::Value } else { InputBindingMode::Value },
+        });
+        *id += 1;
+        let _ = binary;
+    };
+
+    // 8 faders → CC 81..88 (continuous).
+    for i in 0..8 { push_cc(&mut inputs, &mut id, &format!("Fader {}", i + 1), 81 + i as u8, false); }
+    // 8 encoder rotations → CC 1..8 (continuous).
+    for i in 0..8 { push_cc(&mut inputs, &mut id, &format!("Enc {}", i + 1), 1 + i as u8, false); }
+    // 8 encoder pushes → CC 33..40 (binary).
+    for i in 0..8 { push_cc(&mut inputs, &mut id, &format!("Enc {} Push", i + 1), 33 + i as u8, true); }
+    // Top row buttons → CC 65..72 (binary).
+    for i in 0..8 { push_cc(&mut inputs, &mut id, &format!("Btn Top {}", i + 1), 65 + i as u8, true); }
+    // Bottom row buttons → CC 73..80 (binary).
+    for i in 0..8 { push_cc(&mut inputs, &mut id, &format!("Btn Bot {}", i + 1), 73 + i as u8, true); }
+    // 4 free buttons → CC 89..92 (binary).
+    for i in 0..4 { push_cc(&mut inputs, &mut id, &format!("Btn Free {}", i + 1), 89 + i as u8, true); }
+
+    inputs
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -227,6 +317,38 @@ impl InputControllerManager {
             kind: InputControllerKind::Midi { hw_port_name: String::new() },
             inputs: Vec::new(),
             values: Vec::new(),
+            out_values: Vec::new(),
+            status: ConnectionStatus::Disconnected,
+            learning: false,
+            learn_buffer: VecDeque::new(),
+        });
+        drop(state);
+        self.reconcile_sessions();
+        id
+    }
+
+    /// Add a BCF2000 controller — preset-1 input layout is populated
+    /// automatically. `add_controller` is the generic path.
+    pub fn add_bcf2000(&mut self, name: String) -> u32 {
+        let mut state = self.shared.lock().unwrap();
+        let id = state.iter().map(|c| c.id).max().unwrap_or(0) + 1;
+        let inputs = bcf2000_preset1_inputs();
+        let n = inputs.len();
+        // Bump next_input_id so any future learn/add doesn't collide.
+        let max_input_id = inputs.iter().map(|i| i.id).max().unwrap_or(0);
+        if max_input_id >= self.next_input_id {
+            self.next_input_id = max_input_id + 1;
+        }
+        state.push(ControllerRuntime {
+            id,
+            name,
+            kind: InputControllerKind::Bcf2000 {
+                hw_input_port: String::new(),
+                hw_output_port: String::new(),
+            },
+            inputs,
+            values: vec![0.0; n],
+            out_values: vec![0.0; n],
             status: ConnectionStatus::Disconnected,
             learning: false,
             learn_buffer: VecDeque::new(),
@@ -243,12 +365,32 @@ impl InputControllerManager {
         self.reconcile_sessions();
     }
 
-    /// Change the hardware port mapping for a controller. Triggers reconnect.
+    /// Change the hardware input port mapping for a controller. Triggers
+    /// reconnect. Preserves the kind's extra fields (e.g. BCF2000's output
+    /// port mapping).
     pub fn set_hw_port(&mut self, id: u32, port: String) {
         {
             let mut state = self.shared.lock().unwrap();
             if let Some(c) = state.iter_mut().find(|c| c.id == id) {
-                c.kind = InputControllerKind::Midi { hw_port_name: port };
+                match &mut c.kind {
+                    InputControllerKind::Midi { hw_port_name } => *hw_port_name = port,
+                    InputControllerKind::Bcf2000 { hw_input_port, .. } => *hw_input_port = port,
+                }
+                c.status = ConnectionStatus::Disconnected;
+            }
+        }
+        self.reconcile_sessions();
+    }
+
+    /// Change the hardware output port (used for motor fader / LED feedback
+    /// on BCF2000 and other feedback-capable kinds). No-op for plain MIDI.
+    pub fn set_hw_output_port(&mut self, id: u32, port: String) {
+        {
+            let mut state = self.shared.lock().unwrap();
+            if let Some(c) = state.iter_mut().find(|c| c.id == id) {
+                if let InputControllerKind::Bcf2000 { hw_output_port, .. } = &mut c.kind {
+                    *hw_output_port = port;
+                }
                 c.status = ConnectionStatus::Disconnected;
             }
         }
@@ -336,6 +478,11 @@ impl InputControllerManager {
         midi::available_ports()
     }
 
+    /// List currently available MIDI output ports on the system.
+    pub fn available_midi_output_ports() -> Vec<String> {
+        midi::available_output_ports()
+    }
+
     /// Called periodically (from UI update loop) to try reconnecting any
     /// controllers whose hw port just appeared, and drop sessions whose port
     /// disappeared. Cheap no-op if nothing changed.
@@ -347,38 +494,46 @@ impl InputControllerManager {
     fn reconcile_sessions(&mut self) {
         let ports = midi::available_ports();
 
-        let controllers: Vec<(u32, String)> = {
+        // (controller_id, input_port, Option<output_port>)
+        let controllers: Vec<(u32, String, Option<String>)> = {
             let state = self.shared.lock().unwrap();
             state.iter()
-                .filter_map(|c| match &c.kind {
-                    InputControllerKind::Midi { hw_port_name } if !hw_port_name.is_empty() => {
-                        Some((c.id, hw_port_name.clone()))
-                    }
-                    _ => None,
+                .filter_map(|c| {
+                    let ip = c.kind.input_port();
+                    if ip.is_empty() { return None; }
+                    let op = c.kind.output_port();
+                    let op = if op.is_empty() { None } else { Some(op.to_string()) };
+                    Some((c.id, ip.to_string(), op))
                 })
                 .collect()
         };
 
-        // Drop sessions for controllers that no longer exist or whose port changed.
+        // Drop sessions for controllers that no longer exist or whose port(s) changed.
         self.sessions.retain(|s| {
-            controllers.iter().any(|(id, port)| *id == s.controller_id && port == &s.port_name)
-                && ports.contains(&s.port_name)
+            let desc = controllers.iter().find(|(id, _, _)| *id == s.controller_id);
+            let matched = match desc {
+                Some((_, port, out_port)) => {
+                    *port == s.port_name && *out_port == s.output_port_name
+                }
+                None => false,
+            };
+            matched && ports.contains(&s.port_name)
+                && s.output_port_name.as_ref().map(|p| ports.contains(p)).unwrap_or(true)
         });
 
         // Open sessions for controllers that have a matching available port
         // but no active session yet.
-        for (cid, port) in &controllers {
+        for (cid, port, out_port) in &controllers {
             let has_session = self.sessions.iter().any(|s| s.controller_id == *cid);
             if has_session { continue; }
             if !ports.contains(port) {
-                // Port not available — mark waiting.
                 let mut state = self.shared.lock().unwrap();
                 if let Some(c) = state.iter_mut().find(|c| c.id == *cid) {
                     c.status = ConnectionStatus::Waiting;
                 }
                 continue;
             }
-            match MidiSession::open(*cid, port.clone(), self.shared.clone()) {
+            match MidiSession::open(*cid, port.clone(), out_port.clone(), self.shared.clone()) {
                 Ok(session) => {
                     self.sessions.push(session);
                     let mut state = self.shared.lock().unwrap();
@@ -397,15 +552,11 @@ impl InputControllerManager {
         for c in state.iter_mut() {
             let active = self.sessions.iter().any(|s| s.controller_id == c.id);
             if !active {
-                c.status = match &c.kind {
-                    InputControllerKind::Midi { hw_port_name } if hw_port_name.is_empty() => {
-                        ConnectionStatus::Disconnected
-                    }
-                    InputControllerKind::Midi { hw_port_name } if ports.contains(hw_port_name) => {
-                        // Port available but we failed to open — treat as waiting for retry.
-                        ConnectionStatus::Waiting
-                    }
-                    _ => ConnectionStatus::Waiting,
+                let ip = c.kind.input_port();
+                c.status = if ip.is_empty() {
+                    ConnectionStatus::Disconnected
+                } else {
+                    ConnectionStatus::Waiting
                 };
             }
         }
