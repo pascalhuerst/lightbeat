@@ -21,7 +21,12 @@ impl InternalClockWidget {
         Self {
             id,
             shared,
-            inputs: vec![PortDef::new("trigger", PortType::Logic)],
+            inputs: vec![
+                PortDef::new("play/stop", PortType::Logic),
+                PortDef::new("bpm", PortType::Untyped),
+                PortDef::new("set bpm", PortType::Logic),
+                PortDef::new("reset", PortType::Logic),
+            ],
             outputs: vec![
                 PortDef::new("beat", PortType::Logic),
                 PortDef::new("play", PortType::Logic),

@@ -21,9 +21,17 @@ pub struct InternalClockProcessNode {
     /// Beat number of the last fired beat (used to count downbeats).
     last_beat_idx: i64,
     last_tick: Option<Instant>,
-    /// Trigger input: rising edge toggles play/stop.
-    trigger_in: f32,
-    prev_trigger: f32,
+    /// Input 0: rising edge toggles play/stop.
+    play_stop_in: f32,
+    prev_play_stop: f32,
+    /// Input 1: BPM value (continuous, applied on `set_bpm` rising edge).
+    bpm_in: f32,
+    /// Input 2: rising edge captures `bpm_in` into `self.bpm`.
+    set_bpm_in: f32,
+    prev_set_bpm: f32,
+    /// Input 3: rising edge resets phase / beat counter to 0.
+    reset_in: f32,
+    prev_reset: f32,
     beat_output: f32,
     /// For display (set when a beat fires).
     last_beat_time: Option<Instant>,
@@ -41,12 +49,22 @@ impl InternalClockProcessNode {
             beat_pos: 0.0,
             last_beat_idx: -1,
             last_tick: None,
-            trigger_in: 0.0,
-            prev_trigger: 0.0,
+            play_stop_in: 0.0,
+            prev_play_stop: 0.0,
+            bpm_in: 0.0,
+            set_bpm_in: 0.0,
+            prev_set_bpm: 0.0,
+            reset_in: 0.0,
+            prev_reset: 0.0,
             beat_output: 0.0,
             last_beat_time: None,
             last_beat_is_downbeat: false,
-            inputs: vec![PortDef::new("trigger", PortType::Logic)],
+            inputs: vec![
+                PortDef::new("play/stop", PortType::Logic),
+                PortDef::new("bpm", PortType::Untyped),
+                PortDef::new("set bpm", PortType::Logic),
+                PortDef::new("reset", PortType::Logic),
+            ],
             outputs: vec![
                 PortDef::new("beat", PortType::Logic),
                 PortDef::new("play", PortType::Logic),
@@ -63,24 +81,50 @@ impl ProcessNode for InternalClockProcessNode {
     fn outputs(&self) -> &[PortDef] { &self.outputs }
 
     fn write_input(&mut self, pi: usize, v: f32) {
-        if pi == 0 { self.trigger_in = v; }
+        match pi {
+            0 => self.play_stop_in = v,
+            1 => self.bpm_in = v,
+            2 => self.set_bpm_in = v,
+            3 => self.reset_in = v,
+            _ => {}
+        }
     }
     fn read_input(&self, pi: usize) -> f32 {
-        if pi == 0 { self.trigger_in } else { 0.0 }
+        match pi {
+            0 => self.play_stop_in,
+            1 => self.bpm_in,
+            2 => self.set_bpm_in,
+            3 => self.reset_in,
+            _ => 0.0,
+        }
     }
 
     fn process(&mut self) {
-        // Rising edge on trigger input toggles play/stop.
-        if self.trigger_in >= 0.5 && self.prev_trigger < 0.5 {
+        // Rising edge on `set bpm`: capture bpm input into the internal BPM.
+        if self.set_bpm_in >= 0.5 && self.prev_set_bpm < 0.5 && self.bpm_in > 0.0 {
+            self.bpm = self.bpm_in.clamp(20.0, 300.0);
+        }
+        self.prev_set_bpm = self.set_bpm_in;
+
+        // Rising edge on `reset`: zero the phase + beat counter.
+        if self.reset_in >= 0.5 && self.prev_reset < 0.5 {
+            self.beat_pos = 0.0;
+            self.last_beat_idx = -1;
+            self.last_tick = if self.playing { Some(Instant::now()) } else { None };
+        }
+        self.prev_reset = self.reset_in;
+
+        // Rising edge on play/stop: toggle play state.
+        if self.play_stop_in >= 0.5 && self.prev_play_stop < 0.5 {
             self.playing = !self.playing;
             if self.playing {
-                // Reset phase on start so each play session begins cleanly.
+                // Fresh play session — reset phase so beat 1 lands now.
                 self.beat_pos = 0.0;
                 self.last_beat_idx = -1;
                 self.last_tick = Some(Instant::now());
             }
         }
-        self.prev_trigger = self.trigger_in;
+        self.prev_play_stop = self.play_stop_in;
 
         self.beat_output = 0.0;
 

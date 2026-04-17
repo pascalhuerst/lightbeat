@@ -39,6 +39,7 @@ use engine::nodes::ui::fader::FaderProcessNode;
 use engine::nodes::ui::fader_group::FaderGroupProcessNode;
 use engine::nodes::ui::peak_meter::PeakMeterProcessNode;
 use engine::nodes::math::change_detect::ChangeDetectProcessNode;
+use engine::nodes::math::flipflop::{FlipFlopProcessNode, JkFlipFlopProcessNode};
 use engine::nodes::math::color_ops::{ColorMergeProcessNode, ColorSplitProcessNode};
 use engine::nodes::math::compare::{CompareOp, CompareProcessNode};
 use engine::nodes::math::constant::ConstantProcessNode;
@@ -57,6 +58,9 @@ use engine::nodes::transport::clock_divider::ClockDividerProcessNode;
 use engine::nodes::transport::clock_gen::ClockGenProcessNode;
 use engine::nodes::transport::delay::TriggerDelayProcessNode;
 use engine::nodes::transport::envelope::EnvelopeProcessNode;
+use engine::nodes::transport::hold::TriggerHoldProcessNode;
+use engine::nodes::transport::latch::LatchProcessNode;
+use engine::nodes::transport::sample_hold::SampleHoldProcessNode;
 use engine::nodes::transport::transition::TransitionProcessNode;
 use engine::nodes::transport::lfo::LfoProcessNode;
 use engine::nodes::transport::phase_scaler::PhaseScalerProcessNode;
@@ -74,6 +78,7 @@ use widgets::nodes::ui::fader::FaderWidget;
 use widgets::nodes::ui::fader_group::FaderGroupWidget;
 use widgets::nodes::ui::peak_meter::PeakMeterWidget;
 use widgets::nodes::math::change_detect::ChangeDetectWidget;
+use widgets::nodes::math::flipflop::{FlipFlopKind, FlipFlopWidget};
 use widgets::nodes::math::color_ops::{ColorMergeWidget, ColorSplitWidget};
 use widgets::nodes::math::compare::CompareWidget;
 use widgets::nodes::math::constant::ConstantWidget;
@@ -92,6 +97,9 @@ use widgets::nodes::transport::clock_divider::ClockDividerWidget;
 use widgets::nodes::transport::clock_gen::ClockGenWidget;
 use widgets::nodes::transport::delay::TriggerDelayWidget;
 use widgets::nodes::transport::envelope::EnvelopeWidget;
+use widgets::nodes::transport::hold::TriggerHoldWidget;
+use widgets::nodes::transport::latch::LatchWidget;
+use widgets::nodes::transport::sample_hold::SampleHoldWidget;
 use widgets::nodes::transport::transition::TransitionWidget;
 use widgets::nodes::transport::lfo::LfoWidget;
 use widgets::nodes::transport::phase_scaler::PhaseScalerWidget;
@@ -253,7 +261,8 @@ impl LightBeatApp {
             Box::new(ClockWidget::new(id, new_shared_state(0, 3)))
         });
         self.graph.register_node("IO", "Internal Clock", |id| {
-            Box::new(InternalClockWidget::new(id, new_shared_state(1, 3)))
+            // 4 inputs (play/stop, bpm, set bpm, reset) and 3 outputs.
+            Box::new(InternalClockWidget::new(id, new_shared_state(4, 3)))
         });
         let ic_shared = self.input_controllers.shared.clone();
         self.graph.register_node("IO", "Input Controller", move |id| {
@@ -299,6 +308,15 @@ impl LightBeatApp {
         });
         self.graph.register_node("Transport", "Trigger Delay", |id| {
             Box::new(TriggerDelayWidget::new(id, new_shared_state(2, 1)))
+        });
+        self.graph.register_node("Transport", "Trigger Hold", |id| {
+            Box::new(TriggerHoldWidget::new(id, new_shared_state(2, 1)))
+        });
+        self.graph.register_node("Transport", "Sample & Hold", |id| {
+            Box::new(SampleHoldWidget::new(id, new_shared_state(2, 1)))
+        });
+        self.graph.register_node("Transport", "Latch", |id| {
+            Box::new(LatchWidget::new(id, new_shared_state(1, 1)))
         });
         self.graph.register_node("Transport", "Clock Divider", |id| {
             Box::new(ClockDividerWidget::new(id, new_shared_state(1, 1)))
@@ -382,6 +400,12 @@ impl LightBeatApp {
         });
         self.graph.register_node("Logic", "NOT", |id| {
             Box::new(LogicGateWidget::new(id, LogicOp::Not, new_shared_state(1, 1)))
+        });
+        self.graph.register_node("Logic", "Flip-Flop", |id| {
+            Box::new(FlipFlopWidget::new(id, new_shared_state(2, 2), FlipFlopKind::Sr))
+        });
+        self.graph.register_node("Logic", "JK Flip-Flop", |id| {
+            Box::new(FlipFlopWidget::new(id, new_shared_state(3, 2), FlipFlopKind::Jk))
         });
 
         // Position
@@ -502,6 +526,9 @@ impl LightBeatApp {
                 "Scope" => Some(Box::new(ScopeProcessNode::new(id))),
                 "ADSR" => Some(Box::new(EnvelopeProcessNode::new(id))),
                 "Trigger Delay" => Some(Box::new(TriggerDelayProcessNode::new(id))),
+                "Trigger Hold" => Some(Box::new(TriggerHoldProcessNode::new(id))),
+                "Sample & Hold" => Some(Box::new(SampleHoldProcessNode::new(id))),
+                "Latch" => Some(Box::new(LatchProcessNode::new(id))),
                 "Clock Divider" => Some(Box::new(ClockDividerProcessNode::new(id))),
                 "Clock Gen" => Some(Box::new(ClockGenProcessNode::new(id))),
                 "Transition" => Some(Box::new(TransitionProcessNode::new(id))),
@@ -533,6 +560,8 @@ impl LightBeatApp {
                     };
                     Some(Box::new(LogicGateProcessNode::new(id, op)))
                 }
+                "Flip-Flop" => Some(Box::new(FlipFlopProcessNode::new(id))),
+                "JK Flip-Flop" => Some(Box::new(JkFlipFlopProcessNode::new(id))),
                 "Color Merge" => Some(Box::new(ColorMergeProcessNode::new(id))),
                 "Color Split" => Some(Box::new(ColorSplitProcessNode::new(id))),
                 "Position Merge" => Some(Box::new(PositionMergeProcessNode::new(id))),

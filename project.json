@@ -162,12 +162,12 @@
       "type_name": "Audio Input",
       "id": 117,
       "pos": [
-        -2272.6643,
-        972.0491
+        -2642.3218,
+        1197.3373
       ],
       "size": [
-        263.94864,
-        156.0
+        728.12134,
+        175.02174
       ],
       "params": [
         {
@@ -180,47 +180,209 @@
         },
         {
           "index": 2,
-          "value": true
+          "value": false
         },
         {
           "index": 3,
-          "value": -25.0
+          "value": -24.0
         },
         {
           "index": 4,
-          "value": 0.949999988079071
+          "value": 0.7999999523162842
         },
         {
           "index": 5,
-          "value": 140.0
+          "value": 380.0
         },
         {
           "index": 6,
-          "value": 700.0
+          "value": 200.0
         },
         {
           "index": 7,
-          "value": 0.10000000149011612
+          "value": 5.099999904632568
         },
         {
           "index": 8,
-          "value": 0.10000000149011612
+          "value": 100.0999984741211
         }
       ],
       "data": {
         "input_id": 1,
         "params": {
-          "a0.cgd_smooth": true,
-          "a0.min_ioi_ms": 140.0,
+          "a0.cgd_smooth": false,
+          "a0.min_ioi_ms": 380.0,
           "a0.odf": 1,
           "a0.picker": 0,
-          "a0.silence_db": -25.0,
-          "a0.threshold": 0.949999988079071,
-          "a1.release_ms": 700.0,
-          "a2.attack_ms": 0.10000000149011612,
-          "a2.release_ms": 0.10000000149011612
+          "a0.silence_db": -24.0,
+          "a0.threshold": 0.7999999523162842,
+          "a1.release_ms": 200.0,
+          "a2.attack_ms": 5.099999904632568,
+          "a2.release_ms": 100.0999984741211
         }
       }
+    },
+    {
+      "type_name": "Scope",
+      "id": 121,
+      "pos": [
+        -1302.3997,
+        1180.744
+      ],
+      "size": [
+        879.76825,
+        278.4084
+      ],
+      "params": [
+        {
+          "index": 0,
+          "value": 0.25
+        },
+        {
+          "index": 1,
+          "value": 512
+        },
+        {
+          "index": 2,
+          "value": 2.9802322387695312e-8
+        },
+        {
+          "index": 3,
+          "value": 1.0
+        }
+      ]
+    },
+    {
+      "type_name": "Counter",
+      "id": 124,
+      "pos": [
+        -1801.5726,
+        1486.2794
+      ],
+      "params": [
+        {
+          "index": 0,
+          "value": 8
+        },
+        {
+          "index": 1,
+          "value": 0
+        }
+      ]
+    },
+    {
+      "type_name": "Div",
+      "id": 126,
+      "pos": [
+        -2197.6538,
+        1628.1665
+      ],
+      "params": [],
+      "data": {
+        "input_count": 2
+      }
+    },
+    {
+      "type_name": "Const Value",
+      "id": 127,
+      "pos": [
+        -2329.6853,
+        1643.7493
+      ],
+      "params": [
+        {
+          "index": 0,
+          "value": 7.999999523162842
+        }
+      ]
+    },
+    {
+      "type_name": "Internal Clock",
+      "id": 128,
+      "pos": [
+        -1595.6864,
+        1439.7601
+      ],
+      "params": [
+        {
+          "index": 0,
+          "value": 131.31629943847656
+        }
+      ]
+    },
+    {
+      "type_name": "Button",
+      "id": 129,
+      "pos": [
+        -1845.9329,
+        1700.3174
+      ],
+      "params": [],
+      "data": {
+        "inputs_enabled": false,
+        "label": "Button",
+        "mode": "trigger",
+        "override_enabled": false,
+        "override_state": null,
+        "reset_mode": "clear_on_reset",
+        "state": false
+      }
+    },
+    {
+      "type_name": "Scope",
+      "id": 132,
+      "pos": [
+        -1347.2734,
+        1709.7086
+      ],
+      "size": [
+        830.17487,
+        265.20358
+      ],
+      "params": [
+        {
+          "index": 0,
+          "value": 1.0
+        },
+        {
+          "index": 1,
+          "value": 512
+        },
+        {
+          "index": 2,
+          "value": 2.9802322387695312e-8
+        },
+        {
+          "index": 3,
+          "value": 1.0
+        }
+      ]
+    },
+    {
+      "type_name": "Sample & Hold",
+      "id": 138,
+      "pos": [
+        -1895.3292,
+        1890.63
+      ],
+      "params": [],
+      "data": {
+        "held": 0.0
+      }
+    },
+    {
+      "type_name": "Change Detect",
+      "id": 139,
+      "pos": [
+        -1526.9708,
+        1790.458
+      ],
+      "params": [
+        {
+          "index": 0,
+          "value": 0.0010000000474974513
+        }
+      ]
     }
   ],
   "connections": [
@@ -313,6 +475,48 @@
       "from_port": 7,
       "to_node": 115,
       "to_port": 6
+    },
+    {
+      "from_node": 117,
+      "from_port": 0,
+      "to_node": 121,
+      "to_port": 0
+    },
+    {
+      "from_node": 127,
+      "from_port": 0,
+      "to_node": 126,
+      "to_port": 1
+    },
+    {
+      "from_node": 117,
+      "from_port": 0,
+      "to_node": 124,
+      "to_port": 0
+    },
+    {
+      "from_node": 117,
+      "from_port": 1,
+      "to_node": 128,
+      "to_port": 1
+    },
+    {
+      "from_node": 124,
+      "from_port": 1,
+      "to_node": 128,
+      "to_port": 2
+    },
+    {
+      "from_node": 128,
+      "from_port": 2,
+      "to_node": 121,
+      "to_port": 1
+    },
+    {
+      "from_node": 129,
+      "from_port": 0,
+      "to_node": 132,
+      "to_port": 0
     }
   ]
 }

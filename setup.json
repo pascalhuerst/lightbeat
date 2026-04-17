@@ -2641,7 +2641,7 @@
       "name": "Audio Input",
       "device_name": "pipewire",
       "sample_rate": 48000,
-      "buffer_size_frames": 1024,
+      "buffer_size_frames": 4096,
       "analyzers": [
         {
           "kind": "Beat"

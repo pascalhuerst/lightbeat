@@ -3,6 +3,7 @@ pub mod color_ops;
 pub mod counter;
 pub mod compare;
 pub mod constant;
+pub mod flipflop;
 pub mod logic_gate;
 pub mod lookup;
 pub mod math_op;
