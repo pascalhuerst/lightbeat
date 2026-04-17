@@ -226,17 +226,18 @@ impl LightBeatApp {
 
         // UI
         self.graph.register_node("UI", "Button", |id| {
-            Box::new(ButtonWidget::new(id, new_shared_state(0, 1)))
+            // 1 optional input (Logic), 1 output.
+            Box::new(ButtonWidget::new(id, new_shared_state(1, 1)))
         });
         self.graph.register_node("UI", "Fader", |id| {
-            Box::new(FaderWidget::new(id, new_shared_state(0, 1)))
+            // 1 optional input (when "Enable input" is checked), 1 output.
+            Box::new(FaderWidget::new(id, new_shared_state(1, 1)))
         });
         self.graph.register_node("UI", "Button Group", |id| {
-            // Generous initial output channel budget; engine output port count drives actual routing.
-            Box::new(ButtonGroupWidget::new(id, new_shared_state(0, 256)))
+            Box::new(ButtonGroupWidget::new(id, new_shared_state(256, 256)))
         });
         self.graph.register_node("UI", "Fader Group", |id| {
-            Box::new(FaderGroupWidget::new(id, new_shared_state(0, 256)))
+            Box::new(FaderGroupWidget::new(id, new_shared_state(256, 256)))
         });
 
         // Transport

@@ -9,6 +9,8 @@ use crate::widgets::nodes::{GraphLevel, NodeGraph};
 use crate::widgets::nodes::meta::subgraph::SubgraphWidget;
 use crate::widgets::nodes::output::effect_stack::EffectStackWidget;
 use crate::widgets::nodes::output::group::GroupWidget;
+use crate::widgets::nodes::ui::fader::FaderWidget;
+use crate::widgets::nodes::ui::fader_group::FaderGroupWidget;
 
 // ---------------------------------------------------------------------------
 // Save format
@@ -239,6 +241,27 @@ pub fn load_graph(graph: &mut NodeGraph, project: &ProjectFile) -> Vec<usize> {
                                 .collect();
                         }
                         grp.push_config_to_engine();
+                    }
+                }
+            }
+
+            // Restore Fader widget input-port state so wires don't get
+            // dropped by `cleanup_stale_connections` on the first frame.
+            if saved.type_name == "Fader" {
+                if let Some(data) = &saved.data {
+                    let n = graph.node_mut(idx);
+                    if let Some(f) = n.as_any_mut().downcast_mut::<FaderWidget>() {
+                        f.restore_from_save_data(data);
+                    }
+                }
+            }
+
+            // Same for Fader Group — restore per-cell inputs/outputs enabled.
+            if saved.type_name == "Fader Group" {
+                if let Some(data) = &saved.data {
+                    let n = graph.node_mut(idx);
+                    if let Some(fg) = n.as_any_mut().downcast_mut::<FaderGroupWidget>() {
+                        fg.restore_from_save_data(data);
                     }
                 }
             }

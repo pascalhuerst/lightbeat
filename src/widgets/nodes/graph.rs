@@ -686,18 +686,22 @@ impl NodeGraph {
         }
 
         // -- Draw node content (needs &mut node) --
+        let canvas_clip = canvas_rect;
         let level = self.active_mut();
         for i in 0..level.nodes.len() {
             let rect = node_rects[i];
             let content_rect = node_content_rect(rect, z);
-            if content_rect.width() > 0.0 && content_rect.height() > 0.0 {
+            // Intersect with the canvas so node UI doesn't paint over panels
+            // (inspector, status bar) when a node is partially off-canvas.
+            let clip_rect = content_rect.intersect(canvas_clip);
+            if content_rect.width() > 0.0 && content_rect.height() > 0.0
+                && clip_rect.width() > 0.0 && clip_rect.height() > 0.0 {
                 let mut content_ui = ui.new_child(
                     egui::UiBuilder::new()
                         .max_rect(content_rect)
                         .layout(egui::Layout::top_down(egui::Align::LEFT)),
                 );
-                // Clip the content area so widgets can't paint outside the node.
-                content_ui.set_clip_rect(content_rect);
+                content_ui.set_clip_rect(clip_rect);
                 // Scale text and spacing for zoom.
                 if (z - 1.0).abs() > 0.01 {
                     let mut style = (**content_ui.style()).clone();
@@ -943,6 +947,49 @@ impl NodeGraph {
         }
     }
 
+    /// For exactly two selected nodes, plan a one-shot pairwise connection
+    /// from the leftmost node's outputs to the rightmost node's inputs.
+    /// Skips disabled ports and pairs only type-compatible ones (in order).
+    /// Returns `(source_node_id, destination_node_id, [(src_out, dst_in), ...])`.
+    fn auto_connect_plan(&self) -> Option<(NodeId, NodeId, Vec<(usize, usize)>)> {
+        if self.selected_nodes.len() != 2 { return None; }
+        let level = self.active();
+        let i_a = self.selected_nodes[0];
+        let i_b = self.selected_nodes[1];
+        if i_a >= level.nodes.len() || i_b >= level.nodes.len() { return None; }
+
+        // Spatial direction: leftmost node = source.
+        let (src_idx, dst_idx) = if level.states[i_a].pos.x <= level.states[i_b].pos.x {
+            (i_a, i_b)
+        } else {
+            (i_b, i_a)
+        };
+
+        let src_id = level.states[src_idx].id;
+        let dst_id = level.states[dst_idx].id;
+        let outs = level.nodes[src_idx].ui_outputs();
+        let ins = level.nodes[dst_idx].ui_inputs();
+
+        let mut pairs: Vec<(usize, usize)> = Vec::new();
+        let mut o = 0usize;
+        let mut i = 0usize;
+        while o < outs.len() && i < ins.len() {
+            if outs[o].disabled { o += 1; continue; }
+            if ins[i].disabled { i += 1; continue; }
+            if !outs[o].def.port_type.compatible_with(&ins[i].def.port_type) {
+                // Advance source first; if next source matches, we'll pair
+                // with the same input. Otherwise input also gets skipped.
+                o += 1;
+                continue;
+            }
+            pairs.push((o, i));
+            o += 1;
+            i += 1;
+        }
+        if pairs.is_empty() { return None; }
+        Some((src_id, dst_id, pairs))
+    }
+
     /// True if `screen_pos` lies inside any currently-selected node's screen rect.
     fn is_pos_on_selected_node(&self, screen_pos: Pos2, canvas_rect: Rect) -> bool {
         let level = self.active();
@@ -981,18 +1028,46 @@ impl NodeGraph {
                 self.context_menu_pos = None;
                 return;
             }
+            // Pre-compute the auto-connect plan (only set when 2 nodes selected
+            // and there's at least one valid pairwise connection).
+            let plan = self.auto_connect_plan();
+
             let mut move_to_sub = false;
+            let mut do_auto_connect = false;
             let area_resp = egui::Area::new(egui::Id::new("selection_ctx_menu"))
                 .order(egui::Order::Foreground)
                 .fixed_pos(menu_pos)
                 .show(ui.ctx(), |ui| {
                     egui::Frame::popup(ui.style()).show(ui, |ui| {
                         ui.set_min_width(160.0);
+                        if let Some((_, _, pairs)) = &plan {
+                            let label = if pairs.len() == 1 {
+                                "Connect 1 port".to_string()
+                            } else {
+                                format!("Connect {} ports", pairs.len())
+                            };
+                            if ui.button(label).clicked() {
+                                do_auto_connect = true;
+                            }
+                            ui.separator();
+                        }
                         if ui.button("Move to Subgraph").clicked() {
                             move_to_sub = true;
                         }
                     });
                 });
+            if do_auto_connect {
+                if let Some((src_id, dst_id, pairs)) = plan {
+                    for (o, i) in pairs {
+                        let from = PortId { node: src_id, index: o, dir: PortDir::Output };
+                        let to = PortId { node: dst_id, index: i, dir: PortDir::Input };
+                        self.add_connection(from, to);
+                    }
+                }
+                self.context_menu_pos = None;
+                self.context_menu_search.clear();
+                return;
+            }
             if move_to_sub {
                 self.move_selection_to_subgraph();
                 self.context_menu_pos = None;
@@ -1139,6 +1214,7 @@ impl NodeGraph {
         let primary_released =
             ui.input(|i| i.pointer.button_released(egui::PointerButton::Primary));
         let ctrl = ui.input(|i| i.modifiers.ctrl || i.modifiers.command);
+        let shift = ui.input(|i| i.modifiers.shift);
         let drag_delta = response.drag_delta();
         let on_canvas = canvas_has_pointer && self.canvas_rect.contains(pointer_pos);
         let z = self.active().zoom;
@@ -1164,6 +1240,9 @@ impl NodeGraph {
                     (level.nodes[i].ui_outputs(), PortDir::Output)
                 };
                 for (pi, ui_port) in ports.iter().enumerate() {
+                    if ui_port.disabled {
+                        continue;
+                    }
                     if !dc_from_type.compatible_with(&ui_port.def.port_type) {
                         continue;
                     }
@@ -1343,7 +1422,8 @@ impl NodeGraph {
                 }
 
                 if let Some(i) = clicked_node {
-                    if ctrl {
+                    if ctrl || shift {
+                        // Toggle this node's membership in the selection.
                         if let Some(pos) = self.selected_nodes.iter().position(|&x| x == i) {
                             self.selected_nodes.remove(pos);
                         } else {
@@ -1366,7 +1446,9 @@ impl NodeGraph {
                         node_rects[i].min,
                         Vec2::new(node_rects[i].width(), NODE_TITLE_HEIGHT * z),
                     );
-                    if title_rect.contains(pointer_pos) && !double_clicked {
+                    // Don't start a drag when modifier-clicking — the user is
+                    // just toggling selection membership.
+                    if title_rect.contains(pointer_pos) && !double_clicked && !shift && !ctrl {
                         self.drag.dragging_nodes = true;
                     }
                 } else {
@@ -1901,14 +1983,21 @@ fn draw_port(painter: &Painter, pos: Pos2, ui_port: &UiPortDef, highlight: f32, 
     let stroke_width = if ui_port.fill_color.is_some() { 3.0 } else { 1.5 };
     let r = PORT_RADIUS * zoom;
     // Outer glow when port is transiently highlighted.
-    if highlight > 0.0 {
+    if highlight > 0.0 && !ui_port.disabled {
         let alpha = (highlight.clamp(0.0, 1.0) * 255.0) as u8;
         let glow = Color32::from_rgba_unmultiplied(255, 255, 255, alpha);
         painter.circle_filled(pos, r + 4.0 * zoom, glow.linear_multiply(0.25));
         painter.circle_stroke(pos, r + 3.0 * zoom, Stroke::new(2.0, glow));
     }
-    painter.circle_filled(pos, r, fill);
-    painter.circle_stroke(pos, r, Stroke::new(stroke_width, type_color));
+    if ui_port.disabled {
+        // Hollow grayed-out port: not connectable.
+        let dim = Color32::from_gray(70);
+        painter.circle_filled(pos, r, Color32::from_gray(40));
+        painter.circle_stroke(pos, r, Stroke::new(1.0, dim));
+    } else {
+        painter.circle_filled(pos, r, fill);
+        painter.circle_stroke(pos, r, Stroke::new(stroke_width, type_color));
+    }
     // Optional centered glyph (e.g. "+" for the variadic add port).
     if let Some(glyph) = ui_port.marker {
         painter.text(

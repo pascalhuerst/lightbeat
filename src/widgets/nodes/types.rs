@@ -37,6 +37,10 @@ pub struct UiPortDef {
     pub def: PortDef,
     pub fill_color: Option<Color32>,
     pub marker: Option<&'static str>,
+    /// When true, the port is rendered grayed out and the graph refuses
+    /// connections targeting it. Used to keep the visual port layout stable
+    /// while individual cells in a group toggle their input on/off.
+    pub disabled: bool,
 }
 
 impl UiPortDef {
@@ -45,6 +49,7 @@ impl UiPortDef {
             def: def.clone(),
             fill_color: None,
             marker: None,
+            disabled: false,
         }
     }
 
@@ -55,6 +60,11 @@ impl UiPortDef {
 
     pub fn with_marker(mut self, glyph: &'static str) -> Self {
         self.marker = Some(glyph);
+        self
+    }
+
+    pub fn with_disabled(mut self, disabled: bool) -> Self {
+        self.disabled = disabled;
         self
     }
 }

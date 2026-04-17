@@ -61,6 +61,10 @@ pub trait NodeWidget: Any {
     /// Same as `output_highlight` but for input ports.
     fn input_highlight(&self, _port_idx: usize, _now: f64) -> f32 { 0.0 }
 
+    /// When true, the inspector skips the default Inputs/Outputs section.
+    /// Use when the widget renders its own per-port summary in `show_inspector`.
+    fn inspector_hides_default_ports(&self) -> bool { false }
+
     fn as_any_mut(&mut self) -> &mut dyn Any;
 }
 

@@ -74,6 +74,92 @@ pub fn draw_fader(
     }
 }
 
+/// Paint a semi-transparent overlay fill at `value` position, used to show an
+/// underlying input value when an override is active.
+pub fn draw_fader_overlay(
+    painter: &egui::Painter,
+    rect: Rect,
+    value: f32,
+    orient: Orientation,
+    color: Color32,
+) {
+    let v = value.clamp(0.0, 1.0);
+    let fill_rect = match orient {
+        Orientation::Vertical => Rect::from_min_max(
+            egui::pos2(rect.min.x, rect.max.y - v * rect.height()),
+            rect.max,
+        ),
+        Orientation::Horizontal => Rect::from_min_max(
+            rect.min,
+            egui::pos2(rect.min.x + v * rect.width(), rect.max.y),
+        ),
+    };
+    painter.rect_filled(fill_rect, 0.0, color);
+}
+
+/// Bipolar fill: from center (0.5) outward to `value`. Above center for v>0.5,
+/// below center for v<0.5. Used by faders in bipolar mode to show signed offset.
+pub fn draw_bipolar_fill(
+    painter: &egui::Painter,
+    rect: Rect,
+    value: f32,
+    orient: Orientation,
+    color: Color32,
+) {
+    let v = value.clamp(0.0, 1.0);
+    let fill_rect = match orient {
+        Orientation::Vertical => {
+            let center_y = rect.min.y + 0.5 * rect.height();
+            let pos_y = rect.min.y + (1.0 - v) * rect.height();
+            if pos_y <= center_y {
+                Rect::from_min_max(egui::pos2(rect.min.x, pos_y),
+                                    egui::pos2(rect.max.x, center_y))
+            } else {
+                Rect::from_min_max(egui::pos2(rect.min.x, center_y),
+                                    egui::pos2(rect.max.x, pos_y))
+            }
+        }
+        Orientation::Horizontal => {
+            let center_x = rect.min.x + 0.5 * rect.width();
+            let pos_x = rect.min.x + v * rect.width();
+            if pos_x >= center_x {
+                Rect::from_min_max(egui::pos2(center_x, rect.min.y),
+                                    egui::pos2(pos_x, rect.max.y))
+            } else {
+                Rect::from_min_max(egui::pos2(pos_x, rect.min.y),
+                                    egui::pos2(center_x, rect.max.y))
+            }
+        }
+    };
+    painter.rect_filled(fill_rect, 0.0, color);
+}
+
+/// Draw the center reference line on a bipolar fader (a thin horizontal/vertical
+/// line through the middle of `rect`).
+pub fn draw_bipolar_center_line(
+    painter: &egui::Painter,
+    rect: Rect,
+    orient: Orientation,
+    color: Color32,
+) {
+    match orient {
+        Orientation::Vertical => {
+            let y = rect.min.y + 0.5 * rect.height();
+            painter.line_segment(
+                [egui::pos2(rect.min.x, y), egui::pos2(rect.max.x, y)],
+                egui::Stroke::new(1.0, color),
+            );
+        }
+        Orientation::Horizontal => {
+            let x = rect.min.x + 0.5 * rect.width();
+            painter.line_segment(
+                [egui::pos2(x, rect.min.y), egui::pos2(x, rect.max.y)],
+                egui::Stroke::new(1.0, color),
+            );
+        }
+    }
+}
+
 /// Handle interaction for a single fader occupying `rect`. Updates `value` in
 /// place. Returns `true` if the user interacted (clicked, dragged, or
 /// double-clicked) this frame — useful for port highlight timestamps.

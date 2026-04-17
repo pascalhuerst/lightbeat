@@ -2529,7 +2529,7 @@
       },
       "inputs": [
         {
-          "id": 1,
+          "id": 5,
           "name": "Fader1",
           "source": {
             "Midi": {
@@ -2542,39 +2542,91 @@
           "mode": "Value"
         },
         {
-          "id": 2,
-          "name": "Knob1",
+          "id": 6,
+          "name": "Fader2",
           "source": {
             "Midi": {
               "Cc": {
                 "channel": 1,
-                "controller": 14
+                "controller": 3
               }
             }
           },
           "mode": "Value"
         },
         {
-          "id": 3,
-          "name": "Button1",
+          "id": 7,
+          "name": "Fader3",
           "source": {
             "Midi": {
               "Cc": {
                 "channel": 1,
-                "controller": 23
+                "controller": 4
               }
             }
           },
           "mode": "Value"
         },
         {
-          "id": 4,
-          "name": "Button2",
+          "id": 8,
+          "name": "Fader4",
           "source": {
             "Midi": {
               "Cc": {
                 "channel": 1,
-                "controller": 33
+                "controller": 5
+              }
+            }
+          },
+          "mode": "Value"
+        },
+        {
+          "id": 9,
+          "name": "Fader5",
+          "source": {
+            "Midi": {
+              "Cc": {
+                "channel": 1,
+                "controller": 8
+              }
+            }
+          },
+          "mode": "Value"
+        },
+        {
+          "id": 10,
+          "name": "Fader6",
+          "source": {
+            "Midi": {
+              "Cc": {
+                "channel": 1,
+                "controller": 9
+              }
+            }
+          },
+          "mode": "Value"
+        },
+        {
+          "id": 11,
+          "name": "Fader7",
+          "source": {
+            "Midi": {
+              "Cc": {
+                "channel": 1,
+                "controller": 12
+              }
+            }
+          },
+          "mode": "Value"
+        },
+        {
+          "id": 12,
+          "name": "Fader8",
+          "source": {
+            "Midi": {
+              "Cc": {
+                "channel": 1,
+                "controller": 13
               }
             }
           },

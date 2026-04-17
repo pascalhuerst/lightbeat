@@ -111,35 +111,39 @@ pub fn show_inspector(ui: &mut Ui, node: &mut dyn NodeWidget) {
     }
     ui.separator();
 
-    // Ports info
-    let inputs = node.ui_inputs();
-    if !inputs.is_empty() {
-        ui.label(egui::RichText::new("Inputs").strong().size(11.0));
-        let shared = node.shared_state().lock().unwrap();
-        let values = shared.inputs.clone();
-        drop(shared);
-        let mut ch_base = 0;
-        for port in &inputs {
-            let cpe = port.def.port_type.channel_count();
-            show_port_value(ui, &port.def, &values, ch_base);
-            ch_base += cpe;
-        }
-        ui.add_space(4.0);
-    }
+    let hide_default_ports = node.inspector_hides_default_ports();
 
-    let outputs = node.ui_outputs();
-    if !outputs.is_empty() {
-        ui.label(egui::RichText::new("Outputs").strong().size(11.0));
-        let shared = node.shared_state().lock().unwrap();
-        let values = shared.outputs.clone();
-        drop(shared);
-        let mut ch_base = 0;
-        for port in &outputs {
-            let cpe = port.def.port_type.channel_count();
-            show_port_value(ui, &port.def, &values, ch_base);
-            ch_base += cpe;
+    // Ports info
+    if !hide_default_ports {
+        let inputs = node.ui_inputs();
+        if !inputs.is_empty() {
+            ui.label(egui::RichText::new("Inputs").strong().size(11.0));
+            let shared = node.shared_state().lock().unwrap();
+            let values = shared.inputs.clone();
+            drop(shared);
+            let mut ch_base = 0;
+            for port in &inputs {
+                let cpe = port.def.port_type.channel_count();
+                show_port_value(ui, &port.def, &values, ch_base);
+                ch_base += cpe;
+            }
+            ui.add_space(4.0);
         }
-        ui.add_space(4.0);
+
+        let outputs = node.ui_outputs();
+        if !outputs.is_empty() {
+            ui.label(egui::RichText::new("Outputs").strong().size(11.0));
+            let shared = node.shared_state().lock().unwrap();
+            let values = shared.outputs.clone();
+            drop(shared);
+            let mut ch_base = 0;
+            for port in &outputs {
+                let cpe = port.def.port_type.channel_count();
+                show_port_value(ui, &port.def, &values, ch_base);
+                ch_base += cpe;
+            }
+            ui.add_space(4.0);
+        }
     }
 
     // Parameters

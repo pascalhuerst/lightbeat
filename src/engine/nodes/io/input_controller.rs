@@ -20,13 +20,19 @@ pub struct InputControllerProcessNode {
     id: NodeId,
     /// Bound controller id (0 = none selected).
     controller_id: u32,
-    /// Resolved per-output info, refreshed each tick from shared state.
+    /// Output port layout. Index 0 is always the "any change" trigger port,
+    /// followed by one port per learned input.
     outputs: Vec<PortDef>,
-    /// Output values, one per port.
+    /// Output values for the learned inputs (parallel to inputs[]).
     output_values: Vec<f32>,
+    /// Output values from the previous tick — used to detect changes.
+    prev_output_values: Vec<f32>,
+    /// True for one tick whenever any output value changed.
+    any_changed: bool,
     /// Cached previous values for trigger-edge detection.
     cache: Vec<InputCache>,
     /// Snapshot of current display info (for `update_display`).
+    /// Includes the "any change" entry as the first element.
     display_outputs: Vec<(String, PortType, f32)>,
     display_name: String,
     /// Shared input controller state.
@@ -38,8 +44,10 @@ impl InputControllerProcessNode {
         Self {
             id,
             controller_id: 0,
-            outputs: Vec::new(),
+            outputs: vec![PortDef::new("any change", PortType::Logic)],
             output_values: Vec::new(),
+            prev_output_values: Vec::new(),
+            any_changed: false,
             cache: Vec::new(),
             display_outputs: Vec::new(),
             display_name: String::new(),
@@ -60,21 +68,32 @@ impl ProcessNode for InputControllerProcessNode {
         let Some(c) = c else {
             // No bound controller — clear outputs.
             for v in &mut self.output_values { *v = 0.0; }
+            self.any_changed = false;
+            self.prev_output_values.clear();
             self.display_outputs.clear();
             self.display_name.clear();
+            // Keep just the "any change" port present.
+            if self.outputs.len() != 1 || self.outputs[0].name != "any change" {
+                self.outputs = vec![PortDef::new("any change", PortType::Logic)];
+            }
             return;
         };
 
-        // Rebuild port layout if the input set changed.
+        // Rebuild port layout if the input set changed. Layout: index 0 is
+        // the always-present "any change" trigger; learned inputs follow.
         let n = c.inputs.len();
-        if self.outputs.len() != n
-            || self.outputs.iter().zip(c.inputs.iter())
-                .any(|(p, i)| p.name != i.name || p.port_type != port_type_for(&i.source))
-        {
-            self.outputs = c.inputs.iter().map(|i| {
-                PortDef::new(i.name.clone(), port_type_for(&i.source))
-            }).collect();
+        let expected_len = n + 1;
+        let layout_changed = self.outputs.len() != expected_len
+            || self.outputs.iter().skip(1).zip(c.inputs.iter())
+                .any(|(p, i)| p.name != i.name || p.port_type != port_type_for(&i.source));
+        if layout_changed {
+            self.outputs = std::iter::once(PortDef::new("any change", PortType::Logic))
+                .chain(c.inputs.iter().map(|i| {
+                    PortDef::new(i.name.clone(), port_type_for(&i.source))
+                }))
+                .collect();
             self.output_values = vec![0.0; n];
+            self.prev_output_values = vec![0.0; n];
             self.cache = vec![InputCache::default(); n];
         }
 
@@ -95,14 +114,28 @@ impl ProcessNode for InputControllerProcessNode {
             self.cache[idx].prev_value = raw;
         }
 
+        // Detect any change vs. previous tick — fires for one tick.
+        self.any_changed = self.output_values.iter()
+            .zip(self.prev_output_values.iter())
+            .any(|(cur, prev)| cur != prev);
+        self.prev_output_values.copy_from_slice(&self.output_values);
+
         self.display_name = c.name.clone();
-        self.display_outputs = c.inputs.iter().enumerate().map(|(i, input)| {
+        self.display_outputs = std::iter::once((
+            "any change".to_string(),
+            PortType::Logic,
+            if self.any_changed { 1.0 } else { 0.0 },
+        )).chain(c.inputs.iter().enumerate().map(|(i, input)| {
             (input.name.clone(), port_type_for(&input.source), self.output_values[i])
-        }).collect();
+        })).collect();
     }
 
     fn read_output(&self, pi: usize) -> f32 {
-        self.output_values.get(pi).copied().unwrap_or(0.0)
+        if pi == 0 {
+            if self.any_changed { 1.0 } else { 0.0 }
+        } else {
+            self.output_values.get(pi - 1).copied().unwrap_or(0.0)
+        }
     }
 
     fn save_data(&self) -> Option<serde_json::Value> {
