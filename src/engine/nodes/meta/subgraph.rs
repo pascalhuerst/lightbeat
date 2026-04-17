@@ -1,16 +1,50 @@
-use std::any::Any;
+use crate::engine::nodes::display::led_display::LedDisplayProcessNode;
+use crate::engine::nodes::display::value_display::ValueDisplayProcessNode;
 use crate::engine::types::*;
+use std::any::Any;
+
+/// Walk the inner graph (recursively descending into nested subgraphs) and
+/// collect every Value/LED Display node's current state. Order is depth-first,
+/// which keeps a node's list visually stable as the user reorders inner nodes.
+fn collect_inner_value_displays(inner: &InnerGraph, out: &mut Vec<InnerValueDisplay>) {
+    for node in inner.nodes.iter() {
+        let any = node.as_any();
+        if let Some(vd) = any.downcast_ref::<ValueDisplayProcessNode>() {
+            out.push(InnerValueDisplay {
+                name: vd.name().to_string(),
+                value: vd.value(),
+                mode: 0,
+            });
+        } else if let Some(led) = any.downcast_ref::<LedDisplayProcessNode>() {
+            out.push(InnerValueDisplay {
+                name: led.name().to_string(),
+                value: led.value(),
+                mode: 1,
+            });
+        } else if let Some(sg) = any.downcast_ref::<SubgraphProcessNode>() {
+            collect_inner_value_displays(&sg.inner, out);
+        }
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Display state
 // ---------------------------------------------------------------------------
 
 pub struct SubgraphDisplay {
-    pub name: String,
     pub inner_node_count: usize,
-    pub input_ports: Vec<PortDef>,
-    pub output_ports: Vec<PortDef>,
     pub locked: bool,
+    /// Mirror of every Value Display node found anywhere inside this subgraph
+    /// (recursive). Surfaced so the parent can render them on the subgraph
+    /// node itself, without the user having to navigate in.
+    pub inner_value_displays: Vec<InnerValueDisplay>,
+}
+
+#[derive(Clone)]
+pub struct InnerValueDisplay {
+    pub name: String,
+    pub value: f32,
+    pub mode: u8,
 }
 
 // ---------------------------------------------------------------------------
@@ -102,20 +136,36 @@ impl InnerGraph {
         for conn in &self.connections {
             // Determine source channel count.
             let src_channels = if conn.from.node == BRIDGE_IN_NODE_ID {
-                input_ports.get(conn.from.index).map(|p| p.port_type.channel_count()).unwrap_or(1)
-            } else if let Some(idx) = self.nodes.iter().position(|n| n.node_id() == conn.from.node) {
-                self.nodes[idx].outputs().get(conn.from.index)
-                    .map(|p| p.port_type.channel_count()).unwrap_or(1)
+                input_ports
+                    .get(conn.from.index)
+                    .map(|p| p.port_type.channel_count())
+                    .unwrap_or(1)
+            } else if let Some(idx) = self
+                .nodes
+                .iter()
+                .position(|n| n.node_id() == conn.from.node)
+            {
+                self.nodes[idx]
+                    .outputs()
+                    .get(conn.from.index)
+                    .map(|p| p.port_type.channel_count())
+                    .unwrap_or(1)
             } else {
                 continue;
             };
 
             // Determine dest channel count.
             let dst_channels = if conn.to.node == BRIDGE_OUT_NODE_ID {
-                output_ports.get(conn.to.index).map(|p| p.port_type.channel_count()).unwrap_or(1)
+                output_ports
+                    .get(conn.to.index)
+                    .map(|p| p.port_type.channel_count())
+                    .unwrap_or(1)
             } else if let Some(idx) = self.nodes.iter().position(|n| n.node_id() == conn.to.node) {
-                self.nodes[idx].inputs().get(conn.to.index)
-                    .map(|p| p.port_type.channel_count()).unwrap_or(1)
+                self.nodes[idx]
+                    .inputs()
+                    .get(conn.to.index)
+                    .map(|p| p.port_type.channel_count())
+                    .unwrap_or(1)
             } else {
                 continue;
             };
@@ -127,7 +177,11 @@ impl InnerGraph {
                 let val = if conn.from.node == BRIDGE_IN_NODE_ID {
                     let base = port_base_index(input_ports, conn.from.index);
                     self.bridge_in.get(base + ch).copied().unwrap_or(0.0)
-                } else if let Some(idx) = self.nodes.iter().position(|n| n.node_id() == conn.from.node) {
+                } else if let Some(idx) = self
+                    .nodes
+                    .iter()
+                    .position(|n| n.node_id() == conn.from.node)
+                {
                     let base = port_base_index(self.nodes[idx].outputs(), conn.from.index);
                     self.nodes[idx].read_output(base + ch)
                 } else {
@@ -138,7 +192,9 @@ impl InnerGraph {
                 if conn.to.node == BRIDGE_OUT_NODE_ID {
                     let base = port_base_index(output_ports, conn.to.index);
                     bridge_out_writes.push((base + ch, val));
-                } else if let Some(dst_idx) = self.nodes.iter().position(|n| n.node_id() == conn.to.node) {
+                } else if let Some(dst_idx) =
+                    self.nodes.iter().position(|n| n.node_id() == conn.to.node)
+                {
                     let base = port_base_index(self.nodes[dst_idx].inputs(), conn.to.index);
                     writes.push((dst_idx, base + ch, val));
                 }
@@ -203,6 +259,10 @@ pub struct SubgraphProcessNode {
     /// UI-only flag (round-tripped through save/load + display so the
     /// widget side can mirror it).
     pub locked: bool,
+    /// Macro metadata — only set when this Subgraph is a locked macro
+    /// instance. Empty strings for regular (non-macro) subgraphs.
+    pub macro_description: String,
+    pub macro_path: String,
 }
 
 impl SubgraphProcessNode {
@@ -215,6 +275,8 @@ impl SubgraphProcessNode {
             ext_input_values: Vec::new(),
             inner: InnerGraph::new(),
             locked: false,
+            macro_description: String::new(),
+            macro_path: String::new(),
         }
     }
 
@@ -228,13 +290,23 @@ impl SubgraphProcessNode {
 }
 
 impl ProcessNode for SubgraphProcessNode {
-    fn node_id(&self) -> NodeId { self.id }
-    fn type_name(&self) -> &'static str { "Subgraph" }
-    fn inputs(&self) -> &[PortDef] { &self.ext_inputs }
-    fn outputs(&self) -> &[PortDef] { &self.ext_outputs }
+    fn node_id(&self) -> NodeId {
+        self.id
+    }
+    fn type_name(&self) -> &'static str {
+        "Subgraph"
+    }
+    fn inputs(&self) -> &[PortDef] {
+        &self.ext_inputs
+    }
+    fn outputs(&self) -> &[PortDef] {
+        &self.ext_outputs
+    }
 
     fn write_input(&mut self, ch: usize, v: f32) {
-        if ch < self.ext_input_values.len() { self.ext_input_values[ch] = v; }
+        if ch < self.ext_input_values.len() {
+            self.ext_input_values[ch] = v;
+        }
     }
     fn read_input(&self, ch: usize) -> f32 {
         self.ext_input_values.get(ch).copied().unwrap_or(0.0)
@@ -259,13 +331,15 @@ impl ProcessNode for SubgraphProcessNode {
             self.name = name.to_string();
         }
         if let Some(inputs) = data.get("inputs").and_then(|v| v.as_array()) {
-            self.ext_inputs = inputs.iter()
+            self.ext_inputs = inputs
+                .iter()
                 .filter_map(|v| serde_json::from_value::<SubgraphPortDef>(v.clone()).ok())
                 .map(|p| p.to_port_def())
                 .collect();
         }
         if let Some(outputs) = data.get("outputs").and_then(|v| v.as_array()) {
-            self.ext_outputs = outputs.iter()
+            self.ext_outputs = outputs
+                .iter()
                 .filter_map(|v| serde_json::from_value::<SubgraphPortDef>(v.clone()).ok())
                 .map(|p| p.to_port_def())
                 .collect();
@@ -273,35 +347,58 @@ impl ProcessNode for SubgraphProcessNode {
         if let Some(b) = data.get("locked").and_then(|v| v.as_bool()) {
             self.locked = b;
         }
+        if let Some(s) = data.get("macro_description").and_then(|v| v.as_str()) {
+            self.macro_description = s.to_string();
+        }
+        if let Some(s) = data.get("macro_path").and_then(|v| v.as_str()) {
+            self.macro_path = s.to_string();
+        }
         self.rebuild_from_port_defs();
     }
 
     fn save_data(&self) -> Option<serde_json::Value> {
-        let inputs: Vec<SubgraphPortDef> = self.ext_inputs.iter()
-            .map(|p| SubgraphPortDef { name: p.name.clone(), port_type_idx: port_type_to_idx(p.port_type) })
+        let inputs: Vec<SubgraphPortDef> = self
+            .ext_inputs
+            .iter()
+            .map(|p| SubgraphPortDef {
+                name: p.name.clone(),
+                port_type_idx: port_type_to_idx(p.port_type),
+            })
             .collect();
-        let outputs: Vec<SubgraphPortDef> = self.ext_outputs.iter()
-            .map(|p| SubgraphPortDef { name: p.name.clone(), port_type_idx: port_type_to_idx(p.port_type) })
+        let outputs: Vec<SubgraphPortDef> = self
+            .ext_outputs
+            .iter()
+            .map(|p| SubgraphPortDef {
+                name: p.name.clone(),
+                port_type_idx: port_type_to_idx(p.port_type),
+            })
             .collect();
         Some(serde_json::json!({
             "name": self.name,
             "inputs": inputs,
             "outputs": outputs,
             "locked": self.locked,
+            "macro_description": self.macro_description,
+            "macro_path": self.macro_path,
         }))
     }
 
     fn update_display(&self, shared: &mut NodeSharedState) {
+        let mut inner_value_displays = Vec::new();
+        collect_inner_value_displays(&self.inner, &mut inner_value_displays);
         shared.display = Some(Box::new(SubgraphDisplay {
-            name: self.name.clone(),
             inner_node_count: self.inner.nodes.len(),
-            input_ports: self.ext_inputs.clone(),
-            output_ports: self.ext_outputs.clone(),
             locked: self.locked,
+            inner_value_displays,
         }));
     }
 
-    fn as_any_mut(&mut self) -> &mut dyn Any { self }
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
 }
 
 impl SubgraphProcessNode {
@@ -335,7 +432,9 @@ impl SubgraphProcessNode {
                 if let Some(idx) = self.inner.nodes.iter().position(|n| n.node_id() == id) {
                     self.inner.nodes.remove(idx);
                     self.inner.shared_states.remove(idx);
-                    self.inner.connections.retain(|c| c.from.node != id && c.to.node != id);
+                    self.inner
+                        .connections
+                        .retain(|c| c.from.node != id && c.to.node != id);
                 }
             }
             SubgraphInnerCmd::AddConnection(conn) => {
@@ -351,12 +450,19 @@ impl SubgraphProcessNode {
                     node.load_data(&data);
                 }
             }
-            SubgraphInnerCmd::NotifyConnect { node_id, input_port, source_type } => {
+            SubgraphInnerCmd::NotifyConnect {
+                node_id,
+                input_port,
+                source_type,
+            } => {
                 if let Some(node) = self.inner.nodes.iter_mut().find(|n| n.node_id() == node_id) {
                     node.on_connect(input_port, source_type);
                 }
             }
-            SubgraphInnerCmd::NotifyDisconnect { node_id, input_port } => {
+            SubgraphInnerCmd::NotifyDisconnect {
+                node_id,
+                input_port,
+            } => {
                 if let Some(node) = self.inner.nodes.iter_mut().find(|n| n.node_id() == node_id) {
                     node.on_disconnect(input_port);
                 }

@@ -7,12 +7,9 @@ use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 
-use crate::audio::analyzers::{
-    AnalyzerConfig, AnalyzerInstance, AnalyzerKind, spawn_analyzer,
-};
+use crate::audio::analyzers::{AnalyzerConfig, AnalyzerInstance, AnalyzerKind, spawn_analyzer};
 use crate::audio::device::{
-    self, AudioChunk, DEFAULT_SAMPLE_RATE, DeviceInfo, InputStream, StreamRequest,
-    mk_subscriber,
+    self, DEFAULT_SAMPLE_RATE, DeviceInfo, InputStream, StreamRequest, mk_subscriber,
 };
 use crate::engine::types::{ParamDef, ParamValue};
 
@@ -82,19 +79,12 @@ impl AudioInputRuntime {
             device_name: self.device_name.clone(),
             sample_rate: self.sample_rate,
             buffer_size_frames: self.buffer_size_frames,
-            analyzers: self.analyzer_kinds.iter()
+            analyzers: self
+                .analyzer_kinds
+                .iter()
                 .map(|k| AnalyzerConfig::new(*k))
                 .collect(),
         }
-    }
-
-    /// Read all outputs across all analyzers, in declaration order.
-    pub fn read_all_outputs(&self) -> Vec<f32> {
-        let mut out = Vec::new();
-        for a in &self.analyzers {
-            out.extend(a.read_outputs());
-        }
-        out
     }
 
     pub fn analyzer_param_defs(&self) -> Vec<ParamDef> {
@@ -180,8 +170,7 @@ impl AudioInputManager {
 
     /// Common sample rates to offer in the UI. Cpal will negotiate the
     /// closest one the device actually supports — no per-device probing.
-    pub const COMMON_SAMPLE_RATES: &'static [u32] =
-        &[44_100, 48_000, 88_200, 96_000, 192_000];
+    pub const COMMON_SAMPLE_RATES: &'static [u32] = &[44_100, 48_000, 88_200, 96_000, 192_000];
 
     /// Mark `input_id` as bound to `node_id`, clearing any previous binding
     /// that node held. Used by the Audio Input node widget to enforce
@@ -247,7 +236,8 @@ impl AudioInputManager {
         let mut state = self.shared.lock().unwrap();
         let id = state.iter().map(|c| c.id).max().unwrap_or(0) + 1;
         state.push(AudioInputRuntime {
-            id, name,
+            id,
+            name,
             device_name: String::new(),
             sample_rate: Some(DEFAULT_SAMPLE_RATE),
             buffer_size_frames: None,
@@ -272,7 +262,9 @@ impl AudioInputManager {
 
     pub fn rename(&mut self, id: u32, name: String) {
         let mut state = self.shared.lock().unwrap();
-        if let Some(c) = state.iter_mut().find(|c| c.id == id) { c.name = name; }
+        if let Some(c) = state.iter_mut().find(|c| c.id == id) {
+            c.name = name;
+        }
     }
 
     pub fn set_device(&mut self, id: u32, device_name: String) {
@@ -339,21 +331,25 @@ impl AudioInputManager {
     /// (add/remove/change device) explicitly call `reconcile()` themselves
     /// so a fresh device list isn't required on every frame.
     pub fn tick_reconnect(&mut self) {
-        let due = self.last_device_scan
+        let due = self
+            .last_device_scan
             .map(|t| t.elapsed() >= DEVICE_RESCAN_INTERVAL)
             .unwrap_or(true);
-        if !due { return; }
+        if !due {
+            return;
+        }
         // Only enumerate when there's an input that actually wants a stream
         // but doesn't have one yet (Waiting). Avoids periodic ALSA noise
         // when nothing is configured or everything is already connected.
         let has_pending = {
             let state = self.shared.lock().unwrap();
             state.iter().any(|c| {
-                !c.device_name.is_empty()
-                    && !self.streams.iter().any(|s| s.input_id == c.id)
+                !c.device_name.is_empty() && !self.streams.iter().any(|s| s.input_id == c.id)
             })
         };
-        if !has_pending { return; }
+        if !has_pending {
+            return;
+        }
         self.last_device_scan = Some(Instant::now());
         let devs = device::list_inputs();
         self.cached_device_names = devs.iter().map(|d| d.name.clone()).collect();
@@ -368,16 +364,23 @@ impl AudioInputManager {
     }
 
     fn reconcile_with(&mut self, available: Vec<DeviceInfo>) {
-
         // Snapshot desired configs from the persistent kind list (not the
         // live `analyzers` vec — that's only populated after a successful
         // stream open).
         let desired: Vec<(u32, String, Option<u32>, Option<u32>, Vec<AnalyzerKind>)> = {
             let state = self.shared.lock().unwrap();
-            state.iter().map(|c| (
-                c.id, c.device_name.clone(), c.sample_rate, c.buffer_size_frames,
-                c.analyzer_kinds.clone(),
-            )).collect()
+            state
+                .iter()
+                .map(|c| {
+                    (
+                        c.id,
+                        c.device_name.clone(),
+                        c.sample_rate,
+                        c.buffer_size_frames,
+                        c.analyzer_kinds.clone(),
+                    )
+                })
+                .collect()
         };
 
         // Drop streams whose configured request no longer matches (or whose
@@ -418,7 +421,9 @@ impl AudioInputManager {
                 continue;
             }
             let already_open = self.streams.iter().any(|s| s.input_id == *id);
-            if already_open { continue; }
+            if already_open {
+                continue;
+            }
             let dev = match available.iter().find(|d| &d.name == device_name) {
                 Some(d) => d,
                 None => {

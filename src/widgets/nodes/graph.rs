@@ -80,6 +80,12 @@ pub struct GraphLevel {
     pub zoom: f32,
     /// The NodeId of the SubgraphWidget that owns this level (None for root).
     pub subgraph_id: Option<NodeId>,
+    /// Index of the level this subgraph lives inside. `None` for root. Tracked
+    /// explicitly because `self.levels` is a visit-order list (not a simple
+    /// stack) — when the user navigates between sibling subgraphs, multiple
+    /// levels can end up above the parent, and we need the true parent chain
+    /// to build correct subgraph paths for engine commands.
+    pub parent_level_idx: Option<usize>,
     /// Label for breadcrumb display.
     pub label: String,
 }
@@ -149,6 +155,7 @@ impl NodeGraph {
                 pan: Vec2::ZERO,
                 zoom: 1.0,
                 subgraph_id: None,
+                parent_level_idx: None,
                 label: "Root".to_string(),
             }],
             active_level: 0,
@@ -240,12 +247,24 @@ impl NodeGraph {
     fn active(&self) -> &GraphLevel { &self.levels[self.active_level] }
     fn active_mut(&mut self) -> &mut GraphLevel { &mut self.levels[self.active_level] }
 
-    /// Returns the path of subgraph NodeIds from root to current level.
+    /// Returns the path of subgraph NodeIds from root to current level. We
+    /// walk `parent_level_idx` explicitly — the levels Vec is a visit-order
+    /// list, not a stack, so simple index slicing would include unrelated
+    /// sibling levels pushed during earlier navigation.
     pub fn current_subgraph_path(&self) -> Vec<NodeId> {
-        self.levels[1..=self.active_level]
-            .iter()
-            .filter_map(|l| l.subgraph_id)
-            .collect()
+        let mut chain: Vec<NodeId> = Vec::new();
+        let mut idx = self.active_level;
+        while idx != 0 {
+            if let Some(sid) = self.levels[idx].subgraph_id {
+                chain.push(sid);
+            }
+            match self.levels[idx].parent_level_idx {
+                Some(p) => idx = p,
+                None => break,
+            }
+        }
+        chain.reverse();
+        chain
     }
 
     /// Push an engine command, wrapping in SubgraphInnerCommand if we're inside a subgraph.
@@ -401,6 +420,16 @@ impl NodeGraph {
 
     /// Current zoom level of the active graph.
     pub fn zoom(&self) -> f32 { self.active().zoom }
+
+    /// Screen rect currently occupied by the graph canvas.
+    pub fn canvas_rect(&self) -> Rect { self.canvas_rect }
+
+    /// Convert a screen-space point to world coords on the active level,
+    /// matching the placement logic used by the add-node context menu.
+    pub fn screen_to_world(&self, screen: Pos2) -> Pos2 {
+        let level = self.active();
+        (screen - self.canvas_rect.min.to_vec2() - level.pan) / level.zoom
+    }
 
     /// Take any pending macro action emitted by the right-click menu.
     pub fn take_macro_request(&mut self) -> Option<MacroRequest> {
@@ -1075,6 +1104,7 @@ impl NodeGraph {
             let mut do_auto_connect = false;
             let mut do_save_macro: Option<NodeId> = None;
             let mut do_embed: Option<NodeId> = None;
+            let mut do_unpack: Option<usize> = None;
             let area_resp = egui::Area::new(egui::Id::new("selection_ctx_menu"))
                 .order(egui::Order::Foreground)
                 .fixed_pos(menu_pos)
@@ -1097,11 +1127,17 @@ impl NodeGraph {
                         }
                         if let Some((id, locked)) = single_subgraph {
                             ui.separator();
-                            if ui.button("Save as macro...").clicked() {
+                            if !locked && ui.button("Save as macro...").clicked() {
                                 do_save_macro = Some(id);
                             }
                             if locked && ui.button("Embed").clicked() {
                                 do_embed = Some(id);
+                            }
+                            if ui.button("Unpack").on_hover_text(
+                                "Replace the subgraph with its inner nodes, \
+                                 reconnecting inputs and outputs").clicked()
+                            {
+                                do_unpack = Some(self.selected_nodes[0]);
                             }
                         }
                     });
@@ -1143,6 +1179,12 @@ impl NodeGraph {
                         w.push_config();
                     }
                 }
+                self.context_menu_pos = None;
+                self.context_menu_search.clear();
+                return;
+            }
+            if let Some(sub_idx) = do_unpack {
+                self.unpack_subgraph(sub_idx);
                 self.context_menu_pos = None;
                 self.context_menu_search.clear();
                 return;
@@ -1640,8 +1682,8 @@ impl NodeGraph {
 
     /// Navigate back to the parent level.
     pub fn navigate_up(&mut self) {
-        if self.active_level > 0 {
-            self.active_level -= 1;
+        if let Some(parent) = self.levels[self.active_level].parent_level_idx {
+            self.active_level = parent;
             self.selected_nodes.clear();
             self.drag = DragState::default();
         }
@@ -1699,6 +1741,7 @@ impl NodeGraph {
             nodes.push(Box::new(GraphOutputWidget::new(output_defs)));
             states.push(NodeState::new(BRIDGE_OUT_NODE_ID, Pos2::new(500.0, 100.0)));
 
+            let parent = self.active_level;
             self.levels.push(GraphLevel {
                 nodes,
                 states,
@@ -1706,6 +1749,7 @@ impl NodeGraph {
                 pan: Vec2::ZERO,
                 zoom: 1.0,
                 subgraph_id: Some(subgraph_id),
+                parent_level_idx: Some(parent),
                 label,
             });
             self.active_level = self.levels.len() - 1;
@@ -1714,7 +1758,7 @@ impl NodeGraph {
         self.drag = DragState::default();
     }
 
-    fn navigate_to_level(&mut self, level: usize) {
+    pub fn navigate_to_level(&mut self, level: usize) {
         if level < self.levels.len() {
             self.active_level = level;
             self.selected_nodes.clear();
@@ -1960,6 +2004,180 @@ impl NodeGraph {
 
         // Navigate back to the parent level.
         self.navigate_to_level(self.active_level - 1);
+    }
+
+    /// Inverse of `move_selection_to_subgraph`: replace the Subgraph at
+    /// `sub_idx` (in the active level) with its inner nodes and re-route its
+    /// external wires through the bridges' inner connections.
+    fn unpack_subgraph(&mut self, sub_idx: usize) {
+        // Validate selection and capture the subgraph's id/pos up front.
+        let (sub_id, sub_pos) = {
+            let level = self.active();
+            if sub_idx >= level.nodes.len() { return; }
+            if level.nodes[sub_idx].type_name() != "Subgraph" { return; }
+            (level.states[sub_idx].id, level.states[sub_idx].pos)
+        };
+
+        let inner_level_idx = match self.levels.iter().position(|l| l.subgraph_id == Some(sub_id)) {
+            Some(i) => i,
+            None => return,
+        };
+
+        // External connections touching the subgraph (in the parent level).
+        let (external_incoming, external_outgoing): (Vec<(PortId, usize)>, Vec<(usize, PortId)>) = {
+            let level = self.active();
+            let mut inc = Vec::new();
+            let mut out = Vec::new();
+            for c in &level.connections {
+                if c.to.node == sub_id { inc.push((c.from, c.to.index)); }
+                if c.from.node == sub_id { out.push((c.from.index, c.to)); }
+            }
+            (inc, out)
+        };
+
+        // Partition inner connections into bridge-in / bridge-out / internal.
+        let (bridge_in_conns, bridge_out_conns, internal_conns): (Vec<Connection>, Vec<Connection>, Vec<Connection>) = {
+            let inner = &self.levels[inner_level_idx];
+            let mut bi = Vec::new();
+            let mut bo = Vec::new();
+            let mut it = Vec::new();
+            for c in &inner.connections {
+                let from_br = c.from.node == BRIDGE_IN_NODE_ID;
+                let to_br = c.to.node == BRIDGE_OUT_NODE_ID;
+                if from_br && !to_br { bi.push(c.clone()); }
+                else if !from_br && to_br { bo.push(c.clone()); }
+                else if !from_br && !to_br { it.push(c.clone()); }
+            }
+            (bi, bo, it)
+        };
+
+        // Drain the inner widgets (skip bridges). Snapshot params + save_data
+        // so the new engine nodes can be primed on their next tick.
+        let mut taken: Vec<(Box<dyn NodeWidget>, NodeState, Vec<(usize, ParamValue)>, Option<serde_json::Value>)> = Vec::new();
+        {
+            let inner = &mut self.levels[inner_level_idx];
+            let mut i = inner.nodes.len();
+            while i > 0 {
+                i -= 1;
+                let id = inner.states[i].id;
+                if id == BRIDGE_IN_NODE_ID || id == BRIDGE_OUT_NODE_ID { continue; }
+                let node = inner.nodes.remove(i);
+                let state = inner.states.remove(i);
+                let (params, save_data) = {
+                    let shared = node.shared_state().lock().unwrap();
+                    let params: Vec<(usize, ParamValue)> = shared.current_params.iter().enumerate()
+                        .map(|(pi, p)| {
+                            let v = match p {
+                                ParamDef::Float { value, .. } => ParamValue::Float(*value),
+                                ParamDef::Int { value, .. } => ParamValue::Int(*value),
+                                ParamDef::Bool { value, .. } => ParamValue::Bool(*value),
+                                ParamDef::Choice { value, .. } => ParamValue::Choice(*value),
+                            };
+                            (pi, v)
+                        })
+                        .collect();
+                    (params, shared.save_data.clone())
+                };
+                taken.push((node, state, params, save_data));
+            }
+            taken.reverse();
+            // Clear the orphaned inner level's connections too; the inner
+            // engine gets torn down as soon as we remove the subgraph.
+            inner.connections.clear();
+        }
+
+        // Remove the subgraph node and its connections from the parent level.
+        {
+            let level = self.active_mut();
+            level.connections.retain(|c| c.from.node != sub_id && c.to.node != sub_id);
+            level.states.remove(sub_idx);
+            level.nodes.remove(sub_idx);
+        }
+        self.push_engine_cmd(EngineCommand::RemoveNode(sub_id));
+
+        // Spread the taken nodes around sub_pos, preserving their relative layout.
+        let centroid: Vec2 = if taken.is_empty() {
+            Vec2::ZERO
+        } else {
+            let sum: Vec2 = taken.iter()
+                .map(|(_, s, _, _)| s.pos.to_vec2())
+                .fold(Vec2::ZERO, |a, b| a + b);
+            sum / (taken.len() as f32)
+        };
+
+        let parent_path = self.current_subgraph_path();
+        let mut restore_info: Vec<(NodeId, Vec<(usize, ParamValue)>, Option<serde_json::Value>)> = Vec::new();
+        let start_idx = self.active().nodes.len();
+        {
+            let level = self.active_mut();
+            for (node, state, params, save_data) in taken {
+                let node_id = node.node_id();
+                let new_pos = Pos2::new(
+                    state.pos.x - centroid.x + sub_pos.x,
+                    state.pos.y - centroid.y + sub_pos.y,
+                );
+                level.states.push(NodeState::new(node_id, new_pos));
+                if let Some(sz) = state.size_override {
+                    level.states.last_mut().unwrap().size_override = Some(sz);
+                }
+                level.nodes.push(node);
+                restore_info.push((node_id, params, save_data));
+            }
+        }
+        let end_idx = self.active().nodes.len();
+        for i in start_idx..end_idx {
+            self.new_nodes.push(NewNode { index: i, subgraph_path: parent_path.clone() });
+        }
+
+        // Restore params/save_data on the relocated widgets.
+        for (node_id, params, save_data) in restore_info {
+            let level = self.active();
+            if let Some(idx) = level.states.iter().position(|s| s.id == node_id) {
+                let shared = level.nodes[idx].shared_state();
+                let mut state = shared.lock().unwrap();
+                for (pi, val) in params {
+                    state.pending_params.push((pi, val));
+                }
+                if let Some(data) = save_data {
+                    state.pending_config = Some(data);
+                }
+            }
+        }
+
+        // Internal inner connections carry over as-is.
+        for conn in &internal_conns {
+            self.active_mut().connections.push(conn.clone());
+            self.push_engine_cmd(EngineCommand::AddConnection(conn.clone()));
+        }
+
+        // External src -> subgraph.input[k], combined with BRIDGE_IN[k] -> inner_to,
+        // becomes src -> inner_to.
+        for bin in &bridge_in_conns {
+            let k = bin.from.index;
+            let inner_to = bin.to;
+            for (src, ext_k) in &external_incoming {
+                if *ext_k == k {
+                    let c = Connection { from: *src, to: inner_to };
+                    self.active_mut().connections.push(c.clone());
+                    self.push_engine_cmd(EngineCommand::AddConnection(c));
+                }
+            }
+        }
+        // inner_from -> BRIDGE_OUT[k], combined with subgraph.output[k] -> dst,
+        // becomes inner_from -> dst.
+        for bout in &bridge_out_conns {
+            let k = bout.to.index;
+            let inner_from = bout.from;
+            for (ext_k, dst) in &external_outgoing {
+                if *ext_k == k {
+                    let c = Connection { from: inner_from, to: *dst };
+                    self.active_mut().connections.push(c.clone());
+                    self.push_engine_cmd(EngineCommand::AddConnection(c));
+                }
+            }
+        }
+
+        self.selected_nodes.clear();
     }
 }
 

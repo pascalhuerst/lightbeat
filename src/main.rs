@@ -28,6 +28,7 @@ use engine::EngineHandle;
 use input_controller::InputControllerManager;
 use engine::nodes::display::color_display::ColorDisplayProcessNode;
 use engine::nodes::display::scope::ScopeProcessNode;
+use engine::nodes::display::led_display::LedDisplayProcessNode;
 use engine::nodes::display::value_display::ValueDisplayProcessNode;
 use engine::nodes::io::audio_input::AudioInputProcessNode;
 use engine::nodes::io::clock::ClockProcessNode;
@@ -67,6 +68,7 @@ use engine::nodes::transport::phase_scaler::PhaseScalerProcessNode;
 use engine::nodes::transport::step_sequencer::StepSequencerProcessNode;
 use widgets::nodes::display::color_display::ColorDisplayWidget;
 use widgets::nodes::display::scope::ScopeWidget;
+use widgets::nodes::display::led_display::LedDisplayWidget;
 use widgets::nodes::display::value_display::ValueDisplayWidget;
 use widgets::nodes::io::audio_input::AudioInputWidget;
 use widgets::nodes::io::clock::ClockWidget;
@@ -166,6 +168,15 @@ struct SaveMacroDialog {
     /// Comma-separated tag input.
     tags: String,
     error: Option<String>,
+    /// When set, "Save" overwrites this existing macro file. Name/group
+    /// become read-only since the destination path is already fixed.
+    overwrite_path: Option<std::path::PathBuf>,
+}
+
+/// Payload carried during a macro-library → canvas drag.
+#[derive(Clone)]
+struct MacroDragPayload {
+    path: std::path::PathBuf,
 }
 
 impl LightBeatApp {
@@ -301,7 +312,7 @@ impl LightBeatApp {
             Box::new(LfoWidget::new(id, new_shared_state(1, 2)))
         });
         self.graph.register_node("Transport", "Step Sequencer", |id| {
-            Box::new(StepSequencerWidget::new(id, new_shared_state(1, 3)))
+            Box::new(StepSequencerWidget::new(id, new_shared_state(2, 3)))
         });
         self.graph.register_node("Transport", "ADSR", |id| {
             Box::new(EnvelopeWidget::new(id, new_shared_state(2, 2)))
@@ -426,6 +437,9 @@ impl LightBeatApp {
         self.graph.register_node("Display", "Value Display", |id| {
             Box::new(ValueDisplayWidget::new(id, new_shared_state(1, 0)))
         });
+        self.graph.register_node("Display", "LED Display", |id| {
+            Box::new(LedDisplayWidget::new(id, new_shared_state(1, 0)))
+        });
 
         // Math - Scaler
         self.graph.register_node("Math", "Scaler", |id| {
@@ -542,6 +556,7 @@ impl LightBeatApp {
                 }
                 "Color Display" => Some(Box::new(ColorDisplayProcessNode::new(id))),
                 "Value Display" => Some(Box::new(ValueDisplayProcessNode::new(id))),
+                "LED Display" => Some(Box::new(LedDisplayProcessNode::new(id))),
                 "Palette Select" => Some(Box::new(PaletteSelectProcessNode::new(id))),
                 "Scaler" => Some(Box::new(ScalerProcessNode::new(id))),
                 ">=" | "<=" | "==" | "!=" => {
@@ -888,13 +903,12 @@ impl LightBeatApp {
             .map(|(i, e)| (i, e.clone()))
             .collect();
 
-        let mut instantiate: Option<usize> = None;
         let mut delete: Option<std::path::PathBuf> = None;
 
         egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
             // Group entries by their group path.
             let mut current_group: Option<String> = None;
-            for (idx, e) in &entries {
+            for (_idx, e) in &entries {
                 if Some(&e.group) != current_group.as_ref() {
                     if current_group.is_some() { ui.add_space(4.0); }
                     let label = if e.group.is_empty() { "(root)".to_string() } else { e.group.clone() };
@@ -902,21 +916,17 @@ impl LightBeatApp {
                         egui::RichText::new(label).strong().size(11.0));
                     current_group = Some(e.group.clone());
                 }
-                let resp = ui.add(egui::Button::new(&e.name).wrap_mode(egui::TextWrapMode::Extend));
-                let mut hover = format!("Double-click to add.\n\n{}", e.description);
+                let dnd_id = egui::Id::new(("macro-dnd", &e.path));
+                let payload = MacroDragPayload { path: e.path.clone() };
+                let inner_resp = ui.dnd_drag_source(dnd_id, payload, |ui| {
+                    ui.add(egui::Button::new(&e.name).wrap_mode(egui::TextWrapMode::Extend))
+                });
+                let mut hover = format!("Drag onto canvas to add.\n\n{}", e.description);
                 if !e.tags.is_empty() {
                     hover.push_str(&format!("\n\nTags: {}", e.tags.join(", ")));
                 }
-                let resp = resp.on_hover_text(hover);
-                if resp.double_clicked() {
-                    instantiate = Some(*idx);
-                }
-                resp.context_menu(|ui| {
-                    if ui.button("Add to canvas").clicked() {
-                        instantiate = Some(*idx);
-                        ui.close_menu();
-                    }
-                    ui.separator();
+                let btn_resp = inner_resp.inner.on_hover_text(hover);
+                btn_resp.context_menu(|ui| {
                     if ui.button("Delete from library").clicked() {
                         delete = Some(e.path.clone());
                         ui.close_menu();
@@ -925,10 +935,6 @@ impl LightBeatApp {
             }
         });
 
-        if let Some(idx) = instantiate {
-            let entry = self.library.entries[idx].clone();
-            self.instantiate_macro_from_path(&entry.path);
-        }
         if let Some(p) = delete {
             if let Err(e) = self.library.delete(&p) {
                 eprintln!("delete macro: {}", e);
@@ -952,6 +958,7 @@ impl LightBeatApp {
                     description: String::new(),
                     tags: String::new(),
                     error: None,
+                    overwrite_path: None,
                 });
             }
         }
@@ -981,6 +988,7 @@ impl LightBeatApp {
         // Capture the subgraph's external port defs so the macro can
         // re-instantiate with the same I/O shape.
         let (inputs, outputs) = self.subgraph_port_defs(target_id, &dlg.parent_path);
+        let size = self.subgraph_size(target_id);
 
         let m = Macro {
             format_version: macros::MACRO_FORMAT_VERSION,
@@ -991,12 +999,19 @@ impl LightBeatApp {
             tags,
             inputs,
             outputs,
+            size,
             graph: inner,
         };
-        let path = self.library.path_for(&group, &name);
-        if path.exists() {
-            return Err(format!("File already exists: {}", path.display()));
-        }
+        let path = match &dlg.overwrite_path {
+            Some(p) => p.clone(),
+            None => {
+                let p = self.library.path_for(&group, &name);
+                if p.exists() {
+                    return Err(format!("File already exists: {}", p.display()));
+                }
+                p
+            }
+        };
         m.save_to_file(&path)?;
         self.library.rescan();
         Ok(())
@@ -1046,10 +1061,23 @@ impl LightBeatApp {
         (Vec::new(), Vec::new())
     }
 
-    /// Load a macro file and add it as a locked Subgraph at the current
-    /// canvas position. All NodeIds in the inner graph are remapped to
+    /// Walk every level looking for a Subgraph node with the given id and
+    /// return its `size_override` (the user-resized size). Returns None when
+    /// the user has never resized it.
+    fn subgraph_size(&self, target_id: NodeId) -> Option<[f32; 2]> {
+        for level in self.graph.all_levels() {
+            for (i, _n) in level.nodes.iter().enumerate() {
+                if level.states[i].id != target_id { continue; }
+                return level.states[i].size_override.map(|s| [s.x, s.y]);
+            }
+        }
+        None
+    }
+
+    /// Load a macro file and add it as a locked Subgraph at the given
+    /// world-space position. All NodeIds in the inner graph are remapped to
     /// fresh ones to avoid collisions with existing project nodes.
-    fn instantiate_macro_from_path(&mut self, path: &std::path::Path) {
+    fn instantiate_macro_from_path(&mut self, path: &std::path::Path, canvas_pos: egui::Pos2) {
         let m = match Macro::load_from_file(path) {
             Ok(m) => m,
             Err(e) => { eprintln!("load macro: {}", e); return; }
@@ -1063,20 +1091,20 @@ impl LightBeatApp {
         let mut inner = m.graph;
         remap_project_ids(&mut inner, || self.graph.alloc_id());
 
-        // Wrap as a SavedNode of type Subgraph at the current canvas center.
-        let canvas_pos = egui::Pos2::new(40.0, 40.0); // TODO: spawn at viewport center.
         let new_id = self.graph.alloc_id();
         let data = serde_json::json!({
             "name": m.name,
             "inputs": m.inputs,
             "outputs": m.outputs,
             "locked": true,
+            "macro_description": m.description,
+            "macro_path": path.display().to_string(),
         });
         let saved = project::SavedNode {
             type_name: "Subgraph".to_string(),
             id: new_id.0,
             pos: [canvas_pos.x, canvas_pos.y],
-            size: None,
+            size: m.size,
             params: Vec::new(),
             data: Some(data),
             inner_graph: Some(inner),
@@ -1355,6 +1383,10 @@ impl eframe::App for LightBeatApp {
         let mut close_dialog = false;
         let mut save_action: Option<()> = None;
         if let Some(dlg) = &mut self.save_macro_dialog {
+            // Snapshot the library entries for the "Update existing" dropdown.
+            // Cloning is cheap (metadata only — graph content loads on demand).
+            let library_entries: Vec<macros::library::MacroEntry> = self.library.entries.clone();
+
             let mut open = true;
             egui::Window::new("Save as macro")
                 .open(&mut open)
@@ -1362,15 +1394,51 @@ impl eframe::App for LightBeatApp {
                 .collapsible(false)
                 .default_size([360.0, 0.0])
                 .show(ctx, |ui| {
+                    let overwriting = dlg.overwrite_path.is_some();
+                    ui.horizontal(|ui| {
+                        ui.label("Target:");
+                        let selected_text = match &dlg.overwrite_path {
+                            Some(p) => p
+                                .file_stem()
+                                .and_then(|s| s.to_str())
+                                .unwrap_or("(existing)")
+                                .to_string(),
+                            None => "New macro".to_string(),
+                        };
+                        egui::ComboBox::from_id_salt("save_macro_target")
+                            .selected_text(selected_text)
+                            .show_ui(ui, |ui| {
+                                if ui.selectable_label(dlg.overwrite_path.is_none(), "New macro").clicked() {
+                                    dlg.overwrite_path = None;
+                                }
+                                for entry in &library_entries {
+                                    let picked = dlg.overwrite_path.as_deref() == Some(entry.path.as_path());
+                                    let label = if entry.group.is_empty() {
+                                        entry.name.clone()
+                                    } else {
+                                        format!("{} / {}", entry.group, entry.name)
+                                    };
+                                    if ui.selectable_label(picked, label).clicked() {
+                                        dlg.name = entry.name.clone();
+                                        dlg.group = entry.group.clone();
+                                        dlg.description = entry.description.clone();
+                                        dlg.tags = entry.tags.join(", ");
+                                        dlg.overwrite_path = Some(entry.path.clone());
+                                    }
+                                }
+                            });
+                    });
+                    ui.separator();
+
                     egui::Grid::new("save_macro_grid")
                         .num_columns(2)
                         .spacing([8.0, 4.0])
                         .show(ui, |ui| {
                             ui.label("Name:");
-                            ui.text_edit_singleline(&mut dlg.name);
+                            ui.add_enabled(!overwriting, egui::TextEdit::singleline(&mut dlg.name));
                             ui.end_row();
                             ui.label("Group:");
-                            ui.text_edit_singleline(&mut dlg.group)
+                            ui.add_enabled(!overwriting, egui::TextEdit::singleline(&mut dlg.group))
                                 .on_hover_text("Optional. Use '/' for nested groups, e.g. \"audio/triggers\".");
                             ui.end_row();
                             ui.label("Tags:");
@@ -1387,7 +1455,8 @@ impl eframe::App for LightBeatApp {
                     ui.separator();
                     ui.horizontal(|ui| {
                         let can_save = !dlg.name.trim().is_empty();
-                        if ui.add_enabled(can_save, egui::Button::new("Save")).clicked() {
+                        let save_label = if overwriting { "Update" } else { "Save" };
+                        if ui.add_enabled(can_save, egui::Button::new(save_label)).clicked() {
                             save_action = Some(());
                         }
                         if ui.button("Cancel").clicked() {
@@ -1508,6 +1577,20 @@ impl eframe::App for LightBeatApp {
         egui::CentralPanel::default().show(ctx, |ui| {
             self.graph.show(ui, self.config.snap_to_grid);
         });
+
+        // Accept a macro drop on the canvas. We only consume the payload
+        // when the pointer is released inside the canvas rect — otherwise
+        // egui keeps the drag alive and the user can continue aiming.
+        if ctx.input(|i| i.pointer.any_released()) {
+            if let Some(pos) = ctx.pointer_interact_pos() {
+                if self.graph.canvas_rect().contains(pos) {
+                    if let Some(payload) = egui::DragAndDrop::take_payload::<MacroDragPayload>(ctx) {
+                        let world = self.graph.screen_to_world(pos);
+                        self.instantiate_macro_from_path(&payload.path, world);
+                    }
+                }
+            }
+        }
 
         self.wire_new_nodes();
 

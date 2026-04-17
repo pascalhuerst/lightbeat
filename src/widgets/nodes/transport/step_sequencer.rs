@@ -44,11 +44,15 @@ impl NodeWidget for StepSequencerWidget {
     fn description(&self) -> &'static str { "N-step pattern advanced by phase; outputs current step value, index, and per-step trigger." }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> {
-        let port = match self.mode {
-            StepMode::Phase => PortDef::new("phase", PortType::Phase),
-            StepMode::Trigger => PortDef::new("trigger", PortType::Logic),
-        };
-        vec![UiPortDef::from_def(&port)]
+        match self.mode {
+            StepMode::Phase => vec![
+                UiPortDef::from_def(&PortDef::new("phase", PortType::Phase)),
+            ],
+            StepMode::Trigger => vec![
+                UiPortDef::from_def(&PortDef::new("trigger", PortType::Logic)),
+                UiPortDef::from_def(&PortDef::new("reset", PortType::Logic)),
+            ],
+        }
     }
     fn ui_outputs(&self) -> Vec<UiPortDef> {
         self.outputs.iter().map(UiPortDef::from_def).collect()

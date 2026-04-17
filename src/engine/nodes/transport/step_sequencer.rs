@@ -46,6 +46,10 @@ pub struct StepSequencerProcessNode {
     /// Trigger mode: most recent input value (rising-edge detected).
     trigger_in: f32,
     prev_trigger_in: f32,
+    /// Trigger mode: rising edge resets to step 0 and re-arms so the next
+    /// trigger fires step 0 again.
+    reset_in: f32,
+    prev_reset_in: f32,
     trigger_out: f32,
     inputs: Vec<PortDef>,
     outputs: Vec<PortDef>,
@@ -63,6 +67,8 @@ impl StepSequencerProcessNode {
             phase_in: 0.0,
             trigger_in: 0.0,
             prev_trigger_in: 0.0,
+            reset_in: 0.0,
+            prev_reset_in: 0.0,
             trigger_out: 0.0,
             inputs: Vec::new(),
             outputs: vec![
@@ -91,7 +97,10 @@ impl StepSequencerProcessNode {
     fn rebuild_inputs(&mut self) {
         self.inputs = match self.mode {
             StepMode::Phase => vec![PortDef::new("phase", PortType::Phase)],
-            StepMode::Trigger => vec![PortDef::new("trigger", PortType::Logic)],
+            StepMode::Trigger => vec![
+                PortDef::new("trigger", PortType::Logic),
+                PortDef::new("reset", PortType::Logic),
+            ],
         };
     }
 
@@ -102,6 +111,8 @@ impl StepSequencerProcessNode {
         self.phase_in = 0.0;
         self.trigger_in = 0.0;
         self.prev_trigger_in = 0.0;
+        self.reset_in = 0.0;
+        self.prev_reset_in = 0.0;
         self.current_step = 0;
         self.prev_step = None;
         self.active = false;
@@ -116,24 +127,28 @@ impl ProcessNode for StepSequencerProcessNode {
     fn outputs(&self) -> &[PortDef] { &self.outputs }
 
     fn read_input(&self, port_index: usize) -> f32 {
-        if port_index != 0 { return 0.0; }
-        match self.mode {
-            StepMode::Phase => self.phase_in,
-            StepMode::Trigger => self.trigger_in,
+        match (self.mode, port_index) {
+            (StepMode::Phase, 0) => self.phase_in,
+            (StepMode::Trigger, 0) => self.trigger_in,
+            (StepMode::Trigger, 1) => self.reset_in,
+            _ => 0.0,
         }
     }
 
     fn write_input(&mut self, port_index: usize, value: f32) {
-        if port_index != 0 { return; }
-        match self.mode {
-            StepMode::Phase => {
+        match (self.mode, port_index) {
+            (StepMode::Phase, 0) => {
                 self.phase_in = value.rem_euclid(1.0);
                 self.active = true;
             }
-            StepMode::Trigger => {
+            (StepMode::Trigger, 0) => {
                 self.trigger_in = value;
                 self.active = true;
             }
+            (StepMode::Trigger, 1) => {
+                self.reset_in = value;
+            }
+            _ => {}
         }
     }
 
@@ -149,6 +164,18 @@ impl ProcessNode for StepSequencerProcessNode {
                 Some(s.min(self.num_steps() - 1))
             }
             StepMode::Trigger => {
+                let reset_edge = self.reset_in >= 0.5 && self.prev_reset_in < 0.5;
+                self.prev_reset_in = self.reset_in;
+                if reset_edge {
+                    // Re-arm: clear prev_step so the next trigger fires step 0.
+                    // Suppress trigger_out this tick — only the next trigger edge
+                    // should produce a pulse.
+                    self.current_step = 0;
+                    self.prev_step = None;
+                    self.prev_trigger_in = self.trigger_in;
+                    self.trigger_out = 0.0;
+                    return;
+                }
                 let prev = self.prev_trigger_in;
                 self.prev_trigger_in = self.trigger_in;
                 if self.trigger_in >= 0.5 && prev < 0.5 {

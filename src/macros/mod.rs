@@ -41,6 +41,9 @@ pub struct Macro {
     /// External output ports of the wrapping subgraph.
     #[serde(default)]
     pub outputs: Vec<SubgraphPortDef>,
+    /// Wrapping subgraph node size as `[w, h]` (None if the user never resized).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub size: Option<[f32; 2]>,
     /// The subgraph's inner graph — same shape as `ProjectFile`.
     pub graph: ProjectFile,
 }

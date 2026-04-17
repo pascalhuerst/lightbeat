@@ -18,8 +18,6 @@ pub struct AudioInputDisplay {
     pub input_name: String,
     /// Per-output (name, port_type, current value).
     pub outputs: Vec<(String, PortType, f32)>,
-    /// Mirror of the analyzer params for the inspector.
-    pub params: Vec<ParamDef>,
     /// (kind, output values for this analyzer). Lets the widget render
     /// per-kind mini visualisations (e.g. a level bar for PeakLevel).
     pub analyzer_results: Vec<(AnalyzerKind, Vec<f32>)>,
@@ -48,8 +46,10 @@ pub struct AudioInputProcessNode {
 impl AudioInputProcessNode {
     pub fn new(id: NodeId, audio: SharedAudioInputs) -> Self {
         Self {
-            id, input_id: 0,
-            outputs: Vec::new(), output_values: Vec::new(),
+            id,
+            input_id: 0,
+            outputs: Vec::new(),
+            output_values: Vec::new(),
             caches: Vec::new(),
             display_outputs: Vec::new(),
             display_name: String::new(),
@@ -61,16 +61,26 @@ impl AudioInputProcessNode {
 }
 
 impl ProcessNode for AudioInputProcessNode {
-    fn node_id(&self) -> NodeId { self.id }
-    fn type_name(&self) -> &'static str { "Audio Input" }
-    fn inputs(&self) -> &[PortDef] { &[] }
-    fn outputs(&self) -> &[PortDef] { &self.outputs }
+    fn node_id(&self) -> NodeId {
+        self.id
+    }
+    fn type_name(&self) -> &'static str {
+        "Audio Input"
+    }
+    fn inputs(&self) -> &[PortDef] {
+        &[]
+    }
+    fn outputs(&self) -> &[PortDef] {
+        &self.outputs
+    }
 
     fn process(&mut self) {
         let state = self.audio.lock().unwrap();
         let input = state.iter().find(|c| c.id == self.input_id);
         let Some(input) = input else {
-            for v in &mut self.output_values { *v = 0.0; }
+            for v in &mut self.output_values {
+                *v = 0.0;
+            }
             self.display_outputs.clear();
             self.display_name.clear();
             self.display_params.clear();
@@ -88,7 +98,9 @@ impl ProcessNode for AudioInputProcessNode {
             }
         }
         let layout_changed = expected.len() != self.outputs.len()
-            || expected.iter().zip(self.outputs.iter())
+            || expected
+                .iter()
+                .zip(self.outputs.iter())
                 .any(|(a, b)| a.name != b.name || a.port_type != b.port_type);
         if layout_changed {
             self.outputs = expected;
@@ -111,13 +123,19 @@ impl ProcessNode for AudioInputProcessNode {
                 let cur_onset = a.onset_count();
                 let prev_onset = self.caches[ai].last_onset_count;
                 self.caches[ai].last_onset_count = cur_onset;
-                if cur_onset != prev_onset && prev_onset != 0 { 1.0 } else { 0.0 }
+                if cur_onset != prev_onset && prev_onset != 0 {
+                    1.0
+                } else {
+                    0.0
+                }
             } else {
                 0.0
             };
 
             for (j, mut v) in raw.into_iter().enumerate() {
-                if trigger_at_zero && j == 0 { v = onset_pulse; }
+                if trigger_at_zero && j == 0 {
+                    v = onset_pulse;
+                }
                 if let Some(slot) = self.output_values.get_mut(idx) {
                     *slot = v;
                 }
@@ -127,7 +145,10 @@ impl ProcessNode for AudioInputProcessNode {
 
         // Snapshot for display.
         self.display_name = input.name.clone();
-        self.display_outputs = self.outputs.iter().enumerate()
+        self.display_outputs = self
+            .outputs
+            .iter()
+            .enumerate()
             .map(|(i, p)| (p.name.clone(), p.port_type, self.output_values[i]))
             .collect();
         self.display_params = input.analyzer_param_defs();
@@ -138,7 +159,9 @@ impl ProcessNode for AudioInputProcessNode {
         let mut o = 0;
         for a in &input.analyzers {
             let n = AnalyzerInstance::outputs_for_kind(a.kind).len();
-            let vals: Vec<f32> = (o..o + n).map(|i| self.output_values.get(i).copied().unwrap_or(0.0)).collect();
+            let vals: Vec<f32> = (o..o + n)
+                .map(|i| self.output_values.get(i).copied().unwrap_or(0.0))
+                .collect();
             self.display_analyzer_results.push((a.kind, vals));
             o += n;
         }
@@ -209,7 +232,6 @@ impl ProcessNode for AudioInputProcessNode {
             input_id: self.input_id,
             input_name: self.display_name.clone(),
             outputs: self.display_outputs.clone(),
-            params: self.display_params.clone(),
             analyzer_results: self.display_analyzer_results.clone(),
         }));
         // Also surface params via current_params so the standard inspector

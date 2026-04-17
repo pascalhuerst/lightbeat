@@ -9,6 +9,7 @@
 //! Analyzer kinds are identified by `AnalyzerKind`. New analyzers are added
 //! by extending the enum and `AnalyzerInstance`.
 
+pub mod audio_beat;
 pub mod beat;
 pub mod envelope;
 pub mod peak_level;
@@ -23,16 +24,18 @@ use crate::engine::types::{ParamDef, ParamValue, PortDef, PortType};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum AnalyzerKind {
     Beat,
+    AudioBeat,
     PeakLevel,
     Envelope,
 }
 
 impl AnalyzerKind {
-    pub const ALL: [Self; 3] = [Self::Beat, Self::PeakLevel, Self::Envelope];
+    pub const ALL: [Self; 4] = [Self::Beat, Self::AudioBeat, Self::PeakLevel, Self::Envelope];
 
     pub fn label(&self) -> &'static str {
         match self {
             AnalyzerKind::Beat => "Beat",
+            AnalyzerKind::AudioBeat => "Audio Beat (aubio)",
             AnalyzerKind::PeakLevel => "Peak Level",
             AnalyzerKind::Envelope => "Envelope",
         }
@@ -59,6 +62,7 @@ pub struct AnalyzerInstance {
 
 pub enum AnalyzerState {
     Beat(beat::BeatAnalyzer),
+    AudioBeat(audio_beat::AudioBeatAnalyzer),
     PeakLevel(peak_level::PeakLevelAnalyzer),
     Envelope(envelope::EnvelopeAnalyzer),
 }
@@ -66,7 +70,7 @@ pub enum AnalyzerState {
 impl AnalyzerInstance {
     pub fn outputs_for_kind(kind: AnalyzerKind) -> Vec<PortDef> {
         match kind {
-            AnalyzerKind::Beat => vec![
+            AnalyzerKind::Beat | AnalyzerKind::AudioBeat => vec![
                 PortDef::new("onset", PortType::Logic),
                 PortDef::new("bpm", PortType::Untyped),
             ],
@@ -83,6 +87,7 @@ impl AnalyzerInstance {
     pub fn params_for_kind(kind: AnalyzerKind) -> Vec<ParamDef> {
         match kind {
             AnalyzerKind::Beat => beat::beat_params(),
+            AnalyzerKind::AudioBeat => audio_beat::audio_beat_params(),
             AnalyzerKind::PeakLevel => peak_level::peak_params(),
             AnalyzerKind::Envelope => envelope::envelope_params(),
         }
@@ -92,6 +97,7 @@ impl AnalyzerInstance {
     pub fn read_outputs(&self) -> Vec<f32> {
         match &self.state {
             AnalyzerState::Beat(b) => b.read_outputs(),
+            AnalyzerState::AudioBeat(b) => b.read_outputs(),
             AnalyzerState::PeakLevel(p) => p.read_outputs(),
             AnalyzerState::Envelope(e) => e.read_outputs(),
         }
@@ -103,6 +109,7 @@ impl AnalyzerInstance {
     pub fn onset_count(&self) -> u64 {
         match &self.state {
             AnalyzerState::Beat(b) => b.onset_count(),
+            AnalyzerState::AudioBeat(b) => b.onset_count(),
             AnalyzerState::PeakLevel(_) => 0,
             AnalyzerState::Envelope(_) => 0,
         }
@@ -111,12 +118,13 @@ impl AnalyzerInstance {
     /// True if output index 0 is a trigger that should be edge-detected from
     /// `onset_count`. False for purely continuous analyzers.
     pub fn first_output_is_trigger(&self) -> bool {
-        matches!(self.state, AnalyzerState::Beat(_))
+        matches!(self.state, AnalyzerState::Beat(_) | AnalyzerState::AudioBeat(_))
     }
 
     pub fn set_param(&self, index: usize, value: ParamValue) {
         match &self.state {
             AnalyzerState::Beat(b) => b.set_param(index, value),
+            AnalyzerState::AudioBeat(b) => b.set_param(index, value),
             AnalyzerState::PeakLevel(p) => p.set_param(index, value),
             AnalyzerState::Envelope(e) => e.set_param(index, value),
         }
@@ -125,6 +133,7 @@ impl AnalyzerInstance {
     pub fn current_params(&self) -> Vec<ParamDef> {
         match &self.state {
             AnalyzerState::Beat(b) => b.current_params(),
+            AnalyzerState::AudioBeat(b) => b.current_params(),
             AnalyzerState::PeakLevel(p) => p.current_params(),
             AnalyzerState::Envelope(e) => e.current_params(),
         }
@@ -141,6 +150,10 @@ pub fn spawn_analyzer(
         AnalyzerKind::Beat => {
             let analyzer = beat::BeatAnalyzer::spawn(rx, sample_rate);
             AnalyzerInstance { kind, state: AnalyzerState::Beat(analyzer) }
+        }
+        AnalyzerKind::AudioBeat => {
+            let analyzer = audio_beat::AudioBeatAnalyzer::spawn(rx, sample_rate);
+            AnalyzerInstance { kind, state: AnalyzerState::AudioBeat(analyzer) }
         }
         AnalyzerKind::PeakLevel => {
             let analyzer = peak_level::PeakLevelAnalyzer::spawn(rx, sample_rate);

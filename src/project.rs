@@ -3,16 +3,18 @@ use std::path::PathBuf;
 use egui;
 use serde::{Deserialize, Serialize};
 
-use crate::engine::nodes::meta::subgraph::{BRIDGE_IN_NODE_ID, BRIDGE_OUT_NODE_ID, SubgraphPortDef};
+use crate::engine::nodes::meta::subgraph::{BRIDGE_IN_NODE_ID, SubgraphPortDef};
 use crate::engine::types::{NodeId, ParamDef, ParamValue, PortDir, PortId};
-use crate::widgets::nodes::{GraphLevel, NodeGraph};
-use crate::widgets::nodes::meta::subgraph::SubgraphWidget;
+use crate::widgets::nodes::display::led_display::LedDisplayWidget;
+use crate::widgets::nodes::display::value_display::ValueDisplayWidget;
 use crate::widgets::nodes::io::audio_input::AudioInputWidget;
 use crate::widgets::nodes::io::input_controller::InputControllerWidget;
+use crate::widgets::nodes::meta::subgraph::SubgraphWidget;
 use crate::widgets::nodes::output::effect_stack::EffectStackWidget;
 use crate::widgets::nodes::output::group::GroupWidget;
 use crate::widgets::nodes::ui::fader::FaderWidget;
 use crate::widgets::nodes::ui::fader_group::FaderGroupWidget;
+use crate::widgets::nodes::{GraphLevel, NodeGraph};
 
 // ---------------------------------------------------------------------------
 // Save format
@@ -117,7 +119,8 @@ pub fn save_level(level: &GraphLevel, graph: &NodeGraph) -> ProjectFile {
 
         // For Subgraph nodes, recursively save the inner level.
         let inner_graph = if node.type_name() == "Subgraph" {
-            graph.find_level_for_subgraph(node_id)
+            graph
+                .find_level_for_subgraph(node_id)
                 .map(|inner_level| save_level(inner_level, graph))
         } else {
             None
@@ -206,32 +209,48 @@ pub fn load_graph(graph: &mut NodeGraph, project: &ProjectFile) -> Vec<usize> {
                 if let Some(data) = &saved.data {
                     let n = graph.node_mut(idx);
                     if let Some(sub) = n.as_any_mut().downcast_mut::<SubgraphWidget>() {
+                        if let Some(name) = data.get("name").and_then(|v| v.as_str()) {
+                            sub.set_name(name.to_string());
+                        }
                         if let Some(inputs) = data.get("inputs").and_then(|v| v.as_array()) {
-                            sub.input_defs = inputs.iter()
-                                .filter_map(|v| serde_json::from_value::<SubgraphPortDef>(v.clone()).ok())
+                            sub.input_defs = inputs
+                                .iter()
+                                .filter_map(|v| {
+                                    serde_json::from_value::<SubgraphPortDef>(v.clone()).ok()
+                                })
                                 .collect();
                         }
                         if let Some(outputs) = data.get("outputs").and_then(|v| v.as_array()) {
-                            sub.output_defs = outputs.iter()
-                                .filter_map(|v| serde_json::from_value::<SubgraphPortDef>(v.clone()).ok())
+                            sub.output_defs = outputs
+                                .iter()
+                                .filter_map(|v| {
+                                    serde_json::from_value::<SubgraphPortDef>(v.clone()).ok()
+                                })
                                 .collect();
                         }
                         if let Some(b) = data.get("locked").and_then(|v| v.as_bool()) {
                             sub.locked = b;
+                        }
+                        if let Some(s) = data.get("macro_description").and_then(|v| v.as_str()) {
+                            sub.macro_description = s.to_string();
+                        }
+                        if let Some(s) = data.get("macro_path").and_then(|v| v.as_str()) {
+                            sub.macro_path = s.to_string();
                         }
                         sub.push_config();
                     }
                 }
 
                 if let Some(inner_project) = &saved.inner_graph {
-                    // Navigate into the subgraph to create its inner level.
+                    // Save the active level explicitly — `navigate_up` just
+                    // decrements by one, which picks the wrong level when
+                    // sibling subgraphs have pushed levels above us in the
+                    // navigation Vec (macros with multiple inner subgraphs).
+                    let parent_level = graph.active_level_index();
+
                     graph.navigate_into_by_index(idx);
-
-                    // Recursively load inner nodes (including bridge connections if saved).
                     let _inner_indices = load_graph(graph, inner_project);
-
-                    // Navigate back to parent.
-                    graph.navigate_up();
+                    graph.navigate_to_level(parent_level);
                 }
             }
 
@@ -241,7 +260,8 @@ pub fn load_graph(graph: &mut NodeGraph, project: &ProjectFile) -> Vec<usize> {
                     let n = graph.node_mut(idx);
                     if let Some(grp) = n.as_any_mut().downcast_mut::<GroupWidget>() {
                         if let Some(ids) = data.get("group_ids").and_then(|v| v.as_array()) {
-                            grp.selected_group_ids = ids.iter()
+                            grp.selected_group_ids = ids
+                                .iter()
                                 .filter_map(|v| v.as_u64().map(|n| n as u32))
                                 .collect();
                         }
@@ -290,6 +310,22 @@ pub fn load_graph(graph: &mut NodeGraph, project: &ProjectFile) -> Vec<usize> {
                     }
                 }
             }
+            if saved.type_name == "Value Display" {
+                if let Some(data) = &saved.data {
+                    let n = graph.node_mut(idx);
+                    if let Some(w) = n.as_any_mut().downcast_mut::<ValueDisplayWidget>() {
+                        w.restore_from_save_data(data);
+                    }
+                }
+            }
+            if saved.type_name == "LED Display" {
+                if let Some(data) = &saved.data {
+                    let n = graph.node_mut(idx);
+                    if let Some(w) = n.as_any_mut().downcast_mut::<LedDisplayWidget>() {
+                        w.restore_from_save_data(data);
+                    }
+                }
+            }
 
             // Restore Effect Stack widget state from save_data.
             if saved.type_name == "Effect Stack" {
@@ -297,7 +333,8 @@ pub fn load_graph(graph: &mut NodeGraph, project: &ProjectFile) -> Vec<usize> {
                     let n = graph.node_mut(idx);
                     if let Some(stack) = n.as_any_mut().downcast_mut::<EffectStackWidget>() {
                         if let Some(ids) = data.get("group_ids").and_then(|v| v.as_array()) {
-                            stack.selected_group_ids = ids.iter()
+                            stack.selected_group_ids = ids
+                                .iter()
                                 .filter_map(|v| v.as_u64().map(|n| n as u32))
                                 .collect();
                         }
@@ -319,7 +356,8 @@ pub fn load_graph(graph: &mut NodeGraph, project: &ProjectFile) -> Vec<usize> {
     // Collect loaded node IDs for filtering connections.
     // Include bridge node IDs so bridge connections are preserved.
     let loaded_ids: Vec<u64> = {
-        let mut ids: Vec<u64> = indices.iter()
+        let mut ids: Vec<u64> = indices
+            .iter()
             .map(|&idx| {
                 let (node, _) = graph.node_and_state(idx);
                 node.node_id().0

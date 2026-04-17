@@ -6,7 +6,7 @@ use crate::audio::analyzers::AnalyzerKind;
 use crate::audio::manager::{AudioInputManager, SharedAudioInputs};
 use crate::engine::nodes::io::audio_input::AudioInputDisplay;
 use crate::engine::types::*;
-use crate::widgets::fader::{self, FaderStyle};
+use crate::widgets::fader::FaderStyle;
 use crate::widgets::nodes::node::NodeWidget;
 use crate::widgets::nodes::types::UiPortDef;
 use crate::widgets::nodes::ui::peak_meter::{self, MeterState};
@@ -43,12 +43,15 @@ pub struct AudioInputWidget {
 impl AudioInputWidget {
     pub fn new(id: NodeId, shared: SharedState, audio: SharedAudioInputs) -> Self {
         Self {
-            id, shared, input_id: 0,
+            id,
+            shared,
+            input_id: 0,
             outputs: Vec::new(),
             analyzer_results: Vec::new(),
             meter_state: Vec::new(),
             envelope_history: Vec::new(),
-            audio, bound_input: 0,
+            audio,
+            bound_input: 0,
         }
     }
 
@@ -58,7 +61,9 @@ impl AudioInputWidget {
     }
 
     fn rebind_to(&mut self, new_id: u32) {
-        if new_id == self.bound_input { return; }
+        if new_id == self.bound_input {
+            return;
+        }
         AudioInputManager::rebind(&self.audio, self.id.0, new_id);
         self.bound_input = new_id;
     }
@@ -70,7 +75,9 @@ impl AudioInputWidget {
         if let Some(id) = data.get("input_id").and_then(|v| v.as_u64()) {
             self.input_id = id as u32;
         }
-        if self.input_id == 0 { return; }
+        if self.input_id == 0 {
+            return;
+        }
         let state = self.audio.lock().unwrap();
         if let Some(input) = state.iter().find(|c| c.id == self.input_id) {
             // Mirror the engine's port layout (matches
@@ -93,21 +100,32 @@ impl Drop for AudioInputWidget {
 }
 
 impl NodeWidget for AudioInputWidget {
-    fn node_id(&self) -> NodeId { self.id }
-    fn type_name(&self) -> &'static str { "Audio Input" }
-    fn title(&self) -> &str { "Audio Input" }
+    fn node_id(&self) -> NodeId {
+        self.id
+    }
+    fn type_name(&self) -> &'static str {
+        "Audio Input"
+    }
+    fn title(&self) -> &str {
+        "Audio Input"
+    }
     fn description(&self) -> &'static str {
         "Outputs analyzer values from the selected audio input. Add analyzers in the Audio Inputs window."
     }
 
-    fn ui_inputs(&self) -> Vec<UiPortDef> { vec![] }
+    fn ui_inputs(&self) -> Vec<UiPortDef> {
+        vec![]
+    }
     fn ui_outputs(&self) -> Vec<UiPortDef> {
-        self.outputs.iter().map(|(name, ty, _)| {
-            UiPortDef::from_def(&PortDef::new(name.clone(), *ty))
-        }).collect()
+        self.outputs
+            .iter()
+            .map(|(name, ty, _)| UiPortDef::from_def(&PortDef::new(name.clone(), *ty)))
+            .collect()
     }
 
-    fn min_width(&self) -> f32 { 180.0 }
+    fn min_width(&self) -> f32 {
+        180.0
+    }
     fn min_content_height(&self) -> f32 {
         // Per-analyzer mini-row heights vary by kind: envelope plot is the
         // tallest, the others are single-line.
@@ -120,15 +138,28 @@ impl NodeWidget for AudioInputWidget {
         }
         h
     }
-    fn resizable(&self) -> bool { true }
-    fn shared_state(&self) -> &SharedState { &self.shared }
+    fn resizable(&self) -> bool {
+        true
+    }
+    fn shared_state(&self) -> &SharedState {
+        &self.shared
+    }
 
     fn show_content(&mut self, ui: &mut Ui, _zoom: f32) {
         let snapshot = {
             let shared = self.shared.lock().unwrap();
-            shared.display.as_ref()
+            shared
+                .display
+                .as_ref()
                 .and_then(|d| d.downcast_ref::<AudioInputDisplay>())
-                .map(|d| (d.input_id, d.input_name.clone(), d.outputs.clone(), d.analyzer_results.clone()))
+                .map(|d| {
+                    (
+                        d.input_id,
+                        d.input_name.clone(),
+                        d.outputs.clone(),
+                        d.analyzer_results.clone(),
+                    )
+                })
         };
         if let Some((id, _name, outs, results)) = snapshot {
             self.input_id = id;
@@ -148,17 +179,19 @@ impl NodeWidget for AudioInputWidget {
 
         // Resize per-analyzer meter state and envelope history.
         if self.meter_state.len() != self.analyzer_results.len() {
-            self.meter_state.resize(self.analyzer_results.len(), MeterState::default());
+            self.meter_state
+                .resize(self.analyzer_results.len(), MeterState::default());
         }
         if self.envelope_history.len() != self.analyzer_results.len() {
-            self.envelope_history.resize(self.analyzer_results.len(), Vec::new());
+            self.envelope_history
+                .resize(self.analyzer_results.len(), Vec::new());
         }
         let now = ui.ctx().input(|i| i.time);
 
         let style = FaderStyle::default();
         for (i, (kind, vals)) in self.analyzer_results.iter().enumerate() {
             match kind {
-                AnalyzerKind::Beat => {
+                AnalyzerKind::Beat | AnalyzerKind::AudioBeat => {
                     let bpm = vals.get(1).copied().unwrap_or(0.0);
                     ui.horizontal(|ui| {
                         ui.colored_label(Color32::from_gray(120), format!("a{}", i));
@@ -180,8 +213,12 @@ impl NodeWidget for AudioInputWidget {
                         let bar_size = egui::Vec2::new(avail.x.max(60.0), 12.0);
                         let (resp, painter) = ui.allocate_painter(bar_size, egui::Sense::hover());
                         peak_meter::draw_horizontal(
-                            &painter, resp.rect, peak, rms,
-                            state.peak_hold, state.clipping(now),
+                            &painter,
+                            resp.rect,
+                            peak,
+                            rms,
+                            state.peak_hold,
+                            state.clipping(now),
                         );
                     });
                 }
@@ -215,18 +252,22 @@ impl NodeWidget for AudioInputWidget {
         // Tuple: (id, name, available_to_us). Available = unbound or bound to self.
         let inputs: Vec<(u32, String, bool)> = {
             let state = self.audio.lock().unwrap();
-            state.iter().map(|c| {
-                let avail = match c.bound_to {
-                    None => true,
-                    Some(other) => other == self.id.0,
-                };
-                (c.id, c.name.clone(), avail)
-            }).collect()
+            state
+                .iter()
+                .map(|c| {
+                    let avail = match c.bound_to {
+                        None => true,
+                        Some(other) => other == self.id.0,
+                    };
+                    (c.id, c.name.clone(), avail)
+                })
+                .collect()
         };
 
         ui.horizontal(|ui| {
             ui.label("Audio input:");
-            let current = inputs.iter()
+            let current = inputs
+                .iter()
                 .find(|(id, _, _)| *id == self.input_id)
                 .map(|(_, n, _)| n.clone())
                 .unwrap_or_else(|| "(none)".to_string());
@@ -240,7 +281,9 @@ impl NodeWidget for AudioInputWidget {
                     }
                     for (id, name, avail) in &inputs {
                         // Hide inputs already bound to a different node.
-                        if !avail { continue; }
+                        if !avail {
+                            continue;
+                        }
                         if ui.selectable_label(self.input_id == *id, name).clicked() {
                             self.input_id = *id;
                             self.rebind_to(*id);
@@ -262,7 +305,9 @@ impl NodeWidget for AudioInputWidget {
         }
     }
 
-    fn as_any_mut(&mut self) -> &mut dyn Any { self }
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
 }
 
 const ENV_BG: Color32 = Color32::from_gray(20);
@@ -276,7 +321,9 @@ fn draw_envelope_plot(painter: &egui::Painter, rect: egui::Rect, history: &[f32]
     painter.rect_filled(rect, 2.0, ENV_BG);
     painter.rect_stroke(rect, 2.0, Stroke::new(1.0, ENV_BORDER), StrokeKind::Inside);
 
-    if history.len() < 2 { return; }
+    if history.len() < 2 {
+        return;
+    }
 
     let w = rect.width();
     let h = rect.height();

@@ -1,22 +1,20 @@
 use std::any::Any;
 use egui::{self, Color32, Sense, Ui, Vec2};
 
-use crate::engine::nodes::display::value_display::ValueDisplayData;
+use crate::engine::nodes::display::led_display::LedDisplayData;
 use crate::engine::types::*;
 use crate::widgets::nodes::node::NodeWidget;
 use crate::widgets::nodes::types::UiPortDef;
 
 const NAME_GAP: f32 = 2.0;
 
-pub struct ValueDisplayWidget {
+pub struct LedDisplayWidget {
     id: NodeId,
     shared: SharedState,
-    /// Mirror of the engine's name; edited live via the inspector and pushed
-    /// back through `pending_config`.
     name: String,
 }
 
-impl ValueDisplayWidget {
+impl LedDisplayWidget {
     pub fn new(id: NodeId, shared: SharedState) -> Self {
         Self { id, shared, name: String::new() }
     }
@@ -33,11 +31,11 @@ impl ValueDisplayWidget {
     }
 }
 
-impl NodeWidget for ValueDisplayWidget {
+impl NodeWidget for LedDisplayWidget {
     fn node_id(&self) -> NodeId { self.id }
-    fn type_name(&self) -> &'static str { "Value Display" }
-    fn title(&self) -> &str { "Value Display" }
-    fn description(&self) -> &'static str { "Shows a numeric value. Name appears above the value and on parent subgraph nodes." }
+    fn type_name(&self) -> &'static str { "LED Display" }
+    fn title(&self) -> &str { "LED Display" }
+    fn description(&self) -> &'static str { "Shows a value (0..1) as a glowing LED. Name appears above the LED and on parent subgraph nodes." }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> {
         vec![UiPortDef::from_def(&PortDef::new("in", PortType::Any))]
@@ -53,7 +51,7 @@ impl NodeWidget for ValueDisplayWidget {
         let (name, value) = {
             let shared = self.shared.lock().unwrap();
             let display = shared.display.as_ref()
-                .and_then(|d| d.downcast_ref::<ValueDisplayData>());
+                .and_then(|d| d.downcast_ref::<LedDisplayData>());
             if let Some(d) = display {
                 (d.name.clone(), d.value)
             } else {
@@ -69,7 +67,7 @@ impl NodeWidget for ValueDisplayWidget {
         if !name.is_empty() {
             let label_h = (rect.height() * 0.25).clamp(10.0, 18.0);
             let label_rect = egui::Rect::from_min_size(rect.min, Vec2::new(rect.width(), label_h));
-            let label_size = fit_text_size(ui, &name, label_rect.size());
+            let label_size = fit_label_size(ui, &name, label_rect.size());
             painter.text(
                 label_rect.center(),
                 egui::Align2::CENTER_CENTER,
@@ -83,15 +81,27 @@ impl NodeWidget for ValueDisplayWidget {
             );
         }
 
-        let text = format!("{:.3}", value);
-        let font_size = fit_text_size(ui, &text, rect.size());
-        painter.text(
-            rect.center(),
-            egui::Align2::CENTER_CENTER,
-            text,
-            egui::FontId::monospace(font_size),
-            ui.visuals().text_color(),
+        let brightness = value.clamp(0.0, 1.0);
+        let center = rect.center();
+        let radius = (rect.width().min(rect.height()) * 0.45).max(2.0);
+
+        if brightness > 0.01 {
+            let glow_radius = radius * (1.0 + brightness * 0.5);
+            let glow_color = Color32::from_rgba_premultiplied(
+                (200.0 * brightness) as u8,
+                (40.0 * brightness) as u8,
+                (30.0 * brightness) as u8,
+                (80.0 * brightness) as u8,
+            );
+            painter.circle_filled(center, glow_radius, glow_color);
+        }
+
+        let led_color = Color32::from_rgb(
+            (40.0 + 215.0 * brightness) as u8,
+            (10.0 + 20.0 * brightness) as u8,
+            (10.0 + 10.0 * brightness) as u8,
         );
+        painter.circle_filled(center, radius, led_color);
     }
 
     fn show_inspector(&mut self, ui: &mut Ui) {
@@ -106,9 +116,7 @@ impl NodeWidget for ValueDisplayWidget {
     fn as_any_mut(&mut self) -> &mut dyn Any { self }
 }
 
-/// Binary-search the largest monospace font size that lets `text` fit inside
-/// `area`. Returns a screen-pixel size suitable for `painter.text`.
-fn fit_text_size(ui: &Ui, text: &str, area: Vec2) -> f32 {
+fn fit_label_size(ui: &Ui, text: &str, area: Vec2) -> f32 {
     let pad_x = 6.0;
     let pad_y = 4.0;
     let target_w = (area.x - pad_x).max(4.0);
@@ -118,7 +126,7 @@ fn fit_text_size(ui: &Ui, text: &str, area: Vec2) -> f32 {
     for _ in 0..14 {
         let mid = 0.5 * (lo + hi);
         let galley = ui.fonts(|f| {
-            f.layout_no_wrap(text.to_string(), egui::FontId::monospace(mid), Color32::WHITE)
+            f.layout_no_wrap(text.to_string(), egui::FontId::proportional(mid), Color32::WHITE)
         });
         let size = galley.size();
         if size.x <= target_w && size.y <= target_h {

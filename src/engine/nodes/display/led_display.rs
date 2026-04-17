@@ -2,19 +2,19 @@ use std::any::Any;
 
 use crate::engine::types::*;
 
-pub struct ValueDisplayData {
+pub struct LedDisplayData {
     pub name: String,
     pub value: f32,
 }
 
-pub struct ValueDisplayProcessNode {
+pub struct LedDisplayProcessNode {
     id: NodeId,
     pub name: String,
     value: f32,
     inputs: Vec<PortDef>,
 }
 
-impl ValueDisplayProcessNode {
+impl LedDisplayProcessNode {
     pub fn new(id: NodeId) -> Self {
         Self {
             id,
@@ -28,9 +28,9 @@ impl ValueDisplayProcessNode {
     pub fn value(&self) -> f32 { self.value }
 }
 
-impl ProcessNode for ValueDisplayProcessNode {
+impl ProcessNode for LedDisplayProcessNode {
     fn node_id(&self) -> NodeId { self.id }
-    fn type_name(&self) -> &'static str { "Value Display" }
+    fn type_name(&self) -> &'static str { "LED Display" }
     fn inputs(&self) -> &[PortDef] { &self.inputs }
     fn outputs(&self) -> &[PortDef] { &[] }
 
@@ -53,7 +53,7 @@ impl ProcessNode for ValueDisplayProcessNode {
     }
 
     fn update_display(&self, shared: &mut NodeSharedState) {
-        shared.display = Some(Box::new(ValueDisplayData {
+        shared.display = Some(Box::new(LedDisplayData {
             name: self.name.clone(),
             value: self.value,
         }));

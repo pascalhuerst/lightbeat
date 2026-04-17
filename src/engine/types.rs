@@ -349,4 +349,11 @@ pub trait ProcessNode: Send {
     fn update_display(&self, _shared: &mut NodeSharedState) {}
 
     fn as_any_mut(&mut self) -> &mut dyn Any { unimplemented!("as_any_mut not implemented") }
+    /// Default returns a placeholder that downcasts to nothing — nodes that
+    /// want to be introspected (e.g. for in-subgraph display) override this
+    /// to return `self`.
+    fn as_any(&self) -> &dyn Any {
+        static EMPTY: () = ();
+        &EMPTY
+    }
 }

@@ -8,9 +8,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use cpal::{
-    BufferSize, Device, Host, SampleFormat, Stream, StreamConfig, SupportedStreamConfig,
-};
+use cpal::{BufferSize, Device, Host, SampleFormat, Stream, StreamConfig, SupportedStreamConfig};
 use crossbeam_channel::{Receiver, Sender, bounded};
 
 /// Common request fallback when nothing is configured.
@@ -27,7 +25,9 @@ pub fn host() -> Host {
 }
 
 pub fn list_inputs() -> Vec<DeviceInfo> {
-    let Ok(devices) = host().input_devices() else { return vec![]; };
+    let Ok(devices) = host().input_devices() else {
+        return vec![];
+    };
     devices
         .filter_map(|d| {
             let name = d.name().ok()?;
@@ -36,12 +36,15 @@ pub fn list_inputs() -> Vec<DeviceInfo> {
         .collect()
 }
 
-pub fn list_input_names() -> Vec<String> {
-    list_inputs().into_iter().map(|d| d.name).collect()
-}
+//pub fn list_input_names() -> Vec<String> {
+//    list_inputs().into_iter().map(|d| d.name).collect()
+//}
 
 pub fn find_input_by_name(name: &str) -> Option<Device> {
-    list_inputs().into_iter().find(|d| d.name == name).map(|d| d.device)
+    list_inputs()
+        .into_iter()
+        .find(|d| d.name == name)
+        .map(|d| d.device)
 }
 
 /// Sample rates supported by a device for input. Returns at least the device
@@ -52,7 +55,8 @@ pub fn supported_sample_rates(device: &Device) -> Vec<u32> {
         for c in configs {
             for candidate in [44_100, 48_000, 88_200, 96_000, 192_000] {
                 let sr = cpal::SampleRate(candidate);
-                if c.min_sample_rate() <= sr && c.max_sample_rate() >= sr
+                if c.min_sample_rate() <= sr
+                    && c.max_sample_rate() >= sr
                     && !rates.contains(&candidate)
                 {
                     rates.push(candidate);
@@ -88,7 +92,10 @@ pub struct StreamRequest {
 
 impl Default for StreamRequest {
     fn default() -> Self {
-        Self { sample_rate: Some(DEFAULT_SAMPLE_RATE), buffer_size_frames: None }
+        Self {
+            sample_rate: Some(DEFAULT_SAMPLE_RATE),
+            buffer_size_frames: None,
+        }
     }
 }
 
@@ -156,43 +163,49 @@ pub fn open_input(
             let subs = subscribers;
             let produced_cb = produced.clone();
             let last_cb = last_chunk.clone();
-            device.build_input_stream(
-                &config,
-                move |data: &[f32], _| {
-                    last_cb.store(data.len() / channels.max(1) as usize, Ordering::Relaxed);
-                    on_samples_f32(data, channels as usize, &subs, &produced_cb);
-                },
-                err_fn,
-                None,
-            ).map_err(|e| e.to_string())?
+            device
+                .build_input_stream(
+                    &config,
+                    move |data: &[f32], _| {
+                        last_cb.store(data.len() / channels.max(1) as usize, Ordering::Relaxed);
+                        on_samples_f32(data, channels as usize, &subs, &produced_cb);
+                    },
+                    err_fn,
+                    None,
+                )
+                .map_err(|e| e.to_string())?
         }
         SampleFormat::I16 => {
             let subs = subscribers;
             let produced_cb = produced.clone();
             let last_cb = last_chunk.clone();
-            device.build_input_stream(
-                &config,
-                move |data: &[i16], _| {
-                    last_cb.store(data.len() / channels.max(1) as usize, Ordering::Relaxed);
-                    on_samples_i16(data, channels as usize, &subs, &produced_cb);
-                },
-                err_fn,
-                None,
-            ).map_err(|e| e.to_string())?
+            device
+                .build_input_stream(
+                    &config,
+                    move |data: &[i16], _| {
+                        last_cb.store(data.len() / channels.max(1) as usize, Ordering::Relaxed);
+                        on_samples_i16(data, channels as usize, &subs, &produced_cb);
+                    },
+                    err_fn,
+                    None,
+                )
+                .map_err(|e| e.to_string())?
         }
         SampleFormat::U16 => {
             let subs = subscribers;
             let produced_cb = produced.clone();
             let last_cb = last_chunk.clone();
-            device.build_input_stream(
-                &config,
-                move |data: &[u16], _| {
-                    last_cb.store(data.len() / channels.max(1) as usize, Ordering::Relaxed);
-                    on_samples_u16(data, channels as usize, &subs, &produced_cb);
-                },
-                err_fn,
-                None,
-            ).map_err(|e| e.to_string())?
+            device
+                .build_input_stream(
+                    &config,
+                    move |data: &[u16], _| {
+                        last_cb.store(data.len() / channels.max(1) as usize, Ordering::Relaxed);
+                        on_samples_u16(data, channels as usize, &subs, &produced_cb);
+                    },
+                    err_fn,
+                    None,
+                )
+                .map_err(|e| e.to_string())?
         }
         other => return Err(format!("unsupported sample format: {other:?}")),
     };
@@ -207,7 +220,12 @@ pub fn open_input(
     })
 }
 
-fn on_samples_f32(data: &[f32], channels: usize, subs: &[Sender<AudioChunk>], produced: &AtomicU64) {
+fn on_samples_f32(
+    data: &[f32],
+    channels: usize,
+    subs: &[Sender<AudioChunk>],
+    produced: &AtomicU64,
+) {
     let c = channels.max(1);
     let mono: Vec<f32> = data
         .chunks_exact(c)
@@ -216,7 +234,12 @@ fn on_samples_f32(data: &[f32], channels: usize, subs: &[Sender<AudioChunk>], pr
     dispatch(subs, produced, mono);
 }
 
-fn on_samples_i16(data: &[i16], channels: usize, subs: &[Sender<AudioChunk>], produced: &AtomicU64) {
+fn on_samples_i16(
+    data: &[i16],
+    channels: usize,
+    subs: &[Sender<AudioChunk>],
+    produced: &AtomicU64,
+) {
     let c = channels.max(1);
     let mono: Vec<f32> = data
         .chunks_exact(c)
@@ -228,7 +251,12 @@ fn on_samples_i16(data: &[i16], channels: usize, subs: &[Sender<AudioChunk>], pr
     dispatch(subs, produced, mono);
 }
 
-fn on_samples_u16(data: &[u16], channels: usize, subs: &[Sender<AudioChunk>], produced: &AtomicU64) {
+fn on_samples_u16(
+    data: &[u16],
+    channels: usize,
+    subs: &[Sender<AudioChunk>],
+    produced: &AtomicU64,
+) {
     let c = channels.max(1);
     let mono: Vec<f32> = data
         .chunks_exact(c)

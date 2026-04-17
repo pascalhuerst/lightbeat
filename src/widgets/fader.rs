@@ -1,4 +1,4 @@
-use egui::{Color32, Pos2, Rect, Response, Sense, StrokeKind, Ui, Vec2};
+use egui::{Color32, Pos2, Rect, Response, StrokeKind, Ui};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Orientation {
@@ -33,9 +33,7 @@ pub fn value_from_pos(pos: Pos2, rect: Rect, orient: Orientation) -> f32 {
         Orientation::Vertical => {
             (1.0 - ((pos.y - rect.min.y) / rect.height().max(1.0))).clamp(0.0, 1.0)
         }
-        Orientation::Horizontal => {
-            ((pos.x - rect.min.x) / rect.width().max(1.0)).clamp(0.0, 1.0)
-        }
+        Orientation::Horizontal => ((pos.x - rect.min.x) / rect.width().max(1.0)).clamp(0.0, 1.0),
     }
 }
 
@@ -61,7 +59,11 @@ pub fn draw_fader(
             egui::pos2(rect.min.x + v * rect.width(), rect.max.y),
         ),
     };
-    let color = if active { style.fill_active } else { style.fill };
+    let color = if active {
+        style.fill_active
+    } else {
+        style.fill
+    };
     painter.rect_filled(fill_rect, 0.0, color);
 
     if let Some(b) = style.border {
@@ -112,22 +114,30 @@ pub fn draw_bipolar_fill(
             let center_y = rect.min.y + 0.5 * rect.height();
             let pos_y = rect.min.y + (1.0 - v) * rect.height();
             if pos_y <= center_y {
-                Rect::from_min_max(egui::pos2(rect.min.x, pos_y),
-                                    egui::pos2(rect.max.x, center_y))
+                Rect::from_min_max(
+                    egui::pos2(rect.min.x, pos_y),
+                    egui::pos2(rect.max.x, center_y),
+                )
             } else {
-                Rect::from_min_max(egui::pos2(rect.min.x, center_y),
-                                    egui::pos2(rect.max.x, pos_y))
+                Rect::from_min_max(
+                    egui::pos2(rect.min.x, center_y),
+                    egui::pos2(rect.max.x, pos_y),
+                )
             }
         }
         Orientation::Horizontal => {
             let center_x = rect.min.x + 0.5 * rect.width();
             let pos_x = rect.min.x + v * rect.width();
             if pos_x >= center_x {
-                Rect::from_min_max(egui::pos2(center_x, rect.min.y),
-                                    egui::pos2(pos_x, rect.max.y))
+                Rect::from_min_max(
+                    egui::pos2(center_x, rect.min.y),
+                    egui::pos2(pos_x, rect.max.y),
+                )
             } else {
-                Rect::from_min_max(egui::pos2(pos_x, rect.min.y),
-                                    egui::pos2(center_x, rect.max.y))
+                Rect::from_min_max(
+                    egui::pos2(pos_x, rect.min.y),
+                    egui::pos2(center_x, rect.max.y),
+                )
             }
         }
     };
@@ -207,23 +217,6 @@ pub fn handle_fader_interaction(
     }
 
     changed
-}
-
-/// Complete self-contained fader: allocates its own painter, draws, handles
-/// interaction. Returns the egui Response so callers can observe clicks/drags.
-pub fn fader(
-    ui: &mut Ui,
-    size: Vec2,
-    value: &mut f32,
-    orient: Orientation,
-    style: &FaderStyle,
-    active: bool,
-) -> Response {
-    let (response, painter) = ui.allocate_painter(size, Sense::click_and_drag());
-    let rect = response.rect;
-    draw_fader(&painter, rect, *value, orient, style, active);
-    handle_fader_interaction(ui, &response, rect, orient, value);
-    response
 }
 
 /// Compute a linear fade-out alpha (1.0 → 0.0) given a timestamp of when an
