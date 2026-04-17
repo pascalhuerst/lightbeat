@@ -30,11 +30,13 @@ impl PortTypeUi for PortType {
 // UI-extended port definition (adds fill_color for rendering)
 // ---------------------------------------------------------------------------
 
-/// Port definition with optional UI fill color override.
+/// Port definition with optional UI fill color override and a small glyph
+/// drawn inside the port circle (used for the variadic "+" add port).
 #[derive(Debug, Clone)]
 pub struct UiPortDef {
     pub def: PortDef,
     pub fill_color: Option<Color32>,
+    pub marker: Option<&'static str>,
 }
 
 impl UiPortDef {
@@ -42,11 +44,17 @@ impl UiPortDef {
         Self {
             def: def.clone(),
             fill_color: None,
+            marker: None,
         }
     }
 
     pub fn with_fill(mut self, color: Color32) -> Self {
         self.fill_color = Some(color);
+        self
+    }
+
+    pub fn with_marker(mut self, glyph: &'static str) -> Self {
+        self.marker = Some(glyph);
         self
     }
 }

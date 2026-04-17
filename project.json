@@ -84,7 +84,7 @@
             "port_type_idx": 0
           }
         ],
-        "name": "PaletteCarousell",
+        "name": "Subgraph",
         "outputs": [
           {
             "name": "out 0",
@@ -834,7 +834,10 @@
               324.0895,
               457.75128
             ],
-            "params": []
+            "params": [],
+            "data": {
+              "input_count": 2
+            }
           },
           {
             "type_name": "Color Merge",
@@ -1813,8 +1816,8 @@
       "type_name": "Input Controller",
       "id": 110,
       "pos": [
-        -1280.663,
-        992.9526
+        -1174.2227,
+        933.12946
       ],
       "params": [],
       "data": {
@@ -1825,8 +1828,8 @@
       "type_name": "Change Detect",
       "id": 111,
       "pos": [
-        -1019.2319,
-        748.0818
+        -764.3448,
+        1153.4806
       ],
       "params": [
         {
@@ -1834,6 +1837,18 @@
           "value": 0.0010000000474974513
         }
       ]
+    },
+    {
+      "type_name": "OR",
+      "id": 112,
+      "pos": [
+        -893.92664,
+        1094.0637
+      ],
+      "params": [],
+      "data": {
+        "input_count": 2
+      }
     }
   ],
   "connections": [

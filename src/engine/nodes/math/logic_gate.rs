@@ -17,34 +17,54 @@ impl LogicOp {
             LogicOp::Not => "NOT",
         }
     }
-
 }
 
+/// Display state for the widget.
+#[allow(dead_code)]
+pub struct LogicDisplay {
+    pub input_count: usize,
+}
+
+/// Variadic logic gate (AND/OR/XOR over N inputs); NOT stays unary.
 pub struct LogicGateProcessNode {
     id: NodeId,
     op: LogicOp,
-    a: f32,
-    b: f32,
+    values: Vec<f32>,
     out: f32,
     inputs: Vec<PortDef>,
     outputs: Vec<PortDef>,
 }
 
+fn input_label(i: usize) -> String {
+    if i < 26 {
+        ((b'a' + i as u8) as char).to_string()
+    } else {
+        format!("in{}", i + 1)
+    }
+}
+
 impl LogicGateProcessNode {
     pub fn new(id: NodeId, op: LogicOp) -> Self {
-        let inputs = if op == LogicOp::Not {
-            vec![PortDef::new("in", PortType::Logic)]
-        } else {
-            vec![
-                PortDef::new("a", PortType::Logic),
-                PortDef::new("b", PortType::Logic),
-            ]
-        };
-        Self {
+        let mut node = Self {
             id, op,
-            a: 0.0, b: 0.0, out: 0.0,
-            inputs,
+            values: Vec::new(),
+            out: 0.0,
+            inputs: Vec::new(),
             outputs: vec![PortDef::new("out", PortType::Logic)],
+        };
+        let init = if op == LogicOp::Not { 1 } else { 2 };
+        node.set_input_count(init);
+        node
+    }
+
+    fn set_input_count(&mut self, n: usize) {
+        let n = n.max(1);
+        if self.op == LogicOp::Not {
+            self.inputs = vec![PortDef::new("in", PortType::Logic)];
+            self.values = vec![0.0];
+        } else {
+            self.inputs = (0..n).map(|i| PortDef::new(input_label(i), PortType::Logic)).collect();
+            self.values.resize(n, 0.0);
         }
     }
 }
@@ -56,25 +76,48 @@ impl ProcessNode for LogicGateProcessNode {
     fn outputs(&self) -> &[PortDef] { &self.outputs }
 
     fn write_input(&mut self, pi: usize, v: f32) {
-        match pi { 0 => self.a = v, 1 => self.b = v, _ => {} }
+        if let Some(slot) = self.values.get_mut(pi) {
+            *slot = v;
+        }
     }
     fn read_input(&self, pi: usize) -> f32 {
-        match pi { 0 => self.a, 1 => self.b, _ => 0.0 }
+        self.values.get(pi).copied().unwrap_or(0.0)
     }
 
     fn process(&mut self) {
-        let a_high = self.a >= 0.5;
-        let b_high = self.b >= 0.5;
         let result = match self.op {
-            LogicOp::And => a_high && b_high,
-            LogicOp::Or => a_high || b_high,
-            LogicOp::Xor => a_high ^ b_high,
-            LogicOp::Not => !a_high,
+            LogicOp::Not => self.values.first().copied().unwrap_or(0.0) < 0.5,
+            LogicOp::And => self.values.iter().all(|v| *v >= 0.5),
+            LogicOp::Or => self.values.iter().any(|v| *v >= 0.5),
+            LogicOp::Xor => self.values.iter().filter(|v| **v >= 0.5).count() % 2 == 1,
         };
         self.out = if result { 1.0 } else { 0.0 };
     }
 
     fn read_output(&self, pi: usize) -> f32 {
-        match pi { 0 => self.out, _ => 0.0 }
+        if pi == 0 { self.out } else { 0.0 }
+    }
+
+    fn on_connect(&mut self, input_port: usize, _source_type: PortType) {
+        if self.op == LogicOp::Not { return; }
+        if input_port >= self.inputs.len() {
+            self.set_input_count(input_port + 1);
+        }
+    }
+
+    fn save_data(&self) -> Option<serde_json::Value> {
+        Some(serde_json::json!({ "input_count": self.inputs.len() }))
+    }
+
+    fn load_data(&mut self, data: &serde_json::Value) {
+        if let Some(n) = data.get("input_count").and_then(|v| v.as_u64()) {
+            self.set_input_count(n as usize);
+        }
+    }
+
+    fn update_display(&self, shared: &mut NodeSharedState) {
+        shared.display = Some(Box::new(LogicDisplay {
+            input_count: self.inputs.len(),
+        }));
     }
 }

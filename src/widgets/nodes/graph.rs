@@ -1909,6 +1909,16 @@ fn draw_port(painter: &Painter, pos: Pos2, ui_port: &UiPortDef, highlight: f32, 
     }
     painter.circle_filled(pos, r, fill);
     painter.circle_stroke(pos, r, Stroke::new(stroke_width, type_color));
+    // Optional centered glyph (e.g. "+" for the variadic add port).
+    if let Some(glyph) = ui_port.marker {
+        painter.text(
+            pos,
+            egui::Align2::CENTER_CENTER,
+            glyph,
+            egui::FontId::proportional(11.0 * zoom),
+            Color32::BLACK,
+        );
+    }
 }
 
 fn draw_grid(painter: &Painter, rect: Rect, pan: Vec2, zoom: f32) {

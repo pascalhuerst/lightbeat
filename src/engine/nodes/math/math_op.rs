@@ -26,57 +26,61 @@ impl MathOp {
             MathOp::Div => "÷",
         }
     }
-
-    fn apply(&self, a: f32, b: f32) -> f32 {
-        match self {
-            MathOp::Add => a + b,
-            MathOp::Sub => a - b,
-            MathOp::Mul => a * b,
-            MathOp::Div => if b.abs() > 1e-10 { a / b } else { 0.0 },
-        }
-    }
 }
 
-/// Display state for the widget to know connected types.
+/// Display state for the widget.
 #[allow(dead_code)]
 pub struct MathDisplay {
-    pub connected_types: [Option<PortType>; 2],
+    pub input_count: usize,
+    pub connected_types: Vec<Option<PortType>>,
     pub output_type: PortType,
 }
 
+/// Variadic arithmetic node. Starts at 2 inputs; the widget grows the count
+/// by connecting wires to the special "+" add port. Operator is folded
+/// across all values (left-to-right for Sub/Div).
 pub struct MathProcessNode {
     id: NodeId,
     op: MathOp,
-    a: f32,
-    b: f32,
+    values: Vec<f32>,
     out: f32,
     inputs: Vec<PortDef>,
     outputs: Vec<PortDef>,
-    connected_types: [Option<PortType>; 2],
+    connected_types: Vec<Option<PortType>>,
+}
+
+fn port_name(i: usize) -> String {
+    // a, b, c, ... z, then in27, in28, ...
+    if i < 26 {
+        ((b'a' + i as u8) as char).to_string()
+    } else {
+        format!("in{}", i + 1)
+    }
 }
 
 impl MathProcessNode {
     pub fn new(id: NodeId, op: MathOp) -> Self {
-        Self {
-            id,
-            op,
-            a: 0.0,
-            b: 0.0,
+        let mut node = Self {
+            id, op,
+            values: Vec::new(),
             out: 0.0,
-            inputs: vec![
-                PortDef::new("a", PortType::Any),
-                PortDef::new("b", PortType::Any),
-            ],
+            inputs: Vec::new(),
             outputs: vec![PortDef::new("out", PortType::Any)],
-            connected_types: [None, None],
-        }
+            connected_types: Vec::new(),
+        };
+        node.set_input_count(2);
+        node
+    }
+
+    fn set_input_count(&mut self, n: usize) {
+        let n = n.max(1);
+        self.inputs = (0..n).map(|i| PortDef::new(port_name(i), PortType::Any)).collect();
+        self.values.resize(n, 0.0);
+        self.connected_types.resize(n, None);
     }
 
     fn resolve_output_type(&self) -> PortType {
-        // Output adopts the type of the first connected input.
-        self.connected_types[0]
-            .or(self.connected_types[1])
-            .unwrap_or(PortType::Any)
+        self.connected_types.iter().find_map(|t| *t).unwrap_or(PortType::Any)
     }
 }
 
@@ -87,40 +91,63 @@ impl ProcessNode for MathProcessNode {
     fn outputs(&self) -> &[PortDef] { &self.outputs }
 
     fn write_input(&mut self, port_index: usize, value: f32) {
-        match port_index {
-            0 => self.a = value,
-            1 => self.b = value,
-            _ => {}
+        if let Some(slot) = self.values.get_mut(port_index) {
+            *slot = value;
         }
     }
 
     fn read_input(&self, port_index: usize) -> f32 {
-        match port_index { 0 => self.a, 1 => self.b, _ => 0.0 }
+        self.values.get(port_index).copied().unwrap_or(0.0)
     }
 
     fn process(&mut self) {
-        self.out = self.op.apply(self.a, self.b);
+        if self.values.is_empty() { self.out = 0.0; return; }
+        self.out = match self.op {
+            MathOp::Add => self.values.iter().sum(),
+            MathOp::Mul => self.values.iter().product(),
+            MathOp::Sub => self.values.iter().enumerate().fold(0.0, |acc, (i, v)| {
+                if i == 0 { *v } else { acc - v }
+            }),
+            MathOp::Div => self.values.iter().enumerate().fold(0.0, |acc, (i, v)| {
+                if i == 0 { *v }
+                else if v.abs() > 1e-10 { acc / v }
+                else { 0.0 }
+            }),
+        };
     }
 
     fn read_output(&self, port_index: usize) -> f32 {
-        match port_index { 0 => self.out, _ => 0.0 }
+        if port_index == 0 { self.out } else { 0.0 }
     }
 
     fn on_connect(&mut self, input_port: usize, source_type: PortType) {
-        if input_port < 2 {
-            self.connected_types[input_port] = Some(source_type);
+        // Auto-grow if the widget connected to a port beyond our current set.
+        if input_port >= self.inputs.len() {
+            self.set_input_count(input_port + 1);
         }
+        self.connected_types[input_port] = Some(source_type);
     }
 
     fn on_disconnect(&mut self, input_port: usize) {
-        if input_port < 2 {
-            self.connected_types[input_port] = None;
+        if let Some(slot) = self.connected_types.get_mut(input_port) {
+            *slot = None;
+        }
+    }
+
+    fn save_data(&self) -> Option<serde_json::Value> {
+        Some(serde_json::json!({ "input_count": self.inputs.len() }))
+    }
+
+    fn load_data(&mut self, data: &serde_json::Value) {
+        if let Some(n) = data.get("input_count").and_then(|v| v.as_u64()) {
+            self.set_input_count(n as usize);
         }
     }
 
     fn update_display(&self, shared: &mut NodeSharedState) {
         shared.display = Some(Box::new(MathDisplay {
-            connected_types: self.connected_types,
+            input_count: self.inputs.len(),
+            connected_types: self.connected_types.clone(),
             output_type: self.resolve_output_type(),
         }));
     }

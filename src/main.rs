@@ -266,18 +266,18 @@ impl LightBeatApp {
             Box::new(TransitionWidget::new(id, new_shared_state(14, 12)))
         });
 
-        // Math
+        // Math (variadic — generous initial input buffer; engine grows as ports are added).
         self.graph.register_node("Math", "Add", |id| {
-            Box::new(MathWidget::new(id, MathOp::Add, new_shared_state(2, 1)))
+            Box::new(MathWidget::new(id, MathOp::Add, new_shared_state(16, 1)))
         });
         self.graph.register_node("Math", "Sub", |id| {
-            Box::new(MathWidget::new(id, MathOp::Sub, new_shared_state(2, 1)))
+            Box::new(MathWidget::new(id, MathOp::Sub, new_shared_state(16, 1)))
         });
         self.graph.register_node("Math", "Mul", |id| {
-            Box::new(MathWidget::new(id, MathOp::Mul, new_shared_state(2, 1)))
+            Box::new(MathWidget::new(id, MathOp::Mul, new_shared_state(16, 1)))
         });
         self.graph.register_node("Math", "Div", |id| {
-            Box::new(MathWidget::new(id, MathOp::Div, new_shared_state(2, 1)))
+            Box::new(MathWidget::new(id, MathOp::Div, new_shared_state(16, 1)))
         });
         self.graph.register_node("Math", "Sin", |id| {
             Box::new(OscillatorWidget::new(id, OscFunc::Sin, new_shared_state(2, 1)))
@@ -325,15 +325,15 @@ impl LightBeatApp {
             Box::new(CompareWidget::new(id, CompareOp::Neq, new_shared_state(2, 1)))
         });
 
-        // Logic
+        // Logic (AND/OR/XOR variadic; NOT is unary).
         self.graph.register_node("Logic", "AND", |id| {
-            Box::new(LogicGateWidget::new(id, LogicOp::And, new_shared_state(2, 1)))
+            Box::new(LogicGateWidget::new(id, LogicOp::And, new_shared_state(16, 1)))
         });
         self.graph.register_node("Logic", "OR", |id| {
-            Box::new(LogicGateWidget::new(id, LogicOp::Or, new_shared_state(2, 1)))
+            Box::new(LogicGateWidget::new(id, LogicOp::Or, new_shared_state(16, 1)))
         });
         self.graph.register_node("Logic", "XOR", |id| {
-            Box::new(LogicGateWidget::new(id, LogicOp::Xor, new_shared_state(2, 1)))
+            Box::new(LogicGateWidget::new(id, LogicOp::Xor, new_shared_state(16, 1)))
         });
         self.graph.register_node("Logic", "NOT", |id| {
             Box::new(LogicGateWidget::new(id, LogicOp::Not, new_shared_state(1, 1)))
