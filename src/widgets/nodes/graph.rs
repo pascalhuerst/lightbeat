@@ -1205,7 +1205,12 @@ impl NodeGraph {
         snap_to_grid: bool,
     ) {
         let pointer_pos = ui.input(|i| i.pointer.hover_pos()).unwrap_or_default();
-        let canvas_has_pointer = response.contains_pointer();
+        // Don't accept canvas interactions while the pointer is over a
+        // floating area (Window, Area, popup). This prevents the selection
+        // rect from being started when the user is resizing a window whose
+        // resize handle sits over the canvas.
+        let pointer_over_area = ui.ctx().is_pointer_over_area();
+        let canvas_has_pointer = response.contains_pointer() && !pointer_over_area;
         let primary_pressed = canvas_has_pointer
             && ui.input(|i| i.pointer.button_pressed(egui::PointerButton::Primary));
         let double_clicked = canvas_has_pointer

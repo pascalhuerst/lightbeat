@@ -4,8 +4,8 @@
       "type_name": "Input Controller",
       "id": 114,
       "pos": [
-        -1877.735,
-        772.9194
+        -1924.238,
+        763.019
       ],
       "params": [],
       "data": {
@@ -157,57 +157,73 @@
         ],
         "rows": 1
       }
+    },
+    {
+      "type_name": "Audio Input",
+      "id": 117,
+      "pos": [
+        -2272.6643,
+        972.0491
+      ],
+      "size": [
+        263.94864,
+        156.0
+      ],
+      "params": [
+        {
+          "index": 0,
+          "value": 1
+        },
+        {
+          "index": 1,
+          "value": 0
+        },
+        {
+          "index": 2,
+          "value": true
+        },
+        {
+          "index": 3,
+          "value": -25.0
+        },
+        {
+          "index": 4,
+          "value": 0.949999988079071
+        },
+        {
+          "index": 5,
+          "value": 140.0
+        },
+        {
+          "index": 6,
+          "value": 700.0
+        },
+        {
+          "index": 7,
+          "value": 0.10000000149011612
+        },
+        {
+          "index": 8,
+          "value": 0.10000000149011612
+        }
+      ],
+      "data": {
+        "input_id": 1,
+        "params": {
+          "a0.cgd_smooth": true,
+          "a0.min_ioi_ms": 140.0,
+          "a0.odf": 1,
+          "a0.picker": 0,
+          "a0.silence_db": -25.0,
+          "a0.threshold": 0.949999988079071,
+          "a1.release_ms": 700.0,
+          "a2.attack_ms": 0.10000000149011612,
+          "a2.release_ms": 0.10000000149011612
+        }
+      }
     }
   ],
   "connections": [
-    {
-      "from_node": 114,
-      "from_port": 1,
-      "to_node": 115,
-      "to_port": 0
-    },
-    {
-      "from_node": 114,
-      "from_port": 2,
-      "to_node": 115,
-      "to_port": 1
-    },
-    {
-      "from_node": 114,
-      "from_port": 3,
-      "to_node": 115,
-      "to_port": 2
-    },
-    {
-      "from_node": 114,
-      "from_port": 4,
-      "to_node": 115,
-      "to_port": 3
-    },
-    {
-      "from_node": 114,
-      "from_port": 5,
-      "to_node": 115,
-      "to_port": 4
-    },
-    {
-      "from_node": 114,
-      "from_port": 6,
-      "to_node": 115,
-      "to_port": 5
-    },
-    {
-      "from_node": 114,
-      "from_port": 7,
-      "to_node": 115,
-      "to_port": 6
-    },
-    {
-      "from_node": 114,
-      "from_port": 8,
-      "to_node": 115,
-      "to_port": 7
-    },
     {
       "from_node": 115,
       "from_port": 0,
@@ -255,6 +271,48 @@
       "from_port": 7,
       "to_node": 116,
       "to_port": 7
+    },
+    {
+      "from_node": 114,
+      "from_port": 1,
+      "to_node": 115,
+      "to_port": 0
+    },
+    {
+      "from_node": 114,
+      "from_port": 2,
+      "to_node": 115,
+      "to_port": 1
+    },
+    {
+      "from_node": 114,
+      "from_port": 3,
+      "to_node": 115,
+      "to_port": 2
+    },
+    {
+      "from_node": 114,
+      "from_port": 4,
+      "to_node": 115,
+      "to_port": 3
+    },
+    {
+      "from_node": 114,
+      "from_port": 5,
+      "to_node": 115,
+      "to_port": 4
+    },
+    {
+      "from_node": 114,
+      "from_port": 6,
+      "to_node": 115,
+      "to_port": 5
+    },
+    {
+      "from_node": 114,
+      "from_port": 7,
+      "to_node": 115,
+      "to_port": 6
     }
   ]
 }

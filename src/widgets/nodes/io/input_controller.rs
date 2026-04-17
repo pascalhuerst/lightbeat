@@ -37,6 +37,28 @@ impl InputControllerWidget {
             "controller_id": self.controller_id,
         }));
     }
+
+    /// Pre-populate `controller_id` and the output-port list from save_data
+    /// + the live controllers registry, so connections survive the first
+    /// frame's `cleanup_stale_connections` after a project load.
+    pub fn restore_from_save_data(&mut self, data: &serde_json::Value) {
+        if let Some(id) = data.get("controller_id").and_then(|v| v.as_u64()) {
+            self.controller_id = id as u32;
+        }
+        if self.controller_id == 0 { return; }
+        let state = self.controllers.lock().unwrap();
+        if let Some(c) = state.iter().find(|c| c.id == self.controller_id) {
+            // The "any change" trigger port is at index 0 in the engine
+            // node's output layout, but the InputControllerProcessNode does
+            // not actually expose it (only Beat / button-style triggers do).
+            // Match what `InputControllerProcessNode::process` builds: one
+            // port per learned input, typed by source.
+            self.outputs = c.inputs.iter().map(|i| {
+                let ty = if i.source.is_binary() { PortType::Logic } else { PortType::Untyped };
+                (i.name.clone(), ty, 0.0)
+            }).collect();
+        }
+    }
 }
 
 impl NodeWidget for InputControllerWidget {

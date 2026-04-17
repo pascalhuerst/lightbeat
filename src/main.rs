@@ -1,3 +1,4 @@
+mod audio;
 mod beat_clock;
 mod color;
 mod config;
@@ -17,6 +18,7 @@ use std::sync::Arc;
 use eframe::egui;
 
 use beat_clock::{BeatClock, BeatPattern, SubscriptionHandle};
+use audio::manager::AudioInputManager;
 use config::{AppConfig, InspectorMode};
 use engine::types::{new_shared_state, EngineCommand, NodeId, PortType, ProcessNode, SubgraphInnerCmd};
 use engine::EngineHandle;
@@ -24,6 +26,7 @@ use input_controller::InputControllerManager;
 use engine::nodes::display::color_display::ColorDisplayProcessNode;
 use engine::nodes::display::scope::ScopeProcessNode;
 use engine::nodes::display::value_display::ValueDisplayProcessNode;
+use engine::nodes::io::audio_input::AudioInputProcessNode;
 use engine::nodes::io::clock::ClockProcessNode;
 use engine::nodes::io::input_controller::InputControllerProcessNode;
 use engine::nodes::io::internal_clock::InternalClockProcessNode;
@@ -31,6 +34,7 @@ use engine::nodes::ui::button::ButtonProcessNode;
 use engine::nodes::ui::button_group::ButtonGroupProcessNode;
 use engine::nodes::ui::fader::FaderProcessNode;
 use engine::nodes::ui::fader_group::FaderGroupProcessNode;
+use engine::nodes::ui::peak_meter::PeakMeterProcessNode;
 use engine::nodes::math::change_detect::ChangeDetectProcessNode;
 use engine::nodes::math::color_ops::{ColorMergeProcessNode, ColorSplitProcessNode};
 use engine::nodes::math::compare::{CompareOp, CompareProcessNode};
@@ -57,6 +61,7 @@ use engine::nodes::transport::step_sequencer::StepSequencerProcessNode;
 use widgets::nodes::display::color_display::ColorDisplayWidget;
 use widgets::nodes::display::scope::ScopeWidget;
 use widgets::nodes::display::value_display::ValueDisplayWidget;
+use widgets::nodes::io::audio_input::AudioInputWidget;
 use widgets::nodes::io::clock::ClockWidget;
 use widgets::nodes::io::input_controller::InputControllerWidget;
 use widgets::nodes::io::internal_clock::InternalClockWidget;
@@ -64,6 +69,7 @@ use widgets::nodes::ui::button::ButtonWidget;
 use widgets::nodes::ui::button_group::ButtonGroupWidget;
 use widgets::nodes::ui::fader::FaderWidget;
 use widgets::nodes::ui::fader_group::FaderGroupWidget;
+use widgets::nodes::ui::peak_meter::PeakMeterWidget;
 use widgets::nodes::math::change_detect::ChangeDetectWidget;
 use widgets::nodes::math::color_ops::{ColorMergeWidget, ColorSplitWidget};
 use widgets::nodes::math::compare::CompareWidget;
@@ -125,6 +131,8 @@ struct LightBeatApp {
     palette_ctx: widgets::nodes::math::palette_select::SharedPaletteContext,
     input_controllers: InputControllerManager,
     show_input_controllers: bool,
+    audio_inputs: AudioInputManager,
+    show_audio_inputs: bool,
     project_undoer: egui::util::undoer::Undoer<project::ProjectFile>,
     setup_undoer: egui::util::undoer::Undoer<setup::SetupFile>,
 }
@@ -175,6 +183,8 @@ impl LightBeatApp {
             palette_ctx: new_shared_palette_context(),
             input_controllers: InputControllerManager::new(),
             show_input_controllers: false,
+            audio_inputs: AudioInputManager::new(),
+            show_audio_inputs: false,
             project_undoer: egui::util::undoer::Undoer::default(),
             setup_undoer: egui::util::undoer::Undoer::default(),
         };
@@ -223,6 +233,10 @@ impl LightBeatApp {
             // Generous output channel budget; engine resizes as inputs change.
             Box::new(InputControllerWidget::new(id, new_shared_state(0, 64), ic_shared.clone()))
         });
+        let ai_shared = self.audio_inputs.shared.clone();
+        self.graph.register_node("IO", "Audio Input", move |id| {
+            Box::new(AudioInputWidget::new(id, new_shared_state(0, 16), ai_shared.clone()))
+        });
 
         // UI
         self.graph.register_node("UI", "Button", |id| {
@@ -238,6 +252,9 @@ impl LightBeatApp {
         });
         self.graph.register_node("UI", "Fader Group", |id| {
             Box::new(FaderGroupWidget::new(id, new_shared_state(256, 256)))
+        });
+        self.graph.register_node("UI", "Peak Level Meter", |id| {
+            Box::new(PeakMeterWidget::new(id, new_shared_state(2, 0)))
         });
 
         // Transport
@@ -444,10 +461,14 @@ impl LightBeatApp {
                 "Input Controller" => Some(Box::new(InputControllerProcessNode::new(
                     id, self.input_controllers.shared.clone(),
                 ))),
+                "Audio Input" => Some(Box::new(AudioInputProcessNode::new(
+                    id, self.audio_inputs.shared.clone(),
+                ))),
                 "Button" => Some(Box::new(ButtonProcessNode::new(id))),
                 "Fader" => Some(Box::new(FaderProcessNode::new(id))),
                 "Button Group" => Some(Box::new(ButtonGroupProcessNode::new(id))),
                 "Fader Group" => Some(Box::new(FaderGroupProcessNode::new(id))),
+                "Peak Level Meter" => Some(Box::new(PeakMeterProcessNode::new(id))),
                 "Phase Scaler" => Some(Box::new(PhaseScalerProcessNode::new(id))),
                 "LFO" => Some(Box::new(LfoProcessNode::new(id))),
                 "Step Sequencer" => Some(Box::new(StepSequencerProcessNode::new(id))),
@@ -539,6 +560,7 @@ impl LightBeatApp {
                 self.color_palette_manager = widgets::color_palette_list::ColorPaletteManager::from_palettes(s.color_palettes);
                 self.color_palette_group_manager = widgets::color_palette_group_list::ColorPaletteGroupManager::from_groups(s.color_palette_groups);
                 self.input_controllers.set_controllers(&s.input_controllers);
+                self.audio_inputs.set_inputs(&s.audio_inputs);
                 // Reset history so undo doesn't go back to an empty setup.
                 self.setup_undoer = egui::util::undoer::Undoer::default();
             }
@@ -746,6 +768,7 @@ impl LightBeatApp {
             color_palettes: self.color_palette_manager.palettes.clone(),
             color_palette_groups: self.color_palette_group_manager.groups.clone(),
             input_controllers: self.input_controllers.export(),
+            audio_inputs: self.audio_inputs.export(),
         }
     }
 
@@ -758,6 +781,7 @@ impl LightBeatApp {
         self.color_palette_manager = widgets::color_palette_list::ColorPaletteManager::from_palettes(s.color_palettes.clone());
         self.color_palette_group_manager = widgets::color_palette_group_list::ColorPaletteGroupManager::from_groups(s.color_palette_groups.clone());
         self.input_controllers.set_controllers(&s.input_controllers);
+        self.audio_inputs.set_inputs(&s.audio_inputs);
 
         self.sync_group_context();
         self.sync_object_store();
@@ -871,6 +895,9 @@ impl eframe::App for LightBeatApp {
                     if ui.checkbox(&mut self.show_input_controllers, "Input Controllers").changed() {
                         ui.close_menu();
                     }
+                    if ui.checkbox(&mut self.show_audio_inputs, "Audio Inputs").changed() {
+                        ui.close_menu();
+                    }
                     ui.separator();
                     if ui.checkbox(&mut self.show_dmx_monitor, "DMX Monitor").changed() {
                         ui.close_menu();
@@ -982,8 +1009,20 @@ impl eframe::App for LightBeatApp {
                 });
             mark_hovered(r);
         }
-        // Periodic reconnect / port availability check.
+
+        // Audio Inputs window.
+        if self.show_audio_inputs {
+            let r = egui::Window::new("Audio Inputs")
+                .open(&mut self.show_audio_inputs)
+                .default_size([420.0, 500.0])
+                .show(ctx, |ui| {
+                    widgets::audio_input_list::show(ui, &mut self.audio_inputs);
+                });
+            mark_hovered(r);
+        }
+        // Periodic reconnect / port availability checks.
         self.input_controllers.tick_reconnect();
+        self.audio_inputs.tick_reconnect();
 
         // Inspector panel — visibility gated by InspectorMode.
         let has_selection = !self.graph.selected_nodes_mut().is_empty();

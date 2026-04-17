@@ -14,6 +14,11 @@ pub struct ScopeProcessNode {
     id: NodeId,
     buffers: [VecDeque<f32>; 2],
     input_values: [f32; 2],
+    /// Per-channel "extreme value seen during the current decimation period".
+    /// Tracks the sample with the largest absolute value so single-tick
+    /// trigger pulses survive decimation (otherwise a 1-tick high pulse
+    /// landing between two sample-tick boundaries would be invisible).
+    period_peak: [f32; 2],
     width_samples: usize,
     range_min: f32,
     range_max: f32,
@@ -36,6 +41,7 @@ impl ScopeProcessNode {
                 VecDeque::with_capacity(MAX_SAMPLES),
             ],
             input_values: [0.0; 2],
+            period_peak: [0.0; 2],
             width_samples: 200,
             range_min: 0.0,
             range_max: 1.0,
@@ -73,16 +79,28 @@ impl ProcessNode for ScopeProcessNode {
     }
 
     fn process(&mut self) {
+        // Track the largest-magnitude sample seen during the current
+        // decimation period (signed). For period=1 this is just the latest
+        // value; for period>1 it preserves single-tick spikes that would
+        // otherwise fall between sample-tick boundaries.
+        for ch in 0..2 {
+            let v = self.input_values[ch];
+            if v.abs() > self.period_peak[ch].abs() {
+                self.period_peak[ch] = v;
+            }
+        }
+
         let period = self.decimation_period();
         self.tick_counter = self.tick_counter.wrapping_add(1);
         if self.tick_counter % period != 0 {
             return;
         }
         for ch in 0..2 {
-            self.buffers[ch].push_back(self.input_values[ch]);
+            self.buffers[ch].push_back(self.period_peak[ch]);
             while self.buffers[ch].len() > MAX_SAMPLES {
                 self.buffers[ch].pop_front();
             }
+            self.period_peak[ch] = self.input_values[ch];
         }
     }
 

@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
+use crate::audio::manager::AudioInputConfig;
 use crate::input_controller::InputController;
 use crate::objects::color_palette::{ColorPalette, ColorPaletteGroup};
 use crate::objects::fixture::Fixture;
@@ -34,6 +35,9 @@ pub struct SetupFile {
     /// Input controllers (MIDI etc.) — virtual slots that bind to hardware.
     #[serde(default)]
     pub input_controllers: Vec<InputController>,
+    /// Audio inputs + per-input analyzer lists.
+    #[serde(default)]
+    pub audio_inputs: Vec<AudioInputConfig>,
 }
 
 #[derive(Serialize, Deserialize, Clone, PartialEq)]

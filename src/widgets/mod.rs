@@ -1,3 +1,4 @@
+pub mod audio_input_list;
 pub mod color_palette_group_list;
 pub mod color_palette_list;
 pub mod dmx_monitor;

@@ -2634,5 +2634,25 @@
         }
       ]
     }
+  ],
+  "audio_inputs": [
+    {
+      "id": 1,
+      "name": "Audio Input",
+      "device_name": "pipewire",
+      "sample_rate": 48000,
+      "buffer_size_frames": 1024,
+      "analyzers": [
+        {
+          "kind": "Beat"
+        },
+        {
+          "kind": "PeakLevel"
+        },
+        {
+          "kind": "Envelope"
+        }
+      ]
+    }
   ]
 }

@@ -2,7 +2,7 @@ use std::any::Any;
 
 use egui::{self, Color32, Rect, Sense, StrokeKind, Ui, Vec2};
 
-use crate::engine::nodes::transport::step_sequencer::StepSequencerDisplay;
+use crate::engine::nodes::transport::step_sequencer::{StepMode, StepSequencerDisplay};
 use crate::engine::types::*;
 use crate::widgets::fader::{self, FaderStyle, Orientation};
 use crate::widgets::nodes::node::NodeWidget;
@@ -17,7 +17,8 @@ pub struct StepValueEdits {
 pub struct StepSequencerWidget {
     id: NodeId,
     shared: SharedState,
-    inputs: Vec<PortDef>,
+    /// Mirror of engine mode — drives `ui_inputs` so the input port matches.
+    mode: StepMode,
     outputs: Vec<PortDef>,
 }
 
@@ -26,7 +27,7 @@ impl StepSequencerWidget {
         Self {
             id,
             shared,
-            inputs: vec![PortDef::new("phase", PortType::Phase)],
+            mode: StepMode::Phase,
             outputs: vec![
                 PortDef::new("trigger", PortType::Logic),
                 PortDef::new("value", PortType::Untyped),
@@ -43,7 +44,11 @@ impl NodeWidget for StepSequencerWidget {
     fn description(&self) -> &'static str { "N-step pattern advanced by phase; outputs current step value, index, and per-step trigger." }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> {
-        self.inputs.iter().map(UiPortDef::from_def).collect()
+        let port = match self.mode {
+            StepMode::Phase => PortDef::new("phase", PortType::Phase),
+            StepMode::Trigger => PortDef::new("trigger", PortType::Logic),
+        };
+        vec![UiPortDef::from_def(&port)]
     }
     fn ui_outputs(&self) -> Vec<UiPortDef> {
         self.outputs.iter().map(UiPortDef::from_def).collect()
@@ -60,12 +65,13 @@ impl NodeWidget for StepSequencerWidget {
         let display = shared.display.as_ref()
             .and_then(|d| d.downcast_ref::<StepSequencerDisplay>());
 
-        let (values, current_step, active) = if let Some(d) = display {
-            (d.values.clone(), d.current_step, d.active)
+        let (values, current_step, active, mode) = if let Some(d) = display {
+            (d.values.clone(), d.current_step, d.active, d.mode)
         } else {
-            (vec![0.0; 8], 0, false)
+            (vec![0.0; 8], 0, false, StepMode::Phase)
         };
         drop(shared);
+        self.mode = mode;
 
         let num_steps = values.len();
         let available_width = ui.available_width();
@@ -82,35 +88,47 @@ impl NodeWidget for StepSequencerWidget {
             ..FaderStyle::default()
         };
         let active_fill = style.fill_active;
-        let line_color = Color32::from_gray(60);
+        let line_color = Color32::from_gray(90);
+
+        // Use rounded pixel-aligned x boundaries so separator lines render
+        // crisply for any step count (sub-pixel `line_segment` lines were
+        // disappearing for some columns at large step counts).
+        let x_at = |i: usize| -> f32 {
+            (rect.min.x + i as f32 * step_width).round()
+        };
 
         for i in 0..num_steps {
-            let x_min = rect.min.x + i as f32 * step_width;
-            let x_max = x_min + step_width;
+            let x_min = x_at(i);
+            let x_max = x_at(i + 1);
             let cell = Rect::from_min_max(
                 egui::pos2(x_min, rect.min.y),
                 egui::pos2(x_max, rect.max.y),
             );
             let is_active = i == current_step && active;
             fader::draw_fader(&painter, cell, values[i], Orientation::Vertical, &style, is_active);
-
-            if i < num_steps - 1 {
-                painter.line_segment(
-                    [egui::pos2(x_max, rect.min.y), egui::pos2(x_max, rect.max.y)],
-                    egui::Stroke::new(1.0, line_color),
-                );
-            }
+        }
+        // Draw separator lines as 1px-wide filled rects at integer x —
+        // independent of cell drawing so no separator can be hidden by a
+        // bar fill, and they're guaranteed pixel-aligned.
+        for i in 1..num_steps {
+            let x = x_at(i);
+            painter.rect_filled(
+                Rect::from_min_max(
+                    egui::pos2(x, rect.min.y),
+                    egui::pos2(x + 1.0, rect.max.y),
+                ),
+                0.0,
+                line_color,
+            );
         }
 
         painter.rect_stroke(rect, 2.0, egui::Stroke::new(1.0, line_color), StrokeKind::Inside);
 
         if active {
             let i = current_step;
-            let x_min = rect.min.x + i as f32 * step_width;
-            let x_max = x_min + step_width;
             let step_rect = Rect::from_min_max(
-                egui::pos2(x_min, rect.min.y),
-                egui::pos2(x_max, rect.max.y),
+                egui::pos2(x_at(i), rect.min.y),
+                egui::pos2(x_at(i + 1), rect.max.y),
             );
             painter.rect_stroke(step_rect, 0.0, egui::Stroke::new(2.0, active_fill), StrokeKind::Inside);
         }

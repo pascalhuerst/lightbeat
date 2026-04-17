@@ -7,6 +7,8 @@ use crate::engine::nodes::meta::subgraph::{BRIDGE_IN_NODE_ID, BRIDGE_OUT_NODE_ID
 use crate::engine::types::{NodeId, ParamDef, ParamValue, PortDir, PortId};
 use crate::widgets::nodes::{GraphLevel, NodeGraph};
 use crate::widgets::nodes::meta::subgraph::SubgraphWidget;
+use crate::widgets::nodes::io::audio_input::AudioInputWidget;
+use crate::widgets::nodes::io::input_controller::InputControllerWidget;
 use crate::widgets::nodes::output::effect_stack::EffectStackWidget;
 use crate::widgets::nodes::output::group::GroupWidget;
 use crate::widgets::nodes::ui::fader::FaderWidget;
@@ -262,6 +264,26 @@ pub fn load_graph(graph: &mut NodeGraph, project: &ProjectFile) -> Vec<usize> {
                     let n = graph.node_mut(idx);
                     if let Some(fg) = n.as_any_mut().downcast_mut::<FaderGroupWidget>() {
                         fg.restore_from_save_data(data);
+                    }
+                }
+            }
+
+            // Input Controller / Audio Input nodes have dynamic outputs
+            // sourced from the live setup; pre-populate them so wires aren't
+            // dropped on the first frame's stale-connection sweep.
+            if saved.type_name == "Input Controller" {
+                if let Some(data) = &saved.data {
+                    let n = graph.node_mut(idx);
+                    if let Some(w) = n.as_any_mut().downcast_mut::<InputControllerWidget>() {
+                        w.restore_from_save_data(data);
+                    }
+                }
+            }
+            if saved.type_name == "Audio Input" {
+                if let Some(data) = &saved.data {
+                    let n = graph.node_mut(idx);
+                    if let Some(w) = n.as_any_mut().downcast_mut::<AudioInputWidget>() {
+                        w.restore_from_save_data(data);
                     }
                 }
             }
