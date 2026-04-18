@@ -109,6 +109,11 @@ pub struct LearnedInput {
     pub source: InputSource,
     #[serde(default = "default_binding_mode")]
     pub mode: InputBindingMode,
+    /// When true, this mapping does not receive feedback from the graph:
+    /// no MIDI is sent back to the device for it, and the input controller
+    /// node does not expose a feedback input port for it.
+    #[serde(default)]
+    pub disable_feedback: bool,
 }
 
 fn default_binding_mode() -> InputBindingMode { InputBindingMode::Value }
@@ -297,6 +302,7 @@ pub fn bcf2000_preset1_inputs() -> Vec<LearnedInput> {
             name: name.to_string(),
             source: InputSource::Midi(MidiSource::Cc { channel: ch, controller: cc }),
             mode: if binary { InputBindingMode::Value } else { InputBindingMode::Value },
+            disable_feedback: false,
         });
         *id += 1;
         let _ = binary;
@@ -342,6 +348,7 @@ pub fn push1_preset_inputs() -> Vec<LearnedInput> {
             name,
             source: InputSource::Midi(source),
             mode: InputBindingMode::Value,
+            disable_feedback: false,
         });
         *id += 1;
     };
@@ -706,7 +713,7 @@ impl InputControllerManager {
         } else {
             InputBindingMode::Value
         };
-        let input = LearnedInput { id: new_id, name, source, mode };
+        let input = LearnedInput { id: new_id, name, source, mode, disable_feedback: false };
 
         let mut state = self.shared.lock().unwrap();
         if let Some(c) = state.iter_mut().find(|c| c.id == id) {
@@ -771,6 +778,15 @@ impl InputControllerManager {
         if let Some(c) = state.iter_mut().find(|c| c.id == controller_id) {
             if let Some(i) = c.inputs.iter_mut().find(|i| i.id == input_id) {
                 i.mode = mode;
+            }
+        }
+    }
+
+    pub fn set_input_feedback_disabled(&mut self, controller_id: u32, input_id: u32, disabled: bool) {
+        let mut state = self.shared.lock().unwrap();
+        if let Some(c) = state.iter_mut().find(|c| c.id == controller_id) {
+            if let Some(i) = c.inputs.iter_mut().find(|i| i.id == input_id) {
+                i.disable_feedback = disabled;
             }
         }
     }

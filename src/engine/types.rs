@@ -42,7 +42,16 @@ pub enum PortType {
     Position,
     /// A palette: a set of 4 colors (12 floats: 4 × RGB). Warm white.
     Palette,
+    /// An 8-stop gradient (40 floats: 8 × (r, g, b, a, position)). Stops
+    /// with alpha < 0 are treated as unused. Turquoise.
+    Gradient,
 }
+
+/// Number of stops carried by `PortType::Gradient`. Each stop is 5 floats
+/// (r, g, b, a, position), giving `GRADIENT_STOP_COUNT * 5` channels.
+pub const GRADIENT_STOP_COUNT: usize = 8;
+/// Floats per gradient stop (r, g, b, a, position).
+pub const GRADIENT_STOP_FLOATS: usize = 5;
 
 impl PortType {
     pub fn default_range(&self) -> (f32, f32) {
@@ -54,6 +63,7 @@ impl PortType {
             PortType::Color => (0.0, 1.0),
             PortType::Position => (0.0, 1.0),
             PortType::Palette => (0.0, 1.0),
+            PortType::Gradient => (0.0, 1.0),
         }
     }
 
@@ -63,6 +73,7 @@ impl PortType {
             PortType::Color => 3,      // R, G, B
             PortType::Position => 2,   // Pan, Tilt
             PortType::Palette => 12,   // 4 × RGB
+            PortType::Gradient => GRADIENT_STOP_COUNT * GRADIENT_STOP_FLOATS, // 8 × (r,g,b,a,pos)
             _ => 1,
         }
     }

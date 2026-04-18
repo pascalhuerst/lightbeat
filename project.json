@@ -1,237 +1,123 @@
 {
   "nodes": [
     {
-      "type_name": "Input Controller",
-      "id": 1,
+      "type_name": "Group Output",
+      "id": 21,
       "pos": [
-        649.3151,
-        14.61841
-      ],
-      "params": [],
-      "data": {
-        "controller_id": 1
-      }
-    },
-    {
-      "type_name": "Internal Clock",
-      "id": 3,
-      "pos": [
-        10.803793,
-        546.2203
+        1478.3566,
+        1890.5344
       ],
       "params": [
         {
           "index": 0,
-          "value": 120.0
+          "value": 1
         }
-      ]
-    },
-    {
-      "type_name": "Counter",
-      "id": 6,
-      "pos": [
-        282.78995,
-        273.16562
       ],
-      "params": [
-        {
-          "index": 0,
-          "value": 8
-        },
-        {
-          "index": 1,
-          "value": 0
-        }
-      ]
-    },
-    {
-      "type_name": "Fader Group",
-      "id": 8,
-      "pos": [
-        1024.7511,
-        -129.59583
-      ],
-      "params": [],
       "data": {
-        "bipolar": [
-          false,
-          false,
-          false,
-          false,
-          false,
-          false,
-          false,
-          false
+        "group_ids": [
+          2
         ],
-        "cols": 8,
-        "inputs_enabled": [
-          true,
-          true,
-          true,
-          true,
-          true,
-          true,
-          true,
-          true
+        "group_names": [
+          "TestStrips"
         ],
-        "mouse_override": [
-          "no",
-          "no",
-          "no",
-          "no",
-          "no",
-          "no",
-          "no",
-          "no"
-        ],
-        "mouse_values": [
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0
-        ],
-        "name": "Main Faders",
-        "outputs_enabled": [
-          true,
-          true,
-          true,
-          true,
-          true,
-          true,
-          true,
-          true
-        ],
-        "override_values": [
-          null,
-          null,
-          null,
-          null,
-          null,
-          null,
-          null,
-          null
-        ],
-        "rows": 1
+        "object_ids": [
+          11,
+          12
+        ]
       }
     },
     {
-      "type_name": "Portal In",
-      "id": 9,
+      "type_name": "Gradient Source",
+      "id": 22,
       "pos": [
-        1314.5286,
-        -129.13383
+        566.7941,
+        2032.3984
+      ],
+      "size": [
+        180.71057,
+        95.07324
       ],
       "params": [],
       "data": {
-        "name": "Main Faders",
-        "ports": [
+        "stops": [
           {
-            "name": "Fader 1",
-            "port_type_idx": 2
+            "used": false
           },
           {
-            "name": "Fader 2",
-            "port_type_idx": 2
+            "used": false
           },
           {
-            "name": "Fader 3",
-            "port_type_idx": 2
+            "alpha": 0.0,
+            "b": 0.0,
+            "g": 0.0,
+            "position": 0.0,
+            "r": 0.0,
+            "used": true
           },
           {
-            "name": "Fader 4",
-            "port_type_idx": 2
+            "alpha": 1.0,
+            "b": 0.7223010063171387,
+            "g": 0.0,
+            "position": 0.47999998927116394,
+            "r": 1.0,
+            "used": true
           },
           {
-            "name": "Fader 5",
-            "port_type_idx": 2
+            "alpha": 0.44999998807907104,
+            "b": 0.0,
+            "g": 0.0,
+            "position": 1.0,
+            "r": 0.0,
+            "used": true
           },
           {
-            "name": "Fader 6",
-            "port_type_idx": 2
+            "used": false
           },
           {
-            "name": "Fader 7",
-            "port_type_idx": 2
+            "used": false
           },
           {
-            "name": "Fader 8",
-            "port_type_idx": 2
+            "used": false
           }
         ]
       }
     },
     {
       "type_name": "Fader Group",
-      "id": 11,
+      "id": 32,
       "pos": [
-        1010.7311,
-        118.668846
+        283.24222,
+        1926.4696
+      ],
+      "size": [
+        169.61508,
+        480.7778
       ],
       "params": [],
       "data": {
         "bipolar": [
           false,
-          false,
-          false,
-          false,
-          false,
-          false,
-          false,
           false
         ],
-        "cols": 8,
+        "cols": 2,
         "inputs_enabled": [
-          true,
-          true,
-          true,
-          true,
-          true,
-          true,
           true,
           true
         ],
         "mouse_override": [
-          "no",
-          "no",
-          "no",
-          "no",
-          "no",
-          "no",
-          "no",
-          "no"
+          "clear_on_reset",
+          "clear_on_reset"
         ],
         "mouse_values": [
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0
+          0.12966567277908325,
+          0.049921274185180664
         ],
-        "name": "Main Encoders",
+        "name": "Select/Width",
         "outputs_enabled": [
-          true,
-          true,
-          true,
-          true,
-          true,
-          true,
           true,
           true
         ],
         "override_values": [
-          null,
-          null,
-          null,
-          null,
-          null,
-          null,
           null,
           null
         ],
@@ -240,56 +126,948 @@
     },
     {
       "type_name": "Portal In",
-      "id": 12,
+      "id": 34,
       "pos": [
-        1309.0995,
-        117.27744
+        978.6536,
+        1896.7346
       ],
       "params": [],
       "data": {
-        "name": "Main Encoders",
+        "name": "Group Out",
         "ports": [
           {
-            "name": "Encoder 1",
+            "name": "Trigger",
+            "port_type_idx": 0
+          },
+          {
+            "name": "Select",
             "port_type_idx": 2
           },
           {
-            "name": "Encoder 2",
+            "name": "Width",
             "port_type_idx": 2
           },
           {
-            "name": "Encoder 3",
-            "port_type_idx": 2
-          },
-          {
-            "name": "Encoder 4",
-            "port_type_idx": 2
-          },
-          {
-            "name": "Encoder 5",
-            "port_type_idx": 2
-          },
-          {
-            "name": "Encoder 6",
-            "port_type_idx": 2
-          },
-          {
-            "name": "Encoder 7",
-            "port_type_idx": 2
-          },
-          {
-            "name": "Encoder 8",
-            "port_type_idx": 2
+            "name": "Gradient",
+            "port_type_idx": 6
           }
         ]
       }
     },
     {
       "type_name": "Portal Out",
-      "id": 13,
+      "id": 35,
       "pos": [
-        1953.7657,
-        -1.984978
+        1188.6509,
+        1893.6022
+      ],
+      "params": [],
+      "data": {
+        "bound_name": "Group Out",
+        "ports": [
+          {
+            "name": "Trigger",
+            "port_type_idx": 0
+          },
+          {
+            "name": "Select",
+            "port_type_idx": 2
+          },
+          {
+            "name": "Width",
+            "port_type_idx": 2
+          },
+          {
+            "name": "Gradient",
+            "port_type_idx": 6
+          }
+        ]
+      }
+    },
+    {
+      "type_name": "Subgraph",
+      "id": 47,
+      "pos": [
+        502.96298,
+        1221.5674
+      ],
+      "size": [
+        389.70276,
+        263.04697
+      ],
+      "params": [],
+      "data": {
+        "inputs": [],
+        "locked": false,
+        "macro_description": "",
+        "macro_path": "",
+        "name": "Main Faders",
+        "outputs": []
+      },
+      "inner_graph": {
+        "nodes": [
+          {
+            "type_name": "Input Controller",
+            "id": 1,
+            "pos": [
+              -358.659,
+              57.873146
+            ],
+            "params": [],
+            "data": {
+              "controller_id": 1
+            }
+          },
+          {
+            "type_name": "Fader Group",
+            "id": 8,
+            "pos": [
+              103.71326,
+              92.44401
+            ],
+            "params": [],
+            "data": {
+              "bipolar": [
+                false,
+                false,
+                false,
+                false,
+                false,
+                false,
+                false,
+                false
+              ],
+              "cols": 8,
+              "inputs_enabled": [
+                true,
+                true,
+                true,
+                true,
+                true,
+                true,
+                true,
+                true
+              ],
+              "mouse_override": [
+                "no",
+                "no",
+                "no",
+                "no",
+                "no",
+                "no",
+                "no",
+                "no"
+              ],
+              "mouse_values": [
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0
+              ],
+              "name": "Main Faders",
+              "outputs_enabled": [
+                true,
+                true,
+                true,
+                true,
+                true,
+                true,
+                true,
+                true
+              ],
+              "override_values": [
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null
+              ],
+              "rows": 1
+            }
+          },
+          {
+            "type_name": "Portal In",
+            "id": 9,
+            "pos": [
+              393.49072,
+              92.906
+            ],
+            "params": [],
+            "data": {
+              "name": "Main Faders",
+              "ports": [
+                {
+                  "name": "Fader 1",
+                  "port_type_idx": 2
+                },
+                {
+                  "name": "Fader 2",
+                  "port_type_idx": 2
+                },
+                {
+                  "name": "Fader 3",
+                  "port_type_idx": 2
+                },
+                {
+                  "name": "Fader 4",
+                  "port_type_idx": 2
+                },
+                {
+                  "name": "Fader 5",
+                  "port_type_idx": 2
+                },
+                {
+                  "name": "Fader 6",
+                  "port_type_idx": 2
+                },
+                {
+                  "name": "Fader 7",
+                  "port_type_idx": 2
+                },
+                {
+                  "name": "Fader 8",
+                  "port_type_idx": 2
+                }
+              ]
+            }
+          },
+          {
+            "type_name": "Fader Group",
+            "id": 11,
+            "pos": [
+              89.69324,
+              340.70868
+            ],
+            "params": [],
+            "data": {
+              "bipolar": [
+                false,
+                false,
+                false,
+                false,
+                false,
+                false,
+                false,
+                false
+              ],
+              "cols": 8,
+              "inputs_enabled": [
+                true,
+                true,
+                true,
+                true,
+                true,
+                true,
+                true,
+                true
+              ],
+              "mouse_override": [
+                "no",
+                "no",
+                "no",
+                "no",
+                "no",
+                "no",
+                "no",
+                "no"
+              ],
+              "mouse_values": [
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0
+              ],
+              "name": "Main Encoders",
+              "outputs_enabled": [
+                true,
+                true,
+                true,
+                true,
+                true,
+                true,
+                true,
+                true
+              ],
+              "override_values": [
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null
+              ],
+              "rows": 1
+            }
+          },
+          {
+            "type_name": "Portal In",
+            "id": 12,
+            "pos": [
+              388.06165,
+              339.31726
+            ],
+            "params": [],
+            "data": {
+              "name": "Main Encoders",
+              "ports": [
+                {
+                  "name": "Encoder 1",
+                  "port_type_idx": 2
+                },
+                {
+                  "name": "Encoder 2",
+                  "port_type_idx": 2
+                },
+                {
+                  "name": "Encoder 3",
+                  "port_type_idx": 2
+                },
+                {
+                  "name": "Encoder 4",
+                  "port_type_idx": 2
+                },
+                {
+                  "name": "Encoder 5",
+                  "port_type_idx": 2
+                },
+                {
+                  "name": "Encoder 6",
+                  "port_type_idx": 2
+                },
+                {
+                  "name": "Encoder 7",
+                  "port_type_idx": 2
+                },
+                {
+                  "name": "Encoder 8",
+                  "port_type_idx": 2
+                }
+              ]
+            }
+          },
+          {
+            "type_name": "Portal Out",
+            "id": 13,
+            "pos": [
+              665.9868,
+              93.95385
+            ],
+            "params": [],
+            "data": {
+              "bound_name": "Main Faders",
+              "ports": [
+                {
+                  "name": "Fader 1",
+                  "port_type_idx": 2
+                },
+                {
+                  "name": "Fader 2",
+                  "port_type_idx": 2
+                },
+                {
+                  "name": "Fader 3",
+                  "port_type_idx": 2
+                },
+                {
+                  "name": "Fader 4",
+                  "port_type_idx": 2
+                },
+                {
+                  "name": "Fader 5",
+                  "port_type_idx": 2
+                },
+                {
+                  "name": "Fader 6",
+                  "port_type_idx": 2
+                },
+                {
+                  "name": "Fader 7",
+                  "port_type_idx": 2
+                },
+                {
+                  "name": "Fader 8",
+                  "port_type_idx": 2
+                }
+              ]
+            }
+          },
+          {
+            "type_name": "Fader Group",
+            "id": 14,
+            "pos": [
+              900.43884,
+              108.53615
+            ],
+            "size": [
+              620.8073,
+              222.0
+            ],
+            "params": [],
+            "data": {
+              "bipolar": [
+                false,
+                false,
+                false,
+                false,
+                false,
+                false,
+                false,
+                false
+              ],
+              "cols": 8,
+              "inputs_enabled": [
+                true,
+                true,
+                true,
+                true,
+                true,
+                true,
+                true,
+                true
+              ],
+              "mouse_override": [
+                "no",
+                "no",
+                "no",
+                "no",
+                "no",
+                "no",
+                "no",
+                "no"
+              ],
+              "mouse_values": [
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0
+              ],
+              "name": "Main Faders",
+              "outputs_enabled": [
+                true,
+                true,
+                true,
+                true,
+                true,
+                true,
+                true,
+                true
+              ],
+              "override_values": [
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null
+              ],
+              "rows": 1
+            }
+          },
+          {
+            "type_name": "Portal Out",
+            "id": 15,
+            "pos": [
+              672.7284,
+              376.94333
+            ],
+            "params": [],
+            "data": {
+              "bound_name": "Main Encoders",
+              "ports": [
+                {
+                  "name": "Encoder 1",
+                  "port_type_idx": 2
+                },
+                {
+                  "name": "Encoder 2",
+                  "port_type_idx": 2
+                },
+                {
+                  "name": "Encoder 3",
+                  "port_type_idx": 2
+                },
+                {
+                  "name": "Encoder 4",
+                  "port_type_idx": 2
+                },
+                {
+                  "name": "Encoder 5",
+                  "port_type_idx": 2
+                },
+                {
+                  "name": "Encoder 6",
+                  "port_type_idx": 2
+                },
+                {
+                  "name": "Encoder 7",
+                  "port_type_idx": 2
+                },
+                {
+                  "name": "Encoder 8",
+                  "port_type_idx": 2
+                }
+              ]
+            }
+          },
+          {
+            "type_name": "Fader Group",
+            "id": 16,
+            "pos": [
+              907.83435,
+              384.8827
+            ],
+            "size": [
+              621.62244,
+              222.0
+            ],
+            "params": [],
+            "data": {
+              "bipolar": [
+                false,
+                false,
+                false,
+                false,
+                false,
+                false,
+                false,
+                false
+              ],
+              "cols": 8,
+              "inputs_enabled": [
+                true,
+                true,
+                true,
+                true,
+                true,
+                true,
+                true,
+                true
+              ],
+              "mouse_override": [
+                "clear_on_reset",
+                "clear_on_reset",
+                "clear_on_reset",
+                "clear_on_reset",
+                "clear_on_reset",
+                "clear_on_reset",
+                "clear_on_reset",
+                "clear_on_reset"
+              ],
+              "mouse_values": [
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0
+              ],
+              "name": "",
+              "outputs_enabled": [
+                true,
+                true,
+                true,
+                true,
+                true,
+                true,
+                true,
+                true
+              ],
+              "override_values": [
+                null,
+                0.8241145014762878,
+                null,
+                0.6436316967010498,
+                null,
+                0.38425248861312866,
+                null,
+                null
+              ],
+              "rows": 1
+            }
+          },
+          {
+            "type_name": "Scope",
+            "id": 17,
+            "pos": [
+              169.44739,
+              -388.8673
+            ],
+            "size": [
+              395.5974,
+              268.56268
+            ],
+            "params": [
+              {
+                "index": 0,
+                "value": 1.0
+              },
+              {
+                "index": 1,
+                "value": 200
+              },
+              {
+                "index": 2,
+                "value": 2.9802322387695312e-8
+              },
+              {
+                "index": 3,
+                "value": 1.0
+              }
+            ]
+          },
+          {
+            "type_name": "Fader",
+            "id": 18,
+            "pos": [
+              -1182.7358,
+              151.30226
+            ],
+            "size": [
+              157.58963,
+              384.7164
+            ],
+            "params": [],
+            "data": {
+              "bipolar": true,
+              "inputs_enabled": false,
+              "mouse_override": "no",
+              "mouse_value": 0.5142212510108948,
+              "orientation": "vertical",
+              "override_value": null
+            }
+          }
+        ],
+        "connections": [
+          {
+            "from_node": 1,
+            "from_port": 1,
+            "to_node": 8,
+            "to_port": 0
+          },
+          {
+            "from_node": 1,
+            "from_port": 2,
+            "to_node": 8,
+            "to_port": 1
+          },
+          {
+            "from_node": 1,
+            "from_port": 3,
+            "to_node": 8,
+            "to_port": 2
+          },
+          {
+            "from_node": 1,
+            "from_port": 4,
+            "to_node": 8,
+            "to_port": 3
+          },
+          {
+            "from_node": 1,
+            "from_port": 5,
+            "to_node": 8,
+            "to_port": 4
+          },
+          {
+            "from_node": 1,
+            "from_port": 6,
+            "to_node": 8,
+            "to_port": 5
+          },
+          {
+            "from_node": 1,
+            "from_port": 7,
+            "to_node": 8,
+            "to_port": 6
+          },
+          {
+            "from_node": 1,
+            "from_port": 8,
+            "to_node": 8,
+            "to_port": 7
+          },
+          {
+            "from_node": 8,
+            "from_port": 0,
+            "to_node": 9,
+            "to_port": 0
+          },
+          {
+            "from_node": 8,
+            "from_port": 1,
+            "to_node": 9,
+            "to_port": 1
+          },
+          {
+            "from_node": 8,
+            "from_port": 2,
+            "to_node": 9,
+            "to_port": 2
+          },
+          {
+            "from_node": 8,
+            "from_port": 3,
+            "to_node": 9,
+            "to_port": 3
+          },
+          {
+            "from_node": 8,
+            "from_port": 4,
+            "to_node": 9,
+            "to_port": 4
+          },
+          {
+            "from_node": 8,
+            "from_port": 5,
+            "to_node": 9,
+            "to_port": 5
+          },
+          {
+            "from_node": 8,
+            "from_port": 6,
+            "to_node": 9,
+            "to_port": 6
+          },
+          {
+            "from_node": 8,
+            "from_port": 7,
+            "to_node": 9,
+            "to_port": 7
+          },
+          {
+            "from_node": 11,
+            "from_port": 0,
+            "to_node": 12,
+            "to_port": 0
+          },
+          {
+            "from_node": 11,
+            "from_port": 1,
+            "to_node": 12,
+            "to_port": 1
+          },
+          {
+            "from_node": 11,
+            "from_port": 2,
+            "to_node": 12,
+            "to_port": 2
+          },
+          {
+            "from_node": 11,
+            "from_port": 3,
+            "to_node": 12,
+            "to_port": 3
+          },
+          {
+            "from_node": 11,
+            "from_port": 4,
+            "to_node": 12,
+            "to_port": 4
+          },
+          {
+            "from_node": 11,
+            "from_port": 5,
+            "to_node": 12,
+            "to_port": 5
+          },
+          {
+            "from_node": 11,
+            "from_port": 6,
+            "to_node": 12,
+            "to_port": 6
+          },
+          {
+            "from_node": 11,
+            "from_port": 7,
+            "to_node": 12,
+            "to_port": 7
+          },
+          {
+            "from_node": 1,
+            "from_port": 9,
+            "to_node": 11,
+            "to_port": 0
+          },
+          {
+            "from_node": 1,
+            "from_port": 10,
+            "to_node": 11,
+            "to_port": 1
+          },
+          {
+            "from_node": 1,
+            "from_port": 11,
+            "to_node": 11,
+            "to_port": 2
+          },
+          {
+            "from_node": 1,
+            "from_port": 12,
+            "to_node": 11,
+            "to_port": 3
+          },
+          {
+            "from_node": 1,
+            "from_port": 13,
+            "to_node": 11,
+            "to_port": 4
+          },
+          {
+            "from_node": 1,
+            "from_port": 14,
+            "to_node": 11,
+            "to_port": 5
+          },
+          {
+            "from_node": 1,
+            "from_port": 15,
+            "to_node": 11,
+            "to_port": 6
+          },
+          {
+            "from_node": 1,
+            "from_port": 16,
+            "to_node": 11,
+            "to_port": 7
+          },
+          {
+            "from_node": 13,
+            "from_port": 0,
+            "to_node": 14,
+            "to_port": 0
+          },
+          {
+            "from_node": 13,
+            "from_port": 1,
+            "to_node": 14,
+            "to_port": 1
+          },
+          {
+            "from_node": 13,
+            "from_port": 2,
+            "to_node": 14,
+            "to_port": 2
+          },
+          {
+            "from_node": 13,
+            "from_port": 3,
+            "to_node": 14,
+            "to_port": 3
+          },
+          {
+            "from_node": 13,
+            "from_port": 4,
+            "to_node": 14,
+            "to_port": 4
+          },
+          {
+            "from_node": 13,
+            "from_port": 5,
+            "to_node": 14,
+            "to_port": 5
+          },
+          {
+            "from_node": 13,
+            "from_port": 6,
+            "to_node": 14,
+            "to_port": 6
+          },
+          {
+            "from_node": 13,
+            "from_port": 7,
+            "to_node": 14,
+            "to_port": 7
+          },
+          {
+            "from_node": 15,
+            "from_port": 0,
+            "to_node": 16,
+            "to_port": 0
+          },
+          {
+            "from_node": 15,
+            "from_port": 1,
+            "to_node": 16,
+            "to_port": 1
+          },
+          {
+            "from_node": 15,
+            "from_port": 2,
+            "to_node": 16,
+            "to_port": 2
+          },
+          {
+            "from_node": 15,
+            "from_port": 3,
+            "to_node": 16,
+            "to_port": 3
+          },
+          {
+            "from_node": 15,
+            "from_port": 4,
+            "to_node": 16,
+            "to_port": 4
+          },
+          {
+            "from_node": 15,
+            "from_port": 5,
+            "to_node": 16,
+            "to_port": 5
+          },
+          {
+            "from_node": 15,
+            "from_port": 6,
+            "to_node": 16,
+            "to_port": 6
+          },
+          {
+            "from_node": 15,
+            "from_port": 7,
+            "to_node": 16,
+            "to_port": 7
+          },
+          {
+            "from_node": 1,
+            "from_port": 0,
+            "to_node": 17,
+            "to_port": 0
+          },
+          {
+            "from_node": 18,
+            "from_port": 0,
+            "to_node": 1,
+            "to_port": 8
+          }
+        ]
+      }
+    },
+    {
+      "type_name": "Portal Out",
+      "id": 48,
+      "pos": [
+        89.01903,
+        1944.8059
       ],
       "params": [],
       "data": {
@@ -331,565 +1109,243 @@
       }
     },
     {
-      "type_name": "Fader Group",
-      "id": 14,
+      "type_name": "Internal Clock",
+      "id": 55,
       "pos": [
-        2188.218,
-        12.597303
-      ],
-      "size": [
-        620.8073,
-        222.0
-      ],
-      "params": [],
-      "data": {
-        "bipolar": [
-          false,
-          false,
-          false,
-          false,
-          false,
-          false,
-          false,
-          false
-        ],
-        "cols": 8,
-        "inputs_enabled": [
-          true,
-          true,
-          true,
-          true,
-          true,
-          true,
-          true,
-          true
-        ],
-        "mouse_override": [
-          "no",
-          "no",
-          "no",
-          "no",
-          "no",
-          "no",
-          "no",
-          "no"
-        ],
-        "mouse_values": [
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0
-        ],
-        "name": "Main Faders",
-        "outputs_enabled": [
-          true,
-          true,
-          true,
-          true,
-          true,
-          true,
-          true,
-          true
-        ],
-        "override_values": [
-          null,
-          null,
-          null,
-          null,
-          null,
-          null,
-          null,
-          null
-        ],
-        "rows": 1
-      }
-    },
-    {
-      "type_name": "Portal Out",
-      "id": 15,
-      "pos": [
-        1960.5073,
-        281.0044
-      ],
-      "params": [],
-      "data": {
-        "bound_name": "Main Encoders",
-        "ports": [
-          {
-            "name": "Encoder 1",
-            "port_type_idx": 2
-          },
-          {
-            "name": "Encoder 2",
-            "port_type_idx": 2
-          },
-          {
-            "name": "Encoder 3",
-            "port_type_idx": 2
-          },
-          {
-            "name": "Encoder 4",
-            "port_type_idx": 2
-          },
-          {
-            "name": "Encoder 5",
-            "port_type_idx": 2
-          },
-          {
-            "name": "Encoder 6",
-            "port_type_idx": 2
-          },
-          {
-            "name": "Encoder 7",
-            "port_type_idx": 2
-          },
-          {
-            "name": "Encoder 8",
-            "port_type_idx": 2
-          }
-        ]
-      }
-    },
-    {
-      "type_name": "Fader Group",
-      "id": 16,
-      "pos": [
-        2195.6135,
-        288.94376
-      ],
-      "size": [
-        621.62244,
-        222.0
-      ],
-      "params": [],
-      "data": {
-        "bipolar": [
-          false,
-          false,
-          false,
-          false,
-          false,
-          false,
-          false,
-          false
-        ],
-        "cols": 8,
-        "inputs_enabled": [
-          true,
-          true,
-          true,
-          true,
-          true,
-          true,
-          true,
-          true
-        ],
-        "mouse_override": [
-          "clear_on_reset",
-          "clear_on_reset",
-          "clear_on_reset",
-          "clear_on_reset",
-          "clear_on_reset",
-          "clear_on_reset",
-          "clear_on_reset",
-          "clear_on_reset"
-        ],
-        "mouse_values": [
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0
-        ],
-        "name": "",
-        "outputs_enabled": [
-          true,
-          true,
-          true,
-          true,
-          true,
-          true,
-          true,
-          true
-        ],
-        "override_values": [
-          null,
-          0.8241145014762878,
-          null,
-          0.6436316967010498,
-          null,
-          0.38425248861312866,
-          null,
-          null
-        ],
-        "rows": 1
-      }
-    },
-    {
-      "type_name": "Scope",
-      "id": 17,
-      "pos": [
-        1413.0675,
-        -485.41528
-      ],
-      "size": [
-        395.5974,
-        268.56268
+        94.298065,
+        1529.398
       ],
       "params": [
         {
           "index": 0,
-          "value": 1.0
-        },
-        {
-          "index": 1,
-          "value": 200
-        },
-        {
-          "index": 2,
-          "value": 2.9802322387695312e-8
-        },
-        {
-          "index": 3,
-          "value": 1.0
+          "value": 120.0
         }
       ]
     },
     {
-      "type_name": "Fader",
-      "id": 18,
+      "type_name": "Phase Scaler",
+      "id": 56,
       "pos": [
-        -261.69797,
-        -70.73757
+        449.89407,
+        1650.9193
       ],
-      "size": [
-        157.58963,
-        384.7164
+      "params": [
+        {
+          "index": 0,
+          "value": 5
+        },
+        {
+          "index": 1,
+          "value": 0.0
+        }
+      ]
+    },
+    {
+      "type_name": "Clock Gen",
+      "id": 57,
+      "pos": [
+        616.3739,
+        1687.3993
+      ],
+      "params": [
+        {
+          "index": 0,
+          "value": 4
+        }
+      ]
+    },
+    {
+      "type_name": "Button",
+      "id": 58,
+      "pos": [
+        -125.76491,
+        1500.4735
       ],
       "params": [],
       "data": {
-        "bipolar": true,
         "inputs_enabled": false,
-        "mouse_override": "no",
-        "mouse_value": 0.9227011203765869,
-        "orientation": "vertical",
-        "override_value": null
+        "label": "Button",
+        "mode": "trigger",
+        "override_enabled": false,
+        "override_state": null,
+        "reset_mode": "clear_on_reset",
+        "state": false
+      }
+    },
+    {
+      "type_name": "Color Display",
+      "id": 59,
+      "pos": [
+        1086.1362,
+        2178.4802
+      ],
+      "params": [
+        {
+          "index": 0,
+          "value": 3
+        }
+      ]
+    },
+    {
+      "type_name": "Multiplexer",
+      "id": 60,
+      "pos": [
+        959.8968,
+        2585.4893
+      ],
+      "params": [
+        {
+          "index": 0,
+          "value": 7
+        },
+        {
+          "index": 1,
+          "value": 8
+        }
+      ]
+    },
+    {
+      "type_name": "Gradient Source",
+      "id": 61,
+      "pos": [
+        462.71973,
+        2625.1343
+      ],
+      "size": [
+        180.71057,
+        95.07324
+      ],
+      "params": [],
+      "data": {
+        "stops": [
+          {
+            "alpha": 1.0,
+            "b": 0.0,
+            "g": 0.0,
+            "position": 0.0,
+            "r": 0.0,
+            "used": true
+          },
+          {
+            "alpha": 1.0,
+            "b": 1.0,
+            "g": 1.0,
+            "position": 1.0,
+            "r": 1.0,
+            "used": true
+          },
+          {
+            "used": false
+          },
+          {
+            "used": false
+          },
+          {
+            "used": false
+          },
+          {
+            "used": false
+          },
+          {
+            "used": false
+          },
+          {
+            "used": false
+          }
+        ]
       }
     }
   ],
   "connections": [
     {
-      "from_node": 3,
+      "from_node": 32,
       "from_port": 0,
-      "to_node": 6,
-      "to_port": 0
+      "to_node": 34,
+      "to_port": 1
     },
     {
-      "from_node": 1,
+      "from_node": 32,
       "from_port": 1,
-      "to_node": 8,
-      "to_port": 0
-    },
-    {
-      "from_node": 1,
-      "from_port": 2,
-      "to_node": 8,
-      "to_port": 1
-    },
-    {
-      "from_node": 1,
-      "from_port": 3,
-      "to_node": 8,
+      "to_node": 34,
       "to_port": 2
     },
     {
-      "from_node": 1,
-      "from_port": 4,
-      "to_node": 8,
+      "from_node": 35,
+      "from_port": 3,
+      "to_node": 21,
       "to_port": 3
     },
     {
-      "from_node": 1,
-      "from_port": 5,
-      "to_node": 8,
-      "to_port": 4
-    },
-    {
-      "from_node": 1,
-      "from_port": 6,
-      "to_node": 8,
-      "to_port": 5
-    },
-    {
-      "from_node": 1,
-      "from_port": 7,
-      "to_node": 8,
-      "to_port": 6
-    },
-    {
-      "from_node": 1,
-      "from_port": 8,
-      "to_node": 8,
-      "to_port": 7
-    },
-    {
-      "from_node": 8,
+      "from_node": 22,
       "from_port": 0,
-      "to_node": 9,
+      "to_node": 34,
+      "to_port": 3
+    },
+    {
+      "from_node": 48,
+      "from_port": 0,
+      "to_node": 32,
       "to_port": 0
     },
     {
-      "from_node": 8,
+      "from_node": 48,
       "from_port": 1,
-      "to_node": 9,
+      "to_node": 32,
       "to_port": 1
     },
     {
-      "from_node": 8,
-      "from_port": 2,
-      "to_node": 9,
-      "to_port": 2
-    },
-    {
-      "from_node": 8,
-      "from_port": 3,
-      "to_node": 9,
-      "to_port": 3
-    },
-    {
-      "from_node": 8,
-      "from_port": 4,
-      "to_node": 9,
-      "to_port": 4
-    },
-    {
-      "from_node": 8,
-      "from_port": 5,
-      "to_node": 9,
-      "to_port": 5
-    },
-    {
-      "from_node": 8,
-      "from_port": 6,
-      "to_node": 9,
-      "to_port": 6
-    },
-    {
-      "from_node": 8,
-      "from_port": 7,
-      "to_node": 9,
-      "to_port": 7
-    },
-    {
-      "from_node": 11,
+      "from_node": 35,
       "from_port": 0,
-      "to_node": 12,
+      "to_node": 21,
       "to_port": 0
     },
     {
-      "from_node": 11,
+      "from_node": 35,
       "from_port": 1,
-      "to_node": 12,
+      "to_node": 21,
       "to_port": 1
     },
     {
-      "from_node": 11,
+      "from_node": 35,
       "from_port": 2,
-      "to_node": 12,
+      "to_node": 21,
       "to_port": 2
     },
     {
-      "from_node": 11,
-      "from_port": 3,
-      "to_node": 12,
-      "to_port": 3
-    },
-    {
-      "from_node": 11,
-      "from_port": 4,
-      "to_node": 12,
-      "to_port": 4
-    },
-    {
-      "from_node": 11,
-      "from_port": 5,
-      "to_node": 12,
-      "to_port": 5
-    },
-    {
-      "from_node": 11,
-      "from_port": 6,
-      "to_node": 12,
-      "to_port": 6
-    },
-    {
-      "from_node": 11,
-      "from_port": 7,
-      "to_node": 12,
-      "to_port": 7
-    },
-    {
-      "from_node": 1,
-      "from_port": 9,
-      "to_node": 11,
-      "to_port": 0
-    },
-    {
-      "from_node": 1,
-      "from_port": 10,
-      "to_node": 11,
-      "to_port": 1
-    },
-    {
-      "from_node": 1,
-      "from_port": 11,
-      "to_node": 11,
-      "to_port": 2
-    },
-    {
-      "from_node": 1,
-      "from_port": 12,
-      "to_node": 11,
-      "to_port": 3
-    },
-    {
-      "from_node": 1,
-      "from_port": 13,
-      "to_node": 11,
-      "to_port": 4
-    },
-    {
-      "from_node": 1,
-      "from_port": 14,
-      "to_node": 11,
-      "to_port": 5
-    },
-    {
-      "from_node": 1,
-      "from_port": 15,
-      "to_node": 11,
-      "to_port": 6
-    },
-    {
-      "from_node": 1,
-      "from_port": 16,
-      "to_node": 11,
-      "to_port": 7
-    },
-    {
-      "from_node": 13,
-      "from_port": 0,
-      "to_node": 14,
-      "to_port": 0
-    },
-    {
-      "from_node": 13,
-      "from_port": 1,
-      "to_node": 14,
-      "to_port": 1
-    },
-    {
-      "from_node": 13,
+      "from_node": 55,
       "from_port": 2,
-      "to_node": 14,
-      "to_port": 2
-    },
-    {
-      "from_node": 13,
-      "from_port": 3,
-      "to_node": 14,
-      "to_port": 3
-    },
-    {
-      "from_node": 13,
-      "from_port": 4,
-      "to_node": 14,
-      "to_port": 4
-    },
-    {
-      "from_node": 13,
-      "from_port": 5,
-      "to_node": 14,
-      "to_port": 5
-    },
-    {
-      "from_node": 13,
-      "from_port": 6,
-      "to_node": 14,
-      "to_port": 6
-    },
-    {
-      "from_node": 13,
-      "from_port": 7,
-      "to_node": 14,
-      "to_port": 7
-    },
-    {
-      "from_node": 15,
-      "from_port": 0,
-      "to_node": 16,
+      "to_node": 56,
       "to_port": 0
     },
     {
-      "from_node": 15,
-      "from_port": 1,
-      "to_node": 16,
+      "from_node": 56,
+      "from_port": 0,
+      "to_node": 57,
+      "to_port": 0
+    },
+    {
+      "from_node": 57,
+      "from_port": 0,
+      "to_node": 34,
+      "to_port": 0
+    },
+    {
+      "from_node": 58,
+      "from_port": 0,
+      "to_node": 55,
+      "to_port": 0
+    },
+    {
+      "from_node": 22,
+      "from_port": 0,
+      "to_node": 59,
+      "to_port": 0
+    },
+    {
+      "from_node": 61,
+      "from_port": 0,
+      "to_node": 60,
       "to_port": 1
-    },
-    {
-      "from_node": 15,
-      "from_port": 2,
-      "to_node": 16,
-      "to_port": 2
-    },
-    {
-      "from_node": 15,
-      "from_port": 3,
-      "to_node": 16,
-      "to_port": 3
-    },
-    {
-      "from_node": 15,
-      "from_port": 4,
-      "to_node": 16,
-      "to_port": 4
-    },
-    {
-      "from_node": 15,
-      "from_port": 5,
-      "to_node": 16,
-      "to_port": 5
-    },
-    {
-      "from_node": 15,
-      "from_port": 6,
-      "to_node": 16,
-      "to_port": 6
-    },
-    {
-      "from_node": 15,
-      "from_port": 7,
-      "to_node": 16,
-      "to_port": 7
-    },
-    {
-      "from_node": 1,
-      "from_port": 0,
-      "to_node": 17,
-      "to_port": 0
-    },
-    {
-      "from_node": 18,
-      "from_port": 0,
-      "to_node": 1,
-      "to_port": 8
     }
   ]
 }

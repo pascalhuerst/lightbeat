@@ -42,13 +42,16 @@ use engine::nodes::ui::fader_group::FaderGroupProcessNode;
 use engine::nodes::ui::peak_meter::PeakMeterProcessNode;
 use engine::nodes::math::change_detect::ChangeDetectProcessNode;
 use engine::nodes::math::flipflop::{FlipFlopProcessNode, JkFlipFlopProcessNode};
+use engine::nodes::math::color_modifier::ColorModifierProcessNode;
 use engine::nodes::math::color_ops::{ColorMergeProcessNode, ColorSplitProcessNode};
 use engine::nodes::math::compare::{CompareOp, CompareProcessNode};
 use engine::nodes::math::constant::ConstantProcessNode;
 use engine::nodes::math::counter::CounterProcessNode;
+use engine::nodes::math::gradient_source::GradientSourceProcessNode;
 use engine::nodes::math::lookup::LookupProcessNode;
 use engine::nodes::math::logic_gate::{LogicOp, LogicGateProcessNode};
 use engine::nodes::math::math_op::{MathOp, MathProcessNode};
+use engine::nodes::math::multiplex::{DemultiplexerProcessNode, MultiplexerProcessNode};
 use engine::nodes::math::palette_select::PaletteSelectProcessNode;
 use engine::nodes::meta::subgraph::SubgraphProcessNode;
 use engine::nodes::math::scaler::ScalerProcessNode;
@@ -83,13 +86,16 @@ use widgets::nodes::ui::fader_group::FaderGroupWidget;
 use widgets::nodes::ui::peak_meter::PeakMeterWidget;
 use widgets::nodes::math::change_detect::ChangeDetectWidget;
 use widgets::nodes::math::flipflop::{FlipFlopKind, FlipFlopWidget};
+use widgets::nodes::math::color_modifier::ColorModifierWidget;
 use widgets::nodes::math::color_ops::{ColorMergeWidget, ColorSplitWidget};
 use widgets::nodes::math::compare::CompareWidget;
 use widgets::nodes::math::constant::ConstantWidget;
 use widgets::nodes::math::counter::CounterWidget;
+use widgets::nodes::math::gradient_source::GradientSourceWidget;
 use widgets::nodes::math::lookup::LookupWidget;
 use widgets::nodes::math::logic_gate::LogicGateWidget;
 use widgets::nodes::math::math_op::MathWidget;
+use widgets::nodes::math::multiplex::{DemultiplexerWidget, MultiplexerWidget};
 use widgets::nodes::math::palette_select::{PaletteSelectWidget, new_shared_palette_context};
 use widgets::nodes::meta::subgraph::SubgraphWidget;
 use widgets::nodes::math::scaler::ScalerWidget;
@@ -449,7 +455,8 @@ impl LightBeatApp {
             Box::new(ScopeWidget::new(id, new_shared_state(2, 0)))
         });
         self.graph.register_node("Color", "Color Display", |id| {
-            Box::new(ColorDisplayWidget::new(id, new_shared_state(12, 0)))
+            // Sized for the largest mode (Gradient = 40 channels).
+            Box::new(ColorDisplayWidget::new(id, new_shared_state(40, 0)))
         });
         self.graph.register_node("Display", "Value Display", |id| {
             Box::new(ValueDisplayWidget::new(id, new_shared_state(1, 0)))
@@ -463,11 +470,42 @@ impl LightBeatApp {
             Box::new(ScalerWidget::new(id, new_shared_state(1, 1)))
         });
 
+        // Math - Multiplexer / Demultiplexer (generic typed routing).
+        // Channel budgets sized for the worst case: MUX_MAX_SLOTS × Gradient (40 ch).
+        self.graph.register_node("Math", "Multiplexer", |id| {
+            // 1 select + MUX_MAX_SLOTS * 40 inputs, 40 outputs.
+            Box::new(MultiplexerWidget::new(
+                id,
+                new_shared_state(
+                    1 + engine::nodes::math::multiplex::MUX_MAX_SLOTS * 40,
+                    40,
+                ),
+            ))
+        });
+        self.graph.register_node("Math", "Demultiplexer", |id| {
+            // 1 select + 40 in, MUX_MAX_SLOTS * 40 outputs.
+            Box::new(DemultiplexerWidget::new(
+                id,
+                new_shared_state(
+                    1 + 40,
+                    engine::nodes::math::multiplex::MUX_MAX_SLOTS * 40,
+                ),
+            ))
+        });
+
         // Color (palette)
         let pctx = self.palette_ctx.clone();
         self.graph.register_node("Color", "Palette Select", move |id| {
             // 2 inputs, Palette output = 12 channels
             Box::new(PaletteSelectWidget::new(id, new_shared_state(2, 12), pctx.clone()))
+        });
+        self.graph.register_node("Color", "Gradient Source", |id| {
+            // No inputs, Gradient output = 40 channels (8 stops × 5 floats).
+            Box::new(GradientSourceWidget::new(id, new_shared_state(0, 40)))
+        });
+        self.graph.register_node("Color", "Color Modifier", |id| {
+            // Sized for the largest mode (Gradient = 40 ch main + 1 amount), same out.
+            Box::new(ColorModifierWidget::new(id, new_shared_state(40 + 1, 40)))
         });
 
         // Meta
@@ -491,7 +529,8 @@ impl LightBeatApp {
         // Output
         let gctx = self.group_ctx.clone();
         self.graph.register_node("Output", "Group Output", move |id| {
-            Box::new(GroupWidget::new(id, new_shared_state(13, 0), gctx.clone()))
+            // Sized for the largest mode: Triggered (trigger + select + width + gradient) = 43 channels.
+            Box::new(GroupWidget::new(id, new_shared_state(43, 0), gctx.clone()))
         });
         let gctx2 = self.group_ctx.clone();
         self.graph.register_node("Output", "Effect Stack", move |id| {
@@ -590,6 +629,10 @@ impl LightBeatApp {
                 "Value Display" => Some(Box::new(ValueDisplayProcessNode::new(id))),
                 "LED Display" => Some(Box::new(LedDisplayProcessNode::new(id))),
                 "Palette Select" => Some(Box::new(PaletteSelectProcessNode::new(id))),
+                "Gradient Source" => Some(Box::new(GradientSourceProcessNode::new(id))),
+                "Color Modifier" => Some(Box::new(ColorModifierProcessNode::new(id))),
+                "Multiplexer" => Some(Box::new(MultiplexerProcessNode::new(id))),
+                "Demultiplexer" => Some(Box::new(DemultiplexerProcessNode::new(id))),
                 "Scaler" => Some(Box::new(ScalerProcessNode::new(id))),
                 ">=" | "<=" | "==" | "!=" => {
                     let op = match type_name {

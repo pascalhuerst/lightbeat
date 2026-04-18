@@ -8,6 +8,8 @@ use crate::engine::types::{NodeId, ParamDef, ParamValue, PortDir, PortId};
 use crate::widgets::nodes::display::led_display::LedDisplayWidget;
 use crate::widgets::nodes::display::value_display::ValueDisplayWidget;
 use crate::widgets::nodes::io::audio_input::AudioInputWidget;
+use crate::widgets::nodes::math::gradient_source::GradientSourceWidget;
+use crate::widgets::nodes::math::multiplex::{DemultiplexerWidget, MultiplexerWidget};
 use crate::widgets::nodes::io::input_controller::InputControllerWidget;
 use crate::widgets::nodes::io::push1::Push1Widget;
 use crate::widgets::nodes::meta::portal::{PortalInWidget, PortalOutWidget};
@@ -258,6 +260,23 @@ pub fn load_graph(graph: &mut NodeGraph, project: &ProjectFile) -> Vec<usize> {
 
             // Restore Group Output widget state from save_data.
             if saved.type_name == "Group Output" {
+                // Sync the mode onto the widget BEFORE cleanup_stale_connections
+                // runs, so Triggered-mode wires (trigger/select/width/gradient)
+                // aren't dropped because the widget still reports Flood ports.
+                // Note: SavedParamValue is `#[serde(untagged)]`, so Choice(1)
+                // round-trips through JSON as Float(1.0) — always coerce via as_f64.
+                let mode_idx = saved.params.iter()
+                    .find(|p| p.index == 0)
+                    .map(|p| p.value.as_f64() as usize);
+                if let Some(i) = mode_idx {
+                    let n = graph.node_mut(idx);
+                    if let Some(grp) = n.as_any_mut().downcast_mut::<GroupWidget>() {
+                        grp.set_mode_from_load(
+                            crate::engine::nodes::output::group::GroupMode::from_index(i),
+                        );
+                    }
+                }
+
                 if let Some(data) = &saved.data {
                     let n = graph.node_mut(idx);
                     if let Some(grp) = n.as_any_mut().downcast_mut::<GroupWidget>() {
@@ -354,6 +373,34 @@ pub fn load_graph(graph: &mut NodeGraph, project: &ProjectFile) -> Vec<usize> {
                     if let Some(w) = n.as_any_mut().downcast_mut::<LedDisplayWidget>() {
                         w.restore_from_save_data(data);
                     }
+                }
+            }
+            if saved.type_name == "Gradient Source" {
+                if let Some(data) = &saved.data {
+                    let n = graph.node_mut(idx);
+                    if let Some(w) = n.as_any_mut().downcast_mut::<GradientSourceWidget>() {
+                        w.restore_from_save_data(data);
+                    }
+                }
+            }
+
+            // Mux/Demux need their port type + slot count synced before the
+            // first frame's stale-connection sweep, or wires on slots >= 8 or
+            // on non-default types get dropped.
+            // SavedParamValue is untagged; always coerce via as_f64.
+            if saved.type_name == "Multiplexer" || saved.type_name == "Demultiplexer" {
+                let type_idx = saved.params.iter().find(|p| p.index == 0)
+                    .map(|p| p.value.as_f64() as usize);
+                let slots = saved.params.iter().find(|p| p.index == 1)
+                    .map(|p| p.value.as_f64() as usize);
+                let pt = type_idx.map(crate::engine::nodes::math::multiplex::type_from_index)
+                    .unwrap_or(crate::engine::types::PortType::Any);
+                let s = slots.unwrap_or(crate::engine::nodes::math::multiplex::MUX_DEFAULT_SLOTS);
+                let n = graph.node_mut(idx);
+                if let Some(w) = n.as_any_mut().downcast_mut::<MultiplexerWidget>() {
+                    w.set_state_from_load(pt, s);
+                } else if let Some(w) = n.as_any_mut().downcast_mut::<DemultiplexerWidget>() {
+                    w.set_state_from_load(pt, s);
                 }
             }
 

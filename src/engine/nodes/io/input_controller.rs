@@ -35,6 +35,11 @@ pub struct InputControllerProcessNode {
     /// Pending graph → device values, mirrored from `write_input` into
     /// shared `out_values` every tick.
     input_values: Vec<f32>,
+    /// For each feedback input port, the index into `c.inputs` (i.e. into
+    /// the controller's mapping list) it corresponds to. Mappings with
+    /// `disable_feedback = true` are omitted, so this is shorter than
+    /// `c.inputs` whenever the user has hidden some.
+    feedback_input_mapping_idx: Vec<usize>,
     /// Output values for the learned inputs (parallel to inputs[]).
     output_values: Vec<f32>,
     /// Output values from the previous tick — used to detect changes.
@@ -63,6 +68,7 @@ impl InputControllerProcessNode {
             outputs: vec![PortDef::new("any change", PortType::Logic)],
             inputs: Vec::new(),
             input_values: Vec::new(),
+            feedback_input_mapping_idx: Vec::new(),
             output_values: Vec::new(),
             prev_output_values: Vec::new(),
             any_changed: false,
@@ -103,6 +109,7 @@ impl ProcessNode for InputControllerProcessNode {
             }
             self.inputs.clear();
             self.input_values.clear();
+            self.feedback_input_mapping_idx.clear();
             self.has_feedback = false;
             return;
         };
@@ -126,30 +133,46 @@ impl ProcessNode for InputControllerProcessNode {
             self.cache = vec![InputCache::default(); n];
         }
 
-        // Feedback inputs: present iff the bound controller supports feedback.
-        let expected_in_len = if self.has_feedback { n } else { 0 };
-        let in_layout_changed = self.inputs.len() != expected_in_len
-            || self.inputs.iter().zip(c.inputs.iter())
-                .any(|(p, i)| p.name != i.name || p.port_type != port_type_for(&i.source));
+        // Feedback inputs: only expose a port per mapping where feedback is
+        // NOT disabled; skip mappings the user has silenced.
+        let desired_mapping: Vec<usize> = if self.has_feedback {
+            c.inputs.iter().enumerate()
+                .filter(|(_, i)| !i.disable_feedback)
+                .map(|(idx, _)| idx)
+                .collect()
+        } else {
+            Vec::new()
+        };
+        let in_layout_changed = desired_mapping != self.feedback_input_mapping_idx
+            || self.inputs.len() != desired_mapping.len()
+            || self.inputs.iter().zip(desired_mapping.iter())
+                .any(|(p, &idx)| {
+                    let i = &c.inputs[idx];
+                    p.name != i.name || p.port_type != port_type_for(&i.source)
+                });
         if in_layout_changed {
-            self.inputs = if self.has_feedback {
-                c.inputs.iter().map(|i| {
-                    PortDef::new(i.name.clone(), port_type_for(&i.source))
-                }).collect()
-            } else {
-                Vec::new()
-            };
-            self.input_values = vec![0.0; expected_in_len];
+            self.inputs = desired_mapping.iter().map(|&idx| {
+                let i = &c.inputs[idx];
+                PortDef::new(i.name.clone(), port_type_for(&i.source))
+            }).collect();
+            self.input_values = vec![0.0; desired_mapping.len()];
+            self.feedback_input_mapping_idx = desired_mapping;
         }
 
         // Forward pending graph → device values into shared out_values so
-        // the MIDI feedback worker thread picks them up. Only when the
-        // controller actually supports feedback AND the debug panel hasn't
-        // taken over manual control. Otherwise we'd stomp the test slider
-        // every tick.
+        // the MIDI feedback worker thread picks them up. Only for mappings
+        // that have a feedback port wired, and only when the debug panel
+        // hasn't taken manual control. Mappings with `disable_feedback` are
+        // skipped entirely — the worker won't re-emit for them either.
         if self.has_feedback && !c.debug_feedback_override {
-            let copy_n = self.input_values.len().min(c.out_values.len());
-            c.out_values[..copy_n].copy_from_slice(&self.input_values[..copy_n]);
+            for (port_idx, &mapping_idx) in self.feedback_input_mapping_idx.iter().enumerate() {
+                if let (Some(v), Some(slot)) = (
+                    self.input_values.get(port_idx),
+                    c.out_values.get_mut(mapping_idx),
+                ) {
+                    *slot = *v;
+                }
+            }
         }
 
         // Compute outputs by mode.
@@ -182,11 +205,10 @@ impl ProcessNode for InputControllerProcessNode {
         )).chain(c.inputs.iter().enumerate().map(|(i, input)| {
             (input.name.clone(), port_type_for(&input.source), self.output_values[i])
         })).collect();
-        self.display_feedback_inputs = if self.has_feedback {
-            c.inputs.iter().map(|i| (i.name.clone(), port_type_for(&i.source))).collect()
-        } else {
-            Vec::new()
-        };
+        self.display_feedback_inputs = self.feedback_input_mapping_idx.iter().map(|&idx| {
+            let i = &c.inputs[idx];
+            (i.name.clone(), port_type_for(&i.source))
+        }).collect();
     }
 
     fn read_output(&self, pi: usize) -> f32 {

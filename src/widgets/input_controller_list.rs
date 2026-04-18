@@ -20,6 +20,8 @@ pub fn show(ui: &mut Ui, mgr: &mut InputControllerManager) {
     let mut remove_input: Vec<(u32, u32)> = Vec::new();
     let mut rename_input: Vec<(u32, u32, String)> = Vec::new();
     let mut set_mode: Vec<(u32, u32, InputBindingMode)> = Vec::new();
+    // (controller_id, input_id, disable_feedback)
+    let mut set_feedback_disabled: Vec<(u32, u32, bool)> = Vec::new();
     let mut rename_controller: Vec<(u32, String)> = Vec::new();
     let mut set_port: Vec<(u32, String)> = Vec::new();
     let mut set_output_port: Vec<(u32, String)> = Vec::new();
@@ -164,6 +166,7 @@ pub fn show(ui: &mut Ui, mgr: &mut InputControllerManager) {
                                     is_factory_kind,
                                     &mut rename_input,
                                     &mut set_mode,
+                                    &mut set_feedback_disabled,
                                     &mut remove_input,
                                     &mut set_relearn,
                                 );
@@ -216,6 +219,7 @@ pub fn show(ui: &mut Ui, mgr: &mut InputControllerManager) {
     for cid in consume_learn_for { let _ = mgr.consume_learn(cid); }
     for (cid, iid, name) in rename_input { mgr.rename_input(cid, iid, name); }
     for (cid, iid, mode) in set_mode { mgr.set_input_mode(cid, iid, mode); }
+    for (cid, iid, d) in set_feedback_disabled { mgr.set_input_feedback_disabled(cid, iid, d); }
     for (cid, iid) in remove_input { mgr.remove_input(cid, iid); }
     for (cid, iid) in set_relearn { mgr.set_relearn(cid, iid); }
     for cid in reset_factory { mgr.reset_factory_layout(cid); }
@@ -276,9 +280,11 @@ fn show_inputs_table(
     is_factory_kind: bool,
     rename_input: &mut Vec<(u32, u32, String)>,
     set_mode: &mut Vec<(u32, u32, InputBindingMode)>,
+    set_feedback_disabled: &mut Vec<(u32, u32, bool)>,
     remove_input: &mut Vec<(u32, u32)>,
     set_relearn: &mut Vec<(u32, Option<u32>)>,
 ) {
+    let has_feedback = c.kind.has_feedback();
     let now = std::time::Instant::now();
     /// Time the highlight stays visible after a match, in seconds. After
     /// this many seconds the row fades back to normal colors. Scroll-to only
@@ -301,7 +307,7 @@ fn show_inputs_table(
         ui.ctx().request_repaint();
     }
 
-    let mut table = TableBuilder::new(ui)
+    let table = TableBuilder::new(ui)
         .striped(true)
         .resizable(true)
         .vscroll(true)
@@ -309,7 +315,13 @@ fn show_inputs_table(
         .column(Column::remainder().at_least(120.0).clip(true)) // Name
         .column(Column::remainder().at_least(120.0).clip(true)) // Source
         .column(Column::initial(140.0).at_least(80.0))          // Mode
-        .column(Column::exact(60.0))                             // Value
+        .column(Column::exact(60.0));                            // Value
+    let table = if has_feedback {
+        table.column(Column::exact(36.0))                        // FB (feedback toggle)
+    } else {
+        table
+    };
+    let mut table = table
         .column(Column::exact(44.0))                             // Learn
         .column(Column::exact(24.0));                            // delete
 
@@ -327,6 +339,13 @@ fn show_inputs_table(
             header.col(|ui| { ui.strong("Source"); });
             header.col(|ui| { ui.strong("Mode"); });
             header.col(|ui| { ui.strong("Value"); });
+            if has_feedback {
+                header.col(|ui| {
+                    ui.strong("FB").on_hover_text(
+                        "Feedback enabled: when on, this mapping receives values from the graph and emits MIDI back to the device, and a feedback input port appears on the Input Controller node."
+                    );
+                });
+            }
             header.col(|ui| { ui.strong("Learn"); });
             header.col(|_ui| {});
         })
@@ -422,6 +441,21 @@ fn show_inputs_table(
                                 .size(11.0),
                         );
                     });
+                    // Feedback toggle — only present for feedback-capable
+                    // controllers. When unchecked, this mapping is silenced:
+                    // no MIDI sent back to the device, no input port on the
+                    // Input Controller node.
+                    if has_feedback {
+                        row.col(|ui| {
+                            let mut enabled = !input.disable_feedback;
+                            if ui.checkbox(&mut enabled, "")
+                                .on_hover_text("Feedback for this mapping")
+                                .changed()
+                            {
+                                set_feedback_disabled.push((c.id, input.id, !enabled));
+                            }
+                        });
+                    }
                     // Learn column — single toggle. When armed, clicking
                     // again cancels. When any row is armed, the next MIDI
                     // message replaces that row's source (handled engine-side).

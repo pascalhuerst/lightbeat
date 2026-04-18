@@ -339,21 +339,25 @@ fn run_feedback_worker(
     // Source-by-index snapshot so we don't touch the shared state while
     // serializing MIDI bytes.
     let mut sources: Vec<InputSource> = Vec::new();
+    // Per-input flag: when true, skip sending MIDI feedback for this mapping.
+    let mut disabled: Vec<bool> = Vec::new();
 
     while !stop.load(Ordering::Relaxed) {
         thread::sleep(POLL_INTERVAL);
 
-        // Snapshot the current out_values + source list under a short lock.
-        let snapshot: Option<(Vec<f32>, Vec<InputSource>)> = {
+        // Snapshot the current out_values + source list + disable flags
+        // under a short lock.
+        let snapshot: Option<(Vec<f32>, Vec<InputSource>, Vec<bool>)> = {
             let state = shared.lock().unwrap();
             state.iter().find(|c| c.id == controller_id).map(|c| {
                 (
                     c.out_values.clone(),
                     c.inputs.iter().map(|i| i.source.clone()).collect(),
+                    c.inputs.iter().map(|i| i.disable_feedback).collect(),
                 )
             })
         };
-        let Some((out_values, src)) = snapshot else {
+        let Some((out_values, src, dis)) = snapshot else {
             continue;
         };
 
@@ -362,11 +366,13 @@ fn run_feedback_worker(
             sources = src;
             last_sent.resize(sources.len(), None);
         }
+        disabled = dis;
         if last_sent.len() != out_values.len() {
             last_sent.resize(out_values.len(), None);
         }
 
         for (i, v) in out_values.iter().enumerate() {
+            if disabled.get(i).copied().unwrap_or(false) { continue; }
             let prev = last_sent[i];
             if prev == Some(*v) { continue; }
             let bytes = encode_midi(sources.get(i), *v);
