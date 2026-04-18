@@ -140,6 +140,7 @@ struct LightBeatApp {
     show_group_list: bool,
     show_color_palettes: bool,
     show_color_palette_groups: bool,
+    show_gradient_presets: bool,
     dmx_monitor: widgets::dmx_monitor::DmxMonitor,
     dmx_shared: dmx_io::SharedDmxState,
     object_store: dmx_io::SharedObjectStore,
@@ -151,6 +152,8 @@ struct LightBeatApp {
     color_palette_manager: widgets::color_palette_list::ColorPaletteManager,
     color_palette_group_manager: widgets::color_palette_group_list::ColorPaletteGroupManager,
     palette_ctx: widgets::nodes::math::palette_select::SharedPaletteContext,
+    gradient_preset_manager: widgets::gradient_preset_list::GradientPresetManager,
+    gradient_library: widgets::nodes::math::gradient_source::SharedGradientLibrary,
     input_controllers: InputControllerManager,
     show_input_controllers: bool,
     audio_inputs: AudioInputManager,
@@ -203,6 +206,13 @@ impl LightBeatApp {
         let beat_clock = BeatClock::new(4.0);
         let snapshot = beat_clock.snapshot();
         let dmx_shared = dmx_io::new_shared_dmx_state();
+        // Apply the persisted "start with DMX bypassed" preference before
+        // the engine starts ticking. Default is live; users who want the
+        // app to wake up silent set `dmx_bypass_on_startup: true` in
+        // settings.json.
+        if config.dmx_bypass_on_startup {
+            dmx_shared.lock().unwrap().bypass = true;
+        }
         let object_store = dmx_io::new_shared_object_store();
         let group_ctx = widgets::nodes::output::group::new_shared_group_context();
         let engine = EngineHandle::start(dmx_shared.clone(), object_store.clone());
@@ -224,6 +234,7 @@ impl LightBeatApp {
             show_group_list: false,
             show_color_palettes: false,
             show_color_palette_groups: false,
+            show_gradient_presets: false,
             dmx_monitor: widgets::dmx_monitor::DmxMonitor::new(),
             dmx_shared,
             object_store,
@@ -235,6 +246,8 @@ impl LightBeatApp {
             color_palette_manager: widgets::color_palette_list::ColorPaletteManager::new(),
             color_palette_group_manager: widgets::color_palette_group_list::ColorPaletteGroupManager::new(),
             palette_ctx: new_shared_palette_context(),
+            gradient_preset_manager: widgets::gradient_preset_list::GradientPresetManager::new(),
+            gradient_library: widgets::nodes::math::gradient_source::new_shared_gradient_library(),
             input_controllers: InputControllerManager::new(),
             show_input_controllers: false,
             audio_inputs: AudioInputManager::new(),
@@ -258,6 +271,7 @@ impl LightBeatApp {
         app.sync_object_store();
         app.sync_interfaces();
         app.sync_palette_context();
+        app.sync_gradient_library();
 
         // Try autoload, or create default clock.
         let loaded = if app.config.autoload_on_open {
@@ -388,8 +402,10 @@ impl LightBeatApp {
         self.graph.register_node("Color", "Color Split", |id| {
             Box::new(ColorSplitWidget::new(id, new_shared_state(12, 12))) // Palette mode: Palette in, 4×Color out
         });
-        self.graph.register_node("Math", "Lookup", |id| {
-            Box::new(LookupWidget::new(id, new_shared_state(1, 3))) // 1 input, up to 3 output channels (Color)
+        let gradient_library = self.gradient_library.clone();
+        self.graph.register_node("Math", "Lookup", move |id| {
+            // Sized for the worst case: 8 columns × Gradient (40 ch) = 320.
+            Box::new(LookupWidget::new(id, new_shared_state(1, 320), gradient_library.clone()))
         });
         self.graph.register_node("Math", "Const Value", |id| {
             Box::new(ConstantWidget::new(id, PortType::Untyped, new_shared_state(0, 1)))
@@ -499,9 +515,12 @@ impl LightBeatApp {
             // 2 inputs, Palette output = 12 channels
             Box::new(PaletteSelectWidget::new(id, new_shared_state(2, 12), pctx.clone()))
         });
-        self.graph.register_node("Color", "Gradient Source", |id| {
+        let gradient_library = self.gradient_library.clone();
+        self.graph.register_node("Color", "Gradient Source", move |id| {
             // No inputs, Gradient output = 40 channels (8 stops × 5 floats).
-            Box::new(GradientSourceWidget::new(id, new_shared_state(0, 40)))
+            Box::new(GradientSourceWidget::new(
+                id, new_shared_state(0, 40), gradient_library.clone(),
+            ))
         });
         self.graph.register_node("Color", "Color Modifier", |id| {
             // Sized for the largest mode (Gradient = 40 ch main + 1 amount), same out.
@@ -550,6 +569,33 @@ impl LightBeatApp {
         let mut ctx = self.palette_ctx.lock().unwrap();
         ctx.palettes = self.color_palette_manager.palettes.clone();
         ctx.groups = self.color_palette_group_manager.groups.clone();
+    }
+
+    fn sync_gradient_library(&self) {
+        let mut lib = self.gradient_library.lock().unwrap();
+        lib.presets = self.gradient_preset_manager.presets.clone();
+    }
+
+    /// Move any "Save current as preset" requests pushed by Gradient Source
+    /// widgets into the manager, assigning fresh ids, then re-sync the mirror
+    /// so all Gradient Sources see the new preset in their dropdowns.
+    fn drain_pending_gradient_saves(&mut self) {
+        let pending: Vec<widgets::nodes::math::gradient_source::PendingPresetSave> = {
+            let mut lib = self.gradient_library.lock().unwrap();
+            std::mem::take(&mut lib.pending_saves)
+        };
+        if pending.is_empty() { return; }
+        for req in pending {
+            let id = self.gradient_preset_manager.next_id();
+            self.gradient_preset_manager.presets.push(
+                crate::objects::gradient_preset::GradientPreset {
+                    id,
+                    name: req.name,
+                    stops: req.stops,
+                },
+            );
+        }
+        self.sync_gradient_library();
     }
 
     fn create_default_clock(&mut self) {
@@ -918,6 +964,7 @@ impl LightBeatApp {
         let empty = project::ProjectFile {
             nodes: Vec::new(),
             connections: Vec::new(),
+            frames: Vec::new(),
         };
         self.apply_project(&empty);
         self.project_path = None;
@@ -935,6 +982,7 @@ impl LightBeatApp {
             groups: self.group_manager.groups.clone(),
             color_palettes: self.color_palette_manager.palettes.clone(),
             color_palette_groups: self.color_palette_group_manager.groups.clone(),
+            gradient_presets: self.gradient_preset_manager.presets.clone(),
             input_controllers: self.input_controllers.export(),
             audio_inputs: self.audio_inputs.export(),
         }
@@ -948,6 +996,7 @@ impl LightBeatApp {
         self.group_manager = widgets::group_list::GroupManager::from_groups(s.groups.clone());
         self.color_palette_manager = widgets::color_palette_list::ColorPaletteManager::from_palettes(s.color_palettes.clone());
         self.color_palette_group_manager = widgets::color_palette_group_list::ColorPaletteGroupManager::from_groups(s.color_palette_groups.clone());
+        self.gradient_preset_manager = widgets::gradient_preset_list::GradientPresetManager::from_presets(s.gradient_presets.clone());
         self.input_controllers.set_controllers(&s.input_controllers);
         self.audio_inputs.set_inputs(&s.audio_inputs);
 
@@ -955,6 +1004,7 @@ impl LightBeatApp {
         self.sync_object_store();
         self.sync_interfaces();
         self.sync_palette_context();
+        self.sync_gradient_library();
     }
 
     // -- Macro library helpers ----------------------------------------------
@@ -1209,7 +1259,7 @@ impl LightBeatApp {
 
         // Load this single node into the active level via the existing
         // project loader machinery (handles inner-graph descent + bridges).
-        let pf = project::ProjectFile { nodes: vec![saved.clone()], connections: Vec::new() };
+        let pf = project::ProjectFile { nodes: vec![saved.clone()], connections: Vec::new(), frames: Vec::new() };
         let _indices = project::load_graph(&mut self.graph, &pf);
 
         // Spawn engine nodes + send queued commands + load_data, same as
@@ -1243,6 +1293,15 @@ impl eframe::App for LightBeatApp {
         self.poll_file_dialog();
 
         // Snapshot current state for the undoers and the Edit menu.
+        // Drain any "save current as preset" requests from Gradient Source
+        // widgets into the preset manager, then re-sync the shared mirror.
+        self.drain_pending_gradient_saves();
+        // Keep the shared library in sync with the manager every frame —
+        // the management window edits `gradient_preset_manager.presets`
+        // directly (rename / delete / add), and those changes need to be
+        // visible to the Gradient Source dropdowns.
+        self.sync_gradient_library();
+
         // Built once per frame; cheap (clones small structs).
         let now = ctx.input(|i| i.time);
         let current_project = project::save_graph(&self.graph);
@@ -1327,6 +1386,9 @@ impl eframe::App for LightBeatApp {
                         ui.close_menu();
                     }
                     if ui.checkbox(&mut self.show_color_palette_groups, "Color Palette Groups").changed() {
+                        ui.close_menu();
+                    }
+                    if ui.checkbox(&mut self.show_gradient_presets, "Gradients").changed() {
                         ui.close_menu();
                     }
                     ui.separator();
@@ -1437,6 +1499,17 @@ impl eframe::App for LightBeatApp {
                 .default_size([350.0, 400.0])
                 .show(ctx, |ui| {
                     self.color_palette_group_manager.show(ui, &self.color_palette_manager.palettes);
+                });
+            mark_hovered(r);
+        }
+
+        // Gradients window.
+        if self.show_gradient_presets {
+            let r = egui::Window::new("Gradients")
+                .open(&mut self.show_gradient_presets)
+                .default_size([420.0, 400.0])
+                .show(ctx, |ui| {
+                    self.gradient_preset_manager.show(ui);
                 });
             mark_hovered(r);
         }
@@ -1579,7 +1652,9 @@ impl eframe::App for LightBeatApp {
         if close_dialog { self.save_macro_dialog = None; }
 
         // Inspector panel — visibility gated by InspectorMode.
-        let has_selection = !self.graph.selected_nodes_mut().is_empty();
+        let frame_selected_count = self.graph.selected_frame_ids().count();
+        let has_selection = !self.graph.selected_nodes_mut().is_empty()
+            || frame_selected_count > 0;
         let show_inspector = match self.config.inspector_mode {
             InspectorMode::Show => true,
             InspectorMode::Hide => false,
@@ -1589,11 +1664,27 @@ impl eframe::App for LightBeatApp {
             egui::SidePanel::right("inspector")
                 .default_width(250.0)
                 .show(ctx, |ui| {
+                    // Frames first — when a single frame is selected (and no
+                    // nodes), show the frame's editable title/color/notes.
+                    let selected_frame_ids: Vec<u64> = self.graph.selected_frame_ids().collect();
+                    let nodes_selected = !self.graph.selected_nodes_mut().is_empty();
+
+                    if !nodes_selected && selected_frame_ids.len() == 1 {
+                        show_frame_inspector(ui, &mut self.graph, selected_frame_ids[0]);
+                        return;
+                    }
+                    if !nodes_selected && selected_frame_ids.len() > 1 {
+                        ui.heading(format!("{} frames selected", selected_frame_ids.len()));
+                        ui.separator();
+                        ui.label("Multi-frame editing isn't supported yet.");
+                        return;
+                    }
+
                     let selected = self.graph.selected_nodes_mut();
                     if selected.is_empty() {
                         ui.heading("Inspector");
                         ui.separator();
-                        ui.label("Select a node to inspect.");
+                        ui.label("Select a node or frame to inspect.");
                     } else if selected.len() == 1 {
                         let node = &mut *selected.into_iter().next().unwrap();
                         widgets::inspector::show_inspector(ui, node.as_mut());
@@ -1770,6 +1861,51 @@ impl eframe::App for LightBeatApp {
             self.save_setup();
         }
     }
+}
+
+/// Inline inspector for a selected decorative frame.
+fn show_frame_inspector(
+    ui: &mut egui::Ui,
+    graph: &mut widgets::nodes::NodeGraph,
+    frame_id: u64,
+) {
+    ui.heading("Frame");
+    ui.separator();
+    let frames = graph.frames_mut();
+    let Some(frame) = frames.iter_mut().find(|f| f.id == frame_id) else {
+        ui.label("Frame not found.");
+        return;
+    };
+    ui.horizontal(|ui| {
+        ui.label("Title");
+        ui.add(egui::TextEdit::singleline(&mut frame.title).desired_width(160.0));
+    });
+    ui.horizontal(|ui| {
+        ui.label("Color");
+        let mut rgb = [
+            frame.color.r() as f32 / 255.0,
+            frame.color.g() as f32 / 255.0,
+            frame.color.b() as f32 / 255.0,
+        ];
+        if ui.color_edit_button_rgb(&mut rgb).changed() {
+            frame.color = egui::Color32::from_rgb(
+                (rgb[0] * 255.0) as u8,
+                (rgb[1] * 255.0) as u8,
+                (rgb[2] * 255.0) as u8,
+            );
+        }
+    });
+    ui.label("Notes");
+    ui.add(
+        egui::TextEdit::multiline(&mut frame.notes)
+            .desired_rows(4)
+            .desired_width(f32::INFINITY),
+    );
+    ui.add_space(8.0);
+    ui.colored_label(
+        egui::Color32::from_gray(140),
+        "Drag the title bar to move; the bottom-right corner to resize. Delete key removes the frame.",
+    );
 }
 
 /// Walk a `ProjectFile` (recursively into nested subgraphs) and rewrite

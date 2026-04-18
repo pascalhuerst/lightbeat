@@ -1,199 +1,15 @@
 {
   "nodes": [
     {
-      "type_name": "Group Output",
-      "id": 21,
-      "pos": [
-        1478.3566,
-        1890.5344
-      ],
-      "params": [
-        {
-          "index": 0,
-          "value": 1
-        }
-      ],
-      "data": {
-        "group_ids": [
-          2
-        ],
-        "group_names": [
-          "TestStrips"
-        ],
-        "object_ids": [
-          11,
-          12
-        ]
-      }
-    },
-    {
-      "type_name": "Gradient Source",
-      "id": 22,
-      "pos": [
-        566.7941,
-        2032.3984
-      ],
-      "size": [
-        180.71057,
-        95.07324
-      ],
-      "params": [],
-      "data": {
-        "stops": [
-          {
-            "used": false
-          },
-          {
-            "used": false
-          },
-          {
-            "alpha": 0.0,
-            "b": 0.0,
-            "g": 0.0,
-            "position": 0.0,
-            "r": 0.0,
-            "used": true
-          },
-          {
-            "alpha": 1.0,
-            "b": 0.7223010063171387,
-            "g": 0.0,
-            "position": 0.47999998927116394,
-            "r": 1.0,
-            "used": true
-          },
-          {
-            "alpha": 0.44999998807907104,
-            "b": 0.0,
-            "g": 0.0,
-            "position": 1.0,
-            "r": 0.0,
-            "used": true
-          },
-          {
-            "used": false
-          },
-          {
-            "used": false
-          },
-          {
-            "used": false
-          }
-        ]
-      }
-    },
-    {
-      "type_name": "Fader Group",
-      "id": 32,
-      "pos": [
-        283.24222,
-        1926.4696
-      ],
-      "size": [
-        169.61508,
-        480.7778
-      ],
-      "params": [],
-      "data": {
-        "bipolar": [
-          false,
-          false
-        ],
-        "cols": 2,
-        "inputs_enabled": [
-          true,
-          true
-        ],
-        "mouse_override": [
-          "clear_on_reset",
-          "clear_on_reset"
-        ],
-        "mouse_values": [
-          0.12966567277908325,
-          0.049921274185180664
-        ],
-        "name": "Select/Width",
-        "outputs_enabled": [
-          true,
-          true
-        ],
-        "override_values": [
-          null,
-          null
-        ],
-        "rows": 1
-      }
-    },
-    {
-      "type_name": "Portal In",
-      "id": 34,
-      "pos": [
-        978.6536,
-        1896.7346
-      ],
-      "params": [],
-      "data": {
-        "name": "Group Out",
-        "ports": [
-          {
-            "name": "Trigger",
-            "port_type_idx": 0
-          },
-          {
-            "name": "Select",
-            "port_type_idx": 2
-          },
-          {
-            "name": "Width",
-            "port_type_idx": 2
-          },
-          {
-            "name": "Gradient",
-            "port_type_idx": 6
-          }
-        ]
-      }
-    },
-    {
-      "type_name": "Portal Out",
-      "id": 35,
-      "pos": [
-        1188.6509,
-        1893.6022
-      ],
-      "params": [],
-      "data": {
-        "bound_name": "Group Out",
-        "ports": [
-          {
-            "name": "Trigger",
-            "port_type_idx": 0
-          },
-          {
-            "name": "Select",
-            "port_type_idx": 2
-          },
-          {
-            "name": "Width",
-            "port_type_idx": 2
-          },
-          {
-            "name": "Gradient",
-            "port_type_idx": 6
-          }
-        ]
-      }
-    },
-    {
       "type_name": "Subgraph",
       "id": 47,
       "pos": [
-        502.96298,
-        1221.5674
+        -461.68207,
+        1122.694
       ],
       "size": [
-        389.70276,
-        263.04697
+        120.0,
+        95.892075
       ],
       "params": [],
       "data": {
@@ -459,61 +275,111 @@
             }
           },
           {
-            "type_name": "Portal Out",
-            "id": 13,
+            "type_name": "Scope",
+            "id": 17,
             "pos": [
-              665.9868,
-              93.95385
+              169.44739,
+              -388.8673
+            ],
+            "size": [
+              395.5974,
+              268.56268
+            ],
+            "params": [
+              {
+                "index": 0,
+                "value": 1.0
+              },
+              {
+                "index": 1,
+                "value": 200
+              },
+              {
+                "index": 2,
+                "value": 2.9802322387695312e-8
+              },
+              {
+                "index": 3,
+                "value": 1.0
+              }
+            ]
+          },
+          {
+            "type_name": "LFO",
+            "id": 80,
+            "pos": [
+              -1100.2358,
+              416.77875
+            ],
+            "params": [
+              {
+                "index": 0,
+                "value": 0.4099999964237213
+              },
+              {
+                "index": 1,
+                "value": 0
+              },
+              {
+                "index": 2,
+                "value": true
+              }
+            ]
+          },
+          {
+            "type_name": "LFO",
+            "id": 84,
+            "pos": [
+              -1132.3969,
+              161.91531
+            ],
+            "params": [
+              {
+                "index": 0,
+                "value": 0.3999999761581421
+              },
+              {
+                "index": 1,
+                "value": 1
+              },
+              {
+                "index": 2,
+                "value": true
+              }
+            ]
+          },
+          {
+            "type_name": "Mul",
+            "id": 85,
+            "pos": [
+              -870.096,
+              158.26994
             ],
             "params": [],
             "data": {
-              "bound_name": "Main Faders",
-              "ports": [
-                {
-                  "name": "Fader 1",
-                  "port_type_idx": 2
-                },
-                {
-                  "name": "Fader 2",
-                  "port_type_idx": 2
-                },
-                {
-                  "name": "Fader 3",
-                  "port_type_idx": 2
-                },
-                {
-                  "name": "Fader 4",
-                  "port_type_idx": 2
-                },
-                {
-                  "name": "Fader 5",
-                  "port_type_idx": 2
-                },
-                {
-                  "name": "Fader 6",
-                  "port_type_idx": 2
-                },
-                {
-                  "name": "Fader 7",
-                  "port_type_idx": 2
-                },
-                {
-                  "name": "Fader 8",
-                  "port_type_idx": 2
-                }
-              ]
+              "input_count": 2
             }
           },
           {
-            "type_name": "Fader Group",
-            "id": 14,
+            "type_name": "Const Value",
+            "id": 86,
             "pos": [
-              900.43884,
-              108.53615
+              -1002.52924,
+              268.25888
             ],
-            "size": [
-              620.8073,
-              222.0
+            "params": [
+              {
+                "index": 0,
+                "value": 7.999999523162842
+              }
+            ]
+          },
+          {
+            "type_name": "Fader Group",
+            "id": 88,
+            "pos": [
+              93.88436,
+              585.43744
             ],
             "params": [],
             "data": {
@@ -558,7 +424,7 @@
                 0.0,
                 0.0
               ],
-              "name": "Main Faders",
+              "name": "Encoder Buttons",
               "outputs_enabled": [
                 true,
                 true,
@@ -583,46 +449,46 @@
             }
           },
           {
-            "type_name": "Portal Out",
-            "id": 15,
+            "type_name": "Portal In",
+            "id": 89,
             "pos": [
-              672.7284,
-              376.94333
+              386.63766,
+              582.92163
             ],
             "params": [],
             "data": {
-              "bound_name": "Main Encoders",
+              "name": "Encoder Push Button",
               "ports": [
                 {
-                  "name": "Encoder 1",
+                  "name": "Encoder 1 Pushbutton",
                   "port_type_idx": 2
                 },
                 {
-                  "name": "Encoder 2",
+                  "name": "Encoder 2 Pushbutton",
                   "port_type_idx": 2
                 },
                 {
-                  "name": "Encoder 3",
+                  "name": "Encoder 3 Pushbutton",
                   "port_type_idx": 2
                 },
                 {
-                  "name": "Encoder 4",
+                  "name": "Encoder 4 Pushbutton",
                   "port_type_idx": 2
                 },
                 {
-                  "name": "Encoder 5",
+                  "name": "Encoder 5 Pushbutton",
                   "port_type_idx": 2
                 },
                 {
-                  "name": "Encoder 6",
+                  "name": "Encoder 6 Pushbutton",
                   "port_type_idx": 2
                 },
                 {
-                  "name": "Encoder 7",
+                  "name": "Encoder 7 Pushbutton",
                   "port_type_idx": 2
                 },
                 {
-                  "name": "Encoder 8",
+                  "name": "Encoder 8 Pushbutton",
                   "port_type_idx": 2
                 }
               ]
@@ -630,14 +496,10 @@
           },
           {
             "type_name": "Fader Group",
-            "id": 16,
+            "id": 90,
             "pos": [
-              907.83435,
-              384.8827
-            ],
-            "size": [
-              621.62244,
-              222.0
+              90.530945,
+              818.83057
             ],
             "params": [],
             "data": {
@@ -663,14 +525,14 @@
                 true
               ],
               "mouse_override": [
-                "clear_on_reset",
-                "clear_on_reset",
-                "clear_on_reset",
-                "clear_on_reset",
-                "clear_on_reset",
-                "clear_on_reset",
-                "clear_on_reset",
-                "clear_on_reset"
+                "no",
+                "no",
+                "no",
+                "no",
+                "no",
+                "no",
+                "no",
+                "no"
               ],
               "mouse_values": [
                 0.0,
@@ -682,7 +544,7 @@
                 0.0,
                 0.0
               ],
-              "name": "",
+              "name": "Buttons Top",
               "outputs_enabled": [
                 true,
                 true,
@@ -695,11 +557,11 @@
               ],
               "override_values": [
                 null,
-                0.8241145014762878,
                 null,
-                0.6436316967010498,
                 null,
-                0.38425248861312866,
+                null,
+                null,
+                null,
                 null,
                 null
               ],
@@ -707,54 +569,169 @@
             }
           },
           {
-            "type_name": "Scope",
-            "id": 17,
+            "type_name": "Portal In",
+            "id": 91,
             "pos": [
-              169.44739,
-              -388.8673
-            ],
-            "size": [
-              395.5974,
-              268.56268
-            ],
-            "params": [
-              {
-                "index": 0,
-                "value": 1.0
-              },
-              {
-                "index": 1,
-                "value": 200
-              },
-              {
-                "index": 2,
-                "value": 2.9802322387695312e-8
-              },
-              {
-                "index": 3,
-                "value": 1.0
-              }
-            ]
-          },
-          {
-            "type_name": "Fader",
-            "id": 18,
-            "pos": [
-              -1182.7358,
-              151.30226
-            ],
-            "size": [
-              157.58963,
-              384.7164
+              383.2842,
+              816.31476
             ],
             "params": [],
             "data": {
-              "bipolar": true,
-              "inputs_enabled": false,
-              "mouse_override": "no",
-              "mouse_value": 0.5142212510108948,
-              "orientation": "vertical",
-              "override_value": null
+              "name": "Buttons Top",
+              "ports": [
+                {
+                  "name": "Button Top 1",
+                  "port_type_idx": 2
+                },
+                {
+                  "name": "Button Top 2",
+                  "port_type_idx": 2
+                },
+                {
+                  "name": "Button Top 3",
+                  "port_type_idx": 2
+                },
+                {
+                  "name": "Button Top 4",
+                  "port_type_idx": 2
+                },
+                {
+                  "name": "Button Top 5",
+                  "port_type_idx": 2
+                },
+                {
+                  "name": "Button Top 6",
+                  "port_type_idx": 2
+                },
+                {
+                  "name": "Button Top 7",
+                  "port_type_idx": 2
+                },
+                {
+                  "name": "Button Top 8",
+                  "port_type_idx": 2
+                }
+              ]
+            }
+          },
+          {
+            "type_name": "Fader Group",
+            "id": 92,
+            "pos": [
+              89.876205,
+              1055.8116
+            ],
+            "params": [],
+            "data": {
+              "bipolar": [
+                false,
+                false,
+                false,
+                false,
+                false,
+                false,
+                false,
+                false
+              ],
+              "cols": 8,
+              "inputs_enabled": [
+                true,
+                true,
+                true,
+                true,
+                true,
+                true,
+                true,
+                true
+              ],
+              "mouse_override": [
+                "no",
+                "no",
+                "no",
+                "no",
+                "no",
+                "no",
+                "no",
+                "no"
+              ],
+              "mouse_values": [
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0
+              ],
+              "name": "Buttons Bottom",
+              "outputs_enabled": [
+                true,
+                true,
+                true,
+                true,
+                true,
+                true,
+                true,
+                true
+              ],
+              "override_values": [
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null
+              ],
+              "rows": 1
+            }
+          },
+          {
+            "type_name": "Portal In",
+            "id": 93,
+            "pos": [
+              377.83734,
+              1058.52
+            ],
+            "params": [],
+            "data": {
+              "name": "Buttons Bottom",
+              "ports": [
+                {
+                  "name": "Button Bottom 1",
+                  "port_type_idx": 2
+                },
+                {
+                  "name": "Button Bottom 2",
+                  "port_type_idx": 2
+                },
+                {
+                  "name": "Button Bottom 3",
+                  "port_type_idx": 2
+                },
+                {
+                  "name": "Button Bottom 4",
+                  "port_type_idx": 2
+                },
+                {
+                  "name": "Button Bottom 5",
+                  "port_type_idx": 2
+                },
+                {
+                  "name": "Button Bottom 6",
+                  "port_type_idx": 2
+                },
+                {
+                  "name": "Button Bottom 7",
+                  "port_type_idx": 2
+                },
+                {
+                  "name": "Button Bottom 8",
+                  "port_type_idx": 2
+                }
+              ]
             }
           }
         ],
@@ -952,168 +929,795 @@
             "to_port": 7
           },
           {
-            "from_node": 13,
-            "from_port": 0,
-            "to_node": 14,
-            "to_port": 0
-          },
-          {
-            "from_node": 13,
-            "from_port": 1,
-            "to_node": 14,
-            "to_port": 1
-          },
-          {
-            "from_node": 13,
-            "from_port": 2,
-            "to_node": 14,
-            "to_port": 2
-          },
-          {
-            "from_node": 13,
-            "from_port": 3,
-            "to_node": 14,
-            "to_port": 3
-          },
-          {
-            "from_node": 13,
-            "from_port": 4,
-            "to_node": 14,
-            "to_port": 4
-          },
-          {
-            "from_node": 13,
-            "from_port": 5,
-            "to_node": 14,
-            "to_port": 5
-          },
-          {
-            "from_node": 13,
-            "from_port": 6,
-            "to_node": 14,
-            "to_port": 6
-          },
-          {
-            "from_node": 13,
-            "from_port": 7,
-            "to_node": 14,
-            "to_port": 7
-          },
-          {
-            "from_node": 15,
-            "from_port": 0,
-            "to_node": 16,
-            "to_port": 0
-          },
-          {
-            "from_node": 15,
-            "from_port": 1,
-            "to_node": 16,
-            "to_port": 1
-          },
-          {
-            "from_node": 15,
-            "from_port": 2,
-            "to_node": 16,
-            "to_port": 2
-          },
-          {
-            "from_node": 15,
-            "from_port": 3,
-            "to_node": 16,
-            "to_port": 3
-          },
-          {
-            "from_node": 15,
-            "from_port": 4,
-            "to_node": 16,
-            "to_port": 4
-          },
-          {
-            "from_node": 15,
-            "from_port": 5,
-            "to_node": 16,
-            "to_port": 5
-          },
-          {
-            "from_node": 15,
-            "from_port": 6,
-            "to_node": 16,
-            "to_port": 6
-          },
-          {
-            "from_node": 15,
-            "from_port": 7,
-            "to_node": 16,
-            "to_port": 7
-          },
-          {
             "from_node": 1,
             "from_port": 0,
             "to_node": 17,
             "to_port": 0
           },
           {
-            "from_node": 18,
+            "from_node": 86,
             "from_port": 0,
-            "to_node": 1,
-            "to_port": 8
+            "to_node": 85,
+            "to_port": 1
+          },
+          {
+            "from_node": 84,
+            "from_port": 0,
+            "to_node": 85,
+            "to_port": 0
+          },
+          {
+            "from_node": 1,
+            "from_port": 17,
+            "to_node": 88,
+            "to_port": 0
+          },
+          {
+            "from_node": 1,
+            "from_port": 18,
+            "to_node": 88,
+            "to_port": 1
+          },
+          {
+            "from_node": 1,
+            "from_port": 19,
+            "to_node": 88,
+            "to_port": 2
+          },
+          {
+            "from_node": 1,
+            "from_port": 20,
+            "to_node": 88,
+            "to_port": 3
+          },
+          {
+            "from_node": 1,
+            "from_port": 21,
+            "to_node": 88,
+            "to_port": 4
+          },
+          {
+            "from_node": 1,
+            "from_port": 22,
+            "to_node": 88,
+            "to_port": 5
+          },
+          {
+            "from_node": 1,
+            "from_port": 23,
+            "to_node": 88,
+            "to_port": 6
+          },
+          {
+            "from_node": 1,
+            "from_port": 24,
+            "to_node": 88,
+            "to_port": 7
+          },
+          {
+            "from_node": 88,
+            "from_port": 0,
+            "to_node": 89,
+            "to_port": 0
+          },
+          {
+            "from_node": 88,
+            "from_port": 1,
+            "to_node": 89,
+            "to_port": 1
+          },
+          {
+            "from_node": 88,
+            "from_port": 2,
+            "to_node": 89,
+            "to_port": 2
+          },
+          {
+            "from_node": 88,
+            "from_port": 3,
+            "to_node": 89,
+            "to_port": 3
+          },
+          {
+            "from_node": 88,
+            "from_port": 4,
+            "to_node": 89,
+            "to_port": 4
+          },
+          {
+            "from_node": 88,
+            "from_port": 5,
+            "to_node": 89,
+            "to_port": 5
+          },
+          {
+            "from_node": 88,
+            "from_port": 6,
+            "to_node": 89,
+            "to_port": 6
+          },
+          {
+            "from_node": 88,
+            "from_port": 7,
+            "to_node": 89,
+            "to_port": 7
+          },
+          {
+            "from_node": 1,
+            "from_port": 25,
+            "to_node": 90,
+            "to_port": 0
+          },
+          {
+            "from_node": 1,
+            "from_port": 26,
+            "to_node": 90,
+            "to_port": 1
+          },
+          {
+            "from_node": 1,
+            "from_port": 27,
+            "to_node": 90,
+            "to_port": 2
+          },
+          {
+            "from_node": 1,
+            "from_port": 28,
+            "to_node": 90,
+            "to_port": 3
+          },
+          {
+            "from_node": 1,
+            "from_port": 29,
+            "to_node": 90,
+            "to_port": 4
+          },
+          {
+            "from_node": 1,
+            "from_port": 30,
+            "to_node": 90,
+            "to_port": 5
+          },
+          {
+            "from_node": 1,
+            "from_port": 31,
+            "to_node": 90,
+            "to_port": 6
+          },
+          {
+            "from_node": 1,
+            "from_port": 32,
+            "to_node": 90,
+            "to_port": 7
+          },
+          {
+            "from_node": 90,
+            "from_port": 0,
+            "to_node": 91,
+            "to_port": 0
+          },
+          {
+            "from_node": 90,
+            "from_port": 1,
+            "to_node": 91,
+            "to_port": 1
+          },
+          {
+            "from_node": 90,
+            "from_port": 2,
+            "to_node": 91,
+            "to_port": 2
+          },
+          {
+            "from_node": 90,
+            "from_port": 3,
+            "to_node": 91,
+            "to_port": 3
+          },
+          {
+            "from_node": 90,
+            "from_port": 4,
+            "to_node": 91,
+            "to_port": 4
+          },
+          {
+            "from_node": 90,
+            "from_port": 5,
+            "to_node": 91,
+            "to_port": 5
+          },
+          {
+            "from_node": 90,
+            "from_port": 6,
+            "to_node": 91,
+            "to_port": 6
+          },
+          {
+            "from_node": 90,
+            "from_port": 7,
+            "to_node": 91,
+            "to_port": 7
+          },
+          {
+            "from_node": 1,
+            "from_port": 33,
+            "to_node": 92,
+            "to_port": 0
+          },
+          {
+            "from_node": 1,
+            "from_port": 34,
+            "to_node": 92,
+            "to_port": 1
+          },
+          {
+            "from_node": 1,
+            "from_port": 35,
+            "to_node": 92,
+            "to_port": 2
+          },
+          {
+            "from_node": 1,
+            "from_port": 36,
+            "to_node": 92,
+            "to_port": 3
+          },
+          {
+            "from_node": 1,
+            "from_port": 37,
+            "to_node": 92,
+            "to_port": 4
+          },
+          {
+            "from_node": 1,
+            "from_port": 38,
+            "to_node": 92,
+            "to_port": 5
+          },
+          {
+            "from_node": 1,
+            "from_port": 39,
+            "to_node": 92,
+            "to_port": 6
+          },
+          {
+            "from_node": 1,
+            "from_port": 40,
+            "to_node": 92,
+            "to_port": 7
+          },
+          {
+            "from_node": 92,
+            "from_port": 0,
+            "to_node": 93,
+            "to_port": 0
+          },
+          {
+            "from_node": 92,
+            "from_port": 1,
+            "to_node": 93,
+            "to_port": 1
+          },
+          {
+            "from_node": 92,
+            "from_port": 2,
+            "to_node": 93,
+            "to_port": 2
+          },
+          {
+            "from_node": 92,
+            "from_port": 3,
+            "to_node": 93,
+            "to_port": 3
+          },
+          {
+            "from_node": 92,
+            "from_port": 4,
+            "to_node": 93,
+            "to_port": 4
+          },
+          {
+            "from_node": 92,
+            "from_port": 5,
+            "to_node": 93,
+            "to_port": 5
+          },
+          {
+            "from_node": 92,
+            "from_port": 6,
+            "to_node": 93,
+            "to_port": 6
+          },
+          {
+            "from_node": 92,
+            "from_port": 7,
+            "to_node": 93,
+            "to_port": 7
           }
         ]
       }
     },
     {
-      "type_name": "Portal Out",
-      "id": 48,
+      "type_name": "Lookup",
+      "id": 94,
       "pos": [
-        89.01903,
-        1944.8059
+        762.2098,
+        1337.018
+      ],
+      "size": [
+        212.4662,
+        200.0
       ],
       "params": [],
       "data": {
-        "bound_name": "Main Faders",
-        "ports": [
+        "columns": [
           {
-            "name": "Fader 1",
-            "port_type_idx": 2
+            "name": "value",
+            "type": "logic"
           },
           {
-            "name": "Fader 2",
-            "port_type_idx": 2
+            "name": "col2",
+            "type": "color"
           },
           {
-            "name": "Fader 3",
-            "port_type_idx": 2
+            "name": "col3",
+            "type": "palette"
           },
           {
-            "name": "Fader 4",
-            "port_type_idx": 2
+            "name": "col4",
+            "type": "phase"
           },
           {
-            "name": "Fader 5",
-            "port_type_idx": 2
+            "name": "col5",
+            "type": "logic"
           },
           {
-            "name": "Fader 6",
-            "port_type_idx": 2
+            "name": "col6",
+            "type": "color"
           },
           {
-            "name": "Fader 7",
-            "port_type_idx": 2
-          },
-          {
-            "name": "Fader 8",
-            "port_type_idx": 2
+            "name": "col7",
+            "type": "gradient"
           }
-        ]
+        ],
+        "data": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.18000000715255737,
+          0.0,
+          1.0,
+          0.08649146556854248,
+          0.08649146556854248,
+          0.0,
+          0.0,
+          0.0,
+          1.0,
+          0.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          0.0,
+          0.0,
+          0.0,
+          -1.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          -1.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          -1.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          -1.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          -1.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          -1.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.6499999761581421,
+          0.0,
+          0.10383768379688263,
+          0.024146689102053642,
+          0.024146689102053642,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.1599999964237213,
+          0.0,
+          0.0,
+          0.4363574683666229,
+          0.7035446763038635,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.41999998688697815,
+          0.0,
+          0.0,
+          0.46968895196914673,
+          0.11522043496370316,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.267147034406662,
+          0.0,
+          0.10216085612773895,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.009500514715909958,
+          0.20554322004318237,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.397297203540802,
+          0.0,
+          0.15193215012550354,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "row_count": 7
       }
     },
     {
       "type_name": "Internal Clock",
-      "id": 55,
+      "id": 95,
       "pos": [
-        94.298065,
-        1529.398
+        217.01741,
+        1383.276
       ],
       "params": [
         {
@@ -1123,43 +1727,29 @@
       ]
     },
     {
-      "type_name": "Phase Scaler",
-      "id": 56,
+      "type_name": "Counter",
+      "id": 96,
       "pos": [
-        449.89407,
-        1650.9193
+        502.7241,
+        1239.634
       ],
       "params": [
         {
           "index": 0,
-          "value": 5
+          "value": 6
         },
         {
           "index": 1,
-          "value": 0.0
-        }
-      ]
-    },
-    {
-      "type_name": "Clock Gen",
-      "id": 57,
-      "pos": [
-        616.3739,
-        1687.3993
-      ],
-      "params": [
-        {
-          "index": 0,
-          "value": 4
+          "value": 0
         }
       ]
     },
     {
       "type_name": "Button",
-      "id": 58,
+      "id": 97,
       "pos": [
-        -125.76491,
-        1500.4735
+        17.86465,
+        1424.9802
       ],
       "params": [],
       "data": {
@@ -1171,181 +1761,66 @@
         "reset_mode": "clear_on_reset",
         "state": false
       }
-    },
-    {
-      "type_name": "Color Display",
-      "id": 59,
-      "pos": [
-        1086.1362,
-        2178.4802
-      ],
-      "params": [
-        {
-          "index": 0,
-          "value": 3
-        }
-      ]
-    },
-    {
-      "type_name": "Multiplexer",
-      "id": 60,
-      "pos": [
-        959.8968,
-        2585.4893
-      ],
-      "params": [
-        {
-          "index": 0,
-          "value": 7
-        },
-        {
-          "index": 1,
-          "value": 8
-        }
-      ]
-    },
-    {
-      "type_name": "Gradient Source",
-      "id": 61,
-      "pos": [
-        462.71973,
-        2625.1343
-      ],
-      "size": [
-        180.71057,
-        95.07324
-      ],
-      "params": [],
-      "data": {
-        "stops": [
-          {
-            "alpha": 1.0,
-            "b": 0.0,
-            "g": 0.0,
-            "position": 0.0,
-            "r": 0.0,
-            "used": true
-          },
-          {
-            "alpha": 1.0,
-            "b": 1.0,
-            "g": 1.0,
-            "position": 1.0,
-            "r": 1.0,
-            "used": true
-          },
-          {
-            "used": false
-          },
-          {
-            "used": false
-          },
-          {
-            "used": false
-          },
-          {
-            "used": false
-          },
-          {
-            "used": false
-          },
-          {
-            "used": false
-          }
-        ]
-      }
     }
   ],
   "connections": [
     {
-      "from_node": 32,
+      "from_node": 95,
       "from_port": 0,
-      "to_node": 34,
-      "to_port": 1
-    },
-    {
-      "from_node": 32,
-      "from_port": 1,
-      "to_node": 34,
-      "to_port": 2
-    },
-    {
-      "from_node": 35,
-      "from_port": 3,
-      "to_node": 21,
-      "to_port": 3
-    },
-    {
-      "from_node": 22,
-      "from_port": 0,
-      "to_node": 34,
-      "to_port": 3
-    },
-    {
-      "from_node": 48,
-      "from_port": 0,
-      "to_node": 32,
+      "to_node": 96,
       "to_port": 0
     },
     {
-      "from_node": 48,
-      "from_port": 1,
-      "to_node": 32,
-      "to_port": 1
-    },
-    {
-      "from_node": 35,
+      "from_node": 97,
       "from_port": 0,
-      "to_node": 21,
+      "to_node": 95,
       "to_port": 0
     },
     {
-      "from_node": 35,
-      "from_port": 1,
-      "to_node": 21,
-      "to_port": 1
-    },
-    {
-      "from_node": 35,
-      "from_port": 2,
-      "to_node": 21,
-      "to_port": 2
-    },
-    {
-      "from_node": 55,
-      "from_port": 2,
-      "to_node": 56,
-      "to_port": 0
-    },
-    {
-      "from_node": 56,
+      "from_node": 96,
       "from_port": 0,
-      "to_node": 57,
+      "to_node": 94,
       "to_port": 0
+    }
+  ],
+  "frames": [
+    {
+      "id": 72,
+      "title": "Main Fader In/Out",
+      "color": [
+        146,
+        0,
+        0,
+        255
+      ],
+      "notes": "",
+      "pos": [
+        -630.5614,
+        1023.6211
+      ],
+      "size": [
+        506.18237,
+        436.21164
+      ]
     },
     {
-      "from_node": 57,
-      "from_port": 0,
-      "to_node": 34,
-      "to_port": 0
-    },
-    {
-      "from_node": 58,
-      "from_port": 0,
-      "to_node": 55,
-      "to_port": 0
-    },
-    {
-      "from_node": 22,
-      "from_port": 0,
-      "to_node": 59,
-      "to_port": 0
-    },
-    {
-      "from_node": 61,
-      "from_port": 0,
-      "to_node": 60,
-      "to_port": 1
+      "id": 75,
+      "title": "Frame",
+      "color": [
+        200,
+        160,
+        80,
+        255
+      ],
+      "notes": "",
+      "pos": [
+        -590.9393,
+        1896.8398
+      ],
+      "size": [
+        905.58264,
+        645.0125
+      ]
     }
   ]
 }

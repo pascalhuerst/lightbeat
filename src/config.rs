@@ -26,6 +26,12 @@ pub struct AppConfig {
     pub snap_to_grid: bool,
     #[serde(default)]
     pub inspector_mode: InspectorMode,
+    /// If true, DMX output is bypassed (no traffic on the wire) when the app
+    /// starts. Useful for venues where you want to wake up to silence and
+    /// only flip the switch once you're sure the right project is loaded.
+    /// Defaults to false — output is live on startup.
+    #[serde(default)]
+    pub dmx_bypass_on_startup: bool,
 }
 
 impl Default for AppConfig {
@@ -35,6 +41,7 @@ impl Default for AppConfig {
             autoload_on_open: true,
             snap_to_grid: false,
             inspector_mode: InspectorMode::Auto,
+            dmx_bypass_on_startup: false,
         }
     }
 }

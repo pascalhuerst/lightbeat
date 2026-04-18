@@ -43,6 +43,17 @@ struct DrawingConnection {
     from_type: PortType,
     to_pos: Pos2,
     snap_target: Option<PortId>,
+    /// Bundle size — number of consecutive ports to connect on drop.
+    /// Set by pressing a digit key (2..=9, 0 = 10) while a wire is being
+    /// drawn. Defaults to 1 (single wire). On drop, indices
+    /// `from..from + bundle_size` are paired with `to..to + bundle_size`,
+    /// skipping any pair that's type-incompatible or out of range.
+    bundle_size: usize,
+    /// When the drag started by grabbing a connected input port (effectively
+    /// "unwiring" it), this records that port id. Used for bundle-remove:
+    /// dropping on empty canvas with a bundle armed deletes the additional
+    /// N-1 wires at consecutive input indices on the same node.
+    unwired_to: Option<PortId>,
 }
 
 // ---------------------------------------------------------------------------
@@ -88,6 +99,31 @@ pub struct GraphLevel {
     pub parent_level_idx: Option<usize>,
     /// Label for breadcrumb display.
     pub label: String,
+    /// Decorative frames — purely visual containers stored per-level.
+    /// Rendered behind nodes, draggable/resizable, with title and notes.
+    /// No engine semantics; nodes "in" a frame are just nodes whose rect
+    /// overlaps the frame's rect.
+    #[allow(dead_code)]
+    pub frames: Vec<GraphFrame>,
+}
+
+/// A purely-visual rectangle drawn behind nodes for grouping purposes.
+/// Position and size are in world coordinates (same space as `NodeState.pos`).
+#[derive(Debug, Clone)]
+pub struct GraphFrame {
+    pub id: u64,
+    pub title: String,
+    /// Stored as RGBA (multiplied alpha is applied at draw time).
+    pub color: egui::Color32,
+    pub notes: String,
+    pub pos: egui::Pos2,
+    pub size: Vec2,
+}
+
+impl GraphFrame {
+    pub fn rect(&self) -> egui::Rect {
+        egui::Rect::from_min_size(self.pos, self.size)
+    }
 }
 
 /// View state snapshot — pan/zoom per level + active navigation path.
@@ -139,10 +175,36 @@ pub struct NodeGraph {
     /// app each frame.
     pending_macro_request: Option<MacroRequest>,
     selected_nodes: Vec<usize>,
+    /// Selected decorative-frame ids (parallel to `selected_nodes` but for
+    /// frames; frames don't share index-space with nodes).
+    selected_frames: std::collections::HashSet<u64>,
+    /// Per-active-level drag state for frames. None means "no frame drag in
+    /// progress this frame". `frame_id` identifies the dragged frame; `mode`
+    /// distinguishes title-bar drag (move) vs corner drag (resize).
+    frame_drag: Option<FrameDrag>,
     canvas_rect: Rect,
     clipboard: Vec<ClipboardNode>,
     /// Set to true to fit the view to content on the next frame.
     fit_pending: bool,
+}
+
+#[derive(Clone, Copy)]
+struct FrameDrag {
+    frame_id: u64,
+    mode: FrameDragMode,
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum FrameDragMode {
+    Move,
+    Resize,
+}
+
+#[derive(Clone, Copy)]
+enum FrameHit {
+    TitleBar(u64),
+    Corner(u64),
+    Body(u64),
 }
 
 impl NodeGraph {
@@ -157,6 +219,7 @@ impl NodeGraph {
                 subgraph_id: None,
                 parent_level_idx: None,
                 label: "Root".to_string(),
+                frames: Vec::new(),
             }],
             active_level: 0,
             drag: DragState::default(),
@@ -169,10 +232,66 @@ impl NodeGraph {
             context_menu_mode: ContextMenuMode::AddNode,
             pending_macro_request: None,
             selected_nodes: Vec::new(),
+            selected_frames: std::collections::HashSet::new(),
+            frame_drag: None,
             canvas_rect: Rect::NOTHING,
             clipboard: Vec::new(),
             fit_pending: false,
         }
+    }
+
+    /// Add a new decorative frame at the given world position with default
+    /// size and color. Returns the new frame's id.
+    pub fn add_frame_at(&mut self, world_pos: Pos2) -> u64 {
+        let id = self.next_id;
+        self.next_id += 1;
+        let frame = GraphFrame {
+            id,
+            title: "Frame".to_string(),
+            color: Color32::from_rgb(200, 160, 80),
+            notes: String::new(),
+            pos: world_pos,
+            size: Vec2::new(280.0, 180.0),
+        };
+        self.active_mut().frames.push(frame);
+        id
+    }
+
+    /// Read-only access to current level frames (for the inspector).
+    pub fn frames(&self) -> &[GraphFrame] { &self.active().frames }
+    /// Mutable access for the inspector to edit titles/colors/notes.
+    pub fn frames_mut(&mut self) -> &mut Vec<GraphFrame> { &mut self.active_mut().frames }
+    pub fn selected_frame_ids(&self) -> impl Iterator<Item = u64> + '_ {
+        self.selected_frames.iter().copied()
+    }
+    pub fn deselect_all_frames(&mut self) { self.selected_frames.clear(); }
+
+    fn frame_hit_at(&self, pointer: Pos2, canvas_rect: Rect) -> Option<FrameHit> {
+        let level = self.active();
+        let z = level.zoom;
+        let origin = canvas_rect.min.to_vec2() + level.pan;
+        // Topmost frame wins; iterate in reverse.
+        for f in level.frames.iter().rev() {
+            let world_rect = f.rect();
+            let screen_min = Pos2::new(world_rect.min.x * z, world_rect.min.y * z) + origin;
+            let screen_max = Pos2::new(world_rect.max.x * z, world_rect.max.y * z) + origin;
+            let screen_rect = Rect::from_min_max(screen_min, screen_max);
+            if !screen_rect.contains(pointer) { continue; }
+            let handle_size = (10.0 * z).max(6.0);
+            let corner = Rect::from_min_size(
+                Pos2::new(screen_rect.max.x - handle_size, screen_rect.max.y - handle_size),
+                Vec2::splat(handle_size),
+            );
+            if corner.contains(pointer) { return Some(FrameHit::Corner(f.id)); }
+            let title_h = (24.0 * z).max(14.0);
+            let title_rect = Rect::from_min_size(
+                screen_rect.min,
+                Vec2::new(screen_rect.width(), title_h.min(screen_rect.height())),
+            );
+            if title_rect.contains(pointer) { return Some(FrameHit::TitleBar(f.id)); }
+            return Some(FrameHit::Body(f.id));
+        }
+        None
     }
 
     /// Request that the view fits all content on the next frame.
@@ -325,6 +444,14 @@ impl NodeGraph {
         let id = NodeId(self.next_id);
         self.next_id += 1;
         id
+    }
+
+    /// Ensure the next id allocated is strictly greater than `id`.
+    /// Used after loading state that may have reserved ids (frames, etc.).
+    pub fn bump_next_id_above(&mut self, id: u64) {
+        if id >= self.next_id {
+            self.next_id = id + 1;
+        }
     }
 
     pub fn add_node(&mut self, node: Box<dyn NodeWidget>, pos: Pos2) -> usize {
@@ -486,6 +613,47 @@ impl NodeGraph {
             .iter()
             .find(|e| e.label == type_name)
             .map(|e| (e.factory)(id))
+    }
+
+    /// Bundle-connect helper: pair `bundle_size` consecutive ports starting
+    /// at the source and target indices, skipping pairs where ports are
+    /// missing or types don't match. `dc_from` is the port the user dragged
+    /// from (could be input or output); `target` is the snapped destination.
+    fn connect_bundle(&mut self, dc_from: PortId, target: PortId, bundle_size: usize) {
+        let dc_from_dir = dc_from.dir;
+        let level = self.active();
+        let src_node_id = if dc_from_dir == PortDir::Output { dc_from.node } else { target.node };
+        let dst_node_id = if dc_from_dir == PortDir::Output { target.node } else { dc_from.node };
+        let src_start = if dc_from_dir == PortDir::Output { dc_from.index } else { target.index };
+        let dst_start = if dc_from_dir == PortDir::Output { target.index } else { dc_from.index };
+
+        let src_node_idx = match level.states.iter().position(|s| s.id == src_node_id) {
+            Some(i) => i, None => return,
+        };
+        let dst_node_idx = match level.states.iter().position(|s| s.id == dst_node_id) {
+            Some(i) => i, None => return,
+        };
+        let src_outs = level.nodes[src_node_idx].ui_outputs();
+        let dst_ins = level.nodes[dst_node_idx].ui_inputs();
+
+        let mut pairs: Vec<(usize, usize)> = Vec::with_capacity(bundle_size);
+        for k in 0..bundle_size {
+            let si = src_start + k;
+            let di = dst_start + k;
+            let (Some(src_port), Some(dst_port)) = (src_outs.get(si), dst_ins.get(di)) else {
+                continue;
+            };
+            if src_port.disabled || dst_port.disabled { continue; }
+            if !src_port.def.port_type.compatible_with(&dst_port.def.port_type) { continue; }
+            pairs.push((si, di));
+        }
+
+        for (si, di) in pairs {
+            let from = make_port_id(src_node_id, PortDir::Output, si);
+            let to = make_port_id(dst_node_id, PortDir::Input, di);
+            self.remove_connection_to(to);
+            self.add_connection(from, to);
+        }
     }
 
     pub fn add_connection(&mut self, from: PortId, to: PortId) {
@@ -667,6 +835,79 @@ impl NodeGraph {
 
         let origin = canvas_rect.min.to_vec2() + pan;
 
+        // -- Draw decorative frames behind everything --
+        for frame in &level.frames {
+            let world_rect = frame.rect();
+            let screen_min = Pos2::new(world_rect.min.x * z, world_rect.min.y * z) + origin;
+            let screen_max = Pos2::new(world_rect.max.x * z, world_rect.max.y * z) + origin;
+            let screen_rect = Rect::from_min_max(screen_min, screen_max);
+            let selected = self.selected_frames.contains(&frame.id);
+
+            // Body fill — frame's color at low alpha so nodes underneath
+            // remain readable.
+            let fill = Color32::from_rgba_unmultiplied(
+                frame.color.r(), frame.color.g(), frame.color.b(), 40,
+            );
+            painter.rect_filled(screen_rect, 6.0, fill);
+
+            // Title bar across the top with a slightly stronger fill.
+            let title_h = (24.0 * z).max(14.0);
+            let title_rect = Rect::from_min_size(
+                screen_rect.min,
+                Vec2::new(screen_rect.width(), title_h.min(screen_rect.height())),
+            );
+            let title_fill = Color32::from_rgba_unmultiplied(
+                frame.color.r(), frame.color.g(), frame.color.b(), 110,
+            );
+            painter.rect_filled(title_rect, 6.0, title_fill);
+
+            // Border, thicker when selected.
+            let border = if selected {
+                Stroke::new(2.5, frame.color)
+            } else {
+                Stroke::new(1.5, Color32::from_rgba_unmultiplied(
+                    frame.color.r(), frame.color.g(), frame.color.b(), 180,
+                ))
+            };
+            painter.rect_stroke(screen_rect, 6.0, border, egui::StrokeKind::Inside);
+
+            if !frame.title.is_empty() {
+                painter.text(
+                    title_rect.left_center() + Vec2::new(8.0 * z, 0.0),
+                    egui::Align2::LEFT_CENTER,
+                    &frame.title,
+                    egui::FontId::proportional((13.0 * z).max(10.0)),
+                    Color32::from_gray(230),
+                );
+            }
+
+            // Notes shown under the title bar when there's room and the
+            // frame is large enough to carry text.
+            if !frame.notes.is_empty() && screen_rect.height() > title_h + 16.0 {
+                let notes_pos = Pos2::new(
+                    screen_rect.min.x + 8.0 * z,
+                    title_rect.max.y + 4.0 * z,
+                );
+                painter.text(
+                    notes_pos,
+                    egui::Align2::LEFT_TOP,
+                    &frame.notes,
+                    egui::FontId::proportional((11.0 * z).max(9.0)),
+                    Color32::from_gray(180),
+                );
+            }
+
+            // Resize handle in the bottom-right corner.
+            let handle_size = (10.0 * z).max(6.0);
+            let handle_rect = Rect::from_min_size(
+                Pos2::new(screen_rect.max.x - handle_size, screen_rect.max.y - handle_size),
+                Vec2::splat(handle_size),
+            );
+            painter.rect_filled(handle_rect, 1.0, Color32::from_rgba_unmultiplied(
+                frame.color.r(), frame.color.g(), frame.color.b(), 200,
+            ));
+        }
+
         // -- Draw connections --
         for conn in &level.connections {
             if let (Some(from_pos), Some(from_type), Some(to_pos)) = (
@@ -684,6 +925,31 @@ impl NodeGraph {
             draw_bezier(&painter, dc.from_pos, dc.to_pos, color, CONNECTION_THICKNESS);
             if dc.snap_target.is_some() {
                 painter.circle_filled(dc.to_pos, PORT_RADIUS + 3.0, color.linear_multiply(0.3));
+            }
+            // Bundle badge near the cursor when armed for a multi-wire drop.
+            if dc.bundle_size > 1 {
+                let badge_pos = dc.to_pos + Vec2::new(14.0, -14.0);
+                let label = format!("×{}", dc.bundle_size);
+                let font = egui::FontId::proportional(13.0);
+                let galley = painter.layout_no_wrap(label, font.clone(), Color32::WHITE);
+                let pad = Vec2::new(6.0, 2.0);
+                let bg_rect = egui::Rect::from_center_size(
+                    badge_pos,
+                    galley.size() + pad * 2.0,
+                );
+                painter.rect_filled(bg_rect, 4.0, Color32::from_rgba_unmultiplied(0, 0, 0, 200));
+                painter.rect_stroke(
+                    bg_rect, 4.0,
+                    egui::Stroke::new(1.0, dc.from_type.color()),
+                    egui::StrokeKind::Inside,
+                );
+                painter.text(
+                    badge_pos,
+                    egui::Align2::CENTER_CENTER,
+                    format!("×{}", dc.bundle_size),
+                    font,
+                    Color32::WHITE,
+                );
             }
         }
 
@@ -857,6 +1123,13 @@ impl NodeGraph {
     }
 
     fn delete_selected(&mut self) {
+        // Frames have no engine-side counterpart, so just drop them.
+        if !self.selected_frames.is_empty() {
+            let to_drop = self.selected_frames.clone();
+            self.active_mut().frames.retain(|f| !to_drop.contains(&f.id));
+            self.selected_frames.clear();
+        }
+
         let mut to_remove = self.selected_nodes.clone();
         to_remove.sort_unstable();
         to_remove.dedup();
@@ -1214,6 +1487,7 @@ impl NodeGraph {
         }
 
         let mut spawn: Option<usize> = None;
+        let mut spawn_frame = false;
         let search = self.context_menu_search.to_lowercase();
 
         // Filter entries by search (exclude hidden categories).
@@ -1253,6 +1527,17 @@ impl NodeGraph {
                     }
                     search_resp.request_focus();
 
+                    ui.separator();
+
+                    if ui.button(egui::RichText::new("+ Add Frame").color(Color32::from_gray(200)))
+                        .on_hover_text(
+                            "Add a decorative frame for visually grouping nodes. \
+                             Drag the title bar to move, drag the bottom-right corner to resize.",
+                        )
+                        .clicked()
+                    {
+                        spawn_frame = true;
+                    }
                     ui.separator();
 
                     let desc_h = 64.0;
@@ -1306,7 +1591,7 @@ impl NodeGraph {
 
         // Spawn check happens before dismiss so the click on a list item
         // doesn't get treated as "outside click then create node next frame".
-        if spawn.is_none() {
+        if spawn.is_none() && !spawn_frame {
             self.dismiss_on_outside_click(ui, area_resp.response.rect, just_opened);
         }
 
@@ -1316,6 +1601,19 @@ impl NodeGraph {
             let canvas_pos = (menu_pos - canvas_rect.min.to_vec2() - level.pan) / level.zoom;
             let node = (self.registry[reg_idx].factory)(id);
             self.add_node(node, canvas_pos);
+            self.context_menu_search.clear();
+            self.context_menu_pos = None;
+        }
+
+        if spawn_frame {
+            let level = self.active();
+            let world = (menu_pos - canvas_rect.min.to_vec2() - level.pan) / level.zoom;
+            let id = self.add_frame_at(world);
+            // Select the new frame so the user can immediately edit it in
+            // the inspector and see the selected-state border.
+            self.selected_frames.clear();
+            self.selected_frames.insert(id);
+            self.selected_nodes.clear();
             self.context_menu_search.clear();
             self.context_menu_pos = None;
         }
@@ -1354,6 +1652,26 @@ impl NodeGraph {
 
         // --- Connection drawing ---
         if self.drag.drawing_conn.is_some() {
+            // Bundle-arming: pressing 2..9 (or 0 = 10) while a wire is being
+            // drawn marks the drop as a "connect N consecutive ports" action.
+            // Esc resets back to single. Subsequent digit keys overwrite.
+            let bundle_key = ui.input(|i| {
+                use egui::Key::*;
+                if i.key_pressed(Escape) { return Some(1); }
+                for (k, n) in [
+                    (Num2, 2), (Num3, 3), (Num4, 4), (Num5, 5),
+                    (Num6, 6), (Num7, 7), (Num8, 8), (Num9, 9), (Num0, 10),
+                ] {
+                    if i.key_pressed(k) { return Some(n); }
+                }
+                None
+            });
+            if let Some(n) = bundle_key {
+                if let Some(dc) = self.drag.drawing_conn.as_mut() {
+                    dc.bundle_size = n;
+                }
+            }
+
             let dc = self.drag.drawing_conn.as_mut().unwrap();
             dc.to_pos = pointer_pos;
             dc.snap_target = None;
@@ -1402,15 +1720,35 @@ impl NodeGraph {
                 let snap = dc.snap_target;
                 let dc_from = dc.from;
                 let dc_from_dir = dc.from.dir;
+                let bundle = dc.bundle_size.max(1);
+                let unwired_to = dc.unwired_to;
                 self.drag.drawing_conn = None;
                 if let Some(target) = snap {
-                    let (from, to) = if dc_from_dir == PortDir::Output {
-                        (dc_from, target)
+                    if bundle <= 1 {
+                        let (from, to) = if dc_from_dir == PortDir::Output {
+                            (dc_from, target)
+                        } else {
+                            (target, dc_from)
+                        };
+                        self.remove_connection_to(to);
+                        self.add_connection(from, to);
                     } else {
-                        (target, dc_from)
-                    };
-                    self.remove_connection_to(to);
-                    self.add_connection(from, to);
+                        self.connect_bundle(dc_from, target, bundle);
+                    }
+                } else if bundle > 1 {
+                    // Bundle drop on empty canvas after grabbing a connected
+                    // input → remove the next N-1 wires too. The grabbed wire
+                    // was already removed by the click handler.
+                    if let Some(start) = unwired_to {
+                        for k in 1..bundle {
+                            let port_id = PortId {
+                                node: start.node,
+                                index: start.index + k,
+                                dir: PortDir::Input,
+                            };
+                            self.remove_connection_to(port_id);
+                        }
+                    }
                 }
             }
             return;
@@ -1450,6 +1788,8 @@ impl NodeGraph {
                             from_type: ui_port.def.port_type,
                             to_pos: pointer_pos,
                             snap_target: None,
+                            bundle_size: 1,
+                            unwired_to: None,
                         });
                         return;
                     }
@@ -1479,6 +1819,11 @@ impl NodeGraph {
                                     from_type: pt,
                                     to_pos: pointer_pos,
                                     snap_target: None,
+                                    bundle_size: 1,
+                                    // Track which input we just unwired so a
+                                    // bundle-armed drop on empty canvas can
+                                    // remove the next N-1 wires too.
+                                    unwired_to: Some(input_id),
                                 });
                             }
                         } else {
@@ -1488,11 +1833,38 @@ impl NodeGraph {
                                 from_type: pt,
                                 to_pos: pointer_pos,
                                 snap_target: None,
+                                bundle_size: 1,
+                                unwired_to: None,
                             });
                         }
                         return;
                     }
                 }
+            }
+        }
+
+        // --- Frame drag (move / resize) — must run before the node resize/
+        //     selection blocks so an in-progress drag continues across the
+        //     frames where the pointer briefly leaves the frame's screen rect.
+        if let Some(fd) = self.frame_drag {
+            if primary_down {
+                let level = self.active_mut();
+                if let Some(frame) = level.frames.iter_mut().find(|f| f.id == fd.frame_id) {
+                    match fd.mode {
+                        FrameDragMode::Move => {
+                            frame.pos += drag_delta / z;
+                        }
+                        FrameDragMode::Resize => {
+                            frame.size.x = (frame.size.x + drag_delta.x / z).max(80.0);
+                            frame.size.y = (frame.size.y + drag_delta.y / z).max(40.0);
+                            ui.ctx().set_cursor_icon(CursorIcon::ResizeNwSe);
+                        }
+                    }
+                } else {
+                    self.frame_drag = None;
+                }
+            } else {
+                self.frame_drag = None;
             }
         }
 
@@ -1587,6 +1959,27 @@ impl NodeGraph {
                     if title_rect.contains(pointer_pos) && !double_clicked && !shift && !ctrl {
                         self.drag.dragging_nodes = true;
                     }
+                } else if let Some(hit) = self.frame_hit_at(pointer_pos, self.canvas_rect) {
+                    // Click landed on a decorative frame (and no node was hit
+                    // first). Selection follows ctrl/shift conventions; drag
+                    // semantics depend on which part of the frame was clicked.
+                    let id = match hit {
+                        FrameHit::TitleBar(i) | FrameHit::Corner(i) | FrameHit::Body(i) => i,
+                    };
+                    if !ctrl && !shift {
+                        self.selected_frames.clear();
+                        self.selected_nodes.clear();
+                    }
+                    self.selected_frames.insert(id);
+                    match hit {
+                        FrameHit::TitleBar(_) if !double_clicked && !shift && !ctrl => {
+                            self.frame_drag = Some(FrameDrag { frame_id: id, mode: FrameDragMode::Move });
+                        }
+                        FrameHit::Corner(_) => {
+                            self.frame_drag = Some(FrameDrag { frame_id: id, mode: FrameDragMode::Resize });
+                        }
+                        _ => {}
+                    }
                 } else {
                     // Manual double-click detection on empty canvas:
                     // egui's double_clicked may not fire reliably when the first click
@@ -1612,7 +2005,10 @@ impl NodeGraph {
                     if shift {
                         self.drag.panning = true;
                     } else {
-                        if !ctrl { self.selected_nodes.clear(); }
+                        if !ctrl {
+                            self.selected_nodes.clear();
+                            self.selected_frames.clear();
+                        }
                         self.drag.selection_rect_start = Some(pointer_pos);
                     }
                 }
@@ -1764,6 +2160,7 @@ impl NodeGraph {
                 subgraph_id: Some(subgraph_id),
                 parent_level_idx: Some(parent),
                 label,
+                frames: Vec::new(),
             });
             self.active_level = self.levels.len() - 1;
         }

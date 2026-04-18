@@ -9,6 +9,7 @@ use crate::widgets::nodes::display::led_display::LedDisplayWidget;
 use crate::widgets::nodes::display::value_display::ValueDisplayWidget;
 use crate::widgets::nodes::io::audio_input::AudioInputWidget;
 use crate::widgets::nodes::math::gradient_source::GradientSourceWidget;
+use crate::widgets::nodes::math::lookup::LookupWidget;
 use crate::widgets::nodes::math::multiplex::{DemultiplexerWidget, MultiplexerWidget};
 use crate::widgets::nodes::io::input_controller::InputControllerWidget;
 use crate::widgets::nodes::io::push1::Push1Widget;
@@ -28,6 +29,20 @@ use crate::widgets::nodes::{GraphLevel, NodeGraph};
 pub struct ProjectFile {
     pub nodes: Vec<SavedNode>,
     pub connections: Vec<SavedConnection>,
+    /// Decorative frames per level — purely visual, no engine side.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub frames: Vec<SavedFrame>,
+}
+
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
+pub struct SavedFrame {
+    pub id: u64,
+    pub title: String,
+    /// RGBA (alpha for the border tint; body fill is rendered at low opacity).
+    pub color: [u8; 4],
+    pub notes: String,
+    pub pos: [f32; 2],
+    pub size: [f32; 2],
 }
 
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
@@ -152,7 +167,16 @@ pub fn save_level(level: &GraphLevel, graph: &NodeGraph) -> ProjectFile {
         })
         .collect();
 
-    ProjectFile { nodes, connections }
+    let frames = level.frames.iter().map(|f| SavedFrame {
+        id: f.id,
+        title: f.title.clone(),
+        color: [f.color.r(), f.color.g(), f.color.b(), f.color.a()],
+        notes: f.notes.clone(),
+        pos: [f.pos.x, f.pos.y],
+        size: [f.size.x, f.size.y],
+    }).collect();
+
+    ProjectFile { nodes, connections, frames }
 }
 
 pub fn save_graph(graph: &NodeGraph) -> ProjectFile {
@@ -383,6 +407,17 @@ pub fn load_graph(graph: &mut NodeGraph, project: &ProjectFile) -> Vec<usize> {
                     }
                 }
             }
+            // Lookup's widget owns the column list, so it must be restored
+            // before cleanup_stale_connections or wires to columns past the
+            // default single-column layout get dropped on the first frame.
+            if saved.type_name == "Lookup" {
+                if let Some(data) = &saved.data {
+                    let n = graph.node_mut(idx);
+                    if let Some(w) = n.as_any_mut().downcast_mut::<LookupWidget>() {
+                        w.restore_from_save_data(data);
+                    }
+                }
+            }
 
             // Mux/Demux need their port type + slot count synced before the
             // first frame's stale-connection sweep, or wires on slots >= 8 or
@@ -461,6 +496,29 @@ pub fn load_graph(graph: &mut NodeGraph, project: &ProjectFile) -> Vec<usize> {
             dir: PortDir::Input,
         };
         graph.add_connection(from, to);
+    }
+
+    // Restore decorative frames into the active level.
+    {
+        let target = graph.frames_mut();
+        target.clear();
+        for sf in &project.frames {
+            target.push(crate::widgets::nodes::graph::GraphFrame {
+                id: sf.id,
+                title: sf.title.clone(),
+                color: egui::Color32::from_rgba_unmultiplied(
+                    sf.color[0], sf.color[1], sf.color[2], sf.color[3],
+                ),
+                notes: sf.notes.clone(),
+                pos: egui::pos2(sf.pos[0], sf.pos[1]),
+                size: egui::vec2(sf.size[0], sf.size[1]),
+            });
+        }
+    }
+    // Bump the id counter past any restored frame ids so freshly added
+    // frames don't collide.
+    if let Some(max) = project.frames.iter().map(|f| f.id).max() {
+        graph.bump_next_id_above(max);
     }
 
     indices

@@ -102,9 +102,9 @@ impl DmxSharedState {
             universes: HashMap::new(),
             monitor_key: None,
             test_universes: Vec::new(),
-            // Default to bypass on so the app starts with no DMX traffic
-            // until the operator explicitly goes live.
-            bypass: true,
+            // Default: output is live. Override via AppConfig.dmx_bypass_on_startup
+            // applied in main.rs right after the config is loaded.
+            bypass: false,
             blackout: false,
         }
     }
