@@ -228,6 +228,12 @@ pub struct NodeSharedState {
     pub outputs: Vec<f32>,
     /// Current input port values (written by engine, read by UI).
     pub inputs: Vec<f32>,
+    /// Per-logical-input-port connectedness (written by engine, read by UI).
+    /// Indexed by `inputs()` vec index — true iff at least one wire ends at
+    /// that port on this node. Used by the auto-inspector to hide params
+    /// that are overridden by a wired input, and by widgets that need to
+    /// render differently when a port is wired.
+    pub inputs_connected: Vec<bool>,
     /// Current parameter definitions with values (written by engine, read by UI).
     pub current_params: Vec<ParamDef>,
     /// Custom display state (e.g. scope buffers, step sequencer values).
@@ -246,6 +252,7 @@ impl NodeSharedState {
         Self {
             outputs: vec![0.0; num_outputs],
             inputs: vec![0.0; num_inputs],
+            inputs_connected: Vec::new(),
             current_params: Vec::new(),
             display: None,
             pending_params: Vec::new(),
@@ -347,6 +354,13 @@ pub trait ProcessNode: Send {
     fn read_output(&self, _port_index: usize) -> f32 { 0.0 }
     fn read_input(&self, _port_index: usize) -> f32 { 0.0 }
     fn write_input(&mut self, _port_index: usize, _value: f32) {}
+
+    /// Called by the engine at the start of each tick, before `process()`.
+    /// `connected` is indexed by `inputs()` logical port index — `true`
+    /// when at least one wire ends at that port on this node. Nodes that
+    /// use the "input-overrides-param" pattern store this to decide
+    /// whether to use the wired value or the param each tick.
+    fn set_input_connections(&mut self, _connected: &[bool]) {}
 
     fn on_connect(&mut self, _input_port: usize, _source_type: PortType) {}
     fn on_disconnect(&mut self, _input_port: usize) {}

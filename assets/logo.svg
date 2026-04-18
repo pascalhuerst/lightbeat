@@ -1,0 +1,42 @@
+<svg viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- soft outer glow on the waveform -->
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="4" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <!-- subtle left-to-right opacity ramp so the sine fades into the louder beats -->
+    <linearGradient id="strokeGrad" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0"    stop-color="#5cc8ff" stop-opacity="0.65"/>
+      <stop offset="0.55" stop-color="#5cc8ff" stop-opacity="0.85"/>
+      <stop offset="1"    stop-color="#7ad8ff" stop-opacity="1"/>
+    </linearGradient>
+  </defs>
+
+  <!-- background: dark gray with a faint blue cast, rounded square -->
+  <rect width="256" height="256" rx="48" fill="#1a1d22"/>
+
+  <!-- faint baseline rail under the wave -->
+  <line x1="24" y1="128" x2="232" y2="128"
+        stroke="#2a3038" stroke-width="2" stroke-linecap="round"/>
+
+  <!-- waveform: 1 sine cycle (continuous music) → 3 quantized pulses (beats) -->
+  <path d="
+    M 24 128
+    C 36 60  60 60  72 128
+    C 84 196 108 196 120 128
+    L 130 128 L 130 60 L 150 60 L 150 128
+    L 160 128 L 160 70 L 180 70 L 180 128
+    L 190 128 L 190 48 L 220 48 L 220 128
+    L 232 128
+    "
+    fill="none"
+    stroke="url(#strokeGrad)"
+    stroke-width="8"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    filter="url(#glow)"/>
+</svg>

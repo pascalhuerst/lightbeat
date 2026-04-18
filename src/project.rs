@@ -32,7 +32,24 @@ pub struct ProjectFile {
     /// Decorative frames per level — purely visual, no engine side.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub frames: Vec<SavedFrame>,
+    /// App-level view toggles serialized with the project so the layout
+    /// you left a project in comes back on reopen. `None` for inner
+    /// (subgraph) levels — only the root level carries view state.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub view: Option<ProjectViewState>,
 }
+
+/// Persisted view-toggle state for the app's side panels and windows.
+/// Only meaningful at the root level. Add fields here as more toggles
+/// graduate from "session-only" to "remember per project".
+#[derive(Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct ProjectViewState {
+    /// Whether the macro library side panel is visible.
+    #[serde(default = "default_show_library")]
+    pub show_library: bool,
+}
+
+fn default_show_library() -> bool { true }
 
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct SavedFrame {
@@ -176,7 +193,9 @@ pub fn save_level(level: &GraphLevel, graph: &NodeGraph) -> ProjectFile {
         size: [f.size.x, f.size.y],
     }).collect();
 
-    ProjectFile { nodes, connections, frames }
+    // View state is plumbed in by the caller (save_to_file) at the root
+    // level only; nested subgraph saves leave it as None.
+    ProjectFile { nodes, connections, frames, view: None }
 }
 
 pub fn save_graph(graph: &NodeGraph) -> ProjectFile {
@@ -532,8 +551,13 @@ pub fn default_project_path() -> PathBuf {
     PathBuf::from("project.json")
 }
 
-pub fn save_to_file(graph: &NodeGraph, path: &PathBuf) -> Result<(), String> {
-    let project = save_graph(graph);
+pub fn save_to_file(
+    graph: &NodeGraph,
+    view: ProjectViewState,
+    path: &PathBuf,
+) -> Result<(), String> {
+    let mut project = save_graph(graph);
+    project.view = Some(view);
     let json = serde_json::to_string_pretty(&project).map_err(|e| e.to_string())?;
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;

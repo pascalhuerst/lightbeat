@@ -148,12 +148,16 @@ pub fn show_inspector(ui: &mut Ui, node: &mut dyn NodeWidget) {
 
     // Parameters
     let params = read_params(node);
-    if !params.is_empty() {
+    let hidden = node.overridden_param_indices();
+    let visible_count = params.iter().enumerate()
+        .filter(|(i, _)| !hidden.contains(i)).count();
+    if !params.is_empty() && visible_count > 0 {
         ui.separator();
         ui.label(egui::RichText::new("Parameters").strong().size(11.0));
         ui.add_space(4.0);
 
         for (i, param) in params.iter().enumerate() {
+            if hidden.contains(&i) { continue; }
             match param {
                 ParamDef::Float {
                     name,

@@ -404,8 +404,8 @@ impl LightBeatApp {
         });
         let gradient_library = self.gradient_library.clone();
         self.graph.register_node("Math", "Lookup", move |id| {
-            // Sized for the worst case: 8 columns × Gradient (40 ch) = 320.
-            Box::new(LookupWidget::new(id, new_shared_state(1, 320), gradient_library.clone()))
+            // Outputs: 1 (rows) + worst case 8 columns × Gradient (40 ch) = 321.
+            Box::new(LookupWidget::new(id, new_shared_state(1, 321), gradient_library.clone()))
         });
         self.graph.register_node("Math", "Const Value", |id| {
             Box::new(ConstantWidget::new(id, PortType::Untyped, new_shared_state(0, 1)))
@@ -418,7 +418,8 @@ impl LightBeatApp {
         });
 
         self.graph.register_node("Math", "Counter", |id| {
-            Box::new(CounterWidget::new(id, new_shared_state(2, 2)))
+            // Inputs: trigger, reset, max (3 channels). Outputs: count, wrap (2).
+            Box::new(CounterWidget::new(id, new_shared_state(3, 2)))
         });
         self.graph.register_node("Math", "Change Detect", |id| {
             Box::new(ChangeDetectWidget::new(id, new_shared_state(2, 2)))
@@ -800,10 +801,16 @@ impl LightBeatApp {
             .project_path
             .clone()
             .unwrap_or_else(project::default_project_path);
-        if let Err(e) = project::save_to_file(&self.graph, &path) {
+        if let Err(e) = project::save_to_file(&self.graph, self.view_state(), &path) {
             eprintln!("Failed to save project: {}", e);
         } else {
             self.project_path = Some(path);
+        }
+    }
+
+    fn view_state(&self) -> project::ProjectViewState {
+        project::ProjectViewState {
+            show_library: self.show_library,
         }
     }
 
@@ -854,7 +861,7 @@ impl LightBeatApp {
                         self.load_project_from(&path);
                     }
                     FileDialogResult::SaveProjectAs(path) => {
-                        if let Err(e) = project::save_to_file(&self.graph, &path) {
+                        if let Err(e) = project::save_to_file(&self.graph, self.view_state(), &path) {
                             eprintln!("Failed to save project: {}", e);
                         } else {
                             self.project_path = Some(path);
@@ -939,6 +946,13 @@ impl LightBeatApp {
         self.send_load_data_recursive(&proj.nodes, &indices, vec![]);
 
         self.graph.restore_view_state(&view);
+
+        // Restore persisted app-level view toggles (only when present —
+        // older projects without this field keep whatever the user has
+        // open at the moment, instead of jumping back to defaults).
+        if let Some(v) = &proj.view {
+            self.show_library = v.show_library;
+        }
     }
 
     fn load_project_from(&mut self, path: &std::path::Path) {
@@ -965,6 +979,7 @@ impl LightBeatApp {
             nodes: Vec::new(),
             connections: Vec::new(),
             frames: Vec::new(),
+            view: None,
         };
         self.apply_project(&empty);
         self.project_path = None;
@@ -1259,7 +1274,7 @@ impl LightBeatApp {
 
         // Load this single node into the active level via the existing
         // project loader machinery (handles inner-graph descent + bridges).
-        let pf = project::ProjectFile { nodes: vec![saved.clone()], connections: Vec::new(), frames: Vec::new() };
+        let pf = project::ProjectFile { nodes: vec![saved.clone()], connections: Vec::new(), frames: Vec::new(), view: None };
         let _indices = project::load_graph(&mut self.graph, &pf);
 
         // Spawn engine nodes + send queued commands + load_data, same as

@@ -227,8 +227,11 @@ impl NodeWidget for LookupWidget {
         vec![UiPortDef::from_def(&PortDef::new("index", PortType::Untyped))]
     }
     fn ui_outputs(&self) -> Vec<UiPortDef> {
-        self.columns.iter()
-            .map(|c| UiPortDef::from_def(&PortDef::new(c.name.clone(), c.port_type)))
+        // "rows" is always at index 0 so its position is stable when columns
+        // are added/removed — wires from it survive schema edits.
+        std::iter::once(UiPortDef::from_def(&PortDef::new("rows", PortType::Untyped)))
+            .chain(self.columns.iter()
+                .map(|c| UiPortDef::from_def(&PortDef::new(c.name.clone(), c.port_type))))
             .collect()
     }
 

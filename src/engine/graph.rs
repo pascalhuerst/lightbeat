@@ -136,6 +136,23 @@ impl EngineGraph {
 
     /// One tick of the engine: process all nodes, propagate signals, update shared state.
     fn tick(&mut self) {
+        // 0. Compute per-node "which logical input ports are connected"
+        //    so nodes can decide whether to honour wired values over their
+        //    own params (the "input-overrides-param" pattern).
+        let mut per_node_connected: Vec<Vec<bool>> = self.nodes.iter()
+            .map(|n| vec![false; n.inputs().len()])
+            .collect();
+        for conn in &self.connections {
+            if let Some(dst_idx) = self.nodes.iter().position(|n| n.node_id() == conn.to.node) {
+                if let Some(slot) = per_node_connected[dst_idx].get_mut(conn.to.index) {
+                    *slot = true;
+                }
+            }
+        }
+        for (i, node) in self.nodes.iter_mut().enumerate() {
+            node.set_input_connections(&per_node_connected[i]);
+        }
+
         // 1. Process all nodes.
         for node in self.nodes.iter_mut() {
             node.process();
@@ -204,6 +221,7 @@ impl EngineGraph {
             for ch in 0..total_in.min(shared.inputs.len()) {
                 shared.inputs[ch] = node.read_input(ch);
             }
+            shared.inputs_connected = per_node_connected[i].clone();
             shared.current_params = node.params();
             shared.save_data = node.save_data();
             node.update_display(&mut shared);

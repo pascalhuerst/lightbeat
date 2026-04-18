@@ -8,6 +8,12 @@ pub struct CounterProcessNode {
     wrap_out: f32,
     trigger_in: f32,
     reset_in: f32,
+    /// Wired override of `max_value`. Used only when `max_input_connected`.
+    max_in: f32,
+    /// Set by `set_input_connections` each tick — true if a wire ends at
+    /// the `max` port (logical input index 2). When true, the wired value
+    /// (rounded, >= 1) replaces `max_value` for the duration of the tick.
+    max_input_connected: bool,
     prev_trigger: bool,
     prev_reset: bool,
     inputs: Vec<PortDef>,
@@ -24,16 +30,27 @@ impl CounterProcessNode {
             wrap_out: 0.0,
             trigger_in: 0.0,
             reset_in: 0.0,
+            max_in: 0.0,
+            max_input_connected: false,
             prev_trigger: false,
             prev_reset: false,
             inputs: vec![
                 PortDef::new("trigger", PortType::Logic),
                 PortDef::new("reset", PortType::Logic),
+                PortDef::new("max", PortType::Untyped),
             ],
             outputs: vec![
                 PortDef::new("count", PortType::Untyped),
                 PortDef::new("wrap", PortType::Logic),
             ],
+        }
+    }
+
+    fn effective_max(&self) -> i64 {
+        if self.max_input_connected {
+            (self.max_in.round() as i64).max(1)
+        } else {
+            self.max_value
         }
     }
 }
@@ -45,32 +62,51 @@ impl ProcessNode for CounterProcessNode {
     fn outputs(&self) -> &[PortDef] { &self.outputs }
 
     fn write_input(&mut self, pi: usize, v: f32) {
-        match pi { 0 => self.trigger_in = v, 1 => self.reset_in = v, _ => {} }
+        match pi {
+            0 => self.trigger_in = v,
+            1 => self.reset_in = v,
+            2 => self.max_in = v,
+            _ => {}
+        }
     }
     fn read_input(&self, pi: usize) -> f32 {
-        match pi { 0 => self.trigger_in, 1 => self.reset_in, _ => 0.0 }
+        match pi {
+            0 => self.trigger_in,
+            1 => self.reset_in,
+            2 => self.max_in,
+            _ => 0.0,
+        }
+    }
+
+    fn set_input_connections(&mut self, connected: &[bool]) {
+        self.max_input_connected = connected.get(2).copied().unwrap_or(false);
     }
 
     fn process(&mut self) {
         let trigger = self.trigger_in >= 0.5;
         let reset = self.reset_in >= 0.5;
+        let max = self.effective_max();
         self.wrap_out = 0.0;
 
         if reset && !self.prev_reset {
-            self.count = if self.direction > 0 { 0 } else { self.max_value - 1 };
+            self.count = if self.direction > 0 { 0 } else { max - 1 };
         }
         self.prev_reset = reset;
 
         if trigger && !self.prev_trigger {
             self.count += self.direction;
-            if self.count >= self.max_value {
+            if self.count >= max {
                 self.count = 0;
                 self.wrap_out = 1.0;
             } else if self.count < 0 {
-                self.count = self.max_value - 1;
+                self.count = max - 1;
                 self.wrap_out = 1.0;
             }
         }
+        // Clamp the held count if the max shrank below the current count
+        // (e.g. user dialled down a wired max while idle).
+        if self.count >= max { self.count = 0; }
+        if self.count < 0 { self.count = 0; }
         self.prev_trigger = trigger;
     }
 

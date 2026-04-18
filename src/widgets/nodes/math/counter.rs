@@ -26,7 +26,19 @@ impl NodeWidget for CounterWidget {
         vec![
             UiPortDef::from_def(&PortDef::new("trigger", PortType::Logic)),
             UiPortDef::from_def(&PortDef::new("reset", PortType::Logic)),
+            UiPortDef::from_def(&PortDef::new("max", PortType::Untyped)),
         ]
+    }
+
+    fn overridden_param_indices(&self) -> Vec<usize> {
+        // Hide the "Max" param (index 0) when the `max` input port (logical
+        // index 2) is wired — its value is what the engine actually uses.
+        let s = self.shared.lock().unwrap();
+        if s.inputs_connected.get(2).copied().unwrap_or(false) {
+            vec![0]
+        } else {
+            vec![]
+        }
     }
     fn ui_outputs(&self) -> Vec<UiPortDef> {
         vec![

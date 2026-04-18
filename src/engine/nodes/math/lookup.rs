@@ -72,11 +72,16 @@ impl LookupProcessNode {
     }
 
     fn rebuild_ports(&mut self) {
-        self.outputs = self.columns.iter()
-            .map(|c| PortDef::new(c.name.clone(), c.port_type))
+        // Outputs[0] = "rows" (the table's row count, Untyped). Keeping
+        // it first means adding/removing columns never shifts its index,
+        // so wires from `rows` (typically into Counter.max) survive
+        // schema edits.
+        self.outputs = std::iter::once(PortDef::new("rows", PortType::Untyped))
+            .chain(self.columns.iter().map(|c| PortDef::new(c.name.clone(), c.port_type)))
             .collect();
         let stride = self.row_stride();
-        self.output_values = vec![0.0; stride];
+        // output_values: [row_count][row_data ...]
+        self.output_values = vec![0.0; 1 + stride];
         // Ensure data vec matches row_count × stride (pad or truncate).
         let expected = self.row_count * stride;
         if self.data.len() < expected {
@@ -101,8 +106,11 @@ impl ProcessNode for LookupProcessNode {
     }
 
     fn process(&mut self) {
+        // output_values[0] is always the row count, regardless of row_count
+        // being zero (so a fresh node still emits 0 instead of NaN/garbage).
+        self.output_values[0] = self.row_count as f32;
         if self.row_count == 0 {
-            for v in &mut self.output_values { *v = 0.0; }
+            for v in self.output_values.iter_mut().skip(1) { *v = 0.0; }
             return;
         }
         let stride = self.row_stride();
@@ -112,7 +120,7 @@ impl ProcessNode for LookupProcessNode {
         self.current_row = idx;
         let row_start = idx * stride;
         for c in 0..stride {
-            self.output_values[c] = self.data.get(row_start + c).copied().unwrap_or(0.0);
+            self.output_values[1 + c] = self.data.get(row_start + c).copied().unwrap_or(0.0);
         }
     }
 

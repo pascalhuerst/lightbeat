@@ -72,6 +72,15 @@ pub trait NodeWidget: Any {
     /// Use when the widget renders its own per-port summary in `show_inspector`.
     fn inspector_hides_default_ports(&self) -> bool { false }
 
+    /// Param indices that are currently overridden by a wired input and
+    /// should be hidden from the auto-inspector. Pattern: when an input
+    /// port is wired, the wire's value supersedes the matching param;
+    /// the param is omitted from the inspector to avoid showing a value
+    /// the user can't actually change. Implementations typically read
+    /// `shared_state().lock().inputs_connected[port_idx]` to compute this.
+    /// Default: nothing is overridden.
+    fn overridden_param_indices(&self) -> Vec<usize> { Vec::new() }
+
     fn as_any_mut(&mut self) -> &mut dyn Any;
 }
 

@@ -126,6 +126,23 @@ impl InnerGraph {
 
     /// Run one tick of the inner graph.
     pub fn tick(&mut self, input_ports: &[PortDef], output_ports: &[PortDef]) {
+        // 0. Compute per-node connected-input bitmap and tell each node,
+        //    so the "input-overrides-param" pattern works inside subgraphs.
+        let mut per_node_connected: Vec<Vec<bool>> = self.nodes.iter()
+            .map(|n| vec![false; n.inputs().len()])
+            .collect();
+        for conn in &self.connections {
+            if conn.to.node == BRIDGE_OUT_NODE_ID { continue; }
+            if let Some(dst_idx) = self.nodes.iter().position(|n| n.node_id() == conn.to.node) {
+                if let Some(slot) = per_node_connected[dst_idx].get_mut(conn.to.index) {
+                    *slot = true;
+                }
+            }
+        }
+        for (i, node) in self.nodes.iter_mut().enumerate() {
+            node.set_input_connections(&per_node_connected[i]);
+        }
+
         // 1. Process all inner nodes.
         for node in self.nodes.iter_mut() {
             node.process();
@@ -240,6 +257,7 @@ impl InnerGraph {
             for ch in 0..total_in.min(shared.inputs.len()) {
                 shared.inputs[ch] = node.read_input(ch);
             }
+            shared.inputs_connected = per_node_connected[i].clone();
             shared.current_params = node.params();
             shared.save_data = node.save_data();
             node.update_display(&mut shared);
