@@ -1,3 +1,4 @@
+pub mod bipolar;
 pub mod change_detect;
 pub mod color_modifier;
 pub mod color_ops;
@@ -12,5 +13,6 @@ pub mod math_op;
 pub mod multiplex;
 pub mod oscillator;
 pub mod palette_select;
+pub mod palette_to_gradient;
 pub mod position_ops;
 pub mod scaler;

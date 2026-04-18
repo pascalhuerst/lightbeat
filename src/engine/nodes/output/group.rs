@@ -54,6 +54,10 @@ pub struct GroupProcessNode {
     /// `[lo, hi]` range painted by the most recent trigger. The next trigger
     /// erases this region before writing the new range.
     last_written_range: Option<(f32, f32)>,
+    /// True when the Flood-mode `dimmer` input port is wired. When not
+    /// wired, the dimmer defaults to 1.0 so strip-only groups don't
+    /// silently go black.
+    dimmer_connected: bool,
     /// Group names for display.
     group_names: Vec<String>,
 }
@@ -71,6 +75,7 @@ impl GroupProcessNode {
             input_values: [0.0; INPUT_BUF_LEN],
             prev_trigger: 0.0,
             last_written_range: None,
+            dimmer_connected: false,
             group_names: Vec::new(),
         };
         node.rebuild_inputs();
@@ -107,7 +112,14 @@ impl GroupProcessNode {
         let r = self.input_values[0];
         let g = self.input_values[1];
         let b = self.input_values[2];
-        let dim = self.input_values[12];
+        // Default to full brightness when the dimmer port isn't wired, so
+        // a group of LED strips with only a palette input doesn't silently
+        // go black.
+        let dim = if self.dimmer_connected {
+            self.input_values[12].clamp(0.0, 1.0)
+        } else {
+            1.0
+        };
         let color = Rgb::new(r, g, b);
 
         let mut store = self.object_store.lock().unwrap();
@@ -116,9 +128,26 @@ impl GroupProcessNode {
                 Some(o) => o,
                 None => continue,
             };
-            write_object_color(obj, color);
-            if let Some(ch) = obj.channels.iter_mut().find(|c| matches!(c.kind, ChannelKind::Dimmer)) {
-                ch.set_dimmer(dim);
+
+            let has_dimmer_channel = obj.channels.iter()
+                .any(|c| matches!(c.kind, ChannelKind::Dimmer));
+
+            if has_dimmer_channel {
+                // Dedicated dimmer channel exists — write it and leave the
+                // colour channels at full intensity. The fixture's hardware
+                // does the multiplication on the DMX side.
+                for ch in obj.channels.iter_mut() {
+                    if matches!(ch.kind, ChannelKind::Dimmer) {
+                        ch.set_dimmer(dim);
+                    }
+                }
+                write_object_color(obj, color);
+            } else {
+                // No dimmer channel (plain RGB fixtures, LED strips) —
+                // pre-scale the colour. Visually identical to a hardware
+                // dimmer, just done before the DMX encode.
+                let scaled = Rgb::new(color.r * dim, color.g * dim, color.b * dim);
+                write_object_color(obj, scaled);
             }
         }
     }
@@ -212,6 +241,14 @@ impl ProcessNode for GroupProcessNode {
 
     fn read_input(&self, channel: usize) -> f32 {
         if channel < INPUT_BUF_LEN { self.input_values[channel] } else { 0.0 }
+    }
+
+    fn set_input_connections(&mut self, connected: &[bool]) {
+        // Only Flood mode has a dimmer port (at logical input index 1).
+        // In Triggered mode the dimmer is inherent to the gradient; the
+        // flag is simply false.
+        self.dimmer_connected = matches!(self.mode, GroupMode::Flood)
+            && connected.get(1).copied().unwrap_or(false);
     }
 
     fn process(&mut self) {

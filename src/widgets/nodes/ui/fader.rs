@@ -48,6 +48,7 @@ pub struct FaderWidget {
     id: NodeId,
     shared: SharedState,
     // Mirrored from engine display.
+    name: String,
     orientation: FaderOrientation,
     output_value: f32,
     input_value: f32,
@@ -65,6 +66,7 @@ impl FaderWidget {
         Self {
             id,
             shared,
+            name: String::new(),
             orientation: FaderOrientation::Vertical,
             output_value: 0.0,
             input_value: 0.0,
@@ -80,6 +82,7 @@ impl FaderWidget {
     fn push_config(&self, mouse_value: Option<f32>, override_value: Option<Option<f32>>) {
         let mut shared = self.shared.lock().unwrap();
         let mut cfg = serde_json::json!({
+            "name": self.name,
             "orientation": self.orientation.as_str(),
             "inputs_enabled": self.inputs_enabled,
             "mouse_override": self.mouse_override.as_str(),
@@ -113,7 +116,9 @@ impl FaderWidget {
 impl NodeWidget for FaderWidget {
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { "Fader" }
-    fn title(&self) -> &str { "Fader" }
+    fn title(&self) -> &str {
+        if self.name.is_empty() { "Fader" } else { self.name.as_str() }
+    }
     fn description(&self) -> &'static str {
         "Draggable fader. Optional signal input with override; double-click resets."
     }
@@ -151,6 +156,7 @@ impl NodeWidget for FaderWidget {
         {
             let shared = self.shared.lock().unwrap();
             if let Some(d) = shared.display.as_ref().and_then(|d| d.downcast_ref::<FaderDisplay>()) {
+                self.name = d.name.clone();
                 self.orientation = d.orientation;
                 self.output_value = d.output;
                 self.input_value = d.input;
@@ -239,8 +245,14 @@ impl NodeWidget for FaderWidget {
     }
 
     fn show_inspector(&mut self, ui: &mut Ui) {
-        // Orientation
         let mut changed = false;
+        ui.horizontal(|ui| {
+            ui.label("Name:");
+            if ui.text_edit_singleline(&mut self.name).changed() {
+                changed = true;
+            }
+        });
+        ui.separator();
         ui.horizontal(|ui| {
             ui.label("Orientation:");
             if ui.radio_value(&mut self.orientation, FaderOrientation::Vertical, "Vertical").clicked() {

@@ -188,10 +188,16 @@ pub struct NodeGraph {
     fit_pending: bool,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 struct FrameDrag {
     frame_id: u64,
     mode: FrameDragMode,
+    /// Node state-indices captured at drag start (Move mode only). These
+    /// are the nodes "sitting on top of" the frame; they're dragged along
+    /// with it so the frame feels like a container. Snapshotted once so
+    /// nodes don't spontaneously attach/detach when the frame sweeps over
+    /// them mid-drag.
+    hitched_nodes: Vec<usize>,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -266,6 +272,27 @@ impl NodeGraph {
     }
     pub fn deselect_all_frames(&mut self) { self.selected_frames.clear(); }
 
+    /// Indices of nodes whose screen-rect centre currently falls inside the
+    /// frame with id `frame_id`. Captured once at frame-drag start so those
+    /// nodes ride along — centre-based so a node that's only partially over
+    /// a frame only gets hitched when most of it is inside.
+    fn nodes_on_frame(&self, frame_id: u64, node_rects: &[Rect]) -> Vec<usize> {
+        let level = self.active();
+        let z = level.zoom;
+        let origin = self.canvas_rect.min.to_vec2() + level.pan;
+        let Some(frame) = level.frames.iter().find(|f| f.id == frame_id) else {
+            return Vec::new();
+        };
+        let world_rect = frame.rect();
+        let screen_min = Pos2::new(world_rect.min.x * z, world_rect.min.y * z) + origin;
+        let screen_max = Pos2::new(world_rect.max.x * z, world_rect.max.y * z) + origin;
+        let screen_rect = Rect::from_min_max(screen_min, screen_max);
+        node_rects.iter().enumerate()
+            .filter(|(_, r)| screen_rect.contains(r.center()))
+            .map(|(i, _)| i)
+            .collect()
+    }
+
     fn frame_hit_at(&self, pointer: Pos2, canvas_rect: Rect) -> Option<FrameHit> {
         let level = self.active();
         let z = level.zoom;
@@ -277,13 +304,14 @@ impl NodeGraph {
             let screen_max = Pos2::new(world_rect.max.x * z, world_rect.max.y * z) + origin;
             let screen_rect = Rect::from_min_max(screen_min, screen_max);
             if !screen_rect.contains(pointer) { continue; }
-            let handle_size = (10.0 * z).max(6.0);
+            // Hit-test sizes must match render sizes (scale with canvas zoom).
+            let handle_size = 10.0 * z;
             let corner = Rect::from_min_size(
                 Pos2::new(screen_rect.max.x - handle_size, screen_rect.max.y - handle_size),
                 Vec2::splat(handle_size),
             );
             if corner.contains(pointer) { return Some(FrameHit::Corner(f.id)); }
-            let title_h = (24.0 * z).max(14.0);
+            let title_h = 24.0 * z;
             let title_rect = Rect::from_min_size(
                 screen_rect.min,
                 Vec2::new(screen_rect.width(), title_h.min(screen_rect.height())),
@@ -851,7 +879,10 @@ impl NodeGraph {
             painter.rect_filled(screen_rect, 6.0, fill);
 
             // Title bar across the top with a slightly stronger fill.
-            let title_h = (24.0 * z).max(14.0);
+            // All sizes scale linearly with `z` — the frame is a world-space
+            // object and everything drawn on it should follow the canvas zoom
+            // without floors.
+            let title_h = 24.0 * z;
             let title_rect = Rect::from_min_size(
                 screen_rect.min,
                 Vec2::new(screen_rect.width(), title_h.min(screen_rect.height())),
@@ -863,9 +894,9 @@ impl NodeGraph {
 
             // Border, thicker when selected.
             let border = if selected {
-                Stroke::new(2.5, frame.color)
+                Stroke::new(2.5 * z, frame.color)
             } else {
-                Stroke::new(1.5, Color32::from_rgba_unmultiplied(
+                Stroke::new(1.5 * z, Color32::from_rgba_unmultiplied(
                     frame.color.r(), frame.color.g(), frame.color.b(), 180,
                 ))
             };
@@ -876,14 +907,14 @@ impl NodeGraph {
                     title_rect.left_center() + Vec2::new(8.0 * z, 0.0),
                     egui::Align2::LEFT_CENTER,
                     &frame.title,
-                    egui::FontId::proportional((13.0 * z).max(10.0)),
+                    egui::FontId::proportional(13.0 * z),
                     Color32::from_gray(230),
                 );
             }
 
             // Notes shown under the title bar when there's room and the
             // frame is large enough to carry text.
-            if !frame.notes.is_empty() && screen_rect.height() > title_h + 16.0 {
+            if !frame.notes.is_empty() && screen_rect.height() > title_h + 16.0 * z {
                 let notes_pos = Pos2::new(
                     screen_rect.min.x + 8.0 * z,
                     title_rect.max.y + 4.0 * z,
@@ -892,13 +923,13 @@ impl NodeGraph {
                     notes_pos,
                     egui::Align2::LEFT_TOP,
                     &frame.notes,
-                    egui::FontId::proportional((11.0 * z).max(9.0)),
+                    egui::FontId::proportional(11.0 * z),
                     Color32::from_gray(180),
                 );
             }
 
             // Resize handle in the bottom-right corner.
-            let handle_size = (10.0 * z).max(6.0);
+            let handle_size = 10.0 * z;
             let handle_rect = Rect::from_min_size(
                 Pos2::new(screen_rect.max.x - handle_size, screen_rect.max.y - handle_size),
                 Vec2::splat(handle_size),
@@ -1004,7 +1035,7 @@ impl NodeGraph {
                 &painter,
                 level.nodes[i].title(),
                 level.nodes[i].resizable(),
-                level.nodes[i].title_color(),
+                level.nodes[i].accent_color(),
                 &inputs,
                 &outputs,
                 &in_highlights,
@@ -1071,11 +1102,17 @@ impl NodeGraph {
 
         // Only process keyboard shortcuts when no text field has focus.
         let text_has_focus = ui.ctx().memory(|m| m.focused().is_some());
+        // For destructive shortcuts, additionally require the pointer to be
+        // over the canvas — otherwise a stray Backspace from a side panel
+        // could silently wipe selected nodes / frames.
+        let pointer_over_canvas =
+            !ui.ctx().is_pointer_over_area() && response.contains_pointer();
 
-        // -- Delete selected nodes --
-        if !text_has_focus
+        // -- Delete selected nodes / frames --
+        if pointer_over_canvas
+            && !text_has_focus
             && ui.input(|i| i.key_pressed(egui::Key::Delete) || i.key_pressed(egui::Key::Backspace))
-            && !self.selected_nodes.is_empty()
+            && (!self.selected_nodes.is_empty() || !self.selected_frames.is_empty())
         {
             self.delete_selected();
         }
@@ -1846,22 +1883,38 @@ impl NodeGraph {
         // --- Frame drag (move / resize) — must run before the node resize/
         //     selection blocks so an in-progress drag continues across the
         //     frames where the pointer briefly leaves the frame's screen rect.
-        if let Some(fd) = self.frame_drag {
+        if self.frame_drag.is_some() {
             if primary_down {
+                let (frame_id, mode, hitched) = {
+                    let fd = self.frame_drag.as_ref().unwrap();
+                    (fd.frame_id, fd.mode, fd.hitched_nodes.clone())
+                };
+                let delta = drag_delta / z;
                 let level = self.active_mut();
-                if let Some(frame) = level.frames.iter_mut().find(|f| f.id == fd.frame_id) {
-                    match fd.mode {
+                let frame_exists = level.frames.iter().any(|f| f.id == frame_id);
+                if !frame_exists {
+                    self.frame_drag = None;
+                } else {
+                    match mode {
                         FrameDragMode::Move => {
-                            frame.pos += drag_delta / z;
+                            if let Some(frame) = level.frames.iter_mut().find(|f| f.id == frame_id) {
+                                frame.pos += delta;
+                            }
+                            // Drag hitched nodes by the same world-space delta.
+                            for idx in hitched {
+                                if let Some(state) = level.states.get_mut(idx) {
+                                    state.pos += delta;
+                                }
+                            }
                         }
                         FrameDragMode::Resize => {
-                            frame.size.x = (frame.size.x + drag_delta.x / z).max(80.0);
-                            frame.size.y = (frame.size.y + drag_delta.y / z).max(40.0);
+                            if let Some(frame) = level.frames.iter_mut().find(|f| f.id == frame_id) {
+                                frame.size.x = (frame.size.x + delta.x).max(80.0);
+                                frame.size.y = (frame.size.y + delta.y).max(40.0);
+                            }
                             ui.ctx().set_cursor_icon(CursorIcon::ResizeNwSe);
                         }
                     }
-                } else {
-                    self.frame_drag = None;
                 }
             } else {
                 self.frame_drag = None;
@@ -1973,10 +2026,21 @@ impl NodeGraph {
                     self.selected_frames.insert(id);
                     match hit {
                         FrameHit::TitleBar(_) if !double_clicked && !shift && !ctrl => {
-                            self.frame_drag = Some(FrameDrag { frame_id: id, mode: FrameDragMode::Move });
+                            // Snapshot the nodes currently sitting on top of
+                            // this frame; they ride along with the drag.
+                            let hitched = self.nodes_on_frame(id, node_rects);
+                            self.frame_drag = Some(FrameDrag {
+                                frame_id: id,
+                                mode: FrameDragMode::Move,
+                                hitched_nodes: hitched,
+                            });
                         }
                         FrameHit::Corner(_) => {
-                            self.frame_drag = Some(FrameDrag { frame_id: id, mode: FrameDragMode::Resize });
+                            self.frame_drag = Some(FrameDrag {
+                                frame_id: id,
+                                mode: FrameDragMode::Resize,
+                                hitched_nodes: Vec::new(),
+                            });
                         }
                         _ => {}
                     }
@@ -2621,7 +2685,7 @@ fn draw_node_chrome(
     painter: &Painter,
     title: &str,
     resizable: bool,
-    title_color: Option<Color32>,
+    accent: Option<Color32>,
     inputs: &[UiPortDef],
     outputs: &[UiPortDef],
     in_highlights: &[f32],
@@ -2635,8 +2699,10 @@ fn draw_node_chrome(
     let shadow_rect = rect.translate(Vec2::new(3.0, 3.0));
     painter.rect_filled(shadow_rect, NODE_CORNER_RADIUS, Color32::from_black_alpha(60));
 
-    // Portal-peer glow: a soft amber halo behind the node so linked portals
-    // stand out even when they aren't selected.
+    // Accent glow: a soft halo behind the node in the accent colour, so
+    // "important" node kinds (subgraphs, portals…) stand out even when not
+    // selected. Portal-peer glow takes precedence so linked-portal pairs
+    // keep their amber indicator regardless of accent.
     if portal_peer {
         let halo = rect.expand(3.0);
         painter.rect_filled(
@@ -2644,13 +2710,24 @@ fn draw_node_chrome(
             NODE_CORNER_RADIUS + 3.0,
             Color32::from_rgba_unmultiplied(220, 180, 80, 40),
         );
+    } else if let Some(a) = accent {
+        let halo = rect.expand(2.5);
+        painter.rect_filled(
+            halo,
+            NODE_CORNER_RADIUS + 2.5,
+            Color32::from_rgba_unmultiplied(a.r(), a.g(), a.b(), 50),
+        );
     }
 
     // Body
     painter.rect_filled(rect, NODE_CORNER_RADIUS, NODE_BG);
 
-    // Title bar
-    let title_bg = title_color.unwrap_or(NODE_TITLE_BG);
+    // Title bar — accent-tinted when provided, otherwise the neutral dark.
+    // Mix with the dark default so white title text keeps contrast even
+    // with bright accent colours.
+    let title_bg = accent
+        .map(|a| mix_color(a, NODE_TITLE_BG, 0.45))
+        .unwrap_or(NODE_TITLE_BG);
     let title_rect = Rect::from_min_size(rect.min, Vec2::new(rect.width(), NODE_TITLE_HEIGHT * zoom));
     painter.rect_filled(
         title_rect,
@@ -2665,11 +2742,13 @@ fn draw_node_chrome(
         Color32::WHITE,
     );
 
-    // Border. Priority: selected > portal_peer > default.
+    // Border. Priority: selected > portal_peer > accent > default.
     let border = if selected {
         Stroke::new(2.0, SELECTED_BORDER)
     } else if portal_peer {
         Stroke::new(2.0, PORTAL_PEER_BORDER)
+    } else if let Some(a) = accent {
+        Stroke::new(1.5, a)
     } else {
         Stroke::new(1.0, NODE_BORDER)
     };
@@ -2703,6 +2782,20 @@ fn draw_node_chrome(
             Stroke::new(1.0, handle_color),
         );
     }
+}
+
+/// Linear blend from `a` toward `b` by `t` (0..=1). Used to tint accent
+/// colours with the neutral title-bar dark so white title text stays
+/// readable even with punchy accents.
+fn mix_color(a: Color32, b: Color32, t: f32) -> Color32 {
+    let t = t.clamp(0.0, 1.0);
+    let lerp = |x: u8, y: u8| ((1.0 - t) * x as f32 + t * y as f32).round() as u8;
+    Color32::from_rgba_unmultiplied(
+        lerp(a.r(), b.r()),
+        lerp(a.g(), b.g()),
+        lerp(a.b(), b.b()),
+        255,
+    )
 }
 
 fn draw_port(painter: &Painter, pos: Pos2, ui_port: &UiPortDef, highlight: f32, zoom: f32) {

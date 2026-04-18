@@ -30,8 +30,12 @@ pub trait NodeWidget: Any {
     fn min_content_height(&self) -> f32 { 0.0 }
     fn resizable(&self) -> bool { false }
 
-    /// Optional custom title bar color. Return None for default.
-    fn title_color(&self) -> Option<egui::Color32> { None }
+    /// Optional accent colour. When set, the node's title bar is tinted
+    /// with a darkened mix of this colour (white title text stays readable)
+    /// and its border uses the colour at full saturation. Useful for
+    /// making special node kinds (subgraphs, portals) stand out against
+    /// the default gray chrome.
+    fn accent_color(&self) -> Option<egui::Color32> { None }
 
     /// Nodes that belong to a "linked set" (currently just portals) return
     /// the key that identifies the set. When the user selects a node with a

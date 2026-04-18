@@ -16,6 +16,7 @@ const HIGHLIGHT_DURATION: f64 = 0.5;
 pub struct ButtonGroupWidget {
     id: NodeId,
     shared: SharedState,
+    name: String,
     rows: usize,
     cols: usize,
     mode: ButtonMode,
@@ -35,7 +36,7 @@ impl ButtonGroupWidget {
         let cols = 2;
         let n = rows * cols;
         Self {
-            id, shared, rows, cols,
+            id, shared, name: String::new(), rows, cols,
             mode: ButtonMode::Trigger,
             states: vec![false; n],
             input_values: vec![0.0; n],
@@ -56,6 +57,7 @@ impl ButtonGroupWidget {
             .collect();
         let mut shared = self.shared.lock().unwrap();
         let mut cfg = serde_json::json!({
+            "name": self.name,
             "rows": self.rows,
             "cols": self.cols,
             "mode": self.mode.as_str(),
@@ -90,7 +92,9 @@ impl ButtonGroupWidget {
 impl NodeWidget for ButtonGroupWidget {
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { "Button Group" }
-    fn title(&self) -> &str { "Button Group" }
+    fn title(&self) -> &str {
+        if self.name.is_empty() { "Button Group" } else { self.name.as_str() }
+    }
     fn description(&self) -> &'static str {
         "Grid of buttons with one Logic output per cell. Trigger or Toggle mode applies to all."
     }
@@ -124,20 +128,22 @@ impl NodeWidget for ButtonGroupWidget {
     fn show_content(&mut self, ui: &mut Ui, zoom: f32) {
         // Sync from engine display.
         let snapshot: Option<(
-            usize, usize, ButtonMode, Vec<bool>, Vec<f32>, Vec<bool>,
+            String, usize, usize, ButtonMode, Vec<bool>, Vec<f32>, Vec<bool>,
             bool, bool, MouseOverrideMode,
         )> = {
             let shared = self.shared.lock().unwrap();
             shared.display.as_ref()
                 .and_then(|d| d.downcast_ref::<ButtonGroupDisplay>())
                 .map(|d| (
+                    d.name.clone(),
                     d.rows, d.cols, d.mode, d.states.clone(),
                     d.input_values.clone(), d.override_active.clone(),
                     d.inputs_enabled, d.override_enabled, d.reset_mode,
                 ))
         };
-        if let Some((rows, cols, mode, states, ins, ovs, ie, oe, rm)) = snapshot {
+        if let Some((name, rows, cols, mode, states, ins, ovs, ie, oe, rm)) = snapshot {
             let resized = rows != self.rows || cols != self.cols;
+            self.name = name;
             self.rows = rows;
             self.cols = cols;
             self.mode = mode;
@@ -256,6 +262,13 @@ impl NodeWidget for ButtonGroupWidget {
 
     fn show_inspector(&mut self, ui: &mut Ui) {
         let mut changed = false;
+        ui.horizontal(|ui| {
+            ui.label("Name:");
+            if ui.text_edit_singleline(&mut self.name).changed() {
+                changed = true;
+            }
+        });
+        ui.separator();
         ui.horizontal(|ui| {
             ui.label("Rows:");
             let mut r = self.rows as i32;

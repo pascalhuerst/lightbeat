@@ -23,6 +23,7 @@ impl FaderOrientation {
 }
 
 pub struct FaderDisplay {
+    pub name: String,
     pub orientation: FaderOrientation,
     /// Currently-emitted value.
     pub output: f32,
@@ -37,6 +38,7 @@ pub struct FaderDisplay {
 
 pub struct FaderProcessNode {
     id: NodeId,
+    name: String,
     orientation: FaderOrientation,
     /// Local mouse-driven value when inputs are disabled (legacy behavior).
     mouse_value: f32,
@@ -60,6 +62,7 @@ impl FaderProcessNode {
     pub fn new(id: NodeId) -> Self {
         Self {
             id,
+            name: String::new(),
             orientation: FaderOrientation::Vertical,
             mouse_value: 0.0,
             input_value: 0.0,
@@ -123,6 +126,7 @@ impl ProcessNode for FaderProcessNode {
 
     fn save_data(&self) -> Option<serde_json::Value> {
         Some(serde_json::json!({
+            "name": self.name,
             "orientation": self.orientation.as_str(),
             "mouse_value": self.mouse_value,
             "inputs_enabled": self.inputs_enabled,
@@ -133,6 +137,9 @@ impl ProcessNode for FaderProcessNode {
     }
 
     fn load_data(&mut self, data: &serde_json::Value) {
+        if let Some(n) = data.get("name").and_then(|v| v.as_str()) {
+            self.name = n.to_string();
+        }
         if let Some(s) = data.get("orientation").and_then(|v| v.as_str()) {
             self.orientation = FaderOrientation::from_str(s);
         }
@@ -183,6 +190,7 @@ impl ProcessNode for FaderProcessNode {
 
     fn update_display(&self, shared: &mut NodeSharedState) {
         shared.display = Some(Box::new(FaderDisplay {
+            name: self.name.clone(),
             orientation: self.orientation,
             output: self.output,
             input: self.input_value,

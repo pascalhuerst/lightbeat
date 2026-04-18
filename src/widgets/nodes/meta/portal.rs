@@ -70,7 +70,10 @@ impl NodeWidget for PortalInWidget {
 
     fn min_width(&self) -> f32 { 140.0 }
     fn min_content_height(&self) -> f32 { 18.0 }
-    fn title_color(&self) -> Option<Color32> { Some(Color32::from_rgb(28, 28, 36)) }
+    // Amber accent — matches the portal-peer halo so the colour identity
+    // reads "these nodes are a linked wireless pair" whether or not a
+    // peer is currently selected.
+    fn accent_color(&self) -> Option<Color32> { Some(Color32::from_rgb(220, 170, 60)) }
     fn portal_key(&self) -> Option<String> {
         if self.name.is_empty() { None } else { Some(self.name.clone()) }
     }
@@ -216,7 +219,10 @@ impl NodeWidget for PortalOutWidget {
 
     fn min_width(&self) -> f32 { 140.0 }
     fn min_content_height(&self) -> f32 { 18.0 }
-    fn title_color(&self) -> Option<Color32> { Some(Color32::from_rgb(28, 28, 36)) }
+    // Amber accent — matches the portal-peer halo so the colour identity
+    // reads "these nodes are a linked wireless pair" whether or not a
+    // peer is currently selected.
+    fn accent_color(&self) -> Option<Color32> { Some(Color32::from_rgb(220, 170, 60)) }
     fn portal_key(&self) -> Option<String> {
         if self.bound_name.is_empty() { None } else { Some(self.bound_name.clone()) }
     }

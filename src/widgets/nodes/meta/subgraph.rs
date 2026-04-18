@@ -109,8 +109,10 @@ impl NodeWidget for SubgraphWidget {
         &self.shared
     }
 
-    fn title_color(&self) -> Option<Color32> {
-        Some(Color32::from_rgb(18, 18, 28))
+    fn accent_color(&self) -> Option<Color32> {
+        // Magenta-rose: a "this is a container" accent. Distinct from any
+        // port-type colour so the node reads as "special" at a glance.
+        Some(Color32::from_rgb(190, 90, 150))
     }
 
     fn show_content(&mut self, ui: &mut Ui, _zoom: f32) {

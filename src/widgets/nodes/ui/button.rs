@@ -73,7 +73,9 @@ impl ButtonWidget {
 impl NodeWidget for ButtonWidget {
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { "Button" }
-    fn title(&self) -> &str { "Button" }
+    fn title(&self) -> &str {
+        if self.label.is_empty() { "Button" } else { self.label.as_str() }
+    }
     fn description(&self) -> &'static str {
         "Clickable button outputting a trigger pulse or persistent toggle state."
     }

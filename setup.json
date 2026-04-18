@@ -4947,6 +4947,50 @@
           "logical_end": 0.5
         }
       ]
+    },
+    {
+      "id": 3,
+      "name": "Record Shelf",
+      "object_ids": [
+        13,
+        14,
+        15,
+        16,
+        17,
+        18
+      ],
+      "strip_layout": [
+        {
+          "object_id": 13,
+          "logical_start": 0.5,
+          "logical_end": 0.0
+        },
+        {
+          "object_id": 14,
+          "logical_start": 0.5,
+          "logical_end": 1.0
+        },
+        {
+          "object_id": 15,
+          "logical_start": 0.5,
+          "logical_end": 0.0
+        },
+        {
+          "object_id": 16,
+          "logical_start": 0.5,
+          "logical_end": 1.0
+        },
+        {
+          "object_id": 17,
+          "logical_start": 0.5,
+          "logical_end": 0.0
+        },
+        {
+          "object_id": 18,
+          "logical_start": 0.5,
+          "logical_end": 1.0
+        }
+      ]
     }
   ],
   "color_palettes": [

@@ -58,6 +58,7 @@ fn level_to_pos(level: f32) -> f32 {
 pub struct PeakMeterWidget {
     id: NodeId,
     shared: SharedState,
+    name: String,
     /// Current peak (input port 0).
     peak: f32,
     /// Current RMS (input port 1, optional).
@@ -74,6 +75,7 @@ impl PeakMeterWidget {
     pub fn new(id: NodeId, shared: SharedState) -> Self {
         Self {
             id, shared,
+            name: String::new(),
             peak: 0.0, rms: 0.0,
             orientation: PeakMeterOrientation::Vertical,
             peak_hold: 0.0,
@@ -85,6 +87,7 @@ impl PeakMeterWidget {
     fn push_config(&self) {
         let mut shared = self.shared.lock().unwrap();
         shared.pending_config = Some(serde_json::json!({
+            "name": self.name,
             "orientation": self.orientation.as_str(),
         }));
     }
@@ -93,7 +96,9 @@ impl PeakMeterWidget {
 impl NodeWidget for PeakMeterWidget {
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { "Peak Level Meter" }
-    fn title(&self) -> &str { "Peak Meter" }
+    fn title(&self) -> &str {
+        if self.name.is_empty() { "Peak Meter" } else { self.name.as_str() }
+    }
     fn description(&self) -> &'static str {
         "Level meter: green/yellow/red dB scale, RMS overlay, peak hold and clip indicator."
     }
@@ -116,6 +121,7 @@ impl NodeWidget for PeakMeterWidget {
         {
             let shared = self.shared.lock().unwrap();
             if let Some(d) = shared.display.as_ref().and_then(|d| d.downcast_ref::<PeakMeterDisplay>()) {
+                self.name = d.name.clone();
                 self.peak = d.peak;
                 self.rms = d.rms;
                 self.orientation = d.orientation;
@@ -170,6 +176,13 @@ impl NodeWidget for PeakMeterWidget {
 
     fn show_inspector(&mut self, ui: &mut Ui) {
         let mut changed = false;
+        ui.horizontal(|ui| {
+            ui.label("Name:");
+            if ui.text_edit_singleline(&mut self.name).changed() {
+                changed = true;
+            }
+        });
+        ui.separator();
         ui.horizontal(|ui| {
             ui.label("Orientation:");
             if ui.radio_value(&mut self.orientation, PeakMeterOrientation::Vertical, "Vertical").clicked() {

@@ -6,6 +6,7 @@
 use crate::engine::types::*;
 
 pub struct PeakMeterDisplay {
+    pub name: String,
     pub peak: f32,
     pub rms: f32,
     pub orientation: PeakMeterOrientation,
@@ -34,6 +35,7 @@ impl PeakMeterOrientation {
 
 pub struct PeakMeterProcessNode {
     id: NodeId,
+    name: String,
     inputs: Vec<PortDef>,
     peak: f32,
     rms: f32,
@@ -44,6 +46,7 @@ impl PeakMeterProcessNode {
     pub fn new(id: NodeId) -> Self {
         Self {
             id,
+            name: String::new(),
             inputs: vec![
                 PortDef::new("peak", PortType::Untyped),
                 PortDef::new("rms", PortType::Untyped),
@@ -75,10 +78,16 @@ impl ProcessNode for PeakMeterProcessNode {
     fn process(&mut self) {}
 
     fn save_data(&self) -> Option<serde_json::Value> {
-        Some(serde_json::json!({ "orientation": self.orientation.as_str() }))
+        Some(serde_json::json!({
+            "name": self.name,
+            "orientation": self.orientation.as_str(),
+        }))
     }
 
     fn load_data(&mut self, data: &serde_json::Value) {
+        if let Some(n) = data.get("name").and_then(|v| v.as_str()) {
+            self.name = n.to_string();
+        }
         if let Some(s) = data.get("orientation").and_then(|v| v.as_str()) {
             self.orientation = PeakMeterOrientation::from_str(s);
         }
@@ -86,6 +95,7 @@ impl ProcessNode for PeakMeterProcessNode {
 
     fn update_display(&self, shared: &mut NodeSharedState) {
         shared.display = Some(Box::new(PeakMeterDisplay {
+            name: self.name.clone(),
             peak: self.peak,
             rms: self.rms,
             orientation: self.orientation,

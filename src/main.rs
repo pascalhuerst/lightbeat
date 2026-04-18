@@ -40,6 +40,8 @@ use engine::nodes::ui::button_group::ButtonGroupProcessNode;
 use engine::nodes::ui::fader::FaderProcessNode;
 use engine::nodes::ui::fader_group::FaderGroupProcessNode;
 use engine::nodes::ui::peak_meter::PeakMeterProcessNode;
+use engine::nodes::ui::xy_pad::XyPadProcessNode;
+use engine::nodes::math::bipolar::BipolarProcessNode;
 use engine::nodes::math::change_detect::ChangeDetectProcessNode;
 use engine::nodes::math::flipflop::{FlipFlopProcessNode, JkFlipFlopProcessNode};
 use engine::nodes::math::color_modifier::ColorModifierProcessNode;
@@ -53,6 +55,7 @@ use engine::nodes::math::logic_gate::{LogicOp, LogicGateProcessNode};
 use engine::nodes::math::math_op::{MathOp, MathProcessNode};
 use engine::nodes::math::multiplex::{DemultiplexerProcessNode, MultiplexerProcessNode};
 use engine::nodes::math::palette_select::PaletteSelectProcessNode;
+use engine::nodes::math::palette_to_gradient::PaletteToGradientProcessNode;
 use engine::nodes::meta::subgraph::SubgraphProcessNode;
 use engine::nodes::math::scaler::ScalerProcessNode;
 use engine::nodes::math::oscillator::{OscFunc, OscillatorProcessNode};
@@ -84,6 +87,8 @@ use widgets::nodes::ui::button_group::ButtonGroupWidget;
 use widgets::nodes::ui::fader::FaderWidget;
 use widgets::nodes::ui::fader_group::FaderGroupWidget;
 use widgets::nodes::ui::peak_meter::PeakMeterWidget;
+use widgets::nodes::ui::xy_pad::XyPadWidget;
+use widgets::nodes::math::bipolar::BipolarWidget;
 use widgets::nodes::math::change_detect::ChangeDetectWidget;
 use widgets::nodes::math::flipflop::{FlipFlopKind, FlipFlopWidget};
 use widgets::nodes::math::color_modifier::ColorModifierWidget;
@@ -97,6 +102,7 @@ use widgets::nodes::math::logic_gate::LogicGateWidget;
 use widgets::nodes::math::math_op::MathWidget;
 use widgets::nodes::math::multiplex::{DemultiplexerWidget, MultiplexerWidget};
 use widgets::nodes::math::palette_select::{PaletteSelectWidget, new_shared_palette_context};
+use widgets::nodes::math::palette_to_gradient::PaletteToGradientWidget;
 use widgets::nodes::meta::subgraph::SubgraphWidget;
 use widgets::nodes::math::scaler::ScalerWidget;
 use widgets::nodes::math::oscillator::OscillatorWidget;
@@ -337,6 +343,10 @@ impl LightBeatApp {
         self.graph.register_node("UI", "Fader Group", |id| {
             Box::new(FaderGroupWidget::new(id, new_shared_state(256, 256)))
         });
+        self.graph.register_node("UI", "XY Pad", |id| {
+            // No inputs. 4 outputs (bilinear corner weights).
+            Box::new(XyPadWidget::new(id, new_shared_state(0, 4)))
+        });
         self.graph.register_node("UI", "Peak Level Meter", |id| {
             Box::new(PeakMeterWidget::new(id, new_shared_state(2, 0)))
         });
@@ -484,7 +494,12 @@ impl LightBeatApp {
 
         // Math - Scaler
         self.graph.register_node("Math", "Scaler", |id| {
-            Box::new(ScalerWidget::new(id, new_shared_state(1, 1)))
+            // Inputs: in, min, max (3). Output: out (1).
+            Box::new(ScalerWidget::new(id, new_shared_state(3, 1)))
+        });
+        self.graph.register_node("Math", "Bipolar", |id| {
+            // Inputs: in, range, center (3). Output: out (1).
+            Box::new(BipolarWidget::new(id, new_shared_state(3, 1)))
         });
 
         // Math - Multiplexer / Demultiplexer (generic typed routing).
@@ -526,6 +541,10 @@ impl LightBeatApp {
         self.graph.register_node("Color", "Color Modifier", |id| {
             // Sized for the largest mode (Gradient = 40 ch main + 1 amount), same out.
             Box::new(ColorModifierWidget::new(id, new_shared_state(40 + 1, 40)))
+        });
+        self.graph.register_node("Color", "Palette to Gradient", |id| {
+            // Inputs: 12-ch palette + 4 position channels = 16. Output: 40-ch Gradient.
+            Box::new(PaletteToGradientWidget::new(id, new_shared_state(16, 40)))
         });
 
         // Meta
@@ -652,6 +671,7 @@ impl LightBeatApp {
                 "Button Group" => Some(Box::new(ButtonGroupProcessNode::new(id))),
                 "Fader Group" => Some(Box::new(FaderGroupProcessNode::new(id))),
                 "Peak Level Meter" => Some(Box::new(PeakMeterProcessNode::new(id))),
+                "XY Pad" => Some(Box::new(XyPadProcessNode::new(id))),
                 "Phase Scaler" => Some(Box::new(PhaseScalerProcessNode::new(id))),
                 "LFO" => Some(Box::new(LfoProcessNode::new(id))),
                 "Step Sequencer" => Some(Box::new(StepSequencerProcessNode::new(id))),
@@ -678,9 +698,11 @@ impl LightBeatApp {
                 "Palette Select" => Some(Box::new(PaletteSelectProcessNode::new(id))),
                 "Gradient Source" => Some(Box::new(GradientSourceProcessNode::new(id))),
                 "Color Modifier" => Some(Box::new(ColorModifierProcessNode::new(id))),
+                "Palette to Gradient" => Some(Box::new(PaletteToGradientProcessNode::new(id))),
                 "Multiplexer" => Some(Box::new(MultiplexerProcessNode::new(id))),
                 "Demultiplexer" => Some(Box::new(DemultiplexerProcessNode::new(id))),
                 "Scaler" => Some(Box::new(ScalerProcessNode::new(id))),
+                "Bipolar" => Some(Box::new(BipolarProcessNode::new(id))),
                 ">=" | "<=" | "==" | "!=" => {
                     let op = match type_name {
                         ">=" => CompareOp::Gte, "<=" => CompareOp::Lte,

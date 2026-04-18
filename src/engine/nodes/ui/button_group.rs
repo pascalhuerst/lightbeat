@@ -19,6 +19,7 @@ struct CellState {
 }
 
 pub struct ButtonGroupDisplay {
+    pub name: String,
     pub rows: usize,
     pub cols: usize,
     pub mode: ButtonMode,
@@ -32,6 +33,7 @@ pub struct ButtonGroupDisplay {
 
 pub struct ButtonGroupProcessNode {
     id: NodeId,
+    name: String,
     rows: usize,
     cols: usize,
     mode: ButtonMode,
@@ -49,7 +51,7 @@ impl ButtonGroupProcessNode {
         let rows = 2;
         let cols = 2;
         let mut node = Self {
-            id, rows, cols,
+            id, name: String::new(), rows, cols,
             mode: ButtonMode::Trigger,
             cells: vec![CellState::default(); rows * cols],
             inputs_enabled: false,
@@ -167,6 +169,7 @@ impl ProcessNode for ButtonGroupProcessNode {
             None => serde_json::Value::Null,
         }).collect();
         Some(serde_json::json!({
+            "name": self.name,
             "rows": self.rows,
             "cols": self.cols,
             "mode": self.mode.as_str(),
@@ -179,6 +182,9 @@ impl ProcessNode for ButtonGroupProcessNode {
     }
 
     fn load_data(&mut self, data: &serde_json::Value) {
+        if let Some(n) = data.get("name").and_then(|v| v.as_str()) {
+            self.name = n.to_string();
+        }
         let mut dims_changed = false;
         if let Some(r) = data.get("rows").and_then(|v| v.as_u64()) {
             let r = (r as usize).clamp(1, 16);
@@ -271,6 +277,7 @@ impl ProcessNode for ButtonGroupProcessNode {
             }
         }).collect();
         shared.display = Some(Box::new(ButtonGroupDisplay {
+            name: self.name.clone(),
             rows: self.rows,
             cols: self.cols,
             mode: self.mode,
