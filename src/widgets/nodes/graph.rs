@@ -178,6 +178,14 @@ pub struct NodeGraph {
     /// Selected decorative-frame ids (parallel to `selected_nodes` but for
     /// frames; frames don't share index-space with nodes).
     selected_frames: std::collections::HashSet<u64>,
+    /// Selected wires, keyed by their full `Connection` identity so they
+    /// survive connection-vec re-ordering / removals without stale indices.
+    selected_connections: std::collections::HashSet<Connection>,
+    /// Port currently under the cursor, and a rolling sample buffer of its
+    /// scalar value. Cleared when hover moves to a different port or off
+    /// any port. Populated every frame so the tooltip scope has history.
+    hover_port: Option<PortId>,
+    hover_samples: std::collections::VecDeque<f32>,
     /// Per-active-level drag state for frames. None means "no frame drag in
     /// progress this frame". `frame_id` identifies the dragged frame; `mode`
     /// distinguishes title-bar drag (move) vs corner drag (resize).
@@ -239,6 +247,9 @@ impl NodeGraph {
             pending_macro_request: None,
             selected_nodes: Vec::new(),
             selected_frames: std::collections::HashSet::new(),
+            selected_connections: std::collections::HashSet::new(),
+            hover_port: None,
+            hover_samples: std::collections::VecDeque::with_capacity(128),
             frame_drag: None,
             canvas_rect: Rect::NOTHING,
             clipboard: Vec::new(),
@@ -643,6 +654,196 @@ impl NodeGraph {
             .map(|e| (e.factory)(id))
     }
 
+    /// Find the port under the pointer (if any), push a fresh sample to
+    /// the hover ring buffer, and render a tooltip next to the cursor
+    /// showing the port's name + current value + a small scope.
+    fn update_and_show_hover_tooltip(
+        &mut self,
+        ui: &mut Ui,
+        response: &egui::Response,
+        node_rects: &[Rect],
+    ) {
+        // Pointer must be over the canvas and not over a floating area.
+        if ui.ctx().is_pointer_over_area() || !response.contains_pointer() {
+            self.hover_port = None;
+            self.hover_samples.clear();
+            return;
+        }
+        let Some(pointer) = ui.ctx().input(|i| i.pointer.hover_pos()) else {
+            self.hover_port = None;
+            self.hover_samples.clear();
+            return;
+        };
+
+        let z = self.active().zoom;
+        let radius = (PORT_RADIUS + 4.0) * z;
+
+        // Find hit port (try input first, then output).
+        let hit = {
+            let level = self.active();
+            let mut found: Option<(PortId, String, PortType, usize)> = None;
+            'outer: for i in 0..level.nodes.len() {
+                if i >= node_rects.len() { break; }
+                let rect = node_rects[i];
+                let node_id = level.states[i].id;
+
+                let inputs = level.nodes[i].ui_inputs();
+                let mut base = 0usize;
+                for (pi, up) in inputs.iter().enumerate() {
+                    let pos = port_pos_z(rect.min, rect.width(), PortDir::Input, pi, z);
+                    if pos.distance(pointer) < radius {
+                        found = Some((
+                            make_port_id(node_id, PortDir::Input, pi),
+                            up.def.name.clone(),
+                            up.def.port_type,
+                            base,
+                        ));
+                        break 'outer;
+                    }
+                    base += up.def.port_type.channel_count();
+                }
+                let outputs = level.nodes[i].ui_outputs();
+                let mut base = 0usize;
+                for (pi, up) in outputs.iter().enumerate() {
+                    let pos = port_pos_z(rect.min, rect.width(), PortDir::Output, pi, z);
+                    if pos.distance(pointer) < radius {
+                        found = Some((
+                            make_port_id(node_id, PortDir::Output, pi),
+                            up.def.name.clone(),
+                            up.def.port_type,
+                            base,
+                        ));
+                        break 'outer;
+                    }
+                    base += up.def.port_type.channel_count();
+                }
+            }
+            found
+        };
+
+        let Some((port_id, port_name, port_type, channel_base)) = hit else {
+            self.hover_port = None;
+            self.hover_samples.clear();
+            return;
+        };
+
+        // Reset history if hover moved to a different port.
+        if self.hover_port != Some(port_id) {
+            self.hover_port = Some(port_id);
+            self.hover_samples.clear();
+        }
+
+        // Read all channels of this port's current value from shared state.
+        let values: Vec<f32> = {
+            let level = self.active();
+            let Some(idx) = level.states.iter().position(|s| s.id == port_id.node) else {
+                return;
+            };
+            let shared = level.nodes[idx].shared_state().lock().unwrap();
+            let arr = match port_id.dir {
+                PortDir::Input => &shared.inputs,
+                PortDir::Output => &shared.outputs,
+            };
+            let n = port_type.channel_count();
+            (0..n).map(|c| arr.get(channel_base + c).copied().unwrap_or(0.0)).collect()
+        };
+
+        // Scope history only makes sense for scalar ports; for composites
+        // (Color, Palette, Gradient, Position) the preview renders the
+        // whole value shape instead.
+        let is_scalar = matches!(port_type,
+            PortType::Logic | PortType::Phase | PortType::Untyped | PortType::Any);
+        if is_scalar {
+            let first = values.first().copied().unwrap_or(0.0);
+            self.hover_samples.push_back(first);
+            const SCOPE_SAMPLES: usize = 120;
+            while self.hover_samples.len() > SCOPE_SAMPLES {
+                self.hover_samples.pop_front();
+            }
+        } else {
+            self.hover_samples.clear();
+        }
+
+        let samples: Vec<f32> = self.hover_samples.iter().copied().collect();
+        let line_color = port_type.color();
+        egui::show_tooltip_at_pointer(
+            ui.ctx(),
+            ui.layer_id(),
+            egui::Id::new("port_scope_tooltip"),
+            |ui| {
+                ui.horizontal(|ui| {
+                    ui.colored_label(port_type.color(), "●");
+                    ui.strong(&port_name);
+                    ui.colored_label(
+                        Color32::from_gray(140),
+                        match port_id.dir {
+                            PortDir::Input => "(in)",
+                            PortDir::Output => "(out)",
+                        },
+                    );
+                });
+                match port_type {
+                    PortType::Color => {
+                        ui.label(format!("RGB {:.2} {:.2} {:.2}",
+                            values.first().copied().unwrap_or(0.0),
+                            values.get(1).copied().unwrap_or(0.0),
+                            values.get(2).copied().unwrap_or(0.0)));
+                        draw_color_preview(ui, &values);
+                    }
+                    PortType::Palette => {
+                        ui.label("Palette (4 × RGB)");
+                        draw_palette_preview(ui, &values);
+                    }
+                    PortType::Gradient => {
+                        ui.label("Gradient (8 stops, α/pos)");
+                        draw_gradient_preview(ui, &values);
+                    }
+                    PortType::Position => {
+                        let pan = values.first().copied().unwrap_or(0.0);
+                        let tilt = values.get(1).copied().unwrap_or(0.0);
+                        ui.label(format!("Pan {:.2}  Tilt {:.2}", pan, tilt));
+                        draw_position_preview(ui, pan, tilt);
+                    }
+                    _ => {
+                        let first = values.first().copied().unwrap_or(0.0);
+                        ui.label(format!("{:+.4}", first));
+                        draw_scope(ui, &samples, line_color);
+                    }
+                }
+            },
+        );
+
+        // Keep repainting while hovering so the scope animates without
+        // needing any other event to drive the UI.
+        ui.ctx().request_repaint();
+    }
+
+    /// Return the connection whose bezier passes near `pointer_pos`, if
+    /// any. Tolerance scales with zoom so hit-tests feel consistent at any
+    /// zoom level.
+    fn connection_at(&self, pointer: Pos2) -> Option<Connection> {
+        let level = self.active();
+        let z = level.zoom;
+        let origin = self.canvas_rect.min.to_vec2() + level.pan;
+        let tolerance = (6.0 * z).max(4.0);
+
+        let mut best: Option<(f32, Connection)> = None;
+        for conn in &level.connections {
+            let (Some(from_pos), Some(to_pos)) = (
+                port_screen_pos(&level.nodes, &level.states, conn.from, origin, z),
+                port_screen_pos(&level.nodes, &level.states, conn.to, origin, z),
+            ) else { continue };
+            let pts = bezier_sample(from_pos, to_pos, 20);
+            let d = point_to_polyline_distance(pointer, &pts);
+            if d <= tolerance {
+                if best.as_ref().map(|(db, _)| d < *db).unwrap_or(true) {
+                    best = Some((d, conn.clone()));
+                }
+            }
+        }
+        best.map(|(_, c)| c)
+    }
+
     /// Bundle-connect helper: pair `bundle_size` consecutive ports starting
     /// at the source and target indices, skipping pairs where ports are
     /// missing or types don't match. `dc_from` is the port the user dragged
@@ -944,7 +1145,16 @@ impl NodeGraph {
                 port_type_for(&level.nodes, &level.states, conn.from),
                 port_screen_pos(&level.nodes, &level.states, conn.to, origin, z),
             ) {
-                draw_bezier(&painter, from_pos, to_pos, from_type.color(), CONNECTION_THICKNESS);
+                let selected = self.selected_connections.contains(conn);
+                if selected {
+                    // Soft white halo behind the wire, then redraw the wire
+                    // on top so the type colour still reads.
+                    draw_bezier(&painter, from_pos, to_pos,
+                        Color32::from_rgba_unmultiplied(255, 255, 255, 180),
+                        CONNECTION_THICKNESS + 4.0);
+                }
+                draw_bezier(&painter, from_pos, to_pos, from_type.color(),
+                    CONNECTION_THICKNESS + if selected { 1.5 } else { 0.0 });
             }
         }
 
@@ -1085,15 +1295,36 @@ impl NodeGraph {
         }
 
         // -- Draw selection rectangle --
+        // Solid outline = contain mode (drag top-left → bottom-right).
+        // Dashed outline = crossing mode (drag bottom-right → top-left).
         if let Some(start) = self.drag.selection_rect_start
             && let Some(current) = ui.input(|i| i.pointer.hover_pos()) {
                 let sel_rect = Rect::from_two_pos(start, current);
+                let crossing = current.x < start.x;
                 painter.rect_filled(sel_rect, 0.0, Color32::from_rgba_premultiplied(100, 160, 255, 30));
-                painter.rect_stroke(sel_rect, 0.0, Stroke::new(1.0, SELECTED_BORDER), StrokeKind::Inside);
+                if crossing {
+                    draw_dashed_rect(&painter, sel_rect, SELECTED_BORDER);
+                } else {
+                    painter.rect_stroke(sel_rect, 0.0, Stroke::new(1.0, SELECTED_BORDER), StrokeKind::Inside);
+                }
             }
 
         // -- Handle interactions --
         self.handle_interactions(ui, &response, &node_rects, snap_to_grid);
+
+        // -- Port-hover scope tooltip --
+        // Skipped while a drag is in progress (wire draw / node move / frame)
+        // since hovering a port then is almost always incidental.
+        let drag_active = self.drag.drawing_conn.is_some()
+            || self.drag.dragging_nodes
+            || self.frame_drag.is_some()
+            || self.drag.selection_rect_start.is_some();
+        if !drag_active {
+            self.update_and_show_hover_tooltip(ui, &response, &node_rects);
+        } else {
+            self.hover_port = None;
+            self.hover_samples.clear();
+        }
 
         let ctrl = ui.input(|i| i.modifiers.ctrl || i.modifiers.command);
 
@@ -1105,11 +1336,13 @@ impl NodeGraph {
         let pointer_over_canvas =
             !ui.ctx().is_pointer_over_area() && response.contains_pointer();
 
-        // -- Delete selected nodes / frames --
+        // -- Delete selected nodes / frames / connections --
         if pointer_over_canvas
             && !text_has_focus
             && ui.input(|i| i.key_pressed(egui::Key::Delete) || i.key_pressed(egui::Key::Backspace))
-            && (!self.selected_nodes.is_empty() || !self.selected_frames.is_empty())
+            && (!self.selected_nodes.is_empty()
+                || !self.selected_frames.is_empty()
+                || !self.selected_connections.is_empty())
         {
             self.delete_selected();
         }
@@ -1161,6 +1394,16 @@ impl NodeGraph {
             let to_drop = self.selected_frames.clone();
             self.active_mut().frames.retain(|f| !to_drop.contains(&f.id));
             self.selected_frames.clear();
+        }
+
+        // Selected connections — route through `remove_connection_to` so
+        // widgets get their disconnect callbacks (mode-autodetect nodes
+        // reset to Neutral, etc.), same as any other wire removal.
+        if !self.selected_connections.is_empty() {
+            let to_drop: Vec<Connection> = self.selected_connections.drain().collect();
+            for conn in to_drop {
+                self.remove_connection_to(conn.to);
+            }
         }
 
         let mut to_remove = self.selected_nodes.clone();
@@ -1783,15 +2026,51 @@ impl NodeGraph {
             return;
         }
 
-        // --- Selection rectangle ---
+        // --- Selection rectangle (direction-aware) ---
+        // Forward drag (start top-left → drag bottom-right): *contain* mode —
+        // nodes / wires must be fully inside the rect to be selected.
+        // Backward drag (start right, pointer moves left): *crossing* mode —
+        // anything the rect touches is selected. Rendered with a dashed
+        // outline to flag the different semantic.
         if let Some(start) = self.drag.selection_rect_start {
             if primary_down {
                 let sel_rect = Rect::from_two_pos(start, pointer_pos);
+                let crossing = pointer_pos.x < start.x;
                 self.selected_nodes.clear();
+                self.selected_connections.clear();
                 for (i, rect) in node_rects.iter().enumerate() {
-                    if sel_rect.intersects(*rect) {
+                    let hit = if crossing {
+                        sel_rect.intersects(*rect)
+                    } else {
+                        rect_contains_rect(sel_rect, *rect)
+                    };
+                    if hit {
                         self.selected_nodes.push(i);
                     }
+                }
+                // Connection selection via bezier sampling.
+                let z_local = self.active().zoom;
+                let origin = self.canvas_rect.min.to_vec2() + self.active().pan;
+                let hits: Vec<Connection> = {
+                    let level = self.active();
+                    let mut out = Vec::new();
+                    for conn in &level.connections {
+                        let (Some(from_pos), Some(to_pos)) = (
+                            port_screen_pos(&level.nodes, &level.states, conn.from, origin, z_local),
+                            port_screen_pos(&level.nodes, &level.states, conn.to, origin, z_local),
+                        ) else { continue };
+                        let pts = bezier_sample(from_pos, to_pos, 20);
+                        let hit = if crossing {
+                            pts.iter().any(|p| sel_rect.contains(*p))
+                        } else {
+                            pts.iter().all(|p| sel_rect.contains(*p))
+                        };
+                        if hit { out.push(conn.clone()); }
+                    }
+                    out
+                };
+                for c in hits {
+                    self.selected_connections.insert(c);
                 }
             }
             if primary_released {
@@ -2053,14 +2332,33 @@ impl NodeGraph {
 
                     self.drag.last_canvas_click = Some((now, pointer_pos));
 
+                    // Wire click-to-select: if the click lands on (or very
+                    // near) a bezier wire, select it and skip the normal
+                    // empty-canvas gesture. Ctrl/Shift toggles membership
+                    // for compound selections, matching node semantics.
+                    let wire_hit = self.connection_at(pointer_pos);
+                    if let Some(conn) = wire_hit {
+                        if !ctrl && !shift {
+                            self.selected_nodes.clear();
+                            self.selected_frames.clear();
+                            self.selected_connections.clear();
+                        }
+                        if self.selected_connections.contains(&conn) {
+                            self.selected_connections.remove(&conn);
+                        } else {
+                            self.selected_connections.insert(conn);
+                        }
+                        return;
+                    }
+
                     // Empty canvas: shift+drag = pan, plain drag = selection rect.
-                    let shift = ui.input(|i| i.modifiers.shift);
                     if shift {
                         self.drag.panning = true;
                     } else {
                         if !ctrl {
                             self.selected_nodes.clear();
                             self.selected_frames.clear();
+                            self.selected_connections.clear();
                         }
                         self.drag.selection_rect_start = Some(pointer_pos);
                     }
@@ -2786,6 +3084,156 @@ fn mix_color(a: Color32, b: Color32, t: f32) -> Color32 {
     )
 }
 
+/// Solid colour swatch for hovering Color ports. Reads channels 0..3 as RGB.
+fn draw_color_preview(ui: &mut Ui, values: &[f32]) {
+    let size = Vec2::new(180.0, 40.0);
+    let (resp, painter) = ui.allocate_painter(size, Sense::hover());
+    let rect = resp.rect;
+    let r = values.first().copied().unwrap_or(0.0).clamp(0.0, 1.0);
+    let g = values.get(1).copied().unwrap_or(0.0).clamp(0.0, 1.0);
+    let b = values.get(2).copied().unwrap_or(0.0).clamp(0.0, 1.0);
+    painter.rect_filled(rect, 3.0,
+        Color32::from_rgb((r * 255.0) as u8, (g * 255.0) as u8, (b * 255.0) as u8));
+    painter.rect_stroke(rect, 3.0, Stroke::new(1.0, Color32::from_gray(80)), StrokeKind::Inside);
+}
+
+/// Four-swatch row for Palette ports. Channels are laid out as 4 × RGB.
+fn draw_palette_preview(ui: &mut Ui, values: &[f32]) {
+    let size = Vec2::new(180.0, 40.0);
+    let (resp, painter) = ui.allocate_painter(size, Sense::hover());
+    let rect = resp.rect;
+    let slot_w = rect.width() / 4.0;
+    for i in 0..4 {
+        let base = i * 3;
+        let r = values.get(base).copied().unwrap_or(0.0).clamp(0.0, 1.0);
+        let g = values.get(base + 1).copied().unwrap_or(0.0).clamp(0.0, 1.0);
+        let b = values.get(base + 2).copied().unwrap_or(0.0).clamp(0.0, 1.0);
+        let slot_rect = Rect::from_min_size(
+            Pos2::new(rect.min.x + i as f32 * slot_w, rect.min.y),
+            Vec2::new(slot_w, rect.height()),
+        );
+        painter.rect_filled(slot_rect, 0.0,
+            Color32::from_rgb((r * 255.0) as u8, (g * 255.0) as u8, (b * 255.0) as u8));
+    }
+    painter.rect_stroke(rect, 3.0, Stroke::new(1.0, Color32::from_gray(80)), StrokeKind::Inside);
+}
+
+/// Sampled gradient preview (same renderer as Gradient Source etc., just
+/// inlined here to avoid threading a `color::Gradient` helper through the
+/// graph module).
+fn draw_gradient_preview(ui: &mut Ui, values: &[f32]) {
+    use crate::color::Gradient;
+    let size = Vec2::new(200.0, 40.0);
+    let (resp, painter) = ui.allocate_painter(size, Sense::hover());
+    let rect = resp.rect;
+
+    // Checkerboard so alpha reads clearly.
+    let cell = 5.0;
+    let cols = (rect.width() / cell).ceil() as i32;
+    let rows = (rect.height() / cell).ceil() as i32;
+    for y in 0..rows {
+        for x in 0..cols {
+            let color = if (x + y) % 2 == 0 {
+                Color32::from_gray(40)
+            } else {
+                Color32::from_gray(70)
+            };
+            let cr = Rect::from_min_size(
+                Pos2::new(rect.min.x + x as f32 * cell, rect.min.y + y as f32 * cell),
+                Vec2::splat(cell),
+            ).intersect(rect);
+            painter.rect_filled(cr, 0.0, color);
+        }
+    }
+
+    let g = Gradient::from_channels(values);
+    if !g.stops().is_empty() {
+        let samples = (rect.width() as usize).max(16).min(256);
+        for i in 0..samples {
+            let t = i as f32 / (samples - 1).max(1) as f32;
+            let x = rect.min.x + (i as f32 / samples as f32) * rect.width();
+            let (rgb, alpha) = g.sample_with_alpha(t);
+            let c = Color32::from_rgba_unmultiplied(
+                (rgb.r.clamp(0.0, 1.0) * 255.0) as u8,
+                (rgb.g.clamp(0.0, 1.0) * 255.0) as u8,
+                (rgb.b.clamp(0.0, 1.0) * 255.0) as u8,
+                (alpha.clamp(0.0, 1.0) * 255.0) as u8,
+            );
+            painter.line_segment(
+                [Pos2::new(x, rect.min.y), Pos2::new(x, rect.max.y)],
+                Stroke::new(rect.width() / samples as f32 + 0.5, c),
+            );
+        }
+    }
+    painter.rect_stroke(rect, 3.0, Stroke::new(1.0, Color32::from_gray(80)), StrokeKind::Inside);
+}
+
+/// Small pan/tilt crosshair preview. Pan 0..1 is x-axis, tilt 0..1 is y-axis.
+fn draw_position_preview(ui: &mut Ui, pan: f32, tilt: f32) {
+    let size = Vec2::new(80.0, 80.0);
+    let (resp, painter) = ui.allocate_painter(size, Sense::hover());
+    let rect = resp.rect;
+    painter.rect_filled(rect, 3.0, Color32::from_gray(24));
+    painter.rect_stroke(rect, 3.0, Stroke::new(1.0, Color32::from_gray(80)), StrokeKind::Inside);
+    let mid = rect.center();
+    let guide = Stroke::new(0.5, Color32::from_gray(60));
+    painter.line_segment([Pos2::new(rect.min.x, mid.y), Pos2::new(rect.max.x, mid.y)], guide);
+    painter.line_segment([Pos2::new(mid.x, rect.min.y), Pos2::new(mid.x, rect.max.y)], guide);
+    let dot = Pos2::new(
+        rect.min.x + pan.clamp(0.0, 1.0) * rect.width(),
+        rect.min.y + tilt.clamp(0.0, 1.0) * rect.height(),
+    );
+    painter.circle_filled(dot, 4.0, Color32::from_rgb(80, 200, 140));
+    painter.circle_stroke(dot, 4.0, Stroke::new(1.0, Color32::from_gray(20)));
+}
+
+/// Mini scope for the port-hover tooltip. Plots the samples on a dark
+/// background with a subtle zero line; y-scale auto-fits the observed
+/// range (clamped to at least a small epsilon so constant signals still
+/// render as a visible baseline).
+fn draw_scope(ui: &mut Ui, samples: &[f32], line_color: Color32) {
+    let size = Vec2::new(180.0, 60.0);
+    let (resp, painter) = ui.allocate_painter(size, Sense::hover());
+    let rect = resp.rect;
+    painter.rect_filled(rect, 3.0, Color32::from_gray(24));
+    painter.rect_stroke(rect, 3.0, Stroke::new(1.0, Color32::from_gray(80)), StrokeKind::Inside);
+    if samples.is_empty() { return; }
+    let mut min_v = f32::INFINITY;
+    let mut max_v = f32::NEG_INFINITY;
+    for &v in samples {
+        if v < min_v { min_v = v; }
+        if v > max_v { max_v = v; }
+    }
+    // Include 0 in the visible range when the signal is unipolar so the
+    // baseline sits flush with the bottom instead of floating.
+    if min_v > 0.0 { min_v = 0.0; }
+    if max_v < 0.0 { max_v = 0.0; }
+    let range = (max_v - min_v).max(1e-3);
+    let n = samples.len();
+    let dx = rect.width() / (n.max(2) - 1) as f32;
+
+    // Zero line.
+    let zero_y = rect.max.y - ((0.0 - min_v) / range) * rect.height();
+    if zero_y >= rect.min.y && zero_y <= rect.max.y {
+        painter.line_segment(
+            [Pos2::new(rect.min.x, zero_y), Pos2::new(rect.max.x, zero_y)],
+            Stroke::new(0.5, Color32::from_gray(60)),
+        );
+    }
+
+    // Signal line.
+    let pts: Vec<Pos2> = samples.iter().enumerate().map(|(i, &v)| {
+        let x = rect.min.x + i as f32 * dx;
+        let y = rect.max.y - ((v - min_v) / range) * rect.height();
+        Pos2::new(x, y)
+    }).collect();
+    if pts.len() >= 2 {
+        for w in pts.windows(2) {
+            painter.line_segment([w[0], w[1]], Stroke::new(1.5, line_color));
+        }
+    }
+}
+
 fn draw_port(painter: &Painter, pos: Pos2, ui_port: &UiPortDef, highlight: f32, zoom: f32) {
     let type_color = ui_port.def.port_type.color();
     let fill = ui_port.fill_color.unwrap_or(type_color);
@@ -2844,14 +3292,52 @@ fn draw_grid(painter: &Painter, rect: Rect, pan: Vec2, zoom: f32) {
     }
 }
 
-fn draw_bezier(painter: &Painter, from: Pos2, to: Pos2, color: Color32, thickness: f32) {
+/// Dashed rectangle outline used to flag crossing-mode selection lassos.
+fn draw_dashed_rect(painter: &Painter, rect: Rect, color: Color32) {
+    let stroke = Stroke::new(1.0, color);
+    let dash = 6.0;
+    let gap = 4.0;
+    let seg = dash + gap;
+
+    let mut draw_dashed_segment = |from: Pos2, to: Pos2| {
+        let diff = to - from;
+        let len = diff.length();
+        if len <= 0.0 { return; }
+        let dir = diff / len;
+        let mut d = 0.0f32;
+        while d < len {
+            let end = (d + dash).min(len);
+            let a = from + dir * d;
+            let b = from + dir * end;
+            painter.line_segment([a, b], stroke);
+            d += seg;
+        }
+    };
+
+    draw_dashed_segment(rect.left_top(), rect.right_top());
+    draw_dashed_segment(rect.right_top(), rect.right_bottom());
+    draw_dashed_segment(rect.right_bottom(), rect.left_bottom());
+    draw_dashed_segment(rect.left_bottom(), rect.left_top());
+}
+
+/// Is `inner` fully contained within `outer` (edges touching counts)?
+fn rect_contains_rect(outer: Rect, inner: Rect) -> bool {
+    outer.min.x <= inner.min.x
+        && outer.min.y <= inner.min.y
+        && outer.max.x >= inner.max.x
+        && outer.max.y >= inner.max.y
+}
+
+/// Sample a wire bezier between `from` and `to` at `segments+1` points.
+/// Shared by the renderer and hit-test paths so selection matches the
+/// curve the user sees.
+fn bezier_sample(from: Pos2, to: Pos2, segments: usize) -> Vec<Pos2> {
     let dx = (to.x - from.x).abs() * 0.5;
     let ctrl1 = Pos2::new(from.x + dx, from.y);
     let ctrl2 = Pos2::new(to.x - dx, to.y);
-
-    let mut points = Vec::with_capacity(BEZIER_SEGMENTS + 1);
-    for i in 0..=BEZIER_SEGMENTS {
-        let t = i as f32 / BEZIER_SEGMENTS as f32;
+    let mut points = Vec::with_capacity(segments + 1);
+    for i in 0..=segments {
+        let t = i as f32 / segments as f32;
         let inv = 1.0 - t;
         let x = inv * inv * inv * from.x
             + 3.0 * inv * inv * t * ctrl1.x
@@ -2863,10 +3349,37 @@ fn draw_bezier(painter: &Painter, from: Pos2, to: Pos2, color: Color32, thicknes
             + t * t * t * to.y;
         points.push(Pos2::new(x, y));
     }
+    points
+}
 
+fn draw_bezier(painter: &Painter, from: Pos2, to: Pos2, color: Color32, thickness: f32) {
+    let points = bezier_sample(from, to, BEZIER_SEGMENTS);
     for w in points.windows(2) {
         painter.line_segment([w[0], w[1]], Stroke::new(thickness, color));
     }
+}
+
+/// Shortest distance from `p` to the polyline `pts`. Used to hit-test
+/// clicks against wire beziers.
+fn point_to_polyline_distance(p: Pos2, pts: &[Pos2]) -> f32 {
+    let mut best = f32::INFINITY;
+    for w in pts.windows(2) {
+        let d = point_to_segment_distance(p, w[0], w[1]);
+        if d < best { best = d; }
+    }
+    best
+}
+
+fn point_to_segment_distance(p: Pos2, a: Pos2, b: Pos2) -> f32 {
+    let ab = Vec2::new(b.x - a.x, b.y - a.y);
+    let len2 = ab.x * ab.x + ab.y * ab.y;
+    if len2 < 1e-6 {
+        return (p.to_vec2() - a.to_vec2()).length();
+    }
+    let ap = Vec2::new(p.x - a.x, p.y - a.y);
+    let t = ((ap.x * ab.x + ap.y * ab.y) / len2).clamp(0.0, 1.0);
+    let proj = Pos2::new(a.x + t * ab.x, a.y + t * ab.y);
+    (p - proj).length()
 }
 
 fn port_screen_pos(

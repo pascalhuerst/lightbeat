@@ -4,8 +4,8 @@
       "type_name": "Subgraph",
       "id": 47,
       "pos": [
-        -577.76807,
-        851.39496
+        -752.04816,
+        1167.7212
       ],
       "size": [
         120.0,
@@ -1241,8 +1241,8 @@
       "type_name": "Group Output",
       "id": 98,
       "pos": [
-        949.2432,
-        824.64526
+        -1082.8726,
+        826.28595
       ],
       "params": [
         {
@@ -2212,8 +2212,8 @@
       "type_name": "Portal Out",
       "id": 108,
       "pos": [
-        249.47089,
-        818.62305
+        -1802.9471,
+        856.3505
       ],
       "params": [],
       "data": {
@@ -2254,8 +2254,8 @@
       "type_name": "Color Modifier",
       "id": 109,
       "pos": [
-        805.8849,
-        913.5769
+        -1246.5333,
+        951.30414
       ],
       "params": [
         {
@@ -2272,8 +2272,8 @@
       "type_name": "Color Modifier",
       "id": 110,
       "pos": [
-        644.04517,
-        977.1841
+        -1408.3732,
+        1014.91174
       ],
       "params": [
         {
@@ -2290,8 +2290,8 @@
       "type_name": "Bipolar",
       "id": 111,
       "pos": [
-        516.10785,
-        1021.1167
+        -1536.3104,
+        1058.8444
       ],
       "params": [
         {
@@ -2320,8 +2320,8 @@
         "bipolar": false,
         "inputs_enabled": false,
         "mouse_override": "no",
-        "mouse_value": 0.0,
-        "name": "",
+        "mouse_value": 0.5415647029876709,
+        "name": "Hue",
         "orientation": "vertical",
         "override_value": null
       }
@@ -2342,7 +2342,7 @@
         "bipolar": false,
         "inputs_enabled": false,
         "mouse_override": "no",
-        "mouse_value": 0.0,
+        "mouse_value": 0.4338783025741577,
         "name": "",
         "orientation": "horizontal",
         "override_value": null
@@ -2352,8 +2352,8 @@
       "type_name": "Fader",
       "id": 115,
       "pos": [
-        -850.0985,
-        2747.995
+        -855.5856,
+        2754.615
       ],
       "size": [
         226.07263,
@@ -2364,8 +2364,8 @@
         "bipolar": false,
         "inputs_enabled": false,
         "mouse_override": "no",
-        "mouse_value": 1.0,
-        "name": "",
+        "mouse_value": 0.8787021636962891,
+        "name": "Brightness",
         "orientation": "vertical",
         "override_value": null
       }
@@ -2478,8 +2478,8 @@
       "type_name": "Subgraph",
       "id": 128,
       "pos": [
-        -1310.1453,
-        1934.3104
+        -1327.5098,
+        1683.9768
       ],
       "size": [
         158.46138,
@@ -2649,18 +2649,18 @@
         },
         {
           "index": 1,
-          "value": 0.47999998927116394
+          "value": 0.29999998211860657
         },
         {
           "index": 2,
-          "value": 0.4699999988079071
+          "value": 0.26999998092651367
         }
       ],
       "data": {
         "mode": "positions",
         "name": "",
-        "x": 0.47999998927116394,
-        "y": 0.4699999988079071
+        "x": 0.29999998211860657,
+        "y": 0.26999998092651367
       }
     },
     {
@@ -2697,12 +2697,12 @@
       "type_name": "Button",
       "id": 133,
       "pos": [
-        -1749.4465,
-        2228.0051
+        -1955.991,
+        2307.9167
       ],
       "size": [
-        120.0,
-        76.0
+        272.1907,
+        174.44629
       ],
       "params": [],
       "data": {
@@ -2732,7 +2732,7 @@
         "inputs_enabled": false,
         "mouse_override": "no",
         "mouse_value": 0.12388302385807037,
-        "name": "",
+        "name": "Width",
         "orientation": "horizontal",
         "override_value": null
       }
@@ -2795,8 +2795,12 @@
       "type_name": "Scope",
       "id": 138,
       "pos": [
-        -255.38486,
-        2132.77
+        -292.72522,
+        2099.4265
+      ],
+      "size": [
+        582.57654,
+        192.14381
       ],
       "params": [
         {
@@ -2821,8 +2825,8 @@
       "type_name": "Transition",
       "id": 139,
       "pos": [
-        -954.4117,
-        1888.218
+        -869.5168,
+        1898.1681
       ],
       "params": [
         {
@@ -2906,12 +2910,6 @@
       "from_port": 2,
       "to_node": 103,
       "to_port": 2
-    },
-    {
-      "from_node": 108,
-      "from_port": 0,
-      "to_node": 98,
-      "to_port": 0
     },
     {
       "from_node": 108,
@@ -3064,18 +3062,6 @@
       "to_port": 0
     },
     {
-      "from_node": 134,
-      "from_port": 0,
-      "to_node": 107,
-      "to_port": 2
-    },
-    {
-      "from_node": 135,
-      "from_port": 0,
-      "to_node": 107,
-      "to_port": 0
-    },
-    {
       "from_node": 116,
       "from_port": 1,
       "to_node": 136,
@@ -3085,12 +3071,6 @@
       "from_node": 136,
       "from_port": 0,
       "to_node": 135,
-      "to_port": 0
-    },
-    {
-      "from_node": 135,
-      "from_port": 0,
-      "to_node": 138,
       "to_port": 0
     },
     {
@@ -3116,12 +3096,6 @@
       "from_port": 0,
       "to_node": 141,
       "to_port": 0
-    },
-    {
-      "from_node": 141,
-      "from_port": 0,
-      "to_node": 107,
-      "to_port": 1
     },
     {
       "from_node": 102,
@@ -3176,6 +3150,36 @@
       "from_port": 0,
       "to_node": 141,
       "to_port": 1
+    },
+    {
+      "from_node": 134,
+      "from_port": 0,
+      "to_node": 107,
+      "to_port": 2
+    },
+    {
+      "from_node": 108,
+      "from_port": 0,
+      "to_node": 98,
+      "to_port": 0
+    },
+    {
+      "from_node": 135,
+      "from_port": 0,
+      "to_node": 138,
+      "to_port": 0
+    },
+    {
+      "from_node": 135,
+      "from_port": 0,
+      "to_node": 107,
+      "to_port": 0
+    },
+    {
+      "from_node": 141,
+      "from_port": 0,
+      "to_node": 107,
+      "to_port": 1
     }
   ],
   "frames": [
@@ -3190,8 +3194,8 @@
       ],
       "notes": "",
       "pos": [
-        -653.2194,
-        755.3817
+        -827.4996,
+        1071.7079
       ],
       "size": [
         506.18237,
@@ -3200,17 +3204,17 @@
     },
     {
       "id": 75,
-      "title": "Frame",
+      "title": "This is a test, how a standart output coud look like",
       "color": [
-        200,
-        160,
-        80,
+        48,
+        0,
+        0,
         255
       ],
       "notes": "",
       "pos": [
-        210.48651,
-        731.03906
+        -1841.9315,
+        768.76666
       ],
       "size": [
         905.58264,
