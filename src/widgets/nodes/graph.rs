@@ -818,6 +818,95 @@ impl NodeGraph {
         ui.ctx().request_repaint();
     }
 
+    /// Set the OS cursor icon based on what the pointer is currently over,
+    /// giving pre-action feedback: a port suggests "drag me to spin a
+    /// wire", a title bar suggests "grab to move", a resize handle shows
+    /// the diagonal arrows, etc. Priority is highest-specificity first
+    /// (ports before titles before frame areas before wires) so hovers
+    /// over clustered widgets pick the most actionable affordance.
+    fn update_cursor_icon(
+        &self,
+        ui: &mut Ui,
+        response: &egui::Response,
+        node_rects: &[Rect],
+    ) {
+        if ui.ctx().is_pointer_over_area() || !response.contains_pointer() {
+            return;
+        }
+        let Some(pointer) = ui.ctx().input(|i| i.pointer.hover_pos()) else { return; };
+        let z = self.active().zoom;
+
+        // --- Ports on any node: Crosshair = "pull a wire from here".
+        let level = self.active();
+        for i in 0..level.nodes.len() {
+            if i >= node_rects.len() { break; }
+            let rect = node_rects[i];
+            let radius = (PORT_RADIUS + 4.0) * z;
+            let outs = level.nodes[i].ui_outputs();
+            for (pi, _) in outs.iter().enumerate() {
+                let pos = port_pos_z(rect.min, rect.width(), PortDir::Output, pi, z);
+                if pos.distance(pointer) < radius {
+                    ui.ctx().set_cursor_icon(egui::CursorIcon::Crosshair);
+                    return;
+                }
+            }
+            let ins = level.nodes[i].ui_inputs();
+            for (pi, _) in ins.iter().enumerate() {
+                let pos = port_pos_z(rect.min, rect.width(), PortDir::Input, pi, z);
+                if pos.distance(pointer) < radius {
+                    ui.ctx().set_cursor_icon(egui::CursorIcon::Crosshair);
+                    return;
+                }
+            }
+        }
+
+        // --- Node resize handle (bottom-right corner of any resizable node).
+        for i in (0..level.nodes.len()).rev() {
+            if i >= node_rects.len() { break; }
+            if !level.nodes[i].resizable() { continue; }
+            let handle_rect = Rect::from_min_size(
+                node_rects[i].max - Vec2::splat(RESIZE_HANDLE_SIZE),
+                Vec2::splat(RESIZE_HANDLE_SIZE),
+            );
+            if handle_rect.contains(pointer) {
+                ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeNwSe);
+                return;
+            }
+        }
+
+        // --- Node title bar: Grab = "drag to move".
+        for i in (0..level.nodes.len()).rev() {
+            if i >= node_rects.len() { break; }
+            let title_rect = Rect::from_min_size(
+                node_rects[i].min,
+                Vec2::new(node_rects[i].width(), NODE_TITLE_HEIGHT * z),
+            );
+            if title_rect.contains(pointer) {
+                ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
+                return;
+            }
+        }
+
+        // --- Frame chrome: Corner → resize, TitleBar → grab.
+        if let Some(hit) = self.frame_hit_at(pointer, self.canvas_rect) {
+            match hit {
+                FrameHit::Corner(_) => {
+                    ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeNwSe);
+                }
+                FrameHit::TitleBar(_) => {
+                    ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
+                }
+                FrameHit::Body(_) => {}
+            }
+            return;
+        }
+
+        // --- Wire under pointer: PointingHand = "click to select".
+        if self.connection_at(pointer).is_some() {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+        }
+    }
+
     /// Return the connection whose bezier passes near `pointer_pos`, if
     /// any. Tolerance scales with zoom so hit-tests feel consistent at any
     /// zoom level.
@@ -1317,10 +1406,13 @@ impl NodeGraph {
         // since hovering a port then is almost always incidental.
         let drag_active = self.drag.drawing_conn.is_some()
             || self.drag.dragging_nodes
+            || self.drag.resizing_node.is_some()
+            || self.drag.panning
             || self.frame_drag.is_some()
             || self.drag.selection_rect_start.is_some();
         if !drag_active {
             self.update_and_show_hover_tooltip(ui, &response, &node_rects);
+            self.update_cursor_icon(ui, &response, &node_rects);
         } else {
             self.hover_port = None;
             self.hover_samples.clear();
@@ -1345,6 +1437,15 @@ impl NodeGraph {
                 || !self.selected_connections.is_empty())
         {
             self.delete_selected();
+        }
+
+        // -- Fit view to content (F or Home) --
+        // Works even without pointer over canvas — handy when nodes end up
+        // off-screen and you don't know where to pan to reach them.
+        if !text_has_focus
+            && ui.input(|i| i.key_pressed(egui::Key::F) || i.key_pressed(egui::Key::Home))
+        {
+            self.fit_to_content();
         }
 
         // -- Duplicate (Ctrl+D) --
