@@ -133,7 +133,7 @@ impl NodeWidget for GroupWidget {
         drop(shared);
 
         // Keep widget mode in sync with engine state (e.g. after project load).
-        if let Some(m) = engine_mode { if m != self.mode { self.mode = m; } }
+        if let Some(m) = engine_mode && m != self.mode { self.mode = m; }
 
         let mode_label = GROUP_MODE_NAMES[self.mode.to_index()];
         if self.selected_group_ids.is_empty() {

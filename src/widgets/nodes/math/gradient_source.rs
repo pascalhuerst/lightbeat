@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 
 use egui::{self, Color32, Pos2, Sense, Stroke, StrokeKind, Ui, Vec2};
 
-use crate::color::{Gradient, GradientStop, Rgb};
+use crate::color::{GradientStop, Rgb};
 use crate::engine::nodes::math::gradient_source::GradientSourceDisplay;
 use crate::engine::types::*;
 use crate::objects::gradient_preset::GradientPreset;
@@ -221,14 +221,12 @@ impl NodeWidget for GradientSourceWidget {
         // the clicked position, sampled from the current gradient so the
         // visual stays continuous.
         let mut new_stop_at: Option<f32> = None;
-        if resp.double_clicked() {
-            if let Some(pos) = resp.interact_pointer_pos() {
-                if pos.y <= bar_rect.max.y {
+        if resp.double_clicked()
+            && let Some(pos) = resp.interact_pointer_pos()
+                && pos.y <= bar_rect.max.y {
                     let logical = ((pos.x - bar_rect.min.x) / bar_rect.width()).clamp(0.0, 1.0);
                     new_stop_at = Some(logical);
                 }
-            }
-        }
 
         // Draggable stop handles in the strip below the bar.
         let handle_w = 10.0;
@@ -247,15 +245,14 @@ impl NodeWidget for GradientSourceWidget {
             let id = ui.id().with(("grad_stop", node_id, i));
             let h_resp = ui.interact(handle_rect, id, Sense::click_and_drag());
 
-            if h_resp.dragged() {
-                if let Some(p) = h_resp.interact_pointer_pos() {
+            if h_resp.dragged()
+                && let Some(p) = h_resp.interact_pointer_pos() {
                     let new_pos = ((p.x - bar_rect.min.x) / bar_rect.width()).clamp(0.0, 1.0);
                     if (new_pos - s.position).abs() > 1e-4 {
                         s.position = new_pos;
                         changed = true;
                     }
                 }
-            }
             if h_resp.secondary_clicked() {
                 delete_idx = Some(i);
             }

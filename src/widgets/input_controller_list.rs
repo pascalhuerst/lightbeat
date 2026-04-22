@@ -140,14 +140,13 @@ pub fn show(ui: &mut Ui, mgr: &mut InputControllerManager) {
                                         consume_learn_for.push(c.id);
                                     }
                                 }
-                                if is_factory_kind {
-                                    if ui.button("Reset to factory preset")
+                                if is_factory_kind
+                                    && ui.button("Reset to factory preset")
                                         .on_hover_text("Replace all inputs with the shipped factory defaults.")
                                         .clicked()
                                     {
                                         reset_factory.push(c.id);
                                     }
-                                }
                             });
 
                             ui.separator();
@@ -254,9 +253,8 @@ pub fn show(ui: &mut Ui, mgr: &mut InputControllerManager) {
         for (cid, idx, v) in debug_set_out {
             if let Some(c) = state.iter_mut().find(|c| c.id == cid) {
                 if let Some(slot) = c.out_values.get_mut(idx) { *slot = v; }
-                if c.debug_loopback {
-                    if let Some(slot) = c.values.get_mut(idx) { *slot = v; }
-                }
+                if c.debug_loopback
+                    && let Some(slot) = c.values.get_mut(idx) { *slot = v; }
             }
         }
     }
@@ -277,7 +275,7 @@ fn lerp_color(a: Color32, b: Color32, t: f32) -> Color32 {
 fn show_inputs_table(
     ui: &mut Ui,
     c: &crate::input_controller::ControllerRuntime,
-    is_factory_kind: bool,
+    _is_factory_kind: bool,
     rename_input: &mut Vec<(u32, u32, String)>,
     set_mode: &mut Vec<(u32, u32, InputBindingMode)>,
     set_feedback_disabled: &mut Vec<(u32, u32, bool)>,
@@ -325,11 +323,10 @@ fn show_inputs_table(
         .column(Column::exact(44.0))                             // Learn
         .column(Column::exact(24.0));                            // delete
 
-    if let (Some(idx), Some(age)) = (highlight_idx, highlight_row_age) {
-        if age < SCROLL_WINDOW {
+    if let (Some(idx), Some(age)) = (highlight_idx, highlight_row_age)
+        && age < SCROLL_WINDOW {
             table = table.scroll_to_row(idx + 1, Some(egui::Align::Center));
         }
-    }
 
     let armed_relearn = c.relearn_input_id;
 

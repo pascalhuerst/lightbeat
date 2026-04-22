@@ -6,18 +6,17 @@ const CONFIG_FILENAME: &str = "settings.json";
 
 /// How the inspector side panel is shown.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Default)]
 pub enum InspectorMode {
     /// Always visible.
     Show,
     /// Always hidden.
     Hide,
     /// Visible only when at least one node is selected.
+    #[default]
     Auto,
 }
 
-impl Default for InspectorMode {
-    fn default() -> Self { InspectorMode::Auto }
-}
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct AppConfig {

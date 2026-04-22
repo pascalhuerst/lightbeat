@@ -154,13 +154,11 @@ impl NodeWidget for PeakMeterWidget {
         let rect = resp.rect;
 
         // Click on the clip indicator area resets it.
-        if resp.clicked() {
-            if let Some(pos) = resp.interact_pointer_pos() {
-                if pos.y < rect.min.y + 14.0 {
+        if resp.clicked()
+            && let Some(pos) = resp.interact_pointer_pos()
+                && pos.y < rect.min.y + 14.0 {
                     self.clip_time = None;
                 }
-            }
-        }
 
         match self.orientation {
             PeakMeterOrientation::Vertical => draw_vertical(

@@ -206,11 +206,10 @@ impl ProcessNode for AudioInputProcessNode {
             if let Some(input) = state.iter().find(|c| c.id == self.input_id) {
                 let defs = input.analyzer_param_defs();
                 for (name, value) in saved {
-                    if let Some(idx) = defs.iter().position(|d| d.name() == name) {
-                        if let Some(pv) = json_to_param_value(value, &defs[idx]) {
+                    if let Some(idx) = defs.iter().position(|d| d.name() == name)
+                        && let Some(pv) = json_to_param_value(value, &defs[idx]) {
                             input.set_param(idx, pv);
                         }
-                    }
                 }
             }
         }

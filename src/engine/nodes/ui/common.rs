@@ -3,8 +3,10 @@
 /// Combined configuration for whether mouse can override an input-driven
 /// fader/button cell, and (if so) how the override gets cleared.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Default)]
 pub enum MouseOverrideMode {
     /// Mouse cannot override; input fully drives the output.
+    #[default]
     No,
     /// Mouse can override; double-click clears it.
     ClearOnReset,
@@ -14,9 +16,6 @@ pub enum MouseOverrideMode {
     PickupDecrease,
 }
 
-impl Default for MouseOverrideMode {
-    fn default() -> Self { MouseOverrideMode::No }
-}
 
 impl MouseOverrideMode {
     pub fn label(&self) -> &'static str {

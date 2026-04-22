@@ -33,7 +33,7 @@ impl ClockBeatState {
 impl BeatListener for ClockBeatState {
     fn on_beat(&mut self, info: &BeatInfo) {
         self.last_beat_time = Some(Instant::now());
-        self.last_beat_is_downbeat = info.beat % 4 == 0;
+        self.last_beat_is_downbeat = info.beat.is_multiple_of(4);
         self.pending_beats += 1;
     }
 

@@ -106,12 +106,11 @@ impl NodeWidget for MathWidget {
                 .and_then(|d| d.downcast_ref::<MathDisplay>())
                 .map(|d| d.input_count)
         };
-        if let Some(n) = synced_count {
-            if n != self.input_count {
+        if let Some(n) = synced_count
+            && n != self.input_count {
                 self.input_count = n.max(1);
                 self.real_input_types.resize(self.input_count, None);
             }
-        }
 
         let shared = self.shared.lock().unwrap();
         let out = shared.outputs.first().copied().unwrap_or(0.0);

@@ -183,11 +183,10 @@ impl AudioInputManager {
                 c.bound_to = None;
             }
         }
-        if input_id != 0 {
-            if let Some(c) = state.iter_mut().find(|c| c.id == input_id) {
+        if input_id != 0
+            && let Some(c) = state.iter_mut().find(|c| c.id == input_id) {
                 c.bound_to = Some(node_id);
             }
-        }
     }
 
     /// Release `node_id`'s binding (called from widget Drop).
@@ -316,11 +315,10 @@ impl AudioInputManager {
     pub fn remove_analyzer(&mut self, input_id: u32, analyzer_index: usize) {
         {
             let mut state = self.shared.lock().unwrap();
-            if let Some(c) = state.iter_mut().find(|c| c.id == input_id) {
-                if analyzer_index < c.analyzer_kinds.len() {
+            if let Some(c) = state.iter_mut().find(|c| c.id == input_id)
+                && analyzer_index < c.analyzer_kinds.len() {
                     c.analyzer_kinds.remove(analyzer_index);
                 }
-            }
         }
         self.streams.retain(|s| s.input_id != input_id);
         self.reconcile();

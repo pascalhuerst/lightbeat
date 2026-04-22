@@ -1,7 +1,6 @@
 use serde::{Deserialize, Serialize};
 
 use super::channel::ChannelKind;
-use super::fixture::Fixture;
 use super::object::Object;
 
 /// Layout entry for an LED strip object within a group.

@@ -583,12 +583,12 @@ fn edit_cell(
                         }
                         ui.label(egui::RichText::new("Pick a preset").strong());
                         for (_id, name, stops) in &presets {
-                            let mut row_resp = ui.horizontal(|ui| {
+                            let row_resp = ui.horizontal(|ui| {
                                 let bar = ui.allocate_response(
                                     Vec2::new(80.0, 14.0), Sense::hover(),
                                 );
                                 let painter = ui.painter();
-                                draw_checker(&painter, bar.rect, 3.0);
+                                draw_checker(painter, bar.rect, 3.0);
                                 let g = Gradient::new(stops.clone());
                                 let samples = 64usize;
                                 for i in 0..samples {

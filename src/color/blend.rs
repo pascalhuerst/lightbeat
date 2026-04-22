@@ -2,8 +2,10 @@ use super::Rgb;
 
 /// Blend modes for compositing colors, matching common lighting console behavior.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Default)]
 pub enum BlendMode {
     /// Replace base with effect color.
+    #[default]
     Override,
     /// Add effect color to base (can exceed 1.0, clamp at output).
     Add,
@@ -39,11 +41,6 @@ impl BlendMode {
     }
 }
 
-impl Default for BlendMode {
-    fn default() -> Self {
-        BlendMode::Override
-    }
-}
 
 #[cfg(test)]
 mod tests {

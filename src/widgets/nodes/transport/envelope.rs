@@ -141,8 +141,8 @@ impl NodeWidget for EnvelopeWidget {
         painter.circle_filled(p4, hr, HANDLE_COLOR); // release time
 
         // Handle dragging to adjust ADSR params.
-        if response.dragged() || response.clicked() {
-            if let Some(pos) = response.interact_pointer_pos() {
+        if (response.dragged() || response.clicked())
+            && let Some(pos) = response.interact_pointer_pos() {
                 let hit_radius = hr + 6.0;
 
                 // Find closest handle.
@@ -174,7 +174,6 @@ impl NodeWidget for EnvelopeWidget {
                     }
                 }
             }
-        }
 
         // Stage label (small, bottom-left).
         let stage_name = match stage {

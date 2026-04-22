@@ -195,11 +195,10 @@ impl GroupProcessNode {
                             + t_in_strip * (layout.logical_end - layout.logical_start);
 
                         // Erase pixels in the previously written range first.
-                        if let Some((clo, chi)) = clear_range {
-                            if logical >= clo && logical <= chi {
+                        if let Some((clo, chi)) = clear_range
+                            && logical >= clo && logical <= chi {
                                 ch.set_pixel(i, Rgb::BLACK);
                             }
-                        }
 
                         if logical < lo || logical > hi { continue; }
 

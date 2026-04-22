@@ -142,13 +142,11 @@ impl ProcessNode for FaderGroupProcessNode {
         for i in 0..n {
             let enabled = self.inputs_enabled[i];
             let mode = self.mouse_override[i];
-            if enabled && mode.allows_override() {
-                if let Some(ov) = self.override_values[i] {
-                    if mode.should_clear(self.prev_input_values[i], self.input_values[i], ov) {
+            if enabled && mode.allows_override()
+                && let Some(ov) = self.override_values[i]
+                    && mode.should_clear(self.prev_input_values[i], self.input_values[i], ov) {
                         self.override_values[i] = None;
                     }
-                }
-            }
             self.prev_input_values[i] = self.input_values[i];
 
             self.output_values[i] = if !enabled {
@@ -206,41 +204,36 @@ impl ProcessNode for FaderGroupProcessNode {
 
         if let Some(arr) = data.get("inputs_enabled").and_then(|v| v.as_array()) {
             for (i, v) in arr.iter().enumerate() {
-                if let Some(b) = v.as_bool() {
-                    if let Some(slot) = self.inputs_enabled.get_mut(i) { *slot = b; }
-                }
+                if let Some(b) = v.as_bool()
+                    && let Some(slot) = self.inputs_enabled.get_mut(i) { *slot = b; }
             }
         }
         if let Some(arr) = data.get("outputs_enabled").and_then(|v| v.as_array()) {
             for (i, v) in arr.iter().enumerate() {
-                if let Some(b) = v.as_bool() {
-                    if let Some(slot) = self.outputs_enabled.get_mut(i) { *slot = b; }
-                }
+                if let Some(b) = v.as_bool()
+                    && let Some(slot) = self.outputs_enabled.get_mut(i) { *slot = b; }
             }
         }
         if let Some(arr) = data.get("mouse_override").and_then(|v| v.as_array()) {
             for (i, v) in arr.iter().enumerate() {
-                if let Some(s) = v.as_str() {
-                    if let Some(slot) = self.mouse_override.get_mut(i) {
+                if let Some(s) = v.as_str()
+                    && let Some(slot) = self.mouse_override.get_mut(i) {
                         *slot = MouseOverrideMode::from_str(s);
                     }
-                }
             }
         }
         if let Some(arr) = data.get("bipolar").and_then(|v| v.as_array()) {
             for (i, v) in arr.iter().enumerate() {
-                if let Some(b) = v.as_bool() {
-                    if let Some(slot) = self.bipolar.get_mut(i) { *slot = b; }
-                }
+                if let Some(b) = v.as_bool()
+                    && let Some(slot) = self.bipolar.get_mut(i) { *slot = b; }
             }
         }
         if let Some(vals) = data.get("mouse_values").or_else(|| data.get("values")).and_then(|v| v.as_array()) {
             for (i, v) in vals.iter().enumerate() {
-                if let Some(f) = v.as_f64() {
-                    if let Some(slot) = self.mouse_values.get_mut(i) {
+                if let Some(f) = v.as_f64()
+                    && let Some(slot) = self.mouse_values.get_mut(i) {
                         *slot = (f as f32).clamp(0.0, 1.0);
                     }
-                }
             }
         }
         if let Some(vals) = data.get("override_values").and_then(|v| v.as_array()) {

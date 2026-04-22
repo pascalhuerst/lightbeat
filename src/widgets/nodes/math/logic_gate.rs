@@ -82,11 +82,10 @@ impl NodeWidget for LogicGateWidget {
                 .and_then(|d| d.downcast_ref::<LogicDisplay>())
                 .map(|d| d.input_count)
         };
-        if let Some(n) = synced_count {
-            if self.op != LogicOp::Not && n != self.input_count {
+        if let Some(n) = synced_count
+            && self.op != LogicOp::Not && n != self.input_count {
                 self.input_count = n.max(1);
             }
-        }
 
         let shared = self.shared.lock().unwrap();
         let out = shared.outputs.first().copied().unwrap_or(0.0);

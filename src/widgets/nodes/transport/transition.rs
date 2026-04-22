@@ -84,7 +84,7 @@ impl NodeWidget for TransitionWidget {
         let display = shared.display.as_ref()
             .and_then(|d| d.downcast_ref::<TransitionDisplay>());
 
-        let (mode, curve, phase, active) = if let Some(d) = display {
+        let (_mode, curve, phase, active) = if let Some(d) = display {
             self.mode = d.mode;
             (d.mode, d.curve, d.phase, d.active)
         } else {

@@ -929,8 +929,8 @@ impl LightBeatApp {
             }
 
             // Recurse into inner graph.
-            if saved.type_name == "Subgraph" {
-                if let Some(inner_project) = &saved.inner_graph {
+            if saved.type_name == "Subgraph"
+                && let Some(inner_project) = &saved.inner_graph {
                     let mut inner_path = subgraph_path.clone();
                     inner_path.push(node_id);
 
@@ -946,7 +946,6 @@ impl LightBeatApp {
                         inner_path,
                     );
                 }
-            }
         }
     }
 
@@ -1119,11 +1118,10 @@ impl LightBeatApp {
             }
         });
 
-        if let Some(p) = delete {
-            if let Err(e) = self.library.delete(&p) {
+        if let Some(p) = delete
+            && let Err(e) = self.library.delete(&p) {
                 eprintln!("delete macro: {}", e);
             }
-        }
     }
 
     /// Handle a macro request emitted by the right-click menu in the graph.
@@ -1465,9 +1463,8 @@ impl eframe::App for LightBeatApp {
         // Ctrl+Z to the setup undoer instead of the project undoer.
         let mut setup_hovered = false;
         let mut mark_hovered = |r: Option<egui::InnerResponse<Option<()>>>| {
-            if let Some(ir) = r {
-                if ir.response.contains_pointer() { setup_hovered = true; }
-            }
+            if let Some(ir) = r
+                && ir.response.contains_pointer() { setup_hovered = true; }
         };
 
         // Fixture templates window.
@@ -1810,16 +1807,13 @@ impl eframe::App for LightBeatApp {
         // Accept a macro drop on the canvas. We only consume the payload
         // when the pointer is released inside the canvas rect — otherwise
         // egui keeps the drag alive and the user can continue aiming.
-        if ctx.input(|i| i.pointer.any_released()) {
-            if let Some(pos) = ctx.pointer_interact_pos() {
-                if self.graph.canvas_rect().contains(pos) {
-                    if let Some(payload) = egui::DragAndDrop::take_payload::<MacroDragPayload>(ctx) {
+        if ctx.input(|i| i.pointer.any_released())
+            && let Some(pos) = ctx.pointer_interact_pos()
+                && self.graph.canvas_rect().contains(pos)
+                    && let Some(payload) = egui::DragAndDrop::take_payload::<MacroDragPayload>(ctx) {
                         let world = self.graph.screen_to_world(pos);
                         self.instantiate_macro_from_path(&payload.path, world);
                     }
-                }
-            }
-        }
 
         self.wire_new_nodes();
 

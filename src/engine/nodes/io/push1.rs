@@ -397,11 +397,9 @@ impl ProcessNode for Push1ProcessNode {
                 let row = self.in_values[in_idx::SET_PAD_Y].clamp(0.0, 7.0) as usize;
                 let color = self.in_values[in_idx::SET_PAD_COLOR].clamp(0.0, 1.0);
                 let flat = row * 8 + col;
-                if let Some(&idx) = self.idx_map.pads.get(flat) {
-                    if idx != usize::MAX {
-                        if let Some(slot) = c.out_values.get_mut(idx) { *slot = color; }
-                    }
-                }
+                if let Some(&idx) = self.idx_map.pads.get(flat)
+                    && idx != usize::MAX
+                        && let Some(slot) = c.out_values.get_mut(idx) { *slot = color; }
             }
             self.prev_set_pad_trig = trig;
 
@@ -409,11 +407,9 @@ impl ProcessNode for Push1ProcessNode {
             if trig >= 0.5 && self.prev_set_btn_top_trig < 0.5 {
                 let col = self.in_values[in_idx::SET_BTN_TOP_COL].clamp(0.0, 7.0) as usize;
                 let color = self.in_values[in_idx::SET_BTN_TOP_COLOR].clamp(0.0, 1.0);
-                if let Some(&idx) = self.idx_map.btn_top.get(col) {
-                    if idx != usize::MAX {
-                        if let Some(slot) = c.out_values.get_mut(idx) { *slot = color; }
-                    }
-                }
+                if let Some(&idx) = self.idx_map.btn_top.get(col)
+                    && idx != usize::MAX
+                        && let Some(slot) = c.out_values.get_mut(idx) { *slot = color; }
             }
             self.prev_set_btn_top_trig = trig;
 
@@ -421,11 +417,9 @@ impl ProcessNode for Push1ProcessNode {
             if trig >= 0.5 && self.prev_set_btn_bot_trig < 0.5 {
                 let col = self.in_values[in_idx::SET_BTN_BOT_COL].clamp(0.0, 7.0) as usize;
                 let color = self.in_values[in_idx::SET_BTN_BOT_COLOR].clamp(0.0, 1.0);
-                if let Some(&idx) = self.idx_map.btn_bot.get(col) {
-                    if idx != usize::MAX {
-                        if let Some(slot) = c.out_values.get_mut(idx) { *slot = color; }
-                    }
-                }
+                if let Some(&idx) = self.idx_map.btn_bot.get(col)
+                    && idx != usize::MAX
+                        && let Some(slot) = c.out_values.get_mut(idx) { *slot = color; }
             }
             self.prev_set_btn_bot_trig = trig;
 
@@ -438,9 +432,8 @@ impl ProcessNode for Push1ProcessNode {
             for (i, target) in named_targets.iter().enumerate() {
                 let v = self.in_values[in_idx::NAMED_BASE + i];
                 if (v - self.prev_named_in[i]).abs() > 1e-6 {
-                    if let Some(idx) = target {
-                        if let Some(slot) = c.out_values.get_mut(*idx) { *slot = v.clamp(0.0, 1.0); }
-                    }
+                    if let Some(idx) = target
+                        && let Some(slot) = c.out_values.get_mut(*idx) { *slot = v.clamp(0.0, 1.0); }
                     self.prev_named_in[i] = v;
                 }
             }
@@ -471,7 +464,7 @@ impl ProcessNode for Push1ProcessNode {
             i if i == out_idx::ENC_IDX => self.enc_idx,
             i if i == out_idx::ENC_VAL => self.enc_value,
             i if i == out_idx::SLIDER => self.slider_value,
-            i if i >= out_idx::NAMED_BASE && i < out_idx::COUNT => {
+            i if (out_idx::NAMED_BASE..out_idx::COUNT).contains(&i) => {
                 self.named_values[i - out_idx::NAMED_BASE]
             }
             _ => 0.0,

@@ -409,11 +409,10 @@ impl OnsetPicker {
         // seen. Record and compare in that same coordinate so min-IOI is
         // consistent across calls.
         let candidate_frame = self.frames_seen.saturating_sub(PICKER_WIN_POST as u64);
-        if let Some(last) = self.last_onset_frame {
-            if candidate_frame.saturating_sub(last) < self.min_ioi_frames {
+        if let Some(last) = self.last_onset_frame
+            && candidate_frame.saturating_sub(last) < self.min_ioi_frames {
                 return None;
             }
-        }
         self.last_onset_frame = Some(candidate_frame);
         Some(1)
     }

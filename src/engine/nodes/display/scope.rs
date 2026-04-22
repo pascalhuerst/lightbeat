@@ -92,7 +92,7 @@ impl ProcessNode for ScopeProcessNode {
 
         let period = self.decimation_period();
         self.tick_counter = self.tick_counter.wrapping_add(1);
-        if self.tick_counter % period != 0 {
+        if !self.tick_counter.is_multiple_of(period) {
             return;
         }
         for ch in 0..2 {

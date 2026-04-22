@@ -296,7 +296,7 @@ pub fn bcf2000_preset1_inputs() -> Vec<LearnedInput> {
     let mut inputs = Vec::with_capacity(44);
     let mut id: u32 = 1;
 
-    let mut push_cc = |inputs: &mut Vec<LearnedInput>, id: &mut u32, name: &str, cc: u8, binary: bool| {
+    let push_cc = |inputs: &mut Vec<LearnedInput>, id: &mut u32, name: &str, cc: u8, binary: bool| {
         inputs.push(LearnedInput {
             id: *id,
             name: name.to_string(),
@@ -342,7 +342,7 @@ pub fn push1_preset_inputs() -> Vec<LearnedInput> {
     let mut inputs = Vec::with_capacity(120);
     let mut id: u32 = 1;
 
-    let mut push = |inputs: &mut Vec<LearnedInput>, id: &mut u32, name: String, source: MidiSource| {
+    let push = |inputs: &mut Vec<LearnedInput>, id: &mut u32, name: String, source: MidiSource| {
         inputs.push(LearnedInput {
             id: *id,
             name,
@@ -733,11 +733,10 @@ impl InputControllerManager {
 
     pub fn rename_input(&mut self, controller_id: u32, input_id: u32, name: String) {
         let mut state = self.shared.lock().unwrap();
-        if let Some(c) = state.iter_mut().find(|c| c.id == controller_id) {
-            if let Some(i) = c.inputs.iter_mut().find(|i| i.id == input_id) {
+        if let Some(c) = state.iter_mut().find(|c| c.id == controller_id)
+            && let Some(i) = c.inputs.iter_mut().find(|i| i.id == input_id) {
                 i.name = name;
             }
-        }
     }
 
     /// Arm per-row relearn: the next MIDI message that controller receives
@@ -775,20 +774,18 @@ impl InputControllerManager {
 
     pub fn set_input_mode(&mut self, controller_id: u32, input_id: u32, mode: InputBindingMode) {
         let mut state = self.shared.lock().unwrap();
-        if let Some(c) = state.iter_mut().find(|c| c.id == controller_id) {
-            if let Some(i) = c.inputs.iter_mut().find(|i| i.id == input_id) {
+        if let Some(c) = state.iter_mut().find(|c| c.id == controller_id)
+            && let Some(i) = c.inputs.iter_mut().find(|i| i.id == input_id) {
                 i.mode = mode;
             }
-        }
     }
 
     pub fn set_input_feedback_disabled(&mut self, controller_id: u32, input_id: u32, disabled: bool) {
         let mut state = self.shared.lock().unwrap();
-        if let Some(c) = state.iter_mut().find(|c| c.id == controller_id) {
-            if let Some(i) = c.inputs.iter_mut().find(|i| i.id == input_id) {
+        if let Some(c) = state.iter_mut().find(|c| c.id == controller_id)
+            && let Some(i) = c.inputs.iter_mut().find(|i| i.id == input_id) {
                 i.disable_feedback = disabled;
             }
-        }
     }
 
     /// List currently available MIDI input ports on the system.

@@ -60,8 +60,8 @@ impl<'de> serde::Deserialize<'de> for PixelFormat {
         }
 
         // Legacy externally-tagged enum: { "Rgbw": { "white_temperature": 6500 } } etc.
-        if let Some(obj) = v.as_object() {
-            if let Some((tag, body)) = obj.iter().next() {
+        if let Some(obj) = v.as_object()
+            && let Some((tag, body)) = obj.iter().next() {
                 let temp = body.get("white_temperature")
                     .or_else(|| body.get("warm_temperature"))
                     .and_then(|t| t.as_u64())
@@ -75,7 +75,6 @@ impl<'de> serde::Deserialize<'de> for PixelFormat {
                     other => return Err(serde::de::Error::custom(format!("unknown PixelFormat tag \"{}\"", other))),
                 });
             }
-        }
         Err(serde::de::Error::custom("could not parse PixelFormat"))
     }
 }
@@ -243,24 +242,22 @@ impl Channel {
 
     /// Set one pixel of an LED strip (no-op if not a strip or index out of range).
     pub fn set_pixel(&mut self, index: usize, color: Rgb) {
-        if let ChannelKind::LedStrip { count, .. } = self.kind {
-            if index < count {
+        if let ChannelKind::LedStrip { count, .. } = self.kind
+            && index < count {
                 let base = index * 3;
                 self.values[base] = color.r;
                 self.values[base + 1] = color.g;
                 self.values[base + 2] = color.b;
             }
-        }
     }
 
     /// Get one pixel of an LED strip.
     pub fn pixel(&self, index: usize) -> Rgb {
-        if let ChannelKind::LedStrip { count, .. } = self.kind {
-            if index < count {
+        if let ChannelKind::LedStrip { count, .. } = self.kind
+            && index < count {
                 let base = index * 3;
                 return Rgb::new(self.values[base], self.values[base + 1], self.values[base + 2]);
             }
-        }
         Rgb::new(0.0, 0.0, 0.0)
     }
 

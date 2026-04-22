@@ -1,6 +1,6 @@
 //! MIDI backend for input controllers using `midir`.
 
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::time::Duration;
@@ -195,11 +195,10 @@ fn handle_midi_message(controller_id: u32, msg: &[u8], shared: &SharedController
         let duplicate_of = c.inputs.iter()
             .find(|i| i.id != target_id && i.source == src)
             .map(|i| i.id);
-        if duplicate_of.is_none() {
-            if let Some(input) = c.inputs.iter_mut().find(|i| i.id == target_id) {
+        if duplicate_of.is_none()
+            && let Some(input) = c.inputs.iter_mut().find(|i| i.id == target_id) {
                 input.source = src;
             }
-        }
         c.relearn_input_id = None;
         return;
     }
@@ -272,11 +271,10 @@ fn handle_midi_message(controller_id: u32, msg: &[u8], shared: &SharedController
     // the hardware from the UI and doesn't want device input to stomp it.
     let mirror = !matches!(c.inputs[idx].source, InputSource::Midi(MidiSource::CcRelative { .. }))
         && !c.debug_feedback_override;
-    if mirror {
-        if let Some(slot) = c.out_values.get_mut(idx) {
+    if mirror
+        && let Some(slot) = c.out_values.get_mut(idx) {
             *slot = stored;
         }
-    }
 
     // Backfill the matched index on the most recent log entry so the debug
     // panel can show "→ Fader 3" next to the raw bytes.

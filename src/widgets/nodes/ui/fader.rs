@@ -267,7 +267,7 @@ impl NodeWidget for FaderWidget {
         ui.label(egui::RichText::new("Output").strong());
         if cell_inspector_section(
             ui,
-            self.id.0 as u64,
+            self.id.0,
             None,
             &mut self.inputs_enabled,
             &mut self.mouse_override,

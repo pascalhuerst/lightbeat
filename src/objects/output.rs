@@ -3,6 +3,7 @@
 /// This is stored on the fixture itself. The actual output implementation
 /// lives in `crate::interfaces`.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Default)]
 pub enum OutputConfig {
     /// Art-Net output.
     ArtNet {
@@ -14,11 +15,7 @@ pub enum OutputConfig {
         source_name: String,
     },
     /// No output (preview only).
+    #[default]
     None,
 }
 
-impl Default for OutputConfig {
-    fn default() -> Self {
-        OutputConfig::None
-    }
-}

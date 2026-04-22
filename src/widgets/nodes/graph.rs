@@ -737,11 +737,10 @@ impl NodeGraph {
             // connections from the same output port).
             if let Some(from) = removed_from {
                 let still_connected = level.connections.iter().any(|c| c.from == from);
-                if !still_connected {
-                    if let Some(src_idx) = level.states.iter().position(|s| s.id == from.node) {
+                if !still_connected
+                    && let Some(src_idx) = level.states.iter().position(|s| s.id == from.node) {
                         level.nodes[src_idx].on_ui_output_disconnect(from.index);
                     }
-                }
             }
 
             // Notify engine.
@@ -844,8 +843,8 @@ impl NodeGraph {
         // the click landed on a selected node:
         //   - selected node → selection actions ("Move to Subgraph", ...)
         //   - empty canvas / unselected node → add-node selector
-        if response.secondary_clicked() {
-            if let Some(pos) = ui.input(|i| i.pointer.hover_pos()) {
+        if response.secondary_clicked()
+            && let Some(pos) = ui.input(|i| i.pointer.hover_pos()) {
                 self.context_menu_mode = if self.is_pos_on_selected_node(pos, canvas_rect) {
                     ContextMenuMode::Selection
                 } else {
@@ -854,7 +853,6 @@ impl NodeGraph {
                 self.context_menu_pos = Some(pos);
                 self.context_menu_search.clear();
             }
-        }
 
         let level = self.active();
         let z = level.zoom;
@@ -1087,13 +1085,12 @@ impl NodeGraph {
         }
 
         // -- Draw selection rectangle --
-        if let Some(start) = self.drag.selection_rect_start {
-            if let Some(current) = ui.input(|i| i.pointer.hover_pos()) {
+        if let Some(start) = self.drag.selection_rect_start
+            && let Some(current) = ui.input(|i| i.pointer.hover_pos()) {
                 let sel_rect = Rect::from_two_pos(start, current);
                 painter.rect_filled(sel_rect, 0.0, Color32::from_rgba_premultiplied(100, 160, 255, 30));
                 painter.rect_stroke(sel_rect, 0.0, Stroke::new(1.0, SELECTED_BORDER), StrokeKind::Inside);
             }
-        }
 
         // -- Handle interactions --
         self.handle_interactions(ui, &response, &node_rects, snap_to_grid);
@@ -1139,13 +1136,12 @@ impl NodeGraph {
         // -- Check for subgraph open requests --
         let mut open_subgraph_idx = None;
         for i in 0..self.active().nodes.len() {
-            if let Some(sub) = self.active_mut().nodes[i].as_any_mut().downcast_mut::<SubgraphWidget>() {
-                if sub.wants_open {
+            if let Some(sub) = self.active_mut().nodes[i].as_any_mut().downcast_mut::<SubgraphWidget>()
+                && sub.wants_open {
                     sub.wants_open = false;
                     open_subgraph_idx = Some(i);
                     break;
                 }
-            }
         }
         if let Some(idx) = open_subgraph_idx {
             self.navigate_into(idx);
@@ -1314,12 +1310,11 @@ impl NodeGraph {
         let any_press = ui.input(|i| i.pointer.any_pressed());
         if !any_press { return; }
         let pos = ui.input(|i| i.pointer.interact_pos());
-        if let Some(p) = pos {
-            if !area_rect.contains(p) {
+        if let Some(p) = pos
+            && !area_rect.contains(p) {
                 self.context_menu_pos = None;
                 self.context_menu_search.clear();
             }
-        }
     }
 
     /// For exactly two selected nodes, plan a one-shot pairwise connection
@@ -1496,12 +1491,11 @@ impl NodeGraph {
             if let Some(id) = do_embed {
                 // Find the subgraph widget and clear its locked flag.
                 let level = self.active_mut();
-                if let Some(idx) = level.states.iter().position(|s| s.id == id) {
-                    if let Some(w) = level.nodes[idx].as_any_mut().downcast_mut::<SubgraphWidget>() {
+                if let Some(idx) = level.states.iter().position(|s| s.id == id)
+                    && let Some(w) = level.nodes[idx].as_any_mut().downcast_mut::<SubgraphWidget>() {
                         w.locked = false;
                         w.push_config();
                     }
-                }
                 self.context_menu_pos = None;
                 self.context_menu_search.clear();
                 return;
@@ -1557,11 +1551,10 @@ impl NodeGraph {
                         dismiss_via_esc = true;
                         return;
                     }
-                    if search_resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
-                        if let Some(&(idx, _, _, _)) = filtered.first() {
+                    if search_resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter))
+                        && let Some(&(idx, _, _, _)) = filtered.first() {
                             spawn = Some(idx);
                         }
-                    }
                     search_resp.request_focus();
 
                     ui.separator();
@@ -1703,11 +1696,10 @@ impl NodeGraph {
                 }
                 None
             });
-            if let Some(n) = bundle_key {
-                if let Some(dc) = self.drag.drawing_conn.as_mut() {
+            if let Some(n) = bundle_key
+                && let Some(dc) = self.drag.drawing_conn.as_mut() {
                     dc.bundle_size = n;
                 }
-            }
 
             let dc = self.drag.drawing_conn.as_mut().unwrap();
             dc.to_pos = pointer_pos;
@@ -1993,15 +1985,12 @@ impl NodeGraph {
                     }
                     // Double-click on a subgraph node to open it (unless
                     // the subgraph is locked — i.e. a macro instance).
-                    if double_clicked {
-                        if self.active().nodes[i].type_name() == "Subgraph" {
-                            if let Some(sub) = self.active_mut().nodes[i].as_any_mut().downcast_mut::<SubgraphWidget>() {
-                                if !sub.locked {
+                    if double_clicked
+                        && self.active().nodes[i].type_name() == "Subgraph"
+                            && let Some(sub) = self.active_mut().nodes[i].as_any_mut().downcast_mut::<SubgraphWidget>()
+                                && !sub.locked {
                                     sub.wants_open = true;
                                 }
-                            }
-                        }
-                    }
 
                     let title_rect = Rect::from_min_size(
                         node_rects[i].min,
@@ -2049,7 +2038,7 @@ impl NodeGraph {
                     // egui's double_clicked may not fire reliably when the first click
                     // started a drag (e.g., panning). We track our own timer.
                     let now = std::time::Instant::now();
-                    let is_double = self.drag.last_canvas_click.map_or(false, |(t, p)| {
+                    let is_double = self.drag.last_canvas_click.is_some_and(|(t, p)| {
                         now.duration_since(t) < std::time::Duration::from_millis(400)
                             && pointer_pos.distance(p) < 6.0
                     });
@@ -2198,11 +2187,10 @@ impl NodeGraph {
                     if let Some(gi) = node.as_any_mut().downcast_mut::<GraphInputWidget>() {
                         gi.update_ports(input_defs.clone());
                     }
-                } else if node.node_id() == BRIDGE_OUT_NODE_ID {
-                    if let Some(go) = node.as_any_mut().downcast_mut::<GraphOutputWidget>() {
+                } else if node.node_id() == BRIDGE_OUT_NODE_ID
+                    && let Some(go) = node.as_any_mut().downcast_mut::<GraphOutputWidget>() {
                         go.update_ports(output_defs.clone());
                     }
-                }
             }
         } else {
             // Create new level with bridge nodes.

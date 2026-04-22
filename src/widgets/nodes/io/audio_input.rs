@@ -188,7 +188,7 @@ impl NodeWidget for AudioInputWidget {
         }
         let now = ui.ctx().input(|i| i.time);
 
-        let style = FaderStyle::default();
+        let _style = FaderStyle::default();
         for (i, (kind, vals)) in self.analyzer_results.iter().enumerate() {
             match kind {
                 AnalyzerKind::Beat | AnalyzerKind::AudioBeat => {

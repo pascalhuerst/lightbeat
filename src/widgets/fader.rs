@@ -209,12 +209,11 @@ pub fn handle_fader_interaction(
             *value = value_from_pos(pos, rect, orient);
             changed = true;
         }
-    } else if response.clicked() && shift {
-        if let Some(pos) = response.interact_pointer_pos() {
+    } else if response.clicked() && shift
+        && let Some(pos) = response.interact_pointer_pos() {
             *value = value_from_pos(pos, rect, orient);
             changed = true;
         }
-    }
 
     changed
 }

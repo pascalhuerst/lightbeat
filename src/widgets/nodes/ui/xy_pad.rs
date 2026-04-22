@@ -138,13 +138,12 @@ impl NodeWidget for XyPadWidget {
 
         // Interaction — click or drag anywhere inside the pad to reposition.
         let moved = resp.dragged() || resp.clicked() || resp.drag_started();
-        if moved {
-            if let Some(p) = resp.interact_pointer_pos() {
+        if moved
+            && let Some(p) = resp.interact_pointer_pos() {
                 self.x = ((p.x - rect.min.x) / rect.width()).clamp(0.0, 1.0);
                 self.y = ((p.y - rect.min.y) / rect.height()).clamp(0.0, 1.0);
                 self.push_position();
             }
-        }
     }
 
     fn show_inspector(&mut self, ui: &mut Ui) {

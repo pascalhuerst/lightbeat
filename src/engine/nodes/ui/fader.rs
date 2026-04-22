@@ -102,13 +102,11 @@ impl ProcessNode for FaderProcessNode {
 
     fn process(&mut self) {
         // Pickup-style reset: if override active and input crosses it, clear.
-        if self.inputs_enabled && self.mouse_override.allows_override() {
-            if let Some(ov) = self.override_value {
-                if self.mouse_override.should_clear(self.prev_input_value, self.input_value, ov) {
+        if self.inputs_enabled && self.mouse_override.allows_override()
+            && let Some(ov) = self.override_value
+                && self.mouse_override.should_clear(self.prev_input_value, self.input_value, ov) {
                     self.override_value = None;
                 }
-            }
-        }
         self.prev_input_value = self.input_value;
 
         self.output = if !self.inputs_enabled {

@@ -81,8 +81,8 @@ impl EffectStackWidget {
 
             // Strip members: use the explicit strip_layout entries.
             for layout in &group.strip_layout {
-                if let Some(obj) = ctx.objects.iter().find(|o| o.id == layout.object_id) {
-                    if obj.channels.iter().any(|c| matches!(c.kind, ChannelKind::LedStrip { .. })) {
+                if let Some(obj) = ctx.objects.iter().find(|o| o.id == layout.object_id)
+                    && obj.channels.iter().any(|c| matches!(c.kind, ChannelKind::LedStrip { .. })) {
                         targets.push(serde_json::json!({
                             "kind": "strip",
                             "object_id": layout.object_id,
@@ -90,7 +90,6 @@ impl EffectStackWidget {
                             "logical_end": layout.logical_end,
                         }));
                     }
-                }
             }
 
             // Non-strip fixtures with a Color channel: distribute evenly along
@@ -255,23 +254,20 @@ impl NodeWidget for EffectStackWidget {
             });
             // Stamp the hover time whenever the pointer is over this layer's
             // row — the corresponding input ports on the node will glow.
-            if row_resp.response.contains_pointer() {
-                if let Some(slot) = self.layer_hover_time.get_mut(i) {
+            if row_resp.response.contains_pointer()
+                && let Some(slot) = self.layer_hover_time.get_mut(i) {
                     *slot = Some(now);
                 }
-            }
         }
 
         if let Some(i) = remove_idx {
             self.layers.remove(i);
             layers_changed = true;
         }
-        if let Some(i) = move_up {
-            if i > 0 { self.layers.swap(i, i - 1); layers_changed = true; }
-        }
-        if let Some(i) = move_down {
-            if i + 1 < self.layers.len() { self.layers.swap(i, i + 1); layers_changed = true; }
-        }
+        if let Some(i) = move_up
+            && i > 0 { self.layers.swap(i, i - 1); layers_changed = true; }
+        if let Some(i) = move_down
+            && i + 1 < self.layers.len() { self.layers.swap(i, i + 1); layers_changed = true; }
 
         ui.horizontal(|ui| {
             if ui.button("+ Add Layer").clicked() {

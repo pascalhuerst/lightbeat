@@ -3,7 +3,7 @@
 //! patterns into a final image using `color::blend::BlendMode`.
 
 use crate::color::Rgb;
-use crate::engine::types::{PortDef, PortType};
+use crate::engine::types::PortDef;
 use crate::objects::group::StripLayout;
 
 pub mod bar;

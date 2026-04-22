@@ -96,11 +96,10 @@ impl DmxMonitor {
             // Universe number picker (0..15).
             ui.label("Universe:");
             let mut uni_num: i32 = self.selected_key.map(|k| k.universe as i32).unwrap_or(0);
-            if ui.add(egui::DragValue::new(&mut uni_num).range(0..=15)).changed() {
-                if let Some(k) = self.selected_key.as_mut() {
+            if ui.add(egui::DragValue::new(&mut uni_num).range(0..=15)).changed()
+                && let Some(k) = self.selected_key.as_mut() {
                     k.universe = uni_num as u8;
                 }
-            }
 
             // Marker if this universe currently has live data (objects writing to it).
             if let Some(key) = self.selected_key {
@@ -113,14 +112,13 @@ impl DmxMonitor {
 
             ui.separator();
 
-            if ui.small_button("Clear Overrides").clicked() {
-                if let Some(key) = &self.selected_key {
+            if ui.small_button("Clear Overrides").clicked()
+                && let Some(key) = &self.selected_key {
                     let mut state = shared.lock().unwrap();
                     if let Some(uni) = state.universes.get_mut(key) {
                         uni.overrides.clear_all();
                     }
                 }
-            }
 
             ui.separator();
 
@@ -163,9 +161,9 @@ impl DmxMonitor {
         // Ctrl-gated fader interaction: click/drag to set override value,
         // double-click to clear the override, shift+drag for fine-grained.
         // Shares gesture conventions with the widgets::fader module.
-        if ctrl {
-            if let Some(pos) = response.interact_pointer_pos() {
-                if let Some(key) = &self.selected_key {
+        if ctrl
+            && let Some(pos) = response.interact_pointer_pos()
+                && let Some(key) = &self.selected_key {
                     let col = ((pos.x - origin.x) / cell_w).floor() as usize;
                     let row = ((pos.y - origin.y) / cell_h).floor() as usize;
                     if col < COLS && row < ROWS {
@@ -208,8 +206,6 @@ impl DmxMonitor {
                         }
                     }
                 }
-            }
-        }
 
         for i in 0..CHANNEL_COUNT {
             let col = i % COLS;

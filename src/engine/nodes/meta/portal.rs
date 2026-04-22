@@ -86,15 +86,14 @@ impl Drop for PortalInProcessNode {
     fn drop(&mut self) {
         // Remove our registry entry so dangling names don't linger when the
         // node is deleted. Safe even if our name was never set.
-        if !self.name.is_empty() {
-            if let Ok(mut reg) = self.registry.lock() {
+        if !self.name.is_empty()
+            && let Ok(mut reg) = self.registry.lock() {
                 // Only remove if the entry is actually ours — we don't track
                 // uniqueness at insert time, so we might end up removing a
                 // stale entry by a namesake. That's OK: the surviving Portal
                 // In will re-publish on its next tick.
                 reg.entries.remove(&self.name);
             }
-        }
     }
 }
 
@@ -143,11 +142,10 @@ impl ProcessNode for PortalInProcessNode {
         if let Some(old_name) = Some(self.name.clone()) {
             // Removing the old entry before publishing the new name avoids
             // orphans when the user renames.
-            if !old_name.is_empty() {
-                if let Ok(mut reg) = self.registry.lock() {
+            if !old_name.is_empty()
+                && let Ok(mut reg) = self.registry.lock() {
                     reg.entries.remove(&old_name);
                 }
-            }
         }
         if let Some(n) = data.get("name").and_then(|v| v.as_str()) {
             self.name = n.to_string();

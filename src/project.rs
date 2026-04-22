@@ -1,6 +1,5 @@
 use std::path::PathBuf;
 
-use egui;
 use serde::{Deserialize, Serialize};
 
 use crate::engine::nodes::meta::subgraph::{BRIDGE_IN_NODE_ID, SubgraphPortDef};
@@ -336,107 +335,96 @@ pub fn load_graph(graph: &mut NodeGraph, project: &ProjectFile) -> Vec<usize> {
 
             // Restore Fader widget input-port state so wires don't get
             // dropped by `cleanup_stale_connections` on the first frame.
-            if saved.type_name == "Fader" {
-                if let Some(data) = &saved.data {
+            if saved.type_name == "Fader"
+                && let Some(data) = &saved.data {
                     let n = graph.node_mut(idx);
                     if let Some(f) = n.as_any_mut().downcast_mut::<FaderWidget>() {
                         f.restore_from_save_data(data);
                     }
                 }
-            }
 
             // Portal widgets need their port defs restored before
             // `cleanup_stale_connections` runs, otherwise wires targeting
             // the portal's input/output ports get dropped on the first frame.
-            if saved.type_name == "Portal In" {
-                if let Some(data) = &saved.data {
+            if saved.type_name == "Portal In"
+                && let Some(data) = &saved.data {
                     let n = graph.node_mut(idx);
                     if let Some(w) = n.as_any_mut().downcast_mut::<PortalInWidget>() {
                         w.restore_from_save_data(data);
                     }
                 }
-            }
-            if saved.type_name == "Portal Out" {
-                if let Some(data) = &saved.data {
+            if saved.type_name == "Portal Out"
+                && let Some(data) = &saved.data {
                     let n = graph.node_mut(idx);
                     if let Some(w) = n.as_any_mut().downcast_mut::<PortalOutWidget>() {
                         w.restore_from_save_data(data);
                     }
                 }
-            }
 
             // Same for Fader Group — restore per-cell inputs/outputs enabled.
-            if saved.type_name == "Fader Group" {
-                if let Some(data) = &saved.data {
+            if saved.type_name == "Fader Group"
+                && let Some(data) = &saved.data {
                     let n = graph.node_mut(idx);
                     if let Some(fg) = n.as_any_mut().downcast_mut::<FaderGroupWidget>() {
                         fg.restore_from_save_data(data);
                     }
                 }
-            }
 
             // Input Controller / Audio Input nodes have dynamic outputs
             // sourced from the live setup; pre-populate them so wires aren't
             // dropped on the first frame's stale-connection sweep.
-            if saved.type_name == "Input Controller" {
-                if let Some(data) = &saved.data {
+            if saved.type_name == "Input Controller"
+                && let Some(data) = &saved.data {
                     let n = graph.node_mut(idx);
                     if let Some(w) = n.as_any_mut().downcast_mut::<InputControllerWidget>() {
                         w.restore_from_save_data(data);
                     }
                 }
-            }
-            if saved.type_name == "Push 1" {
-                if let Some(data) = &saved.data {
+            if saved.type_name == "Push 1"
+                && let Some(data) = &saved.data {
                     let n = graph.node_mut(idx);
                     if let Some(w) = n.as_any_mut().downcast_mut::<Push1Widget>() {
                         w.restore_from_save_data(data);
                     }
                 }
-            }
-            if saved.type_name == "Audio Input" {
-                if let Some(data) = &saved.data {
+            if saved.type_name == "Audio Input"
+                && let Some(data) = &saved.data {
                     let n = graph.node_mut(idx);
                     if let Some(w) = n.as_any_mut().downcast_mut::<AudioInputWidget>() {
                         w.restore_from_save_data(data);
                     }
                 }
-            }
-            if saved.type_name == "Value Display" {
-                if let Some(data) = &saved.data {
+            if saved.type_name == "Value Display"
+                && let Some(data) = &saved.data {
                     let n = graph.node_mut(idx);
                     if let Some(w) = n.as_any_mut().downcast_mut::<ValueDisplayWidget>() {
                         w.restore_from_save_data(data);
                     }
                 }
-            }
-            if saved.type_name == "LED Display" {
-                if let Some(data) = &saved.data {
+            if saved.type_name == "LED Display"
+                && let Some(data) = &saved.data {
                     let n = graph.node_mut(idx);
                     if let Some(w) = n.as_any_mut().downcast_mut::<LedDisplayWidget>() {
                         w.restore_from_save_data(data);
                     }
                 }
-            }
-            if saved.type_name == "Gradient Source" {
-                if let Some(data) = &saved.data {
+            if saved.type_name == "Gradient Source"
+                && let Some(data) = &saved.data {
                     let n = graph.node_mut(idx);
                     if let Some(w) = n.as_any_mut().downcast_mut::<GradientSourceWidget>() {
                         w.restore_from_save_data(data);
                     }
                 }
-            }
             // Lookup's widget owns the column list, so it must be restored
             // before cleanup_stale_connections or wires to columns past the
             // default single-column layout get dropped on the first frame.
-            if saved.type_name == "Lookup" {
-                if let Some(data) = &saved.data {
+            if saved.type_name == "Lookup"
+                && let Some(data) = &saved.data {
                     let n = graph.node_mut(idx);
                     if let Some(w) = n.as_any_mut().downcast_mut::<LookupWidget>() {
                         w.restore_from_save_data(data);
                     }
                 }
-            }
 
             // Mux/Demux need their port type + slot count synced before the
             // first frame's stale-connection sweep, or wires on slots >= 8 or
@@ -459,8 +447,8 @@ pub fn load_graph(graph: &mut NodeGraph, project: &ProjectFile) -> Vec<usize> {
             }
 
             // Restore Effect Stack widget state from save_data.
-            if saved.type_name == "Effect Stack" {
-                if let Some(data) = &saved.data {
+            if saved.type_name == "Effect Stack"
+                && let Some(data) = &saved.data {
                     let n = graph.node_mut(idx);
                     if let Some(stack) = n.as_any_mut().downcast_mut::<EffectStackWidget>() {
                         if let Some(ids) = data.get("group_ids").and_then(|v| v.as_array()) {
@@ -469,15 +457,13 @@ pub fn load_graph(graph: &mut NodeGraph, project: &ProjectFile) -> Vec<usize> {
                                 .filter_map(|v| v.as_u64().map(|n| n as u32))
                                 .collect();
                         }
-                        if let Some(layers) = data.get("layers") {
-                            if let Ok(parsed) = serde_json::from_value(layers.clone()) {
+                        if let Some(layers) = data.get("layers")
+                            && let Ok(parsed) = serde_json::from_value(layers.clone()) {
                                 stack.layers = parsed;
                             }
-                        }
                         stack.push_config_to_engine();
                     }
                 }
-            }
 
             indices.push(idx);
         }

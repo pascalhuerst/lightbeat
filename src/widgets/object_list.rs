@@ -223,7 +223,7 @@ impl ObjectManager {
                 }
                 self.needs_sync = true;
                 // Advance start channel for next batch.
-                self.batch_start_ch = self.batch_start_ch + self.batch_count * stride;
+                self.batch_start_ch += self.batch_count * stride;
             }
         }
     }

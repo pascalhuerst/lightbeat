@@ -140,8 +140,8 @@ impl NodeWidget for StepSequencerWidget {
         // Handle fader interaction — send value edits to engine via shared state.
         // Uses the shared fader gesture conventions: double-click to reset,
         // shift+drag for fine-grained (delta-based) adjustment, else absolute.
-        if let Some(pos) = response.interact_pointer_pos() {
-            if rect.contains(pos) {
+        if let Some(pos) = response.interact_pointer_pos()
+            && rect.contains(pos) {
                 let step_index = ((pos.x - rect.min.x) / step_width).floor() as usize;
                 let step_index = step_index.min(num_steps - 1);
 
@@ -168,7 +168,6 @@ impl NodeWidget for StepSequencerWidget {
                     shared.pending_params.push((100 + step_index, ParamValue::Float(value)));
                 }
             }
-        }
     }
 
     fn as_any_mut(&mut self) -> &mut dyn Any { self }

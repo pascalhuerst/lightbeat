@@ -376,7 +376,7 @@ impl Odf {
                     }
                     s
                 } else { 0.0 };
-                if history.len() >= SF_TIME_LAG + 1 { history.pop_front(); }
+                if history.len() > SF_TIME_LAG { history.pop_front(); }
                 history.push_back(maxed);
                 flux
             }
@@ -487,9 +487,8 @@ impl BelloPicker {
         let is_local_max = f_m1 > f_m2 && f_m1 >= f_0 && f_m1 > threshold;
         if !is_local_max { return None; }
         let candidate_frame = self.frames_seen - 2;
-        if let Some(last) = self.last_onset_frame {
-            if candidate_frame.saturating_sub(last) < self.min_ioi_frames { return None; }
-        }
+        if let Some(last) = self.last_onset_frame
+            && candidate_frame.saturating_sub(last) < self.min_ioi_frames { return None; }
         self.last_onset_frame = Some(candidate_frame);
         Some(1)
     }
@@ -526,21 +525,19 @@ impl VpdPicker {
         self.rolling_max_dvp *= self.decay;
         if gated || self.frames_seen < 3 { return None; }
         if f_m1 < f_m2 && f_m1 < f_0 { self.last_valley_val = Some(f_m1); }
-        if f_m1 > f_m2 && f_m1 >= f_0 {
-            if let Some(valley_val) = self.last_valley_val {
+        if f_m1 > f_m2 && f_m1 >= f_0
+            && let Some(valley_val) = self.last_valley_val {
                 let dvp = f_m1 - valley_val;
                 if dvp > self.rolling_max_dvp { self.rolling_max_dvp = dvp; }
                 let threshold = (self.mu * self.rolling_max_dvp).max(self.baseline);
                 if dvp > threshold {
                     let candidate_frame = self.frames_seen - 2;
-                    if let Some(last) = self.last_onset_frame {
-                        if candidate_frame.saturating_sub(last) < self.min_ioi_frames { return None; }
-                    }
+                    if let Some(last) = self.last_onset_frame
+                        && candidate_frame.saturating_sub(last) < self.min_ioi_frames { return None; }
                     self.last_onset_frame = Some(candidate_frame);
                     return Some(1);
                 }
             }
-        }
         None
     }
 }

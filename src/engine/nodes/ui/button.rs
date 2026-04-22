@@ -123,14 +123,13 @@ impl ProcessNode for ButtonProcessNode {
         let prev_input = self.prev_input_value;
 
         // Pass-through reset for override (Toggle mode only).
-        if self.mode == ButtonMode::Toggle && self.inputs_enabled && self.override_enabled {
-            if let Some(ov_bool) = self.override_state {
+        if self.mode == ButtonMode::Toggle && self.inputs_enabled && self.override_enabled
+            && let Some(ov_bool) = self.override_state {
                 let ov = if ov_bool { 1.0 } else { 0.0 };
                 if self.reset_mode.should_clear(prev_input, self.input_value, ov) {
                     self.override_state = None;
                 }
             }
-        }
         self.prev_input_value = self.input_value;
 
         match self.mode {
@@ -208,12 +207,11 @@ impl ProcessNode for ButtonProcessNode {
             }
         }
         // Click event (incrementing click_id from widget).
-        if let Some(click_id) = data.get("click_id").and_then(|v| v.as_u64()) {
-            if click_id != self.last_click_id {
+        if let Some(click_id) = data.get("click_id").and_then(|v| v.as_u64())
+            && click_id != self.last_click_id {
                 self.last_click_id = click_id;
                 self.handle_click();
             }
-        }
     }
 
     fn update_display(&self, shared: &mut NodeSharedState) {

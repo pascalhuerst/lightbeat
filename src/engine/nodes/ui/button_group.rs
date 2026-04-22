@@ -124,14 +124,13 @@ impl ProcessNode for ButtonGroupProcessNode {
         for (i, cell) in self.cells.iter_mut().enumerate() {
             let prev = cell.prev_input_value;
             // Pass-through reset.
-            if self.mode == ButtonMode::Toggle && self.inputs_enabled && self.override_enabled {
-                if let Some(ov_bool) = cell.override_state {
+            if self.mode == ButtonMode::Toggle && self.inputs_enabled && self.override_enabled
+                && let Some(ov_bool) = cell.override_state {
                     let ov = if ov_bool { 1.0 } else { 0.0 };
                     if self.reset_mode.should_clear(prev, cell.input_value, ov) {
                         cell.override_state = None;
                     }
                 }
-            }
             cell.prev_input_value = cell.input_value;
 
             let v = match self.mode {
@@ -219,9 +218,8 @@ impl ProcessNode for ButtonGroupProcessNode {
 
         if let Some(states) = data.get("states").and_then(|v| v.as_array()) {
             for (i, s) in states.iter().enumerate() {
-                if let Some(b) = s.as_bool() {
-                    if let Some(cell) = self.cells.get_mut(i) { cell.toggled = b; }
-                }
+                if let Some(b) = s.as_bool()
+                    && let Some(cell) = self.cells.get_mut(i) { cell.toggled = b; }
             }
         }
         if let Some(overrides) = data.get("override_states").and_then(|v| v.as_array()) {
@@ -246,17 +244,15 @@ impl ProcessNode for ButtonGroupProcessNode {
                 let mut parts = k.split(',');
                 let r = parts.next().and_then(|s| s.parse::<usize>().ok());
                 let c = parts.next().and_then(|s| s.parse::<usize>().ok());
-                if let (Some(r), Some(c)) = (r, c) {
-                    if r < self.rows && c < self.cols {
+                if let (Some(r), Some(c)) = (r, c)
+                    && r < self.rows && c < self.cols {
                         let idx = r * self.cols + c;
-                        if let Some(click_id) = v.as_u64() {
-                            if click_id != self.cells[idx].last_click_id {
+                        if let Some(click_id) = v.as_u64()
+                            && click_id != self.cells[idx].last_click_id {
                                 self.cells[idx].last_click_id = click_id;
                                 self.handle_click(idx);
                             }
-                        }
                     }
-                }
             }
         }
     }
