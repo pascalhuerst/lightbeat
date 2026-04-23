@@ -1,9 +1,13 @@
 {
-  "autosave_on_close": true,
+  "autosave_enabled": true,
   "autoload_on_open": true,
   "snap_to_grid": false,
   "inspector_mode": "Auto",
   "dmx_bypass_on_startup": false,
   "window_size": null,
-  "window_maximized": true
+  "window_maximized": true,
+  "recent_projects": [
+    "/home/paso/LightBeat/test_project_1.json",
+    "project.json"
+  ]
 }

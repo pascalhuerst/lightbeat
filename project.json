@@ -1241,8 +1241,8 @@
       "type_name": "Group Output",
       "id": 98,
       "pos": [
-        -64.70665,
-        1173.2646
+        -1537.8326,
+        1253.0714
       ],
       "params": [],
       "data": {
@@ -2203,8 +2203,8 @@
       "type_name": "Portal Out",
       "id": 108,
       "pos": [
-        -744.7784,
-        1171.9048
+        -2217.9043,
+        1251.7115
       ],
       "params": [],
       "data": {
@@ -2241,8 +2241,8 @@
       "type_name": "Color Modifier",
       "id": 109,
       "pos": [
-        -212.90366,
-        1238.5393
+        -1686.0297,
+        1318.3461
       ],
       "params": [
         {
@@ -2259,8 +2259,8 @@
       "type_name": "Color Modifier",
       "id": 110,
       "pos": [
-        -368.1143,
-        1237.4265
+        -1841.2404,
+        1317.2333
       ],
       "params": [
         {
@@ -2277,8 +2277,8 @@
       "type_name": "Bipolar",
       "id": 111,
       "pos": [
-        -542.82465,
-        1325.8889
+        -2015.9504,
+        1405.6957
       ],
       "params": [
         {
@@ -2460,137 +2460,6 @@
           "value": 4
         }
       ]
-    },
-    {
-      "type_name": "Subgraph",
-      "id": 128,
-      "pos": [
-        -1327.5098,
-        1683.9768
-      ],
-      "size": [
-        158.46138,
-        99.609764
-      ],
-      "params": [],
-      "data": {
-        "inputs": [
-          {
-            "name": "in 0",
-            "port_type_idx": 0
-          }
-        ],
-        "locked": true,
-        "macro_description": "Shows Triggers with an LED",
-        "macro_path": "/home/paso/.local/share/lightbeat/macros/display/trigger/led/Trigger LED.lbm",
-        "name": "Trigger LED",
-        "outputs": []
-      },
-      "inner_graph": {
-        "nodes": [
-          {
-            "type_name": "Trigger Hold",
-            "id": 123,
-            "pos": [
-              430.19415,
-              62.56189
-            ],
-            "params": [
-              {
-                "index": 0,
-                "value": 100
-              }
-            ],
-            "data": {
-              "default_duration": 100
-            }
-          },
-          {
-            "type_name": "Const Value",
-            "id": 124,
-            "pos": [
-              117.414795,
-              160.38821
-            ],
-            "params": [
-              {
-                "index": 0,
-                "value": 10.0
-              }
-            ]
-          },
-          {
-            "type_name": "Const Value",
-            "id": 125,
-            "pos": [
-              112.74072,
-              238.693
-            ],
-            "params": [
-              {
-                "index": 0,
-                "value": 10.0
-              }
-            ]
-          },
-          {
-            "type_name": "Mul",
-            "id": 126,
-            "pos": [
-              301.44727,
-              140.29837
-            ],
-            "params": [],
-            "data": {
-              "input_count": 2
-            }
-          },
-          {
-            "type_name": "LED Display",
-            "id": 127,
-            "pos": [
-              587.1094,
-              183.29688
-            ],
-            "params": [],
-            "data": {
-              "name": "trigger"
-            }
-          }
-        ],
-        "connections": [
-          {
-            "from_node": 124,
-            "from_port": 0,
-            "to_node": 126,
-            "to_port": 0
-          },
-          {
-            "from_node": 125,
-            "from_port": 0,
-            "to_node": 126,
-            "to_port": 1
-          },
-          {
-            "from_node": 126,
-            "from_port": 0,
-            "to_node": 123,
-            "to_port": 1
-          },
-          {
-            "from_node": 18446744073709551614,
-            "from_port": 0,
-            "to_node": 123,
-            "to_port": 0
-          },
-          {
-            "from_node": 123,
-            "from_port": 0,
-            "to_node": 127,
-            "to_port": 0
-          }
-        ]
-      }
     },
     {
       "type_name": "Palette to Gradient",
@@ -2783,127 +2652,6 @@
           "value": 3
         }
       ]
-    },
-    {
-      "type_name": "Subgraph",
-      "id": 152,
-      "pos": [
-        -2225.0945,
-        1423.2397
-      ],
-      "size": [
-        140.18846,
-        120.7618
-      ],
-      "params": [],
-      "inner_graph": {
-        "nodes": [
-          {
-            "type_name": "Flip-Flop",
-            "id": 147,
-            "pos": [
-              51.05298,
-              131.50226
-            ],
-            "params": []
-          },
-          {
-            "type_name": "AND",
-            "id": 148,
-            "pos": [
-              212.84888,
-              131.34454
-            ],
-            "params": []
-          },
-          {
-            "type_name": "LED Display",
-            "id": 149,
-            "pos": [
-              350.91864,
-              -57.947662
-            ],
-            "size": [
-              90.27328,
-              138.54713
-            ],
-            "params": []
-          },
-          {
-            "type_name": "LED Display",
-            "id": 150,
-            "pos": [
-              596.42633,
-              262.29657
-            ],
-            "size": [
-              95.744896,
-              96.274994
-            ],
-            "params": []
-          },
-          {
-            "type_name": "Trigger Hold",
-            "id": 151,
-            "pos": [
-              349.46152,
-              307.50238
-            ],
-            "params": []
-          }
-        ],
-        "connections": [
-          {
-            "from_node": 147,
-            "from_port": 0,
-            "to_node": 148,
-            "to_port": 0
-          },
-          {
-            "from_node": 148,
-            "from_port": 0,
-            "to_node": 147,
-            "to_port": 1
-          },
-          {
-            "from_node": 18446744073709551614,
-            "from_port": 0,
-            "to_node": 147,
-            "to_port": 0
-          },
-          {
-            "from_node": 18446744073709551614,
-            "from_port": 1,
-            "to_node": 148,
-            "to_port": 1
-          },
-          {
-            "from_node": 148,
-            "from_port": 0,
-            "to_node": 18446744073709551615,
-            "to_port": 0
-          },
-          {
-            "from_node": 147,
-            "from_port": 0,
-            "to_node": 149,
-            "to_port": 0
-          },
-          {
-            "from_node": 148,
-            "from_port": 0,
-            "to_node": 151,
-            "to_port": 0
-          },
-          {
-            "from_node": 151,
-            "from_port": 0,
-            "to_node": 150,
-            "to_port": 0
-          }
-        ]
-      },
-      "disabled": true
     }
   ],
   "connections": [
@@ -2965,12 +2713,6 @@
       "from_node": 121,
       "from_port": 0,
       "to_node": 122,
-      "to_port": 0
-    },
-    {
-      "from_node": 122,
-      "from_port": 0,
-      "to_node": 128,
       "to_port": 0
     },
     {
@@ -3136,8 +2878,8 @@
       ],
       "notes": "",
       "pos": [
-        -790.0182,
-        1121.6882
+        -2263.144,
+        1201.495
       ],
       "size": [
         892.5242,

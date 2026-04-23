@@ -166,6 +166,17 @@ struct LightBeatApp {
     file_dialog_rx: Option<std::sync::mpsc::Receiver<FileDialogResult>>,
     snapshot: Arc<std::sync::Mutex<beat_clock::LinkSnapshot>>,
     quit_requested: bool,
+    /// Serialized form (JSON) of the project at the moment it was last saved
+    /// (or loaded). Comparing the current serialized project against this
+    /// tells us whether there are unsaved changes.
+    last_saved_project_json: Option<String>,
+    /// Time of the last autosave write, in seconds from app start (ctx time).
+    last_autosave_time: f64,
+    /// Whether the close-confirm modal is currently open.
+    close_confirm_open: bool,
+    /// Whether the startup autosave-recovery prompt is currently open. Carries
+    /// the autosave path to load on "Recover".
+    recover_prompt: Option<PathBuf>,
     show_dmx_monitor: bool,
     show_setup: bool,
     setup_active_tab: SetupTab,
@@ -263,6 +274,10 @@ impl LightBeatApp {
             file_dialog_rx: None,
             snapshot,
             quit_requested: false,
+            last_saved_project_json: None,
+            last_autosave_time: 0.0,
+            close_confirm_open: false,
+            recover_prompt: None,
             show_dmx_monitor: false,
             show_setup: false,
             setup_active_tab: SetupTab::Interfaces,
@@ -302,10 +317,16 @@ impl LightBeatApp {
         app.sync_palette_context();
         app.sync_gradient_library();
 
-        // Try autoload, or create default clock.
+        // Try autoload: prefer the most-recent-opened project, falling back
+        // to the default path next to the executable.
         let loaded = if app.config.autoload_on_open {
-            let path = project::default_project_path();
-            if path.exists() {
+            let candidate = app.config.recent_projects.first().cloned()
+                .filter(|p| p.exists())
+                .or_else(|| {
+                    let p = project::default_project_path();
+                    if p.exists() { Some(p) } else { None }
+                });
+            if let Some(path) = candidate {
                 app.load_project_from(&path);
                 true
             } else {
@@ -319,6 +340,9 @@ impl LightBeatApp {
             app.create_default_clock();
             // Drain since create_default_clock already handled the engine side.
             app.graph.drain_new_nodes();
+            // Baseline the dirty detector so a fresh default-clock graph
+            // isn't immediately flagged as "unsaved changes".
+            app.mark_project_saved();
         }
 
         app
@@ -848,9 +872,64 @@ impl LightBeatApp {
             .unwrap_or_else(project::default_project_path);
         if let Err(e) = project::save_to_file(&self.graph, self.view_state(), &path) {
             eprintln!("Failed to save project: {}", e);
-        } else {
-            self.project_path = Some(path);
+            return;
         }
+        self.project_path = Some(path.clone());
+        self.mark_project_saved();
+        self.config.push_recent_project(&path);
+        self.config.save();
+        self.delete_autosave_for(Some(&path));
+    }
+
+    /// Serialize the current project graph + view to JSON for dirty
+    /// comparison and autosave writes.
+    fn project_json(&self) -> String {
+        let mut project = project::save_graph(&self.graph);
+        project.view = Some(self.view_state());
+        serde_json::to_string(&project).unwrap_or_default()
+    }
+
+    /// Call after a successful project save / load / apply to baseline the
+    /// dirty detector against the now-on-disk state.
+    fn mark_project_saved(&mut self) {
+        self.last_saved_project_json = Some(self.project_json());
+    }
+
+    /// True when the current project differs from the last saved/loaded
+    /// baseline. Returns true if there's no baseline yet (fresh graph —
+    /// asks the user to save before losing their work).
+    fn is_project_dirty(&self) -> bool {
+        match &self.last_saved_project_json {
+            Some(base) => self.project_json() != *base,
+            None => {
+                // No baseline: treat an empty graph as clean so launching the
+                // app and quitting immediately doesn't prompt.
+                !self.graph.root_level().nodes.is_empty()
+            }
+        }
+    }
+
+    /// Write the current project to its crash-recovery autosave file. Silent
+    /// best-effort — errors are logged and ignored.
+    fn write_autosave(&mut self) {
+        let path = project::autosave_path_for(self.project_path.as_deref());
+        let mut project = project::save_graph(&self.graph);
+        project.view = Some(self.view_state());
+        match serde_json::to_string_pretty(&project) {
+            Ok(json) => {
+                if let Err(e) = std::fs::write(&path, json) {
+                    eprintln!("autosave write failed ({}): {}", path.display(), e);
+                }
+            }
+            Err(e) => eprintln!("autosave serialize failed: {}", e),
+        }
+    }
+
+    /// Remove the autosave file associated with the given project path (or
+    /// the unsaved-project default if `None`). Missing-file is not an error.
+    fn delete_autosave_for(&self, project_path: Option<&std::path::Path>) {
+        let path = project::autosave_path_for(project_path);
+        let _ = std::fs::remove_file(&path);
     }
 
     fn view_state(&self) -> project::ProjectViewState {
@@ -909,7 +988,11 @@ impl LightBeatApp {
                         if let Err(e) = project::save_to_file(&self.graph, self.view_state(), &path) {
                             eprintln!("Failed to save project: {}", e);
                         } else {
-                            self.project_path = Some(path);
+                            self.project_path = Some(path.clone());
+                            self.mark_project_saved();
+                            self.config.push_recent_project(&path);
+                            self.config.save();
+                            self.delete_autosave_for(Some(&path));
                         }
                     }
                 }
@@ -1007,6 +1090,16 @@ impl LightBeatApp {
                 self.project_path = Some(path.to_path_buf());
                 // Reset history so undo doesn't go back to the empty pre-load graph.
                 self.project_undoer = egui::util::undoer::Undoer::default();
+                self.mark_project_saved();
+                self.config.push_recent_project(path);
+                self.config.save();
+                // If a crash-recovery autosave exists for this project and
+                // is newer than the project file on disk, surface a prompt
+                // so the user can choose to recover.
+                let autosave = project::autosave_path_for(Some(path));
+                if autosave.exists() && is_newer(&autosave, path) {
+                    self.recover_prompt = Some(autosave);
+                }
             }
             Err(e) => {
                 eprintln!("Failed to open project: {}", e);
@@ -1030,6 +1123,9 @@ impl LightBeatApp {
         // Drop undo history so the first undo doesn't resurrect the previous
         // project's graph.
         self.project_undoer = egui::util::undoer::Undoer::default();
+        // Baseline the dirty detector against the empty graph — a freshly
+        // created project isn't "unsaved" until the user actually edits it.
+        self.mark_project_saved();
     }
 
     /// Build current SetupFile snapshot (used for both saving and feeding the undoer).
@@ -1496,6 +1592,17 @@ impl eframe::App for LightBeatApp {
         self.project_undoer.feed_state(now, &current_project);
         self.setup_undoer.feed_state(now, &current_setup);
 
+        // Periodic crash-recovery autosave: writes to a separate file, never
+        // over the user's project. Only runs when there are unsaved changes.
+        const AUTOSAVE_INTERVAL: f64 = 30.0;
+        if self.config.autosave_enabled
+            && now - self.last_autosave_time > AUTOSAVE_INTERVAL
+            && self.is_project_dirty()
+        {
+            self.write_autosave();
+            self.last_autosave_time = now;
+        }
+
         let can_undo_proj = self.project_undoer.has_undo(&current_project);
         let can_redo_proj = self.project_undoer.has_redo(&current_project);
         let can_undo_setup = self.setup_undoer.has_undo(&current_setup);
@@ -1512,6 +1619,38 @@ impl eframe::App for LightBeatApp {
                     if ui.button("Open...").clicked() {
                         ui.close_menu();
                         self.open_project(ctx);
+                    }
+                    let recents = self.config.recent_projects.clone();
+                    let mut load_recent: Option<PathBuf> = None;
+                    let mut clear_recents = false;
+                    ui.add_enabled_ui(!recents.is_empty(), |ui| {
+                        ui.menu_button("Open Recent", |ui| {
+                            for p in &recents {
+                                let label = p.file_name()
+                                    .and_then(|s| s.to_str())
+                                    .unwrap_or_else(|| p.to_str().unwrap_or("?"))
+                                    .to_string();
+                                if ui.button(label)
+                                    .on_hover_text(p.to_string_lossy())
+                                    .clicked()
+                                {
+                                    load_recent = Some(p.clone());
+                                    ui.close_menu();
+                                }
+                            }
+                            ui.separator();
+                            if ui.button("Clear list").clicked() {
+                                clear_recents = true;
+                                ui.close_menu();
+                            }
+                        });
+                    });
+                    if let Some(p) = load_recent {
+                        self.load_project_from(&p);
+                    }
+                    if clear_recents {
+                        self.config.recent_projects.clear();
+                        self.config.save();
                     }
                     ui.separator();
                     if ui.button("Save").clicked() {
@@ -1900,6 +2039,9 @@ impl eframe::App for LightBeatApp {
         if ctx.input(|i| i.modifiers.ctrl && i.key_pressed(egui::Key::O)) {
             self.open_project(ctx);
         }
+        if ctx.input(|i| i.modifiers.ctrl && i.key_pressed(egui::Key::Q)) {
+            self.quit_requested = true;
+        }
 
         // Undo / Redo: Ctrl+Z / Ctrl+Shift+Z (and Ctrl+Y for redo).
         // Routes to the setup undoer when the pointer is over the Setup
@@ -1932,21 +2074,129 @@ impl eframe::App for LightBeatApp {
             }
         }
 
+        // Intercept the OS window close button: if the project has unsaved
+        // changes, cancel the close and open the confirm modal instead.
+        if ctx.input(|i| i.viewport().close_requested()) && self.is_project_dirty() {
+            ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+            self.quit_requested = true;
+        }
+
         if self.quit_requested {
-            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+            if self.is_project_dirty() {
+                self.close_confirm_open = true;
+                self.quit_requested = false;
+            } else {
+                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                self.quit_requested = false;
+            }
+        }
+
+        // Close-confirm modal: Save / Discard / Cancel.
+        if self.close_confirm_open {
+            let mut do_save = false;
+            let mut do_discard = false;
+            let mut do_cancel = false;
+            egui::Window::new("Unsaved changes")
+                .collapsible(false)
+                .resizable(false)
+                .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
+                .show(ctx, |ui| {
+                    ui.label("You have unsaved changes in this project. Save before quitting?");
+                    ui.add_space(8.0);
+                    ui.horizontal(|ui| {
+                        if ui.button("Save").clicked() { do_save = true; }
+                        if ui.button("Discard").clicked() { do_discard = true; }
+                        if ui.button("Cancel").clicked() { do_cancel = true; }
+                    });
+                });
+            if do_save {
+                self.save_project();
+                self.save_setup();
+                self.close_confirm_open = false;
+                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+            } else if do_discard {
+                self.delete_autosave_for(self.project_path.as_deref());
+                self.close_confirm_open = false;
+                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+            } else if do_cancel {
+                self.close_confirm_open = false;
+            }
+        }
+
+        // Recovery prompt shown on startup when a newer autosave file exists
+        // alongside the loaded project.
+        if self.recover_prompt.is_some() {
+            let mut do_recover = false;
+            let mut do_discard = false;
+            let autosave_display = self.recover_prompt
+                .as_ref()
+                .map(|p| p.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            egui::Window::new("Recover unsaved changes?")
+                .collapsible(false)
+                .resizable(false)
+                .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
+                .show(ctx, |ui| {
+                    ui.label("An autosave file exists that is newer than the project on disk.");
+                    ui.label("This usually means the app was closed unexpectedly.");
+                    ui.add_space(4.0);
+                    ui.label(egui::RichText::new(&autosave_display).monospace().small());
+                    ui.add_space(8.0);
+                    ui.horizontal(|ui| {
+                        if ui.button("Recover").clicked() { do_recover = true; }
+                        if ui.button("Discard").clicked() { do_discard = true; }
+                    });
+                });
+            if do_recover
+                && let Some(autosave) = self.recover_prompt.take() {
+                    match project::load_from_file(&autosave) {
+                        Ok(proj) => {
+                            self.apply_project(&proj);
+                            self.graph.fit_to_content();
+                            // Keep project_path pointing at the real project:
+                            // recovering from autosave should NOT silently save
+                            // over the project file — user has to hit Save.
+                            self.project_undoer = egui::util::undoer::Undoer::default();
+                            // Recovered content is "unsaved" — leave the
+                            // baseline pointing at the on-disk project so the
+                            // dirty flag reads true until the user saves.
+                        }
+                        Err(e) => eprintln!("Failed to load autosave: {}", e),
+                    }
+                }
+            if do_discard
+                && let Some(autosave) = self.recover_prompt.take() {
+                    let _ = std::fs::remove_file(&autosave);
+                }
         }
     }
 
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
-        if self.config.autosave_on_close {
-            self.save_project();
-            self.save_setup();
-        }
+        // Setup (fixtures/interfaces/palettes/etc.) always persists on exit
+        // — it's shared hardware config, not the user-authored project.
+        self.save_setup();
+        // Clean exit: remove the crash-recovery autosave file. If we got
+        // here after a Discard or Save the user already made an explicit
+        // decision; if the user closed without prompting (clean no-op),
+        // there are no unsaved changes so the autosave is stale anyway.
+        self.delete_autosave_for(self.project_path.as_deref());
         self.config.save();
     }
 }
 
 /// Inline inspector for a selected decorative frame.
+/// True when `a`'s modification time is strictly newer than `b`'s. Missing
+/// metadata on either side yields `false` — we don't want to false-positive
+/// into prompting the user when we can't actually compare.
+fn is_newer(a: &std::path::Path, b: &std::path::Path) -> bool {
+    let ta = std::fs::metadata(a).and_then(|m| m.modified()).ok();
+    let tb = std::fs::metadata(b).and_then(|m| m.modified()).ok();
+    match (ta, tb) {
+        (Some(a), Some(b)) => a > b,
+        _ => false,
+    }
+}
+
 fn show_frame_inspector(
     ui: &mut egui::Ui,
     graph: &mut widgets::nodes::NodeGraph,

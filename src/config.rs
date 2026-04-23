@@ -20,7 +20,12 @@ pub enum InspectorMode {
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct AppConfig {
-    pub autosave_on_close: bool,
+    /// If true, the app periodically writes a separate autosave file next to
+    /// the project (for crash recovery) while there are unsaved changes. The
+    /// autosave is never written over the user's project file — explicit
+    /// Save / Save As is the only way to modify that.
+    #[serde(alias = "autosave_on_close")]
+    pub autosave_enabled: bool,
     pub autoload_on_open: bool,
     pub snap_to_grid: bool,
     #[serde(default)]
@@ -39,18 +44,23 @@ pub struct AppConfig {
     /// maximized again.
     #[serde(default)]
     pub window_maximized: bool,
+    /// Most-recently-opened/saved project paths (front = newest). Capped
+    /// and deduped by `push_recent_project`.
+    #[serde(default)]
+    pub recent_projects: Vec<PathBuf>,
 }
 
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
-            autosave_on_close: true,
+            autosave_enabled: true,
             autoload_on_open: true,
             snap_to_grid: false,
             inspector_mode: InspectorMode::Auto,
             dmx_bypass_on_startup: false,
             window_size: None,
             window_maximized: false,
+            recent_projects: Vec::new(),
         }
     }
 }
@@ -77,6 +87,17 @@ impl AppConfig {
         let path = Self::config_path();
         if let Ok(json) = serde_json::to_string_pretty(self) {
             let _ = std::fs::write(&path, json);
+        }
+    }
+
+    /// Add a project path to the recent list: move to front, dedupe by path,
+    /// cap at `MAX_RECENT`.
+    pub fn push_recent_project(&mut self, path: &std::path::Path) {
+        const MAX_RECENT: usize = 8;
+        self.recent_projects.retain(|p| p != path);
+        self.recent_projects.insert(0, path.to_path_buf());
+        if self.recent_projects.len() > MAX_RECENT {
+            self.recent_projects.truncate(MAX_RECENT);
         }
     }
 }

@@ -1,8 +1,8 @@
-use std::any::Any;
 use egui::{self, Color32, Ui};
+use std::any::Any;
 
 use crate::engine::nodes::meta::portal::{
-    available_portal_names, PortalInDisplay, PortalOutDisplay, PortalPortDef, SharedPortalRegistry,
+    PortalInDisplay, PortalOutDisplay, PortalPortDef, SharedPortalRegistry, available_portal_names,
 };
 use crate::engine::nodes::meta::subgraph::PORT_TYPE_NAMES;
 use crate::engine::types::*;
@@ -25,7 +25,8 @@ pub struct PortalInWidget {
 impl PortalInWidget {
     pub fn new(id: NodeId, shared: SharedState) -> Self {
         Self {
-            id, shared,
+            id,
+            shared,
             name: String::new(),
             port_defs: Vec::new(),
             duplicate_name: false,
@@ -45,7 +46,8 @@ impl PortalInWidget {
             self.name = n.to_string();
         }
         if let Some(arr) = data.get("ports").and_then(|v| v.as_array()) {
-            self.port_defs = arr.iter()
+            self.port_defs = arr
+                .iter()
                 .filter_map(|v| serde_json::from_value::<PortalPortDef>(v.clone()).ok())
                 .collect();
         }
@@ -53,37 +55,62 @@ impl PortalInWidget {
 }
 
 impl NodeWidget for PortalInWidget {
-    fn node_id(&self) -> NodeId { self.id }
-    fn type_name(&self) -> &'static str { "Portal In" }
+    fn node_id(&self) -> NodeId {
+        self.id
+    }
+    fn type_name(&self) -> &'static str {
+        "Portal In"
+    }
     fn title(&self) -> &str {
-        if self.name.is_empty() { "Portal In" } else { self.name.as_str() }
+        if self.name.is_empty() {
+            "Portal In"
+        } else {
+            self.name.as_str()
+        }
     }
     fn description(&self) -> &'static str {
         "Publishes its inputs under a name. Any Portal Out bound to the same name mirrors these ports as outputs — wireless cables for tidy graphs."
     }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> {
-        self.port_defs.iter()
+        self.port_defs
+            .iter()
             .map(|p| UiPortDef::from_def(&p.to_port_def()))
             .collect()
     }
-    fn ui_outputs(&self) -> Vec<UiPortDef> { vec![] }
+    fn ui_outputs(&self) -> Vec<UiPortDef> {
+        vec![]
+    }
 
-    fn min_width(&self) -> f32 { 140.0 }
-    fn min_content_height(&self) -> f32 { 18.0 }
+    fn min_width(&self) -> f32 {
+        140.0
+    }
+    fn min_content_height(&self) -> f32 {
+        18.0
+    }
     // Amber accent — matches the portal-peer halo so the colour identity
     // reads "these nodes are a linked wireless pair" whether or not a
     // peer is currently selected.
-    fn accent_color(&self) -> Option<Color32> { Some(theme::SEM_WARNING) }
-    fn portal_key(&self) -> Option<String> {
-        if self.name.is_empty() { None } else { Some(self.name.clone()) }
+    fn accent_color(&self) -> Option<Color32> {
+        Some(theme::SEM_WARNING)
     }
-    fn shared_state(&self) -> &SharedState { &self.shared }
+    fn portal_key(&self) -> Option<String> {
+        if self.name.is_empty() {
+            None
+        } else {
+            Some(self.name.clone())
+        }
+    }
+    fn shared_state(&self) -> &SharedState {
+        &self.shared
+    }
 
     fn show_content(&mut self, ui: &mut Ui, _zoom: f32) {
         let snap = {
             let shared = self.shared.lock().unwrap();
-            shared.display.as_ref()
+            shared
+                .display
+                .as_ref()
                 .and_then(|d| d.downcast_ref::<PortalInDisplay>())
                 .map(|d| (d.name.clone(), d.duplicate_name))
         };
@@ -95,10 +122,7 @@ impl NodeWidget for PortalInWidget {
         if self.name.is_empty() {
             ui.colored_label(theme::TEXT_DIM, "(unnamed)");
         } else if self.duplicate_name {
-            ui.colored_label(
-                theme::SEM_WARNING,
-                format!("{} — duplicate!", self.name),
-            );
+            ui.colored_label(theme::SEM_WARNING, format!("{} — duplicate!", self.name));
         } else {
             ui.colored_label(theme::TEXT, &self.name);
         }
@@ -128,7 +152,10 @@ impl NodeWidget for PortalInWidget {
                     .selected_text(*PORT_TYPE_NAMES.get(port.port_type_idx).unwrap_or(&"?"))
                     .show_ui(ui, |ui| {
                         for (idx, name) in PORT_TYPE_NAMES.iter().enumerate() {
-                            if ui.selectable_value(&mut port.port_type_idx, idx, *name).changed() {
+                            if ui
+                                .selectable_value(&mut port.port_type_idx, idx, *name)
+                                .changed()
+                            {
                                 changed = true;
                             }
                         }
@@ -155,7 +182,9 @@ impl NodeWidget for PortalInWidget {
         }
     }
 
-    fn as_any_mut(&mut self) -> &mut dyn Any { self }
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -174,7 +203,9 @@ pub struct PortalOutWidget {
 impl PortalOutWidget {
     pub fn new(id: NodeId, shared: SharedState, registry: SharedPortalRegistry) -> Self {
         Self {
-            id, shared, registry,
+            id,
+            shared,
+            registry,
             bound_name: String::new(),
             port_defs: Vec::new(),
             connected: false,
@@ -194,7 +225,8 @@ impl PortalOutWidget {
             self.bound_name = n.to_string();
         }
         if let Some(arr) = data.get("ports").and_then(|v| v.as_array()) {
-            self.port_defs = arr.iter()
+            self.port_defs = arr
+                .iter()
                 .filter_map(|v| serde_json::from_value::<PortalPortDef>(v.clone()).ok())
                 .collect();
         }
@@ -202,37 +234,62 @@ impl PortalOutWidget {
 }
 
 impl NodeWidget for PortalOutWidget {
-    fn node_id(&self) -> NodeId { self.id }
-    fn type_name(&self) -> &'static str { "Portal Out" }
+    fn node_id(&self) -> NodeId {
+        self.id
+    }
+    fn type_name(&self) -> &'static str {
+        "Portal Out"
+    }
     fn title(&self) -> &str {
-        if self.bound_name.is_empty() { "Portal Out" } else { self.bound_name.as_str() }
+        if self.bound_name.is_empty() {
+            "Portal Out"
+        } else {
+            self.bound_name.as_str()
+        }
     }
     fn description(&self) -> &'static str {
         "Mirrors a Portal In's inputs as outputs. Select which Portal In to follow by name in the inspector."
     }
 
-    fn ui_inputs(&self) -> Vec<UiPortDef> { vec![] }
+    fn ui_inputs(&self) -> Vec<UiPortDef> {
+        vec![]
+    }
     fn ui_outputs(&self) -> Vec<UiPortDef> {
-        self.port_defs.iter()
+        self.port_defs
+            .iter()
             .map(|p| UiPortDef::from_def(&p.to_port_def()))
             .collect()
     }
 
-    fn min_width(&self) -> f32 { 140.0 }
-    fn min_content_height(&self) -> f32 { 18.0 }
+    fn min_width(&self) -> f32 {
+        140.0
+    }
+    fn min_content_height(&self) -> f32 {
+        18.0
+    }
     // Amber accent — matches the portal-peer halo so the colour identity
     // reads "these nodes are a linked wireless pair" whether or not a
     // peer is currently selected.
-    fn accent_color(&self) -> Option<Color32> { Some(theme::SEM_WARNING) }
-    fn portal_key(&self) -> Option<String> {
-        if self.bound_name.is_empty() { None } else { Some(self.bound_name.clone()) }
+    fn accent_color(&self) -> Option<Color32> {
+        Some(theme::SEM_WARNING)
     }
-    fn shared_state(&self) -> &SharedState { &self.shared }
+    fn portal_key(&self) -> Option<String> {
+        if self.bound_name.is_empty() {
+            None
+        } else {
+            Some(self.bound_name.clone())
+        }
+    }
+    fn shared_state(&self) -> &SharedState {
+        &self.shared
+    }
 
     fn show_content(&mut self, ui: &mut Ui, _zoom: f32) {
         let snap = {
             let shared = self.shared.lock().unwrap();
-            shared.display.as_ref()
+            shared
+                .display
+                .as_ref()
                 .and_then(|d| d.downcast_ref::<PortalOutDisplay>())
                 .map(|d| (d.bound_name.clone(), d.port_defs.clone(), d.connected))
         };
@@ -269,12 +326,18 @@ impl NodeWidget for PortalOutWidget {
             egui::ComboBox::from_id_salt(("portal_out_bind", self.id.0))
                 .selected_text(current_label)
                 .show_ui(ui, |ui| {
-                    if ui.selectable_label(self.bound_name.is_empty(), "(none)").clicked() {
+                    if ui
+                        .selectable_label(self.bound_name.is_empty(), "(none)")
+                        .clicked()
+                    {
                         self.bound_name.clear();
                         self.push_config();
                     }
                     for name in &names {
-                        if ui.selectable_label(self.bound_name == *name, name).clicked() {
+                        if ui
+                            .selectable_label(self.bound_name == *name, name)
+                            .clicked()
+                        {
                             self.bound_name = name.clone();
                             self.push_config();
                         }
@@ -295,12 +358,11 @@ impl NodeWidget for PortalOutWidget {
         });
 
         if !self.bound_name.is_empty() && !self.connected {
-            ui.colored_label(
-                theme::SEM_WARNING,
-                "No Portal In publishing this name yet.",
-            );
+            ui.colored_label(theme::SEM_WARNING, "No Portal In publishing this name yet.");
         }
     }
 
-    fn as_any_mut(&mut self) -> &mut dyn Any { self }
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
 }

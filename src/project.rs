@@ -528,6 +528,23 @@ pub fn default_project_path() -> PathBuf {
     PathBuf::from("project.json")
 }
 
+/// Path for the crash-recovery autosave file that shadows a given project
+/// file. Convention: same directory as the project, filename is the project's
+/// stem with `.autosave.json` appended and a leading `.` (hidden on unix).
+/// If `project_path` is `None`, falls back to `./.project.autosave.json`.
+pub fn autosave_path_for(project_path: Option<&std::path::Path>) -> PathBuf {
+    match project_path {
+        Some(p) => {
+            let dir = p.parent().unwrap_or(std::path::Path::new(""));
+            let stem = p.file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("project");
+            dir.join(format!(".{}.autosave.json", stem))
+        }
+        None => PathBuf::from(".project.autosave.json"),
+    }
+}
+
 pub fn save_to_file(
     graph: &NodeGraph,
     view: ProjectViewState,
