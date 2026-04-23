@@ -74,7 +74,7 @@ impl NodeWidget for PortalInWidget {
     // Amber accent — matches the portal-peer halo so the colour identity
     // reads "these nodes are a linked wireless pair" whether or not a
     // peer is currently selected.
-    fn accent_color(&self) -> Option<Color32> { Some(theme::ACCENT_PORTAL) }
+    fn accent_color(&self) -> Option<Color32> { Some(theme::SEM_WARNING) }
     fn portal_key(&self) -> Option<String> {
         if self.name.is_empty() { None } else { Some(self.name.clone()) }
     }
@@ -96,11 +96,11 @@ impl NodeWidget for PortalInWidget {
             ui.colored_label(theme::TEXT_DIM, "(unnamed)");
         } else if self.duplicate_name {
             ui.colored_label(
-                theme::STATUS_WARNING,
+                theme::SEM_WARNING,
                 format!("{} — duplicate!", self.name),
             );
         } else {
-            ui.colored_label(theme::TEXT_SUBTLE, &self.name);
+            ui.colored_label(theme::TEXT, &self.name);
         }
     }
 
@@ -223,7 +223,7 @@ impl NodeWidget for PortalOutWidget {
     // Amber accent — matches the portal-peer halo so the colour identity
     // reads "these nodes are a linked wireless pair" whether or not a
     // peer is currently selected.
-    fn accent_color(&self) -> Option<Color32> { Some(theme::ACCENT_PORTAL) }
+    fn accent_color(&self) -> Option<Color32> { Some(theme::SEM_WARNING) }
     fn portal_key(&self) -> Option<String> {
         if self.bound_name.is_empty() { None } else { Some(self.bound_name.clone()) }
     }
@@ -247,10 +247,10 @@ impl NodeWidget for PortalOutWidget {
         if self.bound_name.is_empty() {
             ui.colored_label(theme::TEXT_DIM, "(pick a Portal In)");
         } else if self.connected {
-            ui.colored_label(theme::TEXT_SUBTLE, &self.bound_name);
+            ui.colored_label(theme::TEXT, &self.bound_name);
         } else {
             ui.colored_label(
-                theme::STATUS_WARNING,
+                theme::SEM_WARNING,
                 format!("{} (not connected)", self.bound_name),
             );
         }
@@ -296,7 +296,7 @@ impl NodeWidget for PortalOutWidget {
 
         if !self.bound_name.is_empty() && !self.connected {
             ui.colored_label(
-                theme::STATUS_WARNING,
+                theme::SEM_WARNING,
                 "No Portal In publishing this name yet.",
             );
         }

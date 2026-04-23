@@ -17,14 +17,14 @@ pub trait PortTypeUi {
 impl PortTypeUi for PortType {
     fn color(&self) -> Color32 {
         match self {
-            PortType::Logic => theme::PORT_LOGIC,
-            PortType::Phase => theme::PORT_PHASE,
-            PortType::Untyped => theme::PORT_UNTYPED,
-            PortType::Any => theme::PORT_ANY,
-            PortType::Color => theme::PORT_COLOR,
-            PortType::Position => theme::PORT_POSITION,
-            PortType::Palette => theme::PORT_PALETTE,
-            PortType::Gradient => theme::PORT_GRADIENT,
+            PortType::Logic => theme::TYPE_LOGIC,
+            PortType::Phase => theme::TYPE_PHASE,
+            PortType::Untyped => theme::TYPE_UNTYPED,
+            PortType::Any => theme::TYPE_ANY,
+            PortType::Color => theme::TYPE_COLOR,
+            PortType::Position => theme::TYPE_POSITION,
+            PortType::Palette => theme::TYPE_PALETTE,
+            PortType::Gradient => theme::TYPE_GRADIENT,
         }
     }
 }

@@ -86,12 +86,12 @@ impl NodeWidget for LfoWidget {
         let px = rect.min.x + rect.width() * phase;
         painter.line_segment(
             [egui::pos2(px, rect.min.y), egui::pos2(px, rect.max.y)],
-            Stroke::new(1.0, theme::STATUS_ACTIVE),
+            Stroke::new(1.0, theme::SEM_PRIMARY),
         );
         // Value indicator (dot at intersection)
         let value_norm = value.clamp(-1.5, 1.5);
         let py = cy - value_norm * (rect.height() * 0.45);
-        painter.circle_filled(egui::pos2(px, py), 3.0, theme::PORT_LOGIC);
+        painter.circle_filled(egui::pos2(px, py), 3.0, theme::TYPE_LOGIC);
     }
 
     fn as_any_mut(&mut self) -> &mut dyn Any { self }

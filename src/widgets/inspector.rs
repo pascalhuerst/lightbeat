@@ -68,7 +68,7 @@ fn show_port_value(ui: &mut Ui, def: &PortDef, values: &[f32], base: usize) {
                 );
                 cp.rect_filled(cr.rect, 2.0, color);
                 ui.colored_label(
-                    theme::TEXT_FAINT,
+                    theme::TEXT_DIM,
                     format!("#{:02X}{:02X}{:02X}", (rv * 255.0) as u8, (gv * 255.0) as u8, (bv * 255.0) as u8),
                 );
             }
@@ -76,7 +76,7 @@ fn show_port_value(ui: &mut Ui, def: &PortDef, values: &[f32], base: usize) {
                 let pan = values.get(base).copied().unwrap_or(0.0);
                 let tilt = values.get(base + 1).copied().unwrap_or(0.0);
                 ui.colored_label(
-                    theme::TEXT_FAINT,
+                    theme::TEXT_DIM,
                     format!("P:{:.2} T:{:.2}", pan, tilt),
                 );
             }
@@ -97,7 +97,7 @@ fn show_port_value(ui: &mut Ui, def: &PortDef, values: &[f32], base: usize) {
             }
             _ => {
                 let val = values.get(base).copied().unwrap_or(0.0);
-                ui.colored_label(theme::TEXT_FAINT, format!("{:.2}", val));
+                ui.colored_label(theme::TEXT_DIM, format!("{:.2}", val));
             }
         }
     });

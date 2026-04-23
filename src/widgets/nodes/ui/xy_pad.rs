@@ -134,7 +134,7 @@ impl NodeWidget for XyPadWidget {
 
         // Knob: filled cyan circle with a dark outline for contrast.
         let knob_r = 6.0;
-        painter.circle_filled(knob, knob_r, theme::STATUS_ACTIVE);
+        painter.circle_filled(knob, knob_r, theme::SEM_PRIMARY);
         painter.circle_stroke(knob, knob_r, Stroke::new(1.5, Color32::from_gray(20)));
 
         // Interaction — click or drag anywhere inside the pad to reposition.

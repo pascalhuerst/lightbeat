@@ -124,7 +124,7 @@ impl NodeWidget for ButtonWidget {
 
         let pressed = matches!(self.mode, ButtonMode::Toggle) && self.state;
         let fill = if pressed {
-            theme::STATUS_ACTIVE
+            theme::SEM_PRIMARY
         } else {
             Color32::from_gray(60)
         };
@@ -144,7 +144,7 @@ impl NodeWidget for ButtonWidget {
         painter.rect_filled(rect, 3.0, fill);
         let border = if self.override_active {
             // Bright orange border to indicate override is active.
-            theme::STATUS_OVERRIDE
+            theme::SEM_WARNING
         } else if resp.hovered() {
             Color32::from_gray(140)
         } else {
@@ -169,13 +169,13 @@ impl NodeWidget for ButtonWidget {
             let dot_r = 4.0 * zoom;
             let dot_pos = egui::pos2(rect.max.x - dot_r - 3.0, rect.min.y + dot_r + 3.0);
             let in_color = if self.input_value >= 0.5 {
-                theme::STATUS_ACTIVE
+                theme::SEM_PRIMARY
             } else {
                 Color32::from_gray(80)
             };
             painter.circle_filled(dot_pos, dot_r, in_color);
             painter.circle_stroke(dot_pos, dot_r,
-                egui::Stroke::new(1.0, theme::STATUS_OVERRIDE));
+                egui::Stroke::new(1.0, theme::SEM_WARNING));
         }
 
         if interactive {

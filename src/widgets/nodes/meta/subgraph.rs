@@ -178,7 +178,7 @@ impl NodeWidget for SubgraphWidget {
             if self.macro_path.is_empty() {
                 ui.colored_label(theme::TEXT_DIM, "(unknown)");
             } else {
-                ui.colored_label(theme::TEXT_SUBTLE, &self.macro_path);
+                ui.colored_label(theme::TEXT, &self.macro_path);
             }
             return;
         }

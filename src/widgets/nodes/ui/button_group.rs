@@ -190,7 +190,7 @@ impl NodeWidget for ButtonGroupWidget {
                 let pressed = matches!(self.mode, ButtonMode::Toggle)
                     && self.states.get(idx).copied().unwrap_or(false);
                 let fill = if pressed {
-                    theme::STATUS_ACTIVE
+                    theme::SEM_PRIMARY
                 } else if resp.hovered() {
                     Color32::from_gray(80)
                 } else {
@@ -202,7 +202,7 @@ impl NodeWidget for ButtonGroupWidget {
                 painter.rect_filled(inner, 3.0, fill);
                 let override_active = self.override_active.get(idx).copied().unwrap_or(false);
                 let border = if override_active {
-                    theme::STATUS_OVERRIDE
+                    theme::SEM_WARNING
                 } else if resp.hovered() {
                     Color32::from_gray(140)
                 } else {
@@ -224,13 +224,13 @@ impl NodeWidget for ButtonGroupWidget {
                     let dot_r = 3.5 * zoom;
                     let dot_pos = egui::pos2(inner.max.x - dot_r - 2.0, inner.min.y + dot_r + 2.0);
                     let in_color = if self.input_values.get(idx).copied().unwrap_or(0.0) >= 0.5 {
-                        theme::STATUS_ACTIVE
+                        theme::SEM_PRIMARY
                     } else {
                         Color32::from_gray(80)
                     };
                     painter.circle_filled(dot_pos, dot_r, in_color);
                     painter.circle_stroke(dot_pos, dot_r,
-                        egui::Stroke::new(1.0, theme::STATUS_OVERRIDE));
+                        egui::Stroke::new(1.0, theme::SEM_WARNING));
                 }
 
                 if interactive {

@@ -75,7 +75,7 @@ impl NodeWidget for TriggerDelayWidget {
             }
 
             let color = if pending {
-                theme::PORT_LOGIC
+                theme::TYPE_LOGIC
             } else {
                 Color32::from_gray(180)
             };

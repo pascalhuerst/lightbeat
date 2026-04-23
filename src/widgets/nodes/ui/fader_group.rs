@@ -12,7 +12,7 @@ use crate::widgets::nodes::types::UiPortDef;
 use crate::widgets::nodes::ui::fader::draw_override_indicator;
 
 const HIGHLIGHT_DURATION: f64 = 0.5;
-const OVERRIDE_OVERLAY_COLOR: Color32 = theme::STATUS_OVERRIDE_OVERLAY;
+const OVERRIDE_OVERLAY_COLOR: Color32 = theme::SEM_WARNING_FILL;
 const CENTER_LINE_COLOR: Color32 = Color32::from_gray(110);
 
 pub struct FaderGroupWidget {
@@ -412,7 +412,7 @@ impl NodeWidget for FaderGroupWidget {
 
                             if self.override_active[idx] {
                                 ui.colored_label(
-                                    theme::STATUS_OVERRIDE,
+                                    theme::SEM_WARNING,
                                     format!("{:.3}", self.override_values[idx]),
                                 );
                             } else {

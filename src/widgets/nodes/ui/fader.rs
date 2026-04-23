@@ -11,8 +11,8 @@ use crate::widgets::nodes::node::NodeWidget;
 use crate::widgets::nodes::types::UiPortDef;
 
 const HIGHLIGHT_DURATION: f64 = 0.5;
-const OVERRIDE_OVERLAY_COLOR: Color32 = theme::STATUS_OVERRIDE_OVERLAY;
-const OVERRIDE_ICON_COLOR: Color32 = theme::STATUS_OVERRIDE_ICON;
+const OVERRIDE_OVERLAY_COLOR: Color32 = theme::SEM_WARNING_FILL;
+const OVERRIDE_ICON_COLOR: Color32 = theme::SEM_WARNING_BRIGHT;
 const CENTER_LINE_COLOR: Color32 = Color32::from_gray(110);
 
 /// Icon string indicating how the override clears for the given mode.
@@ -335,7 +335,7 @@ pub fn cell_inspector_section(
         if override_active {
             ui.horizontal(|ui| {
                 ui.label("Override:");
-                ui.colored_label(theme::STATUS_OVERRIDE, format!("{:.3}", override_value));
+                ui.colored_label(theme::SEM_WARNING, format!("{:.3}", override_value));
             });
         }
         ui.horizontal(|ui| {

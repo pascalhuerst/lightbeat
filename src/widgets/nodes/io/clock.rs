@@ -114,7 +114,7 @@ impl NodeWidget for ClockWidget {
         // Beat LED (right).
         let beat_color = if beat_on {
             if is_downbeat { Color32::from_rgb(255, 255, 255) }
-            else { theme::PORT_LOGIC }
+            else { theme::TYPE_LOGIC }
         } else {
             Color32::from_gray(40)
         };

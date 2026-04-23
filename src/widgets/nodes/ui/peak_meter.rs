@@ -24,11 +24,11 @@ const CLIP_DISPLAY_DURATION: f64 = 1.5;
 
 const BG_COLOR: Color32 = Color32::from_gray(22);
 const BORDER_COLOR: Color32 = Color32::from_gray(60);
-const GREEN_COLOR: Color32 = theme::METER_GREEN;
-const YELLOW_COLOR: Color32 = theme::METER_YELLOW;
-const RED_COLOR: Color32 = theme::METER_RED;
-const HOLD_COLOR: Color32 = theme::METER_PEAK_HOLD;
-const RMS_COLOR: Color32 = theme::METER_RMS_OVERLAY;
+const GREEN_COLOR: Color32 = theme::SEM_SUCCESS;
+const YELLOW_COLOR: Color32 = theme::TYPE_LOGIC;
+const RED_COLOR: Color32 = theme::SEM_DANGER;
+const HOLD_COLOR: Color32 = theme::TEXT;
+const RMS_COLOR: Color32 = theme::RMS_WASH;
 const CLIP_OFF_COLOR: Color32 = Color32::from_gray(40);
 const SCALE_LABEL_COLOR: Color32 = theme::TEXT_DIM;
 const SCALE_TICK_COLOR: Color32 = Color32::from_gray(70);
@@ -192,11 +192,11 @@ impl NodeWidget for PeakMeterWidget {
         });
         ui.horizontal(|ui| {
             ui.label("Peak:");
-            ui.colored_label(theme::TEXT_SUBTLE, format!("{:.3} ({:+.1} dB)", self.peak, level_to_db(self.peak)));
+            ui.colored_label(theme::TEXT, format!("{:.3} ({:+.1} dB)", self.peak, level_to_db(self.peak)));
         });
         ui.horizontal(|ui| {
             ui.label("RMS:");
-            ui.colored_label(theme::TEXT_SUBTLE, format!("{:.3} ({:+.1} dB)", self.rms, level_to_db(self.rms)));
+            ui.colored_label(theme::TEXT, format!("{:.3} ({:+.1} dB)", self.rms, level_to_db(self.rms)));
         });
         ui.horizontal(|ui| {
             if ui.small_button("Reset clip").clicked() {

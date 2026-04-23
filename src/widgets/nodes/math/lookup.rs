@@ -401,7 +401,7 @@ impl NodeWidget for LookupWidget {
                             let txt = egui::RichText::new(format!("{:>3}", r))
                                 .monospace()
                                 .color(if is_current {
-                                    theme::STATUS_ACTIVE
+                                    theme::SEM_PRIMARY
                                 } else {
                                     theme::TEXT_MUTED
                                 })
@@ -497,7 +497,7 @@ fn preview_color(pt: PortType, data: &[f32], base: usize) -> Color32 {
         }
         PortType::Logic => {
             let on = data.get(base).copied().unwrap_or(0.0) >= 0.5;
-            if on { theme::PORT_LOGIC } else { Color32::from_gray(40) }
+            if on { theme::TYPE_LOGIC } else { Color32::from_gray(40) }
         }
         _ => {
             let v = data.get(base).copied().unwrap_or(0.0).clamp(0.0, 1.0);
