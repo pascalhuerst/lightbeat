@@ -20,6 +20,7 @@
 //!   the learn buffer.
 
 pub mod midi;
+pub mod x1;
 
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
@@ -27,6 +28,7 @@ use std::sync::{Arc, Mutex};
 use serde::{Deserialize, Serialize};
 
 use self::midi::{MidiSession, MidiSource};
+use self::x1::{X1Session, X1Source};
 
 // ---------------------------------------------------------------------------
 // Persistent types (stored in SetupFile)
@@ -64,6 +66,10 @@ pub enum InputControllerKind {
         #[serde(default)]
         hw_output_port: String,
     },
+    /// Native Instruments Kontrol X1 (Mk1). USB HID (not MIDI) — auto-found
+    /// by VID/PID (0x17CC / 0x2305); no port config needed. Fixed layout,
+    /// no learn mode.
+    X1,
 }
 
 impl InputControllerKind {
@@ -72,15 +78,19 @@ impl InputControllerKind {
             InputControllerKind::Midi { .. } => "MIDI",
             InputControllerKind::Bcf2000 { .. } => "BCF2000",
             InputControllerKind::Push1 { .. } => "Push 1",
+            InputControllerKind::X1 => "X1",
         }
     }
 
-    /// MIDI input port name (empty when not configured).
+    /// MIDI input port name (empty when not configured). X1 is USB HID, not
+    /// MIDI, so it returns an empty string — the reconcile loop branches on
+    /// the variant directly.
     pub fn input_port(&self) -> &str {
         match self {
             InputControllerKind::Midi { hw_port_name } => hw_port_name,
             InputControllerKind::Bcf2000 { hw_input_port, .. } => hw_input_port,
             InputControllerKind::Push1 { hw_input_port, .. } => hw_input_port,
+            InputControllerKind::X1 => "",
         }
     }
 
@@ -90,6 +100,7 @@ impl InputControllerKind {
             InputControllerKind::Midi { .. } => "",
             InputControllerKind::Bcf2000 { hw_output_port, .. } => hw_output_port,
             InputControllerKind::Push1 { hw_output_port, .. } => hw_output_port,
+            InputControllerKind::X1 => "",
         }
     }
 
@@ -97,7 +108,9 @@ impl InputControllerKind {
     pub fn has_feedback(&self) -> bool {
         matches!(
             self,
-            InputControllerKind::Bcf2000 { .. } | InputControllerKind::Push1 { .. }
+            InputControllerKind::Bcf2000 { .. }
+                | InputControllerKind::Push1 { .. }
+                | InputControllerKind::X1
         )
     }
 }
@@ -121,6 +134,7 @@ fn default_binding_mode() -> InputBindingMode { InputBindingMode::Value }
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum InputSource {
     Midi(MidiSource),
+    X1(X1Source),
 }
 
 impl InputSource {
@@ -129,12 +143,14 @@ impl InputSource {
     pub fn is_binary(&self) -> bool {
         match self {
             InputSource::Midi(m) => m.is_binary(),
+            InputSource::X1(s) => s.is_binary(),
         }
     }
 
     pub fn label(&self) -> String {
         match self {
             InputSource::Midi(m) => m.label(),
+            InputSource::X1(s) => s.label(),
         }
     }
 }
@@ -163,12 +179,16 @@ impl InputBindingMode {
 // Runtime shared state
 // ---------------------------------------------------------------------------
 
-/// One entry in the MIDI activity log — used by the debug panel to show
-/// what the device is actually sending. Capped to a small ring in
-/// `ControllerRuntime::midi_log`.
+/// One entry in the controller activity log — used by the debug panel to
+/// show what the device is actually sending. Capped to a small ring in
+/// `ControllerRuntime::activity_log`.
 #[derive(Debug, Clone)]
-pub struct MidiLogEntry {
-    pub raw: Vec<u8>,
+pub struct ActivityLogEntry {
+    /// Raw wire-level bytes when available (MIDI kinds). `None` for
+    /// controllers that don't have a meaningful byte-level representation
+    /// (e.g. X1 USB HID — the driver decodes the packet into structured
+    /// events before we see them).
+    pub raw: Option<Vec<u8>>,
     /// None when the message couldn't be parsed to a known source.
     pub decoded: Option<(InputSource, f32)>,
     /// Index into `inputs` of the learned input this matched, if any.
@@ -195,10 +215,10 @@ pub struct ControllerRuntime {
     /// the UI to pick the next as a new learned input.
     pub learning: bool,
     pub learn_buffer: VecDeque<InputSource>,
-    /// Rolling log of the most recent MIDI messages. Used by the debug panel
-    /// to verify what the hardware is sending. Always populated; cheap
-    /// (a few pushes per message), capped via `MIDI_LOG_CAPACITY`.
-    pub midi_log: VecDeque<MidiLogEntry>,
+    /// Rolling log of the most recent controller events. Used by the debug
+    /// panel to verify what the hardware is sending. Always populated; cheap
+    /// (a few pushes per message), capped via `ACTIVITY_LOG_CAPACITY`.
+    pub activity_log: VecDeque<ActivityLogEntry>,
     /// Debug panel open/closed in the UI. Purely cosmetic; the log itself is
     /// always collected.
     pub debug_open: bool,
@@ -227,7 +247,7 @@ pub struct ControllerRuntime {
 
 /// Keep the log small so UI rendering stays cheap on Push-class devices that
 /// can blast hundreds of messages per second during a pad sweep.
-pub const MIDI_LOG_CAPACITY: usize = 128;
+pub const ACTIVITY_LOG_CAPACITY: usize = 128;
 
 impl ControllerRuntime {
     pub fn from_persistent(c: &InputController) -> Self {
@@ -239,6 +259,7 @@ impl ControllerRuntime {
         let inputs = match &c.kind {
             InputControllerKind::Bcf2000 { .. } if c.inputs.is_empty() => bcf2000_preset1_inputs(),
             InputControllerKind::Push1 { .. } if c.inputs.is_empty() => push1_preset_inputs(),
+            InputControllerKind::X1 if c.inputs.is_empty() => x1::x1_preset_inputs(1),
             _ => c.inputs.clone(),
         };
         let n = inputs.len();
@@ -252,7 +273,7 @@ impl ControllerRuntime {
             status: ConnectionStatus::Disconnected,
             learning: false,
             learn_buffer: VecDeque::new(),
-            midi_log: VecDeque::with_capacity(MIDI_LOG_CAPACITY),
+            activity_log: VecDeque::with_capacity(ACTIVITY_LOG_CAPACITY),
             debug_open: false,
             debug_feedback_override: false,
             debug_loopback: false,
@@ -483,12 +504,28 @@ pub type SharedControllers = Arc<Mutex<Vec<ControllerRuntime>>>;
 // Manager
 // ---------------------------------------------------------------------------
 
-/// Owns active MIDI sessions and a reconnect worker. Controllers themselves
+/// An active session for one hardware controller. Midi-based kinds use
+/// `Midi`; the USB-HID Kontrol X1 uses `X1`.
+enum Session {
+    Midi(MidiSession),
+    X1(X1Session),
+}
+
+impl Session {
+    fn controller_id(&self) -> u32 {
+        match self {
+            Session::Midi(s) => s.controller_id,
+            Session::X1(s) => s.controller_id,
+        }
+    }
+}
+
+/// Owns active sessions and a reconnect worker. Controllers themselves
 /// live inside `SharedControllers`.
 pub struct InputControllerManager {
     pub shared: SharedControllers,
-    /// Active per-controller midir session (dropped on disconnect / removal).
-    sessions: Vec<MidiSession>,
+    /// Active per-controller sessions (dropped on disconnect / removal).
+    sessions: Vec<Session>,
     next_input_id: u32,
 }
 
@@ -541,7 +578,7 @@ impl InputControllerManager {
             status: ConnectionStatus::Disconnected,
             learning: false,
             learn_buffer: VecDeque::new(),
-            midi_log: VecDeque::with_capacity(MIDI_LOG_CAPACITY),
+            activity_log: VecDeque::with_capacity(ACTIVITY_LOG_CAPACITY),
             debug_open: false,
             debug_feedback_override: false,
             debug_loopback: false,
@@ -578,7 +615,7 @@ impl InputControllerManager {
             status: ConnectionStatus::Disconnected,
             learning: false,
             learn_buffer: VecDeque::new(),
-            midi_log: VecDeque::with_capacity(MIDI_LOG_CAPACITY),
+            activity_log: VecDeque::with_capacity(ACTIVITY_LOG_CAPACITY),
             debug_open: false,
             debug_feedback_override: false,
             debug_loopback: false,
@@ -617,7 +654,42 @@ impl InputControllerManager {
             status: ConnectionStatus::Disconnected,
             learning: false,
             learn_buffer: VecDeque::new(),
-            midi_log: VecDeque::with_capacity(MIDI_LOG_CAPACITY),
+            activity_log: VecDeque::with_capacity(ACTIVITY_LOG_CAPACITY),
+            debug_open: false,
+            debug_feedback_override: false,
+            debug_loopback: false,
+            debug_highlight_on_touch: false,
+            last_match_idx: None,
+            last_match_instant: None,
+            relearn_input_id: None,
+        });
+        drop(state);
+        self.reconcile_sessions();
+        id
+    }
+
+    /// Add a Native Instruments Kontrol X1 controller — fixed factory input
+    /// layout, no MIDI port config (USB HID, auto-found by VID/PID).
+    pub fn add_x1(&mut self, name: String) -> u32 {
+        let mut state = self.shared.lock().unwrap();
+        let id = state.iter().map(|c| c.id).max().unwrap_or(0) + 1;
+        let inputs = x1::x1_preset_inputs(self.next_input_id);
+        let n = inputs.len();
+        let max_input_id = inputs.iter().map(|i| i.id).max().unwrap_or(0);
+        if max_input_id >= self.next_input_id {
+            self.next_input_id = max_input_id + 1;
+        }
+        state.push(ControllerRuntime {
+            id,
+            name,
+            kind: InputControllerKind::X1,
+            inputs,
+            values: vec![0.0; n],
+            out_values: vec![0.0; n],
+            status: ConnectionStatus::Disconnected,
+            learning: false,
+            learn_buffer: VecDeque::new(),
+            activity_log: VecDeque::with_capacity(ACTIVITY_LOG_CAPACITY),
             debug_open: false,
             debug_feedback_override: false,
             debug_loopback: false,
@@ -649,6 +721,7 @@ impl InputControllerManager {
                     InputControllerKind::Midi { hw_port_name } => *hw_port_name = port,
                     InputControllerKind::Bcf2000 { hw_input_port, .. } => *hw_input_port = port,
                     InputControllerKind::Push1 { hw_input_port, .. } => *hw_input_port = port,
+                    InputControllerKind::X1 => {} // no port config
                 }
                 c.status = ConnectionStatus::Disconnected;
             }
@@ -757,6 +830,7 @@ impl InputControllerManager {
             let factory = match &c.kind {
                 InputControllerKind::Bcf2000 { .. } => Some(bcf2000_preset1_inputs()),
                 InputControllerKind::Push1 { .. } => Some(push1_preset_inputs()),
+                InputControllerKind::X1 => Some(x1::x1_preset_inputs(self.next_input_id)),
                 _ => None,
             };
             if let Some(inputs) = factory {
@@ -809,55 +883,92 @@ impl InputControllerManager {
     fn reconcile_sessions(&mut self) {
         let ports = midi::available_ports();
 
-        // (controller_id, input_port, Option<output_port>)
-        let controllers: Vec<(u32, String, Option<String>)> = {
+        // Snapshot of each controller's desired session target.
+        // (controller_id, TargetKind)
+        enum TargetKind {
+            Midi { input: String, output: Option<String> },
+            X1,
+        }
+        let controllers: Vec<(u32, TargetKind)> = {
             let state = self.shared.lock().unwrap();
             state.iter()
-                .filter_map(|c| {
-                    let ip = c.kind.input_port();
-                    if ip.is_empty() { return None; }
-                    let op = c.kind.output_port();
-                    let op = if op.is_empty() { None } else { Some(op.to_string()) };
-                    Some((c.id, ip.to_string(), op))
+                .filter_map(|c| match &c.kind {
+                    InputControllerKind::Midi { hw_port_name }
+                    | InputControllerKind::Bcf2000 { hw_input_port: hw_port_name, .. }
+                    | InputControllerKind::Push1 { hw_input_port: hw_port_name, .. } => {
+                        if hw_port_name.is_empty() { return None; }
+                        let op = c.kind.output_port();
+                        let op = if op.is_empty() { None } else { Some(op.to_string()) };
+                        Some((c.id, TargetKind::Midi {
+                            input: hw_port_name.clone(),
+                            output: op,
+                        }))
+                    }
+                    InputControllerKind::X1 => Some((c.id, TargetKind::X1)),
                 })
                 .collect()
         };
 
-        // Drop sessions for controllers that no longer exist or whose port(s) changed.
+        // Drop sessions that no longer match (controller gone, port changed,
+        // device disappeared, kind swapped).
         self.sessions.retain(|s| {
-            let desc = controllers.iter().find(|(id, _, _)| *id == s.controller_id);
-            let matched = match desc {
-                Some((_, port, out_port)) => {
-                    *port == s.port_name && *out_port == s.output_port_name
+            let desc = controllers.iter().find(|(id, _)| *id == s.controller_id());
+            match (s, desc) {
+                (Session::Midi(ms), Some((_, TargetKind::Midi { input, output }))) => {
+                    input == &ms.port_name
+                        && output == &ms.output_port_name
+                        && ports.contains(&ms.port_name)
+                        && ms.output_port_name.as_ref().map(|p| ports.contains(p)).unwrap_or(true)
                 }
-                None => false,
-            };
-            matched && ports.contains(&s.port_name)
-                && s.output_port_name.as_ref().map(|p| ports.contains(p)).unwrap_or(true)
+                (Session::X1(_), Some((_, TargetKind::X1))) => true,
+                _ => false,
+            }
         });
 
-        // Open sessions for controllers that have a matching available port
-        // but no active session yet.
-        for (cid, port, out_port) in &controllers {
-            let has_session = self.sessions.iter().any(|s| s.controller_id == *cid);
+        // Open sessions for controllers that need one.
+        for (cid, target) in &controllers {
+            let has_session = self.sessions.iter().any(|s| s.controller_id() == *cid);
             if has_session { continue; }
-            if !ports.contains(port) {
-                let mut state = self.shared.lock().unwrap();
-                if let Some(c) = state.iter_mut().find(|c| c.id == *cid) {
-                    c.status = ConnectionStatus::Waiting;
-                }
-                continue;
-            }
-            match MidiSession::open(*cid, port.clone(), out_port.clone(), self.shared.clone()) {
-                Ok(session) => {
-                    self.sessions.push(session);
-                    let mut state = self.shared.lock().unwrap();
-                    if let Some(c) = state.iter_mut().find(|c| c.id == *cid) {
-                        c.status = ConnectionStatus::Connected;
+            match target {
+                TargetKind::Midi { input, output } => {
+                    if !ports.contains(input) {
+                        let mut state = self.shared.lock().unwrap();
+                        if let Some(c) = state.iter_mut().find(|c| c.id == *cid) {
+                            c.status = ConnectionStatus::Waiting;
+                        }
+                        continue;
+                    }
+                    match MidiSession::open(*cid, input.clone(), output.clone(), self.shared.clone()) {
+                        Ok(session) => {
+                            self.sessions.push(Session::Midi(session));
+                            let mut state = self.shared.lock().unwrap();
+                            if let Some(c) = state.iter_mut().find(|c| c.id == *cid) {
+                                c.status = ConnectionStatus::Connected;
+                            }
+                        }
+                        Err(e) => eprintln!("Failed to open MIDI port '{}': {}", input, e),
                     }
                 }
-                Err(e) => {
-                    eprintln!("Failed to open MIDI port '{}': {}", port, e);
+                TargetKind::X1 => {
+                    match X1Session::open(*cid, self.shared.clone()) {
+                        Ok(session) => {
+                            self.sessions.push(Session::X1(session));
+                            let mut state = self.shared.lock().unwrap();
+                            if let Some(c) = state.iter_mut().find(|c| c.id == *cid) {
+                                c.status = ConnectionStatus::Connected;
+                            }
+                        }
+                        Err(_e) => {
+                            // Device likely unplugged — stay in Waiting and
+                            // retry next reconnect tick. Silent because the
+                            // user expects a controller that isn't plugged in
+                            // to just show as "Waiting".
+                            let mut state = self.shared.lock().unwrap();
+                            if let Some(c) = state.iter_mut().find(|c| c.id == *cid) {
+                                c.status = ConnectionStatus::Waiting;
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -865,13 +976,21 @@ impl InputControllerManager {
         // Update status for controllers without an active session.
         let mut state = self.shared.lock().unwrap();
         for c in state.iter_mut() {
-            let active = self.sessions.iter().any(|s| s.controller_id == c.id);
+            let active = self.sessions.iter().any(|s| s.controller_id() == c.id);
             if !active {
-                let ip = c.kind.input_port();
-                c.status = if ip.is_empty() {
-                    ConnectionStatus::Disconnected
-                } else {
-                    ConnectionStatus::Waiting
+                // X1 has no port config — if no session is active it's
+                // waiting for the USB device to reappear. For MIDI kinds
+                // an empty port means the user hasn't picked one yet.
+                c.status = match c.kind {
+                    InputControllerKind::X1 => ConnectionStatus::Waiting,
+                    _ => {
+                        let ip = c.kind.input_port();
+                        if ip.is_empty() {
+                            ConnectionStatus::Disconnected
+                        } else {
+                            ConnectionStatus::Waiting
+                        }
+                    }
                 };
             }
         }

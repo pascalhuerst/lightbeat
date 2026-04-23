@@ -35,6 +35,7 @@ use engine::nodes::io::audio_input::AudioInputProcessNode;
 use engine::nodes::io::clock::ClockProcessNode;
 use engine::nodes::io::input_controller::InputControllerProcessNode;
 use engine::nodes::io::push1::Push1ProcessNode;
+use engine::nodes::io::x1::X1ProcessNode;
 use engine::nodes::io::internal_clock::InternalClockProcessNode;
 use engine::nodes::ui::button::ButtonProcessNode;
 use engine::nodes::ui::button_group::ButtonGroupProcessNode;
@@ -72,6 +73,7 @@ use engine::nodes::transport::envelope::EnvelopeProcessNode;
 use engine::nodes::transport::hold::TriggerHoldProcessNode;
 use engine::nodes::transport::latch::LatchProcessNode;
 use engine::nodes::transport::sample_hold::SampleHoldProcessNode;
+use engine::nodes::transport::smoothing::SmoothingProcessNode;
 use engine::nodes::transport::transition::TransitionProcessNode;
 use engine::nodes::transport::lfo::LfoProcessNode;
 use engine::nodes::transport::phase_scaler::PhaseScalerProcessNode;
@@ -84,6 +86,7 @@ use widgets::nodes::io::audio_input::AudioInputWidget;
 use widgets::nodes::io::clock::ClockWidget;
 use widgets::nodes::io::input_controller::InputControllerWidget;
 use widgets::nodes::io::push1::Push1Widget;
+use widgets::nodes::io::x1::X1Widget;
 use widgets::nodes::io::internal_clock::InternalClockWidget;
 use widgets::nodes::ui::button::ButtonWidget;
 use widgets::nodes::ui::button_group::ButtonGroupWidget;
@@ -121,6 +124,7 @@ use widgets::nodes::transport::envelope::EnvelopeWidget;
 use widgets::nodes::transport::hold::TriggerHoldWidget;
 use widgets::nodes::transport::latch::LatchWidget;
 use widgets::nodes::transport::sample_hold::SampleHoldWidget;
+use widgets::nodes::transport::smoothing::SmoothingWidget;
 use widgets::nodes::transport::transition::TransitionWidget;
 use widgets::nodes::transport::lfo::LfoWidget;
 use widgets::nodes::transport::phase_scaler::PhaseScalerWidget;
@@ -374,6 +378,12 @@ impl LightBeatApp {
             // 25 outputs, 21 inputs (see push1.rs). 32/32 gives headroom.
             Box::new(Push1Widget::new(id, new_shared_state(32, 32), ic_shared_push.clone()))
         });
+        let ic_shared_x1 = self.input_controllers.shared.clone();
+        self.graph.register_node("IO", "X1", move |id| {
+            // 34 button outputs + 4 encoder outputs + 8 pot outputs = 46 outputs.
+            // 34 LED feedback inputs. 48/48 covers both with a little headroom.
+            Box::new(X1Widget::new(id, new_shared_state(48, 48), ic_shared_x1.clone()))
+        });
         let ai_shared = self.audio_inputs.shared.clone();
         self.graph.register_node("IO", "Audio Input", move |id| {
             Box::new(AudioInputWidget::new(id, new_shared_state(0, 16), ai_shared.clone()))
@@ -428,6 +438,9 @@ impl LightBeatApp {
         });
         self.graph.register_node("Transport", "Sample & Hold", |id| {
             Box::new(SampleHoldWidget::new(id, new_shared_state(2, 1)))
+        });
+        self.graph.register_node("Transport", "Smoothing", |id| {
+            Box::new(SmoothingWidget::new(id, new_shared_state(1, 1)))
         });
         self.graph.register_node("Transport", "Latch", |id| {
             Box::new(LatchWidget::new(id, new_shared_state(1, 1)))
@@ -722,6 +735,9 @@ impl LightBeatApp {
                 "Push 1" => Some(Box::new(Push1ProcessNode::new(
                     id, self.input_controllers.shared.clone(),
                 ))),
+                "X1" => Some(Box::new(X1ProcessNode::new(
+                    id, self.input_controllers.shared.clone(),
+                ))),
                 "Audio Input" => Some(Box::new(AudioInputProcessNode::new(
                     id, self.audio_inputs.shared.clone(),
                 ))),
@@ -740,6 +756,7 @@ impl LightBeatApp {
                 "Trigger Delay" => Some(Box::new(TriggerDelayProcessNode::new(id))),
                 "Trigger Hold" => Some(Box::new(TriggerHoldProcessNode::new(id))),
                 "Sample & Hold" => Some(Box::new(SampleHoldProcessNode::new(id))),
+                "Smoothing" => Some(Box::new(SmoothingProcessNode::new(id))),
                 "Latch" => Some(Box::new(LatchProcessNode::new(id))),
                 "Clock Divider" => Some(Box::new(ClockDividerProcessNode::new(id))),
                 "Clock Gen" => Some(Box::new(ClockGenProcessNode::new(id))),
@@ -1889,35 +1906,39 @@ impl eframe::App for LightBeatApp {
             egui::SidePanel::right("inspector")
                 .default_width(250.0)
                 .show(ctx, |ui| {
-                    // Frames first — when a single frame is selected (and no
-                    // nodes), show the frame's editable title/color/notes.
-                    let selected_frame_ids: Vec<u64> = self.graph.selected_frame_ids().collect();
-                    let nodes_selected = !self.graph.selected_nodes_mut().is_empty();
+                    egui::ScrollArea::vertical()
+                        .auto_shrink([false; 2])
+                        .show(ui, |ui| {
+                            // Frames first — when a single frame is selected (and no
+                            // nodes), show the frame's editable title/color/notes.
+                            let selected_frame_ids: Vec<u64> = self.graph.selected_frame_ids().collect();
+                            let nodes_selected = !self.graph.selected_nodes_mut().is_empty();
 
-                    if !nodes_selected && selected_frame_ids.len() == 1 {
-                        show_frame_inspector(ui, &mut self.graph, selected_frame_ids[0]);
-                        return;
-                    }
-                    if !nodes_selected && selected_frame_ids.len() > 1 {
-                        ui.heading(format!("{} frames selected", selected_frame_ids.len()));
-                        ui.separator();
-                        ui.label("Multi-frame editing isn't supported yet.");
-                        return;
-                    }
+                            if !nodes_selected && selected_frame_ids.len() == 1 {
+                                show_frame_inspector(ui, &mut self.graph, selected_frame_ids[0]);
+                                return;
+                            }
+                            if !nodes_selected && selected_frame_ids.len() > 1 {
+                                ui.heading(format!("{} frames selected", selected_frame_ids.len()));
+                                ui.separator();
+                                ui.label("Multi-frame editing isn't supported yet.");
+                                return;
+                            }
 
-                    let selected = self.graph.selected_nodes_mut();
-                    if selected.is_empty() {
-                        ui.heading("Inspector");
-                        ui.separator();
-                        ui.label("Select a node or frame to inspect.");
-                    } else if selected.len() == 1 {
-                        let node = &mut *selected.into_iter().next().unwrap();
-                        widgets::inspector::show_inspector(ui, node.as_mut());
-                    } else {
-                        ui.heading(format!("{} nodes selected", selected.len()));
-                        ui.separator();
-                        widgets::inspector::show_multi_inspector(ui, selected);
-                    }
+                            let selected = self.graph.selected_nodes_mut();
+                            if selected.is_empty() {
+                                ui.heading("Inspector");
+                                ui.separator();
+                                ui.label("Select a node or frame to inspect.");
+                            } else if selected.len() == 1 {
+                                let node = &mut *selected.into_iter().next().unwrap();
+                                widgets::inspector::show_inspector(ui, node.as_mut());
+                            } else {
+                                ui.heading(format!("{} nodes selected", selected.len()));
+                                ui.separator();
+                                widgets::inspector::show_multi_inspector(ui, selected);
+                            }
+                        });
                 });
         }
 

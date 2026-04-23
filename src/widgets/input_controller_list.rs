@@ -63,37 +63,56 @@ pub fn show(ui: &mut Ui, mgr: &mut InputControllerManager) {
                                 }
                             });
 
-                            // Hardware input port.
-                            let input_port = c.kind.input_port().to_string();
-                            ui.horizontal(|ui| {
-                                ui.label("MIDI In:");
-                                let label = if input_port.is_empty() {
-                                    "(none)".to_string()
-                                } else {
-                                    input_port.clone()
-                                };
-                                egui::ComboBox::from_id_salt(("port", c.id))
-                                    .selected_text(label)
-                                    .show_ui(ui, |ui| {
-                                        if ui.selectable_label(input_port.is_empty(), "(none)").clicked() {
-                                            set_port.push((c.id, String::new()));
-                                        }
-                                        for p in &available_ports {
-                                            if ui.selectable_label(p == &input_port, p).clicked() {
-                                                set_port.push((c.id, p.clone()));
+                            // Hardware input port — only shown for MIDI-based
+                            // kinds. X1 is USB HID (auto-discovered by
+                            // VID/PID) so no port picker applies; surface
+                            // just the connection status on its own row.
+                            let is_midi_kind = !matches!(c.kind, InputControllerKind::X1);
+                            if is_midi_kind {
+                                let input_port = c.kind.input_port().to_string();
+                                ui.horizontal(|ui| {
+                                    ui.label("MIDI In:");
+                                    let label = if input_port.is_empty() {
+                                        "(none)".to_string()
+                                    } else {
+                                        input_port.clone()
+                                    };
+                                    egui::ComboBox::from_id_salt(("port", c.id))
+                                        .selected_text(label)
+                                        .show_ui(ui, |ui| {
+                                            if ui.selectable_label(input_port.is_empty(), "(none)").clicked() {
+                                                set_port.push((c.id, String::new()));
                                             }
-                                        }
-                                    });
-                                let (status_text, status_color) = match c.status {
-                                    ConnectionStatus::Connected => ("Connected", Color32::from_rgb(80, 200, 80)),
-                                    ConnectionStatus::Waiting => ("Waiting", Color32::from_rgb(220, 180, 60)),
-                                    ConnectionStatus::Disconnected => ("No mapping", Color32::from_gray(140)),
-                                };
-                                ui.colored_label(status_color, status_text);
-                            });
+                                            for p in &available_ports {
+                                                if ui.selectable_label(p == &input_port, p).clicked() {
+                                                    set_port.push((c.id, p.clone()));
+                                                }
+                                            }
+                                        });
+                                    let (status_text, status_color) = match c.status {
+                                        ConnectionStatus::Connected => ("Connected", Color32::from_rgb(80, 200, 80)),
+                                        ConnectionStatus::Waiting => ("Waiting", Color32::from_rgb(220, 180, 60)),
+                                        ConnectionStatus::Disconnected => ("No mapping", Color32::from_gray(140)),
+                                    };
+                                    ui.colored_label(status_color, status_text);
+                                });
+                            } else {
+                                // X1: just show the connection badge.
+                                ui.horizontal(|ui| {
+                                    ui.label("USB:");
+                                    let (status_text, status_color) = match c.status {
+                                        ConnectionStatus::Connected => ("Connected", Color32::from_rgb(80, 200, 80)),
+                                        ConnectionStatus::Waiting => ("Waiting for device", Color32::from_rgb(220, 180, 60)),
+                                        ConnectionStatus::Disconnected => ("Disconnected", Color32::from_gray(140)),
+                                    };
+                                    ui.colored_label(status_color, status_text);
+                                });
+                            }
 
-                            // Feedback-capable kinds (BCF2000) also pick an output port.
-                            if c.kind.has_feedback() {
+                            // Feedback-capable MIDI kinds (BCF2000 / Push 1)
+                            // also pick an output port. X1's feedback goes
+                            // over the same USB endpoint, so no port picker.
+                            if c.kind.has_feedback() && is_midi_kind {
                                 let output_port = c.kind.output_port().to_string();
                                 ui.horizontal(|ui| {
                                     ui.label("MIDI Out:");
@@ -208,6 +227,9 @@ pub fn show(ui: &mut Ui, mgr: &mut InputControllerManager) {
         if ui.button("+ Add Push 1").clicked() {
             mgr.add_push1("Push 1".to_string());
         }
+        if ui.button("+ Add X1").clicked() {
+            mgr.add_x1("X1".to_string());
+        }
     });
 
     // Apply queued mutations (lock was released above).
@@ -247,7 +269,7 @@ pub fn show(ui: &mut Ui, mgr: &mut InputControllerManager) {
         }
         for cid in clear_midi_log {
             if let Some(c) = state.iter_mut().find(|c| c.id == cid) {
-                c.midi_log.clear();
+                c.activity_log.clear();
             }
         }
         for (cid, idx, v) in debug_set_out {
@@ -497,7 +519,7 @@ fn show_debug_panel(
         ui.horizontal_wrapped(|ui| {
             let mut highlight = c.debug_highlight_on_touch;
             if ui.checkbox(&mut highlight, "Highlight on touch").on_hover_text(
-                "Jump to and briefly highlight the row in the inputs table when a matching MIDI message comes in. Useful for mapping out a physical control to its CC/note."
+                "Jump to and briefly highlight the row in the inputs table when a matching event comes in from the hardware."
             ).changed() {
                 set_debug_flags.push((c.id, None, None, Some(highlight)));
             }
@@ -522,39 +544,46 @@ fn show_debug_panel(
             }
         });
 
-        // Rolling MIDI log.
+        // Rolling activity log. MIDI-kind controllers prefix each line with
+        // the raw message bytes; other kinds (X1, future HID) just show the
+        // decoded event, since there's no meaningful wire representation.
         ui.separator();
         ui.horizontal(|ui| {
-            ui.label(egui::RichText::new("MIDI In").strong());
-            ui.colored_label(Color32::from_gray(140), format!("{} msgs", c.midi_log.len()));
+            ui.label(egui::RichText::new("Activity").strong());
+            ui.colored_label(Color32::from_gray(140), format!("{} events", c.activity_log.len()));
             if ui.small_button("Clear").clicked() {
                 clear_midi_log.push(c.id);
             }
         });
         egui::ScrollArea::vertical()
-            .id_salt(("midi_log", c.id))
+            .id_salt(("activity_log", c.id))
             .max_height(140.0)
             .auto_shrink([false, false])
             .stick_to_bottom(true)
             .show(ui, |ui| {
-                for entry in c.midi_log.iter() {
-                    let hex: String = entry.raw.iter()
-                        .map(|b| format!("{:02X}", b))
-                        .collect::<Vec<_>>()
-                        .join(" ");
+                for entry in c.activity_log.iter() {
+                    // Prefix is the raw bytes when available, otherwise an
+                    // empty column so decoded-only entries line up vertically.
+                    let prefix: String = match &entry.raw {
+                        Some(bytes) => bytes.iter()
+                            .map(|b| format!("{:02X}", b))
+                            .collect::<Vec<_>>()
+                            .join(" "),
+                        None => String::new(),
+                    };
                     let (label, color) = match (&entry.decoded, entry.matched_input_idx) {
                         (Some((_, v)), Some(idx)) => {
                             let name = c.inputs.get(idx)
                                 .map(|i| i.name.as_str())
                                 .unwrap_or("?");
-                            (format!("{:<10} → {} = {:.3}", hex, name, v), Color32::from_gray(220))
+                            (format!("{:<10} → {} = {:.3}", prefix, name, v), Color32::from_gray(220))
                         }
                         (Some((src, v)), None) => {
-                            (format!("{:<10} → {} = {:.3} (unmatched)", hex, src.label(), v),
+                            (format!("{:<10} → {} = {:.3} (unmatched)", prefix, src.label(), v),
                              Color32::from_rgb(200, 170, 90))
                         }
                         (None, _) => {
-                            (format!("{:<10} (unparsed)", hex), Color32::from_gray(140))
+                            (format!("{:<10} (unparsed)", prefix), Color32::from_gray(140))
                         }
                     };
                     ui.colored_label(color, egui::RichText::new(label).monospace().size(11.0));
@@ -571,13 +600,16 @@ fn show_debug_panel(
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
                     for (i, input) in c.inputs.iter().enumerate() {
-                        // Skip sources we can't send back anyway.
+                        // Skip sources we can't send back anyway. Relative
+                        // MIDI encoders and X1 pots/encoders are read-only on
+                        // the hardware side.
                         let sendable = matches!(
                             &input.source,
                             InputSource::Midi(MidiSource::Cc { .. })
                                 | InputSource::Midi(MidiSource::Note { .. })
                                 | InputSource::Midi(MidiSource::NoteVelocity { .. })
                                 | InputSource::Midi(MidiSource::PitchBend { .. })
+                                | InputSource::X1(crate::input_controller::x1::X1Source::Button(_))
                         );
                         if !sendable { continue; }
                         let mut v = c.out_values.get(i).copied().unwrap_or(0.0);

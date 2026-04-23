@@ -1600,10 +1600,7 @@ impl NodeGraph {
                 })
                 .collect();
 
-            let data = shared
-                .display
-                .as_ref()
-                .and_then(|d| d.downcast_ref::<serde_json::Value>().cloned());
+            let data = shared.save_data.clone();
             drop(shared);
 
             new_clip.push(ClipboardNode {
@@ -1642,6 +1639,21 @@ impl NodeGraph {
 
                 if let Some(size) = cn.size {
                     self.active_mut().states[idx].size_override = Some(size);
+                }
+
+                // Dispatch the source node's save_data to the duplicate's
+                // process node so per-instance settings (fader-group rows/cols
+                // and enable flags, controller bindings, layer stacks, etc.)
+                // survive copy-paste. Widgets that read live state from
+                // `shared.display` will sync on the next tick; widgets that
+                // need early port-layout restore (so wires we're about to
+                // paste-wire aren't dropped) are handled below.
+                if let Some(data) = cn.data.clone() {
+                    let node_id = self.active().nodes[idx].node_id();
+                    self.push_engine_cmd(EngineCommand::LoadData {
+                        node_id,
+                        data,
+                    });
                 }
 
                 self.selected_nodes.push(idx);

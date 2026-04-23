@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 
 use midir::{MidiInput, MidiInputConnection, MidiOutput, MidiOutputConnection};
 
-use super::{InputSource, MidiLogEntry, SharedControllers, MIDI_LOG_CAPACITY};
+use super::{InputSource, ActivityLogEntry, SharedControllers, ACTIVITY_LOG_CAPACITY};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum MidiSource {
@@ -170,15 +170,15 @@ fn handle_midi_message(controller_id: u32, msg: &[u8], shared: &SharedController
     };
 
     // Always log — debug panel reads this; cost is negligible.
-    let log_entry = MidiLogEntry {
-        raw: msg.to_vec(),
+    let log_entry = ActivityLogEntry {
+        raw: Some(msg.to_vec()),
         decoded: parsed.as_ref().map(|(s, v)| (InputSource::Midi(s.clone()), *v)),
         matched_input_idx: None, // filled in below once we know the match
         instant: std::time::Instant::now(),
     };
-    c.midi_log.push_back(log_entry);
-    while c.midi_log.len() > MIDI_LOG_CAPACITY {
-        c.midi_log.pop_front();
+    c.activity_log.push_back(log_entry);
+    while c.activity_log.len() > ACTIVITY_LOG_CAPACITY {
+        c.activity_log.pop_front();
     }
 
     let (source, value) = match parsed {
@@ -227,6 +227,8 @@ fn handle_midi_message(controller_id: u32, msg: &[u8], shared: &SharedController
          InputSource::Midi(MidiSource::NoteVelocity { channel, note })) =>
             sc == channel && sn == note,
         (s, InputSource::Midi(t)) => s == t,
+        // X1 inputs live in a separate session type; MIDI events never match them.
+        (_, InputSource::X1(_)) => false,
     });
     let Some(idx) = idx else { return };
 
@@ -278,7 +280,7 @@ fn handle_midi_message(controller_id: u32, msg: &[u8], shared: &SharedController
 
     // Backfill the matched index on the most recent log entry so the debug
     // panel can show "→ Fader 3" next to the raw bytes.
-    if let Some(last) = c.midi_log.back_mut() {
+    if let Some(last) = c.activity_log.back_mut() {
         last.matched_input_idx = Some(idx);
     }
 
@@ -412,5 +414,7 @@ fn encode_midi(source: Option<&InputSource>, value: f32) -> Option<[u8; 3]> {
             let combined = (v * 16383.0).round() as u16;
             Some([status, (combined & 0x7F) as u8, ((combined >> 7) & 0x7F) as u8])
         }
+        // X1 feedback is driven by the X1Session directly — no MIDI bytes.
+        InputSource::X1(_) => None,
     }
 }

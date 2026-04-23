@@ -12,6 +12,7 @@ use crate::widgets::nodes::math::lookup::LookupWidget;
 use crate::widgets::nodes::math::multiplex::{DemultiplexerWidget, MultiplexerWidget};
 use crate::widgets::nodes::io::input_controller::InputControllerWidget;
 use crate::widgets::nodes::io::push1::Push1Widget;
+use crate::widgets::nodes::io::x1::X1Widget;
 use crate::widgets::nodes::meta::portal::{PortalInWidget, PortalOutWidget};
 use crate::widgets::nodes::meta::subgraph::SubgraphWidget;
 use crate::widgets::nodes::output::effect_stack::EffectStackWidget;
@@ -374,6 +375,13 @@ pub fn load_graph(graph: &mut NodeGraph, project: &ProjectFile) -> Vec<usize> {
                 && let Some(data) = &saved.data {
                     let n = graph.node_mut(idx);
                     if let Some(w) = n.as_any_mut().downcast_mut::<Push1Widget>() {
+                        w.restore_from_save_data(data);
+                    }
+                }
+            if saved.type_name == "X1"
+                && let Some(data) = &saved.data {
+                    let n = graph.node_mut(idx);
+                    if let Some(w) = n.as_any_mut().downcast_mut::<X1Widget>() {
                         w.restore_from_save_data(data);
                     }
                 }

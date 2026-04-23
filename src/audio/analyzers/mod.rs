@@ -26,7 +26,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::engine::types::{ParamDef, ParamValue, PortDef, PortType};
 
-pub use worker::{AnalyzerFrame, AnalyzerWorker, SharedAnalyzerFrame};
+pub use worker::{AnalyzerWorker, SharedAnalyzerFrame};
 
 /// Persistent identifier for an analyzer type.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -65,9 +65,7 @@ impl AnalyzerKind {
                 PortDef::new("peak", PortType::Untyped),
                 PortDef::new("rms", PortType::Untyped),
             ],
-            AnalyzerKind::Envelope => vec![
-                PortDef::new("envelope", PortType::Untyped),
-            ],
+            AnalyzerKind::Envelope => vec![PortDef::new("envelope", PortType::Untyped)],
         }
     }
 
@@ -92,7 +90,9 @@ pub struct AnalyzerConfig {
 }
 
 impl AnalyzerConfig {
-    pub fn new(kind: AnalyzerKind) -> Self { Self { kind } }
+    pub fn new(kind: AnalyzerKind) -> Self {
+        Self { kind }
+    }
 }
 
 /// Worker-side trait: only called from the analyzer worker thread. Each
@@ -102,11 +102,15 @@ pub trait AnalyzerProc: Send {
     fn num_outputs(&self) -> usize;
     /// When true, index 0 of this analyzer's outputs is a trigger (edge-
     /// detected downstream via `onset_count`).
-    fn first_output_is_trigger(&self) -> bool { false }
+    fn first_output_is_trigger(&self) -> bool {
+        false
+    }
     /// How many audio samples *behind* the latest chunk's end does the
     /// current output represent? Fast analyzers (envelope, peak meter)
     /// return 0; onset detectors return their picker lookback.
-    fn output_latency_samples(&self) -> u32 { 0 }
+    fn output_latency_samples(&self) -> u32 {
+        0
+    }
     /// Process one chunk of mono f32 audio. Implementations update their
     /// internal state so that `outputs()` / `onset_count()` reflect the
     /// post-chunk result.
@@ -115,7 +119,9 @@ pub trait AnalyzerProc: Send {
     fn outputs(&self) -> Vec<f32>;
     /// Monotonic counter of onsets detected so far. Defaults to 0 for
     /// analyzers that don't produce a trigger output.
-    fn onset_count(&self) -> u64 { 0 }
+    fn onset_count(&self) -> u64 {
+        0
+    }
 }
 
 /// Thread-safe handle to an analyzer's parameters. Created alongside the
@@ -135,11 +141,19 @@ impl AnalyzerHandle {
         get_params: Arc<dyn Fn() -> Vec<ParamDef> + Send + Sync>,
         set_param: Arc<dyn Fn(usize, ParamValue) + Send + Sync>,
     ) -> Self {
-        Self { kind, get_params, set_param }
+        Self {
+            kind,
+            get_params,
+            set_param,
+        }
     }
 
-    pub fn current_params(&self) -> Vec<ParamDef> { (self.get_params)() }
-    pub fn set_param(&self, index: usize, value: ParamValue) { (self.set_param)(index, value) }
+    pub fn current_params(&self) -> Vec<ParamDef> {
+        (self.get_params)()
+    }
+    pub fn set_param(&self, index: usize, value: ParamValue) {
+        (self.set_param)(index, value)
+    }
 }
 
 /// Factory: create the (handle, proc) pair for a given analyzer kind at the

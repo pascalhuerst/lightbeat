@@ -155,6 +155,17 @@ pub const PORT_RADIUS: f32 = 6.0;
 pub const PORT_SPACING: f32 = 22.0;
 pub const PORT_START_Y: f32 = NODE_TITLE_HEIGHT + 14.0;
 pub const NODE_PADDING: f32 = 8.0;
+/// Every N ports, an extra blank slot is inserted so long port lists are
+/// easier to scan. Keeps input/output indexing untouched — only the
+/// rendered Y position is affected.
+pub const PORT_GROUP_SIZE: usize = 8;
+
+/// Extra vertical offset (in unscaled pixels) accumulated from group gaps
+/// up to and including `index`. Each completed group of `PORT_GROUP_SIZE`
+/// contributes one extra `PORT_SPACING` of blank space above the next port.
+fn port_group_offset(index: usize) -> f32 {
+    (index / PORT_GROUP_SIZE) as f32 * PORT_SPACING
+}
 
 /// Compute port position at zoom=1.
 #[allow(dead_code)]
@@ -163,7 +174,8 @@ pub fn port_pos(node_pos: Pos2, node_width: f32, dir: PortDir, index: usize) -> 
 }
 
 pub fn port_pos_z(node_pos: Pos2, node_width: f32, dir: PortDir, index: usize, zoom: f32) -> Pos2 {
-    let y = node_pos.y + PORT_START_Y * zoom + index as f32 * PORT_SPACING * zoom;
+    let base = PORT_START_Y + index as f32 * PORT_SPACING + port_group_offset(index);
+    let y = node_pos.y + base * zoom;
     let x = match dir {
         PortDir::Input => node_pos.x,
         PortDir::Output => node_pos.x + node_width,
@@ -173,7 +185,10 @@ pub fn port_pos_z(node_pos: Pos2, node_width: f32, dir: PortDir, index: usize, z
 
 pub fn ports_height(num_inputs: usize, num_outputs: usize) -> f32 {
     let max_ports = num_inputs.max(num_outputs).max(1);
-    PORT_START_Y + max_ports as f32 * PORT_SPACING + NODE_PADDING
+    // `port_group_offset(max_ports)` accounts for every gap that sits
+    // *above* port index `max_ports` — equivalent to the gaps between
+    // groups when there are `max_ports` ports in total.
+    PORT_START_Y + max_ports as f32 * PORT_SPACING + port_group_offset(max_ports) + NODE_PADDING
 }
 
 pub fn make_port_id(
