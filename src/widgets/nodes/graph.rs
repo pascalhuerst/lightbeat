@@ -3139,28 +3139,16 @@ fn draw_node_chrome(
     let shadow_rect = rect.translate(Vec2::new(3.0, 3.0));
     painter.rect_filled(shadow_rect, NODE_CORNER_RADIUS, Color32::from_black_alpha(60));
 
-    // Accent glow: a soft halo behind the node in the accent colour, so
-    // "important" node kinds (subgraphs, portals…) stand out even when not
-    // selected. Portal-peer glow takes precedence so linked-portal pairs
-    // keep their amber indicator regardless of accent. All accents are
-    // suppressed when disabled — a disabled node reads as pure grayscale
-    // chrome so the "off" state is obvious at a glance.
-    if !disabled {
-        if portal_peer {
-            let halo = rect.expand(3.0);
-            painter.rect_filled(
-                halo,
-                NODE_CORNER_RADIUS + 3.0,
-                theme::SEM_WARNING_HALO,
-            );
-        } else if let Some(a) = accent {
-            let halo = rect.expand(2.5);
-            painter.rect_filled(
-                halo,
-                NODE_CORNER_RADIUS + 2.5,
-                Color32::from_rgba_unmultiplied(a.r(), a.g(), a.b(), 50),
-            );
-        }
+    // Portal-peer halo: when a portal is the peer of a currently-selected
+    // portal, paint an amber halo so the linked pair is easy to find.
+    // Suppressed when disabled so "off" reads as pure grayscale.
+    if !disabled && portal_peer {
+        let halo = rect.expand(3.0);
+        painter.rect_filled(
+            halo,
+            NODE_CORNER_RADIUS + 3.0,
+            theme::SEM_WARNING_HALO,
+        );
     }
 
     // Body — darker flat gray when disabled so the overlay later looks
@@ -3175,7 +3163,7 @@ fn draw_node_chrome(
         theme::BG
     } else {
         accent
-            .map(|a| mix_color(a, theme::BG_HIGH, 0.45))
+            .map(|a| mix_color(a, theme::BG_HIGH, 0.7))
             .unwrap_or(theme::BG_HIGH)
     };
     let title_rect = Rect::from_min_size(rect.min, Vec2::new(rect.width(), NODE_TITLE_HEIGHT * zoom));

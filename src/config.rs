@@ -31,6 +31,14 @@ pub struct AppConfig {
     /// Defaults to false — output is live on startup.
     #[serde(default)]
     pub dmx_bypass_on_startup: bool,
+    /// Last known window size in logical points. Restored on startup so the
+    /// window opens where the user left it. `None` = use default size.
+    #[serde(default)]
+    pub window_size: Option<(f32, f32)>,
+    /// If true, the window was maximized when last closed and should open
+    /// maximized again.
+    #[serde(default)]
+    pub window_maximized: bool,
 }
 
 impl Default for AppConfig {
@@ -41,6 +49,8 @@ impl Default for AppConfig {
             snap_to_grid: false,
             inspector_mode: InspectorMode::Auto,
             dmx_bypass_on_startup: false,
+            window_size: None,
+            window_maximized: false,
         }
     }
 }

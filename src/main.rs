@@ -1326,6 +1326,19 @@ impl eframe::App for LightBeatApp {
         ctx.request_repaint();
         ctx.send_viewport_cmd(egui::ViewportCommand::Title(self.window_title()));
 
+        // Track window size / maximized state so on_exit can persist them.
+        // Only record size when *not* maximized, so toggling maximize off on
+        // next launch restores the user's last manual size.
+        ctx.input(|i| {
+            let v = i.viewport();
+            let maximized = v.maximized.unwrap_or(false);
+            self.config.window_maximized = maximized;
+            if !maximized
+                && let Some(rect) = v.inner_rect {
+                    self.config.window_size = Some((rect.width(), rect.height()));
+                }
+        });
+
         // Poll background file dialog results.
         self.poll_file_dialog();
 
@@ -1893,6 +1906,7 @@ impl eframe::App for LightBeatApp {
             self.save_project();
             self.save_setup();
         }
+        self.config.save();
     }
 }
 
@@ -1975,8 +1989,14 @@ fn remap_project_ids<F: FnMut() -> NodeId>(pf: &mut project::ProjectFile, mut al
 }
 
 fn main() -> eframe::Result {
+    let saved = AppConfig::load();
+    let mut viewport = egui::ViewportBuilder::default()
+        .with_inner_size(saved.window_size.unwrap_or((1280.0, 768.0)));
+    if saved.window_maximized {
+        viewport = viewport.with_maximized(true);
+    }
     let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default().with_inner_size([1280.0, 768.0]),
+        viewport,
         ..Default::default()
     };
     eframe::run_native(
