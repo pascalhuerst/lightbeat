@@ -201,6 +201,16 @@ struct MacroDragPayload {
     path: std::path::PathBuf,
 }
 
+/// Payload carried during a node-registry → canvas drag (Add Nodes panel).
+#[derive(Clone)]
+struct NodeDragPayload {
+    registry_idx: usize,
+}
+
+/// Payload carried during a frame → canvas drag (Add Nodes panel).
+#[derive(Clone)]
+struct FrameDragPayload;
+
 impl LightBeatApp {
     fn new(cc: &eframe::CreationContext<'_>) -> Self {
         // Add Phosphor icons as a fallback font so we can use icon glyphs
@@ -1046,11 +1056,11 @@ impl LightBeatApp {
 
     // -- Macro library helpers ----------------------------------------------
 
-    fn show_library_panel(&mut self, ui: &mut egui::Ui) {
+    fn show_add_nodes_panel(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
-            ui.heading("Macros");
+            ui.heading("Add Nodes");
             if ui.small_button(egui_phosphor::regular::ARROWS_CLOCKWISE)
-                .on_hover_text("Refresh library")
+                .on_hover_text("Refresh macro library")
                 .clicked()
             {
                 self.library.rescan();
@@ -1061,7 +1071,7 @@ impl LightBeatApp {
         ui.horizontal(|ui| {
             ui.label(egui_phosphor::regular::MAGNIFYING_GLASS);
             ui.add(egui::TextEdit::singleline(&mut self.library_search)
-                .hint_text("search name/tag/group")
+                .hint_text("search nodes, macros, tags…")
                 .desired_width(ui.available_width()));
         });
         ui.separator();
@@ -1069,53 +1079,132 @@ impl LightBeatApp {
         if let Some(err) = &self.library.last_error {
             ui.colored_label(egui::Color32::LIGHT_RED, err);
         }
-        if self.library.entries.is_empty() {
-            ui.colored_label(egui::Color32::from_gray(140),
-                format!("No macros yet.\nSave one via right-click on a Subgraph.\n\nLibrary at: {}",
-                    self.library.root.display()));
-            return;
-        }
 
         let q = self.library_search.to_lowercase();
-        let entries: Vec<_> = self.library.entries.iter().enumerate()
+
+        // Build a filtered view of registered node types grouped by category.
+        // Hidden categories (prefixed with `_`) are always excluded.
+        let node_entries: Vec<(usize, String, String, &'static str)> = self.graph
+            .registry_entries()
+            .iter()
+            .enumerate()
+            .filter(|(_, e)| !e.category.starts_with('_'))
             .filter(|(_, e)| {
-                if q.is_empty() { return true; }
-                e.name.to_lowercase().contains(&q)
+                q.is_empty()
+                    || e.label.to_lowercase().contains(&q)
+                    || e.category.to_lowercase().contains(&q)
+            })
+            .map(|(i, e)| (i, e.category.clone(), e.label.clone(), e.description))
+            .collect();
+
+        let macro_entries: Vec<_> = self.library.entries.iter().enumerate()
+            .filter(|(_, e)| {
+                q.is_empty()
+                    || e.name.to_lowercase().contains(&q)
                     || e.group.to_lowercase().contains(&q)
                     || e.tags.iter().any(|t| t.to_lowercase().contains(&q))
+                    || "macros".contains(&q)
             })
             .map(|(i, e)| (i, e.clone()))
             .collect();
 
+        // "Frame" is a pseudo-entry so it takes part in search the same way.
+        let frame_matches = q.is_empty()
+            || "frame".contains(&q)
+            || "decorative".contains(&q);
+
         let mut delete: Option<std::path::PathBuf> = None;
 
         egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
-            // Group entries by their group path.
-            let mut current_group: Option<String> = None;
-            for (_idx, e) in &entries {
-                if Some(&e.group) != current_group.as_ref() {
-                    if current_group.is_some() { ui.add_space(4.0); }
-                    let label = if e.group.is_empty() { "(root)".to_string() } else { e.group.clone() };
-                    ui.colored_label(egui::Color32::from_gray(150),
-                        egui::RichText::new(label).strong().size(11.0));
-                    current_group = Some(e.group.clone());
+            // --- Decorative (Frame) ---
+            if frame_matches {
+                ui.colored_label(
+                    egui::Color32::from_gray(150),
+                    egui::RichText::new("Decorative").strong().size(11.0),
+                );
+                let dnd_id = egui::Id::new("frame-dnd");
+                let resp = ui.dnd_drag_source(dnd_id, FrameDragPayload, |ui| {
+                    ui.add(egui::Button::new("+ Frame")
+                        .wrap_mode(egui::TextWrapMode::Extend))
+                }).inner;
+                resp.on_hover_text(
+                    "Drag onto canvas to add a decorative frame for visually \
+                     grouping nodes. Drag the title bar to move, the bottom-\
+                     right corner to resize.",
+                );
+                ui.add_space(4.0);
+            }
+
+            // --- Registered node types, grouped by category ---
+            let mut last_cat = "";
+            for (idx, cat, label, desc) in &node_entries {
+                if cat != last_cat {
+                    if !last_cat.is_empty() { ui.add_space(4.0); }
+                    ui.colored_label(
+                        egui::Color32::from_gray(150),
+                        egui::RichText::new(cat).strong().size(11.0),
+                    );
+                    last_cat = cat;
                 }
-                let dnd_id = egui::Id::new(("macro-dnd", &e.path));
-                let payload = MacroDragPayload { path: e.path.clone() };
-                let inner_resp = ui.dnd_drag_source(dnd_id, payload, |ui| {
-                    ui.add(egui::Button::new(&e.name).wrap_mode(egui::TextWrapMode::Extend))
-                });
-                let mut hover = format!("Drag onto canvas to add.\n\n{}", e.description);
-                if !e.tags.is_empty() {
-                    hover.push_str(&format!("\n\nTags: {}", e.tags.join(", ")));
-                }
-                let btn_resp = inner_resp.inner.on_hover_text(hover);
-                btn_resp.context_menu(|ui| {
-                    if ui.button("Delete from library").clicked() {
-                        delete = Some(e.path.clone());
-                        ui.close_menu();
+                let dnd_id = egui::Id::new(("node-dnd", *idx));
+                let payload = NodeDragPayload { registry_idx: *idx };
+                let resp = ui.dnd_drag_source(dnd_id, payload, |ui| {
+                    ui.add(egui::Button::new(label.as_str())
+                        .wrap_mode(egui::TextWrapMode::Extend))
+                }).inner;
+                let hover = if desc.is_empty() {
+                    "Drag onto canvas to add.".to_string()
+                } else {
+                    format!("Drag onto canvas to add.\n\n{}", desc)
+                };
+                resp.on_hover_text(hover);
+            }
+
+            // --- Macros, grouped by their on-disk group path ---
+            if !macro_entries.is_empty() {
+                if !node_entries.is_empty() || frame_matches { ui.add_space(4.0); }
+                ui.colored_label(
+                    theme::ACCENT_MACRO,
+                    egui::RichText::new("Macros").strong().size(11.0),
+                );
+                // Match the title-bar tint macro nodes get in the graph.
+                let macro_fill = theme::mix_color(theme::ACCENT_MACRO, theme::BG_HIGH, 0.7);
+                let mut current_group: Option<String> = None;
+                for (_idx, e) in &macro_entries {
+                    if Some(&e.group) != current_group.as_ref() {
+                        if current_group.is_some() { ui.add_space(2.0); }
+                        let label = if e.group.is_empty() { "(root)".to_string() } else { e.group.clone() };
+                        ui.colored_label(
+                            egui::Color32::from_gray(120),
+                            egui::RichText::new(label).size(10.0),
+                        );
+                        current_group = Some(e.group.clone());
                     }
-                });
+                    let dnd_id = egui::Id::new(("macro-dnd", &e.path));
+                    let payload = MacroDragPayload { path: e.path.clone() };
+                    let inner_resp = ui.dnd_drag_source(dnd_id, payload, |ui| {
+                        ui.add(
+                            egui::Button::new(egui::RichText::new(&e.name).color(theme::TEXT_BRIGHT))
+                                .fill(macro_fill)
+                                .wrap_mode(egui::TextWrapMode::Extend)
+                        )
+                    });
+                    let mut hover = format!("Drag onto canvas to add.\n\n{}", e.description);
+                    if !e.tags.is_empty() {
+                        hover.push_str(&format!("\n\nTags: {}", e.tags.join(", ")));
+                    }
+                    let btn_resp = inner_resp.inner.on_hover_text(hover);
+                    btn_resp.context_menu(|ui| {
+                        if ui.button("Delete from library").clicked() {
+                            delete = Some(e.path.clone());
+                            ui.close_menu();
+                        }
+                    });
+                }
+            }
+
+            if node_entries.is_empty() && macro_entries.is_empty() && !frame_matches {
+                ui.colored_label(egui::Color32::from_gray(120), "No matches.");
             }
         });
 
@@ -1449,7 +1538,7 @@ impl eframe::App for LightBeatApp {
                         ui.close_menu();
                     }
                     ui.separator();
-                    if ui.checkbox(&mut self.show_library, "Macro Library").changed() {
+                    if ui.checkbox(&mut self.show_library, "Add Nodes").changed() {
                         ui.close_menu();
                     }
                     ui.separator();
@@ -1588,12 +1677,12 @@ impl eframe::App for LightBeatApp {
         self.input_controllers.tick_reconnect();
         self.audio_inputs.tick_reconnect();
 
-        // Library side panel (left).
+        // "Add Nodes" side panel (left) — unified node-registry + macro library.
         if self.show_library {
-            egui::SidePanel::left("library_panel")
+            egui::SidePanel::left("add_nodes_panel")
                 .default_width(220.0)
                 .show(ctx, |ui| {
-                    self.show_library_panel(ui);
+                    self.show_add_nodes_panel(ui);
                 });
         }
 
@@ -1819,16 +1908,22 @@ impl eframe::App for LightBeatApp {
             self.graph.show(ui, self.config.snap_to_grid);
         });
 
-        // Accept a macro drop on the canvas. We only consume the payload
-        // when the pointer is released inside the canvas rect — otherwise
-        // egui keeps the drag alive and the user can continue aiming.
+        // Accept drops from the Add Nodes panel onto the canvas. We only
+        // consume the payload when the pointer is released inside the canvas
+        // rect — otherwise egui keeps the drag alive and the user can
+        // continue aiming.
         if ctx.input(|i| i.pointer.any_released())
             && let Some(pos) = ctx.pointer_interact_pos()
-                && self.graph.canvas_rect().contains(pos)
-                    && let Some(payload) = egui::DragAndDrop::take_payload::<MacroDragPayload>(ctx) {
-                        let world = self.graph.screen_to_world(pos);
-                        self.instantiate_macro_from_path(&payload.path, world);
-                    }
+            && self.graph.canvas_rect().contains(pos) {
+                let world = self.graph.screen_to_world(pos);
+                if let Some(p) = egui::DragAndDrop::take_payload::<MacroDragPayload>(ctx) {
+                    self.instantiate_macro_from_path(&p.path, world);
+                } else if let Some(p) = egui::DragAndDrop::take_payload::<NodeDragPayload>(ctx) {
+                    self.graph.spawn_from_registry(p.registry_idx, world);
+                } else if egui::DragAndDrop::take_payload::<FrameDragPayload>(ctx).is_some() {
+                    self.graph.add_frame_at(world);
+                }
+            }
 
         self.wire_new_nodes();
 

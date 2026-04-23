@@ -61,6 +61,23 @@ pub const TYPE_ANY: Color32 = TEXT_DIM;
 
 /// Rose/magenta — "this is a container" accent for Subgraph nodes.
 pub const ACCENT_SUBGRAPH: Color32 = Color32::from_rgb(190, 90, 150);
+/// Violet — "this is a packaged macro instance" accent. Locked Subgraphs
+/// (macros instantiated from the library) use this so they read as distinct
+/// from editable Subgraphs at a glance.
+pub const ACCENT_MACRO: Color32 = Color32::from_rgb(140, 110, 220);
+
+/// Linear blend from `a` toward `b` by `t` (0..=1). Used to tint accent
+/// colours with the neutral title-bar dark so white text stays readable.
+pub fn mix_color(a: Color32, b: Color32, t: f32) -> Color32 {
+    let t = t.clamp(0.0, 1.0);
+    let lerp = |x: u8, y: u8| ((1.0 - t) * x as f32 + t * y as f32).round() as u8;
+    Color32::from_rgba_unmultiplied(
+        lerp(a.r(), b.r()),
+        lerp(a.g(), b.g()),
+        lerp(a.b(), b.b()),
+        255,
+    )
+}
 
 // ---------------------------------------------------------------------------
 // Alpha overlays (premultiplied form required for const)

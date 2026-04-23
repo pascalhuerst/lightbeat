@@ -111,7 +111,7 @@ impl NodeWidget for SubgraphWidget {
     }
 
     fn accent_color(&self) -> Option<Color32> {
-        Some(theme::ACCENT_SUBGRAPH)
+        Some(if self.locked { theme::ACCENT_MACRO } else { theme::ACCENT_SUBGRAPH })
     }
 
     fn show_content(&mut self, ui: &mut Ui, _zoom: f32) {

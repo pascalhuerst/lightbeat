@@ -132,13 +132,6 @@ pub struct ViewState {
     active_path: Vec<NodeId>,
 }
 
-/// Which context menu the right-click is currently showing.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ContextMenuMode {
-    AddNode,
-    Selection,
-}
-
 /// Right-click action on a Subgraph node that the app needs to handle
 /// (because it requires interaction outside the graph itself — opening a
 /// dialog, walking the graph for serialization, etc.).
@@ -168,8 +161,6 @@ pub struct NodeGraph {
     new_nodes: Vec<NewNode>,
     pending_engine_cmds: Vec<EngineCommand>,
     context_menu_pos: Option<Pos2>,
-    context_menu_search: String,
-    context_menu_mode: ContextMenuMode,
     /// Pending macro action emitted by the right-click menu, consumed by the
     /// app each frame.
     pending_macro_request: Option<MacroRequest>,
@@ -241,8 +232,6 @@ impl NodeGraph {
             new_nodes: Vec::new(),
             pending_engine_cmds: Vec::new(),
             context_menu_pos: None,
-            context_menu_search: String::new(),
-            context_menu_mode: ContextMenuMode::AddNode,
             pending_macro_request: None,
             selected_nodes: Vec::new(),
             selected_frames: std::collections::HashSet::new(),
@@ -476,6 +465,21 @@ impl NodeGraph {
     /// Remove all registered nodes in a given category.
     pub fn clear_category(&mut self, category: &str) {
         self.registry.retain(|e| e.category != category);
+    }
+
+    /// Immutable view of the registered node types — used by the external
+    /// "Add Nodes" panel to render the list without touching internals.
+    pub fn registry_entries(&self) -> &[NodeEntry] {
+        &self.registry
+    }
+
+    /// Spawn a new node from the registry at the given canvas-local position.
+    /// Silently no-ops if the index is out of bounds.
+    pub fn spawn_from_registry(&mut self, registry_idx: usize, canvas_pos: Pos2) {
+        if registry_idx >= self.registry.len() { return; }
+        let id = self.alloc_id();
+        let node = (self.registry[registry_idx].factory)(id);
+        self.add_node(node, canvas_pos);
     }
 
     pub fn alloc_id(&mut self) -> NodeId {
@@ -1128,19 +1132,13 @@ impl NodeGraph {
             self.active_mut().pan += response.drag_delta();
         }
 
-        // Right-click opens a context menu. The menu shown depends on whether
-        // the click landed on a selected node:
-        //   - selected node → selection actions ("Move to Subgraph", ...)
-        //   - empty canvas / unselected node → add-node selector
+        // Right-click on a selected node opens the selection actions menu
+        // ("Move to Subgraph", ...). Right-click on empty canvas is a no-op —
+        // nodes are added via the "Add Nodes" side panel (drag onto canvas).
         if response.secondary_clicked()
-            && let Some(pos) = ui.input(|i| i.pointer.hover_pos()) {
-                self.context_menu_mode = if self.is_pos_on_selected_node(pos, canvas_rect) {
-                    ContextMenuMode::Selection
-                } else {
-                    ContextMenuMode::AddNode
-                };
+            && let Some(pos) = ui.input(|i| i.pointer.hover_pos())
+            && self.is_pos_on_selected_node(pos, canvas_rect) {
                 self.context_menu_pos = Some(pos);
-                self.context_menu_search.clear();
             }
 
         let level = self.active();
@@ -1677,7 +1675,6 @@ impl NodeGraph {
         if let Some(p) = pos
             && !area_rect.contains(p) {
                 self.context_menu_pos = None;
-                self.context_menu_search.clear();
             }
     }
 
@@ -1750,267 +1747,121 @@ impl NodeGraph {
         false
     }
 
-    fn show_context_menu(&mut self, ui: &mut Ui, canvas_rect: Rect, just_opened: bool) {
+    fn show_context_menu(&mut self, ui: &mut Ui, _canvas_rect: Rect, just_opened: bool) {
         if self.context_menu_pos.is_none() {
             return;
         }
         let menu_pos = self.context_menu_pos.unwrap();
 
-        // Selection actions menu — shown only for right-clicks on a selected node.
-        if self.context_menu_mode == ContextMenuMode::Selection {
-            if self.selected_nodes.is_empty() {
-                self.context_menu_pos = None;
-                return;
-            }
-            // Pre-compute the auto-connect plan (only set when 2 nodes selected
-            // and there's at least one valid pairwise connection).
-            let plan = self.auto_connect_plan();
-
-            // Macro-context info: when exactly one Subgraph is selected,
-            // show "Save as macro..." + "Embed". Embed is a no-op if the
-            // subgraph isn't actually locked (cheap and harmless).
-            let single_subgraph: Option<(NodeId, bool)> = if self.selected_nodes.len() == 1 {
-                let i = self.selected_nodes[0];
-                let level = self.active_mut();
-                if i < level.nodes.len() && level.nodes[i].type_name() == "Subgraph" {
-                    let id = level.states[i].id;
-                    let locked = level.nodes[i].as_any_mut()
-                        .downcast_mut::<SubgraphWidget>()
-                        .map(|w| w.locked)
-                        .unwrap_or(false);
-                    Some((id, locked))
-                } else { None }
-            } else { None };
-
-            let mut move_to_sub = false;
-            let mut do_auto_connect = false;
-            let mut do_save_macro: Option<NodeId> = None;
-            let mut do_embed: Option<NodeId> = None;
-            let mut do_unpack: Option<usize> = None;
-            let area_resp = egui::Area::new(egui::Id::new("selection_ctx_menu"))
-                .order(egui::Order::Foreground)
-                .fixed_pos(menu_pos)
-                .show(ui.ctx(), |ui| {
-                    egui::Frame::popup(ui.style()).show(ui, |ui| {
-                        ui.set_min_width(160.0);
-                        if let Some((_, _, pairs)) = &plan {
-                            let label = if pairs.len() == 1 {
-                                "Connect 1 port".to_string()
-                            } else {
-                                format!("Connect {} ports", pairs.len())
-                            };
-                            if ui.button(label).clicked() {
-                                do_auto_connect = true;
-                            }
-                            ui.separator();
-                        }
-                        if ui.button("Move to Subgraph").clicked() {
-                            move_to_sub = true;
-                        }
-                        if let Some((id, locked)) = single_subgraph {
-                            ui.separator();
-                            if !locked && ui.button("Save as macro...").clicked() {
-                                do_save_macro = Some(id);
-                            }
-                            if locked && ui.button("Embed").clicked() {
-                                do_embed = Some(id);
-                            }
-                            if ui.button("Unpack").on_hover_text(
-                                "Replace the subgraph with its inner nodes, \
-                                 reconnecting inputs and outputs").clicked()
-                            {
-                                do_unpack = Some(self.selected_nodes[0]);
-                            }
-                        }
-                    });
-                });
-            if do_auto_connect {
-                if let Some((src_id, dst_id, pairs)) = plan {
-                    for (o, i) in pairs {
-                        let from = PortId { node: src_id, index: o, dir: PortDir::Output };
-                        let to = PortId { node: dst_id, index: i, dir: PortDir::Input };
-                        self.add_connection(from, to);
-                    }
-                }
-                self.context_menu_pos = None;
-                self.context_menu_search.clear();
-                return;
-            }
-            if move_to_sub {
-                self.move_selection_to_subgraph();
-                self.context_menu_pos = None;
-                self.context_menu_search.clear();
-                return;
-            }
-            if let Some(id) = do_save_macro {
-                let path = self.current_subgraph_path();
-                self.pending_macro_request = Some(MacroRequest::SaveAs {
-                    node_id: id,
-                    subgraph_path: path,
-                });
-                self.context_menu_pos = None;
-                self.context_menu_search.clear();
-                return;
-            }
-            if let Some(id) = do_embed {
-                // Find the subgraph widget and clear its locked flag.
-                let level = self.active_mut();
-                if let Some(idx) = level.states.iter().position(|s| s.id == id)
-                    && let Some(w) = level.nodes[idx].as_any_mut().downcast_mut::<SubgraphWidget>() {
-                        w.locked = false;
-                        w.push_config();
-                    }
-                self.context_menu_pos = None;
-                self.context_menu_search.clear();
-                return;
-            }
-            if let Some(sub_idx) = do_unpack {
-                self.unpack_subgraph(sub_idx);
-                self.context_menu_pos = None;
-                self.context_menu_search.clear();
-                return;
-            }
-            self.dismiss_on_outside_click(ui, area_resp.response.rect, just_opened);
-            return;
-        }
-
-        // Add-node menu — default for right-clicks on empty canvas / unselected nodes.
-
-        if self.registry.is_empty() {
+        if self.selected_nodes.is_empty() {
             self.context_menu_pos = None;
             return;
         }
 
-        let mut spawn: Option<usize> = None;
-        let mut spawn_frame = false;
-        let search = self.context_menu_search.to_lowercase();
+        // Pre-compute the auto-connect plan (only set when 2 nodes selected
+        // and there's at least one valid pairwise connection).
+        let plan = self.auto_connect_plan();
 
-        // Filter entries by search (exclude hidden categories).
-        let filtered: Vec<(usize, &str, &str, &str)> = self.registry.iter().enumerate()
-            .filter(|(_, e)| !e.category.starts_with('_'))
-            .filter(|(_, e)| search.is_empty() || e.label.to_lowercase().contains(&search) || e.category.to_lowercase().contains(&search))
-            .map(|(i, e)| (i, e.category.as_str(), e.label.as_str(), e.description))
-            .collect();
+        // Macro-context info: when exactly one Subgraph is selected,
+        // show "Save as macro..." + "Embed". Embed is a no-op if the
+        // subgraph isn't actually locked (cheap and harmless).
+        let single_subgraph: Option<(NodeId, bool)> = if self.selected_nodes.len() == 1 {
+            let i = self.selected_nodes[0];
+            let level = self.active_mut();
+            if i < level.nodes.len() && level.nodes[i].type_name() == "Subgraph" {
+                let id = level.states[i].id;
+                let locked = level.nodes[i].as_any_mut()
+                    .downcast_mut::<SubgraphWidget>()
+                    .map(|w| w.locked)
+                    .unwrap_or(false);
+                Some((id, locked))
+            } else { None }
+        } else { None };
 
-        // Description shown for the currently hovered entry (defaults to first match).
-        let mut hovered_desc: Option<&'static str> =
-            filtered.first().map(|&(_, _, _, d)| d);
-
-        let mut dismiss_via_esc = false;
-        let area_resp = egui::Area::new(egui::Id::new("node_ctx_menu"))
+        let mut move_to_sub = false;
+        let mut do_auto_connect = false;
+        let mut do_save_macro: Option<NodeId> = None;
+        let mut do_embed: Option<NodeId> = None;
+        let mut do_unpack: Option<usize> = None;
+        let area_resp = egui::Area::new(egui::Id::new("selection_ctx_menu"))
             .order(egui::Order::Foreground)
             .fixed_pos(menu_pos)
             .show(ui.ctx(), |ui| {
                 egui::Frame::popup(ui.style()).show(ui, |ui| {
-                    ui.set_min_size(egui::Vec2::new(260.0, 420.0));
-                    ui.set_max_width(260.0);
-
-                    // Search field — auto-focused.
-                    let search_resp = ui.add(
-                        egui::TextEdit::singleline(&mut self.context_menu_search)
-                            .hint_text("Search nodes...")
-                            .desired_width(ui.available_width()),
-                    );
-                    if search_resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
-                        dismiss_via_esc = true;
-                        return;
-                    }
-                    if search_resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter))
-                        && let Some(&(idx, _, _, _)) = filtered.first() {
-                            spawn = Some(idx);
-                        }
-                    search_resp.request_focus();
-
-                    ui.separator();
-
-                    if ui.button(egui::RichText::new("+ Add Frame").color(Color32::from_gray(200)))
-                        .on_hover_text(
-                            "Add a decorative frame for visually grouping nodes. \
-                             Drag the title bar to move, drag the bottom-right corner to resize.",
-                        )
-                        .clicked()
-                    {
-                        spawn_frame = true;
-                    }
-                    ui.separator();
-
-                    let desc_h = 64.0;
-                    let list_h = (ui.available_height() - desc_h).max(80.0);
-
-                    egui::ScrollArea::vertical()
-                        .max_height(list_h)
-                        .show(ui, |ui| {
-                            if filtered.is_empty() {
-                                ui.colored_label(egui::Color32::from_gray(100), "No matches");
-                            } else {
-                                let mut last_cat = "";
-                                for &(idx, cat, label, desc) in &filtered {
-                                    if cat != last_cat {
-                                        if !last_cat.is_empty() { ui.add_space(2.0); }
-                                        ui.colored_label(
-                                            egui::Color32::from_gray(120),
-                                            egui::RichText::new(cat).size(10.0),
-                                        );
-                                        last_cat = cat;
-                                    }
-                                    let resp = ui.button(label);
-                                    if resp.hovered() {
-                                        hovered_desc = Some(desc);
-                                    }
-                                    if resp.clicked() {
-                                        spawn = Some(idx);
-                                    }
-                                }
-                            }
-                        });
-
-                    ui.separator();
-                    // Description preview area.
-                    ui.allocate_ui(egui::Vec2::new(ui.available_width(), desc_h - 8.0), |ui| {
-                        let desc = hovered_desc.unwrap_or("");
-                        if desc.is_empty() {
-                            ui.colored_label(egui::Color32::from_gray(80), "Hover an entry for details.");
+                    ui.set_min_width(160.0);
+                    if let Some((_, _, pairs)) = &plan {
+                        let label = if pairs.len() == 1 {
+                            "Connect 1 port".to_string()
                         } else {
-                            ui.colored_label(egui::Color32::from_gray(180), desc);
+                            format!("Connect {} ports", pairs.len())
+                        };
+                        if ui.button(label).clicked() {
+                            do_auto_connect = true;
                         }
-                    });
+                        ui.separator();
+                    }
+                    if ui.button("Move to Subgraph").clicked() {
+                        move_to_sub = true;
+                    }
+                    if let Some((id, locked)) = single_subgraph {
+                        ui.separator();
+                        if !locked && ui.button("Save as macro...").clicked() {
+                            do_save_macro = Some(id);
+                        }
+                        if locked && ui.button("Embed").clicked() {
+                            do_embed = Some(id);
+                        }
+                        if ui.button("Unpack").on_hover_text(
+                            "Replace the subgraph with its inner nodes, \
+                             reconnecting inputs and outputs").clicked()
+                        {
+                            do_unpack = Some(self.selected_nodes[0]);
+                        }
+                    }
                 });
             });
-
-        if dismiss_via_esc {
+        if do_auto_connect {
+            if let Some((src_id, dst_id, pairs)) = plan {
+                for (o, i) in pairs {
+                    let from = PortId { node: src_id, index: o, dir: PortDir::Output };
+                    let to = PortId { node: dst_id, index: i, dir: PortDir::Input };
+                    self.add_connection(from, to);
+                }
+            }
             self.context_menu_pos = None;
-            self.context_menu_search.clear();
             return;
         }
-
-        // Spawn check happens before dismiss so the click on a list item
-        // doesn't get treated as "outside click then create node next frame".
-        if spawn.is_none() && !spawn_frame {
-            self.dismiss_on_outside_click(ui, area_resp.response.rect, just_opened);
-        }
-
-        if let Some(reg_idx) = spawn {
-            let id = self.alloc_id();
-            let level = self.active();
-            let canvas_pos = (menu_pos - canvas_rect.min.to_vec2() - level.pan) / level.zoom;
-            let node = (self.registry[reg_idx].factory)(id);
-            self.add_node(node, canvas_pos);
-            self.context_menu_search.clear();
+        if move_to_sub {
+            self.move_selection_to_subgraph();
             self.context_menu_pos = None;
+            return;
         }
-
-        if spawn_frame {
-            let level = self.active();
-            let world = (menu_pos - canvas_rect.min.to_vec2() - level.pan) / level.zoom;
-            let id = self.add_frame_at(world);
-            // Select the new frame so the user can immediately edit it in
-            // the inspector and see the selected-state border.
-            self.selected_frames.clear();
-            self.selected_frames.insert(id);
-            self.selected_nodes.clear();
-            self.context_menu_search.clear();
+        if let Some(id) = do_save_macro {
+            let path = self.current_subgraph_path();
+            self.pending_macro_request = Some(MacroRequest::SaveAs {
+                node_id: id,
+                subgraph_path: path,
+            });
             self.context_menu_pos = None;
+            return;
         }
+        if let Some(id) = do_embed {
+            // Find the subgraph widget and clear its locked flag.
+            let level = self.active_mut();
+            if let Some(idx) = level.states.iter().position(|s| s.id == id)
+                && let Some(w) = level.nodes[idx].as_any_mut().downcast_mut::<SubgraphWidget>() {
+                    w.locked = false;
+                    w.push_config();
+                }
+            self.context_menu_pos = None;
+            return;
+        }
+        if let Some(sub_idx) = do_unpack {
+            self.unpack_subgraph(sub_idx);
+            self.context_menu_pos = None;
+            return;
+        }
+        self.dismiss_on_outside_click(ui, area_resp.response.rect, just_opened);
     }
 
     // -----------------------------------------------------------------------
@@ -3252,19 +3103,7 @@ fn draw_node_chrome(
     }
 }
 
-/// Linear blend from `a` toward `b` by `t` (0..=1). Used to tint accent
-/// colours with the neutral title-bar dark so white title text stays
-/// readable even with punchy accents.
-fn mix_color(a: Color32, b: Color32, t: f32) -> Color32 {
-    let t = t.clamp(0.0, 1.0);
-    let lerp = |x: u8, y: u8| ((1.0 - t) * x as f32 + t * y as f32).round() as u8;
-    Color32::from_rgba_unmultiplied(
-        lerp(a.r(), b.r()),
-        lerp(a.g(), b.g()),
-        lerp(a.b(), b.b()),
-        255,
-    )
-}
+use crate::theme::mix_color;
 
 /// Solid colour swatch for hovering Color ports. Reads channels 0..3 as RGB.
 fn draw_color_preview(ui: &mut Ui, values: &[f32]) {
