@@ -1,12 +1,13 @@
 use std::any::Any;
 use std::sync::{Arc, Mutex};
 
-use egui::{self, Color32, Ui};
+use egui::{self, Ui};
 
-use crate::engine::nodes::output::group::{GROUP_MODE_NAMES, GroupMode, GroupNodeDisplay};
+use crate::engine::nodes::output::group::GroupNodeDisplay;
 use crate::engine::types::*;
 use crate::objects::group::Group;
 use crate::objects::object::Object;
+use crate::theme;
 use crate::widgets::nodes::node::NodeWidget;
 use crate::widgets::nodes::types::UiPortDef;
 
@@ -29,7 +30,6 @@ pub struct GroupWidget {
     id: NodeId,
     shared: SharedState,
     group_ctx: SharedGroupContext,
-    pub mode: GroupMode,
     /// Which group IDs are selected.
     pub selected_group_ids: Vec<u32>,
 }
@@ -40,7 +40,6 @@ impl GroupWidget {
             id,
             shared,
             group_ctx,
-            mode: GroupMode::Flood,
             selected_group_ids: Vec::new(),
         }
     }
@@ -80,18 +79,6 @@ impl GroupWidget {
         let mut shared = self.shared.lock().unwrap();
         shared.pending_config = Some(config);
     }
-
-    fn push_mode(&self) {
-        let mut s = self.shared.lock().unwrap();
-        s.pending_params.push((0, ParamValue::Choice(self.mode.to_index())));
-    }
-
-    /// Set the widget's mode directly, without going through the engine.
-    /// Used on project load so `ui_inputs()` reports the correct ports
-    /// before `cleanup_stale_connections` sweeps the first frame.
-    pub fn set_mode_from_load(&mut self, mode: GroupMode) {
-        self.mode = mode;
-    }
 }
 
 impl NodeWidget for GroupWidget {
@@ -99,22 +86,19 @@ impl NodeWidget for GroupWidget {
     fn type_name(&self) -> &'static str { "Group Output" }
     fn title(&self) -> &str { "Group Output" }
     fn description(&self) -> &'static str {
-        "Writes to the objects of one or more groups. In Flood mode it broadcasts a palette color + dimmer every tick. In Triggered mode, a rising trigger writes a gradient across a sub-range of the group, using the gradient's per-stop alpha to softly blend with each object's current color."
+        "Writes a gradient across a sub-range of the group's strip pixels every tick. \
+         The `select` and `width` inputs position a window on the group's 0..1 logical \
+         axis; the gradient is sampled across that window, with per-stop alpha softly \
+         blending against each pixel's current colour. Pixels leaving the window are \
+         cleared, so a moving selection never leaves a trail."
     }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> {
-        match self.mode {
-            GroupMode::Flood => vec![
-                UiPortDef::from_def(&PortDef::new("palette", PortType::Palette)),
-                UiPortDef::from_def(&PortDef::new("dimmer", PortType::Untyped)),
-            ],
-            GroupMode::Triggered => vec![
-                UiPortDef::from_def(&PortDef::new("trigger", PortType::Logic)),
-                UiPortDef::from_def(&PortDef::new("select", PortType::Untyped)),
-                UiPortDef::from_def(&PortDef::new("width", PortType::Untyped)),
-                UiPortDef::from_def(&PortDef::new("gradient", PortType::Gradient)),
-            ],
-        }
+        vec![
+            UiPortDef::from_def(&PortDef::new("select", PortType::Untyped)),
+            UiPortDef::from_def(&PortDef::new("width", PortType::Untyped)),
+            UiPortDef::from_def(&PortDef::new("gradient", PortType::Gradient)),
+        ]
     }
     fn ui_outputs(&self) -> Vec<UiPortDef> { vec![] }
 
@@ -125,23 +109,18 @@ impl NodeWidget for GroupWidget {
 
     fn show_content(&mut self, ui: &mut Ui, _zoom: f32) {
         let shared = self.shared.lock().unwrap();
-        let display = shared.display.as_ref()
-            .and_then(|d| d.downcast_ref::<GroupNodeDisplay>());
-
-        let obj_count = display.map(|d| d.object_count).unwrap_or(0);
-        let engine_mode = display.map(|d| d.mode);
+        let obj_count = shared.display.as_ref()
+            .and_then(|d| d.downcast_ref::<GroupNodeDisplay>())
+            .map(|d| d.object_count)
+            .unwrap_or(0);
         drop(shared);
 
-        // Keep widget mode in sync with engine state (e.g. after project load).
-        if let Some(m) = engine_mode && m != self.mode { self.mode = m; }
-
-        let mode_label = GROUP_MODE_NAMES[self.mode.to_index()];
         if self.selected_group_ids.is_empty() {
-            ui.colored_label(Color32::from_gray(120), format!("{} — No groups", mode_label));
+            ui.colored_label(theme::TEXT_DIM, "No groups");
         } else {
             ui.colored_label(
-                Color32::from_gray(140),
-                format!("{} — {} groups, {} obj", mode_label, self.selected_group_ids.len(), obj_count),
+                theme::TEXT_DIM,
+                format!("{} groups, {} obj", self.selected_group_ids.len(), obj_count),
             );
         }
     }

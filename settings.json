@@ -5,5 +5,5 @@
   "inspector_mode": "Auto",
   "dmx_bypass_on_startup": false,
   "window_size": null,
-  "window_maximized": false
+  "window_maximized": true
 }

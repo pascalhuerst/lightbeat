@@ -4896,7 +4896,7 @@
           "port": 6454
         }
       },
-      "enabled": true
+      "enabled": false
     },
     {
       "id": 3,
@@ -4907,7 +4907,7 @@
           "port": 6454
         }
       },
-      "enabled": true
+      "enabled": false
     }
   ],
   "groups": [
@@ -6107,7 +6107,104 @@
       ]
     }
   ],
-  "gradient_presets": [],
+  "gradient_presets": [
+    {
+      "id": 1,
+      "name": "Gradient 1",
+      "stops": [
+        {
+          "position": 0.0,
+          "color": {
+            "r": 0.0,
+            "g": 0.0,
+            "b": 0.0
+          },
+          "alpha": 1.0
+        },
+        {
+          "position": 1.0,
+          "color": {
+            "r": 1.0,
+            "g": 1.0,
+            "b": 1.0
+          },
+          "alpha": 1.0
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "name": "Gradient 2",
+      "stops": [
+        {
+          "position": 0.0,
+          "color": {
+            "r": 0.0,
+            "g": 0.0,
+            "b": 0.0
+          },
+          "alpha": 1.0
+        },
+        {
+          "position": 1.0,
+          "color": {
+            "r": 1.0,
+            "g": 1.0,
+            "b": 1.0
+          },
+          "alpha": 1.0
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "name": "Gradient 3",
+      "stops": [
+        {
+          "position": 0.0,
+          "color": {
+            "r": 0.0,
+            "g": 0.0,
+            "b": 0.0
+          },
+          "alpha": 1.0
+        },
+        {
+          "position": 1.0,
+          "color": {
+            "r": 1.0,
+            "g": 1.0,
+            "b": 1.0
+          },
+          "alpha": 1.0
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "name": "Gradient 4",
+      "stops": [
+        {
+          "position": 0.0,
+          "color": {
+            "r": 0.0,
+            "g": 0.0,
+            "b": 0.0
+          },
+          "alpha": 1.0
+        },
+        {
+          "position": 1.0,
+          "color": {
+            "r": 1.0,
+            "g": 1.0,
+            "b": 1.0
+          },
+          "alpha": 1.0
+        }
+      ]
+    }
+  ],
   "input_controllers": [
     {
       "id": 1,

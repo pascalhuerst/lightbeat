@@ -130,6 +130,32 @@ enum FileDialogResult {
     SaveProjectAs(PathBuf),
 }
 
+/// Active tab in the consolidated Setup window.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SetupTab {
+    Interfaces,
+    FixtureTemplates,
+    Objects,
+    Groups,
+    ColorPalettes,
+    ColorPaletteGroups,
+    Gradients,
+    AudioInputs,
+    InputControllers,
+}
+
+const SETUP_TABS: &[(SetupTab, &str)] = &[
+    (SetupTab::Interfaces, "Interfaces"),
+    (SetupTab::FixtureTemplates, "Fixture Templates"),
+    (SetupTab::Objects, "Objects"),
+    (SetupTab::Groups, "Groups"),
+    (SetupTab::ColorPalettes, "Color Palettes"),
+    (SetupTab::ColorPaletteGroups, "Palette Groups"),
+    (SetupTab::Gradients, "Gradients"),
+    (SetupTab::AudioInputs, "Audio Inputs"),
+    (SetupTab::InputControllers, "Input Controllers"),
+];
+
 struct LightBeatApp {
     graph: NodeGraph,
     engine: EngineHandle,
@@ -141,13 +167,8 @@ struct LightBeatApp {
     snapshot: Arc<std::sync::Mutex<beat_clock::LinkSnapshot>>,
     quit_requested: bool,
     show_dmx_monitor: bool,
-    show_fixture_list: bool,
-    show_object_list: bool,
-    show_interface_list: bool,
-    show_group_list: bool,
-    show_color_palettes: bool,
-    show_color_palette_groups: bool,
-    show_gradient_presets: bool,
+    show_setup: bool,
+    setup_active_tab: SetupTab,
     dmx_monitor: widgets::dmx_monitor::DmxMonitor,
     dmx_shared: dmx_io::SharedDmxState,
     object_store: dmx_io::SharedObjectStore,
@@ -162,13 +183,11 @@ struct LightBeatApp {
     gradient_preset_manager: widgets::gradient_preset_list::GradientPresetManager,
     gradient_library: widgets::nodes::math::gradient_source::SharedGradientLibrary,
     input_controllers: InputControllerManager,
-    show_input_controllers: bool,
     audio_inputs: AudioInputManager,
     /// Shared map of published Portal In names → values. Referenced by both
     /// Portal In and Portal Out process nodes so data flows between them
     /// without visible wires.
     portals: engine::nodes::meta::portal::SharedPortalRegistry,
-    show_audio_inputs: bool,
     library: LibraryManager,
     show_library: bool,
     library_search: String,
@@ -245,13 +264,8 @@ impl LightBeatApp {
             snapshot,
             quit_requested: false,
             show_dmx_monitor: false,
-            show_fixture_list: false,
-            show_object_list: false,
-            show_interface_list: false,
-            show_group_list: false,
-            show_color_palettes: false,
-            show_color_palette_groups: false,
-            show_gradient_presets: false,
+            show_setup: false,
+            setup_active_tab: SetupTab::Interfaces,
             dmx_monitor: widgets::dmx_monitor::DmxMonitor::new(),
             dmx_shared,
             object_store,
@@ -266,9 +280,7 @@ impl LightBeatApp {
             gradient_preset_manager: widgets::gradient_preset_list::GradientPresetManager::new(),
             gradient_library: widgets::nodes::math::gradient_source::new_shared_gradient_library(),
             input_controllers: InputControllerManager::new(),
-            show_input_controllers: false,
             audio_inputs: AudioInputManager::new(),
-            show_audio_inputs: false,
             portals: std::sync::Arc::new(std::sync::Mutex::new(
                 engine::nodes::meta::portal::PortalRegistry::default(),
             )),
@@ -580,7 +592,7 @@ impl LightBeatApp {
         let gctx = self.group_ctx.clone();
         self.graph.register_node("Output", "Group Output", move |id| {
             // Sized for the largest mode: Triggered (trigger + select + width + gradient) = 43 channels.
-            Box::new(GroupWidget::new(id, new_shared_state(43, 0), gctx.clone()))
+            Box::new(GroupWidget::new(id, new_shared_state(42, 0), gctx.clone()))
         });
         let gctx2 = self.group_ctx.clone();
         self.graph.register_node("Output", "Effect Stack", move |id| {
@@ -1214,6 +1226,42 @@ impl LightBeatApp {
             }
     }
 
+    /// Render the consolidated Setup window body: a top tab bar plus the
+    /// active tab's manager UI.
+    fn show_setup_tabs(&mut self, ui: &mut egui::Ui) {
+        ui.horizontal_wrapped(|ui| {
+            for (tab, label) in SETUP_TABS {
+                ui.selectable_value(&mut self.setup_active_tab, *tab, *label);
+            }
+        });
+        ui.separator();
+        egui::ScrollArea::both().auto_shrink([false, false]).show(ui, |ui| {
+            match self.setup_active_tab {
+                SetupTab::Interfaces => self.interface_manager.show(ui),
+                SetupTab::FixtureTemplates => self.fixture_manager.show(ui),
+                SetupTab::Objects => {
+                    let interface_names: Vec<(u32, String)> = self.interface_manager.interfaces
+                        .iter().map(|e| (e.id, e.name.clone())).collect();
+                    self.object_manager.show(ui, &self.fixture_manager.fixtures, &interface_names);
+                }
+                SetupTab::Groups => {
+                    self.group_manager.show(ui, &self.object_manager.objects);
+                }
+                SetupTab::ColorPalettes => self.color_palette_manager.show(ui),
+                SetupTab::ColorPaletteGroups => {
+                    self.color_palette_group_manager.show(ui, &self.color_palette_manager.palettes);
+                }
+                SetupTab::Gradients => self.gradient_preset_manager.show(ui),
+                SetupTab::AudioInputs => {
+                    widgets::audio_input_list::show(ui, &mut self.audio_inputs);
+                }
+                SetupTab::InputControllers => {
+                    widgets::input_controller_list::show(ui, &mut self.input_controllers);
+                }
+            }
+        });
+    }
+
     /// Handle a macro request emitted by the right-click menu in the graph.
     fn handle_macro_request(&mut self, req: MacroRequest) {
         match req {
@@ -1508,40 +1556,9 @@ impl eframe::App for LightBeatApp {
                     }
                 });
                 ui.menu_button("View", |ui| {
-                    if ui.checkbox(&mut self.show_fixture_list, "Fixture Templates").changed() {
-                        ui.close_menu();
-                    }
-                    if ui.checkbox(&mut self.show_object_list, "Objects").changed() {
-                        ui.close_menu();
-                    }
-                    if ui.checkbox(&mut self.show_group_list, "Groups").changed() {
-                        ui.close_menu();
-                    }
-                    if ui.checkbox(&mut self.show_interface_list, "Interfaces").changed() {
-                        ui.close_menu();
-                    }
-                    ui.separator();
-                    if ui.checkbox(&mut self.show_color_palettes, "Color Palettes").changed() {
-                        ui.close_menu();
-                    }
-                    if ui.checkbox(&mut self.show_color_palette_groups, "Color Palette Groups").changed() {
-                        ui.close_menu();
-                    }
-                    if ui.checkbox(&mut self.show_gradient_presets, "Gradients").changed() {
-                        ui.close_menu();
-                    }
-                    ui.separator();
-                    if ui.checkbox(&mut self.show_input_controllers, "Input Controllers").changed() {
-                        ui.close_menu();
-                    }
-                    if ui.checkbox(&mut self.show_audio_inputs, "Audio Inputs").changed() {
-                        ui.close_menu();
-                    }
-                    ui.separator();
                     if ui.checkbox(&mut self.show_library, "Add Nodes").changed() {
                         ui.close_menu();
                     }
-                    ui.separator();
                     if ui.checkbox(&mut self.show_dmx_monitor, "DMX Monitor").changed() {
                         ui.close_menu();
                     }
@@ -1560,119 +1577,36 @@ impl eframe::App for LightBeatApp {
                         if changed { self.config.save(); }
                     });
                 });
+                ui.menu_button("Window", |ui| {
+                    if ui.checkbox(&mut self.show_setup, "Setup…").changed() {
+                        ui.close_menu();
+                    }
+                });
             });
         });
 
-        // Track whether the pointer is over any setup window. This routes
-        // Ctrl+Z to the setup undoer instead of the project undoer.
+        // Consolidated Setup window — embedded `egui::Window` inside the
+        // main viewport. All setup managers (interfaces, fixtures, objects,
+        // groups, palettes, gradients, audio inputs, input controllers)
+        // live as tabs inside one window.
         let mut setup_hovered = false;
-        let mut mark_hovered = |r: Option<egui::InnerResponse<Option<()>>>| {
+        if self.show_setup {
+            // Stage the open flag locally so the closure can borrow `self`
+            // mutably; assign back after the window returns.
+            let mut open = true;
+            let r = egui::Window::new("Setup")
+                .open(&mut open)
+                .default_size([780.0, 560.0])
+                .min_width(420.0)
+                .min_height(320.0)
+                .show(ctx, |ui| {
+                    self.show_setup_tabs(ui);
+                });
+            self.show_setup = open;
             if let Some(ir) = r
                 && ir.response.contains_pointer() { setup_hovered = true; }
-        };
-
-        // Fixture templates window.
-        if self.show_fixture_list {
-            let r = egui::Window::new("Fixture Templates")
-                .open(&mut self.show_fixture_list)
-                .default_size([350.0, 400.0])
-                .show(ctx, |ui| {
-                    self.fixture_manager.show(ui);
-                });
-            mark_hovered(r);
         }
 
-        // Objects window.
-        if self.show_object_list {
-            let interface_names: Vec<(u32, String)> = self.interface_manager.interfaces
-                .iter()
-                .map(|e| (e.id, e.name.clone()))
-                .collect();
-            let r = egui::Window::new("Objects")
-                .open(&mut self.show_object_list)
-                .default_size([400.0, 400.0])
-                .show(ctx, |ui| {
-                    self.object_manager.show(ui, &self.fixture_manager.fixtures, &interface_names);
-                });
-            mark_hovered(r);
-        }
-
-        // Interface list window (toggled via View menu).
-        if self.show_interface_list {
-            let r = egui::Window::new("Interfaces")
-                .open(&mut self.show_interface_list)
-                .default_size([350.0, 300.0])
-                .show(ctx, |ui| {
-                    self.interface_manager.show(ui);
-                });
-            mark_hovered(r);
-        }
-
-        // Groups window (toggled via View menu).
-        if self.show_group_list {
-            let r = egui::Window::new("Groups")
-                .open(&mut self.show_group_list)
-                .default_size([350.0, 400.0])
-                .show(ctx, |ui| {
-                    self.group_manager.show(ui, &self.object_manager.objects);
-                });
-            mark_hovered(r);
-        }
-
-        // Color Palettes window.
-        if self.show_color_palettes {
-            let r = egui::Window::new("Color Palettes")
-                .open(&mut self.show_color_palettes)
-                .default_size([300.0, 400.0])
-                .show(ctx, |ui| {
-                    self.color_palette_manager.show(ui);
-                });
-            mark_hovered(r);
-        }
-
-        // Color Palette Groups window.
-        if self.show_color_palette_groups {
-            let r = egui::Window::new("Color Palette Groups")
-                .open(&mut self.show_color_palette_groups)
-                .default_size([350.0, 400.0])
-                .show(ctx, |ui| {
-                    self.color_palette_group_manager.show(ui, &self.color_palette_manager.palettes);
-                });
-            mark_hovered(r);
-        }
-
-        // Gradients window.
-        if self.show_gradient_presets {
-            let r = egui::Window::new("Gradients")
-                .open(&mut self.show_gradient_presets)
-                .default_size([420.0, 400.0])
-                .show(ctx, |ui| {
-                    self.gradient_preset_manager.show(ui);
-                });
-            mark_hovered(r);
-        }
-
-        // Input Controllers window.
-        if self.show_input_controllers {
-            let r = egui::Window::new("Input Controllers")
-                .open(&mut self.show_input_controllers)
-                .default_size([400.0, 500.0])
-                .show(ctx, |ui| {
-                    widgets::input_controller_list::show(ui, &mut self.input_controllers);
-                });
-            mark_hovered(r);
-        }
-
-        // Audio Inputs window.
-        if self.show_audio_inputs {
-            let r = egui::Window::new("Audio Inputs")
-                .open(&mut self.show_audio_inputs)
-                .default_size([420.0, 500.0])
-                .show(ctx, |ui| {
-                    widgets::audio_input_list::show(ui, &mut self.audio_inputs);
-                });
-            mark_hovered(r);
-        }
         // Periodic reconnect / port availability checks.
         self.input_controllers.tick_reconnect();
         self.audio_inputs.tick_reconnect();
@@ -1911,16 +1845,23 @@ impl eframe::App for LightBeatApp {
         // Accept drops from the Add Nodes panel onto the canvas. We only
         // consume the payload when the pointer is released inside the canvas
         // rect — otherwise egui keeps the drag alive and the user can
-        // continue aiming.
+        // continue aiming. `take_payload` always removes the payload even
+        // when the type doesn't match, so dispatch via the non-consuming
+        // `has_payload_of_type` first and only `take_payload` the right one.
         if ctx.input(|i| i.pointer.any_released())
             && let Some(pos) = ctx.pointer_interact_pos()
             && self.graph.canvas_rect().contains(pos) {
                 let world = self.graph.screen_to_world(pos);
-                if let Some(p) = egui::DragAndDrop::take_payload::<MacroDragPayload>(ctx) {
-                    self.instantiate_macro_from_path(&p.path, world);
-                } else if let Some(p) = egui::DragAndDrop::take_payload::<NodeDragPayload>(ctx) {
-                    self.graph.spawn_from_registry(p.registry_idx, world);
-                } else if egui::DragAndDrop::take_payload::<FrameDragPayload>(ctx).is_some() {
+                if egui::DragAndDrop::has_payload_of_type::<MacroDragPayload>(ctx) {
+                    if let Some(p) = egui::DragAndDrop::take_payload::<MacroDragPayload>(ctx) {
+                        self.instantiate_macro_from_path(&p.path, world);
+                    }
+                } else if egui::DragAndDrop::has_payload_of_type::<NodeDragPayload>(ctx) {
+                    if let Some(p) = egui::DragAndDrop::take_payload::<NodeDragPayload>(ctx) {
+                        self.graph.spawn_from_registry(p.registry_idx, world);
+                    }
+                } else if egui::DragAndDrop::has_payload_of_type::<FrameDragPayload>(ctx) {
+                    let _ = egui::DragAndDrop::take_payload::<FrameDragPayload>(ctx);
                     self.graph.add_frame_at(world);
                 }
             }
@@ -1961,8 +1902,8 @@ impl eframe::App for LightBeatApp {
         }
 
         // Undo / Redo: Ctrl+Z / Ctrl+Shift+Z (and Ctrl+Y for redo).
-        // Routes to the setup undoer if the pointer is over a setup window,
-        // otherwise to the project undoer.
+        // Routes to the setup undoer when the pointer is over the Setup
+        // window, otherwise to the project undoer.
         let undo_pressed = ctx.input(|i| {
             i.modifiers.ctrl && !i.modifiers.shift && i.key_pressed(egui::Key::Z)
         });

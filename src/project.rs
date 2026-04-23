@@ -310,23 +310,6 @@ pub fn load_graph(graph: &mut NodeGraph, project: &ProjectFile) -> Vec<usize> {
 
             // Restore Group Output widget state from save_data.
             if saved.type_name == "Group Output" {
-                // Sync the mode onto the widget BEFORE cleanup_stale_connections
-                // runs, so Triggered-mode wires (trigger/select/width/gradient)
-                // aren't dropped because the widget still reports Flood ports.
-                // Note: SavedParamValue is `#[serde(untagged)]`, so Choice(1)
-                // round-trips through JSON as Float(1.0) — always coerce via as_f64.
-                let mode_idx = saved.params.iter()
-                    .find(|p| p.index == 0)
-                    .map(|p| p.value.as_f64() as usize);
-                if let Some(i) = mode_idx {
-                    let n = graph.node_mut(idx);
-                    if let Some(grp) = n.as_any_mut().downcast_mut::<GroupWidget>() {
-                        grp.set_mode_from_load(
-                            crate::engine::nodes::output::group::GroupMode::from_index(i),
-                        );
-                    }
-                }
-
                 if let Some(data) = &saved.data {
                     let n = graph.node_mut(idx);
                     if let Some(grp) = n.as_any_mut().downcast_mut::<GroupWidget>() {
