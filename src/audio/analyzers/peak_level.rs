@@ -8,7 +8,7 @@ use std::thread;
 use crossbeam_channel::Receiver;
 use parking_lot::{Mutex, RwLock};
 
-use crate::audio::device::AudioChunk;
+use crate::audio::backend::AudioChunk;
 use crate::engine::types::{ParamDef, ParamValue};
 
 #[derive(Clone, Copy, Debug, PartialEq)]

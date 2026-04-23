@@ -1,6 +1,7 @@
 use egui::{self, Color32, Ui};
 
 use crate::audio::analyzers::AnalyzerKind;
+use crate::audio::backend::AudioBackendKind;
 use crate::audio::manager::{AudioInputManager, ConnectionStatus};
 
 pub fn show(ui: &mut Ui, mgr: &mut AudioInputManager) {
@@ -12,12 +13,16 @@ pub fn show(ui: &mut Ui, mgr: &mut AudioInputManager) {
     });
     ui.separator();
 
-    // Cached device list — avoid re-enumerating cpal/ALSA on every frame
-    // (it's slow and stderr-noisy with virtual ALSA devices).
-    let available_devices: Vec<String> = mgr.cached_devices().to_vec();
+    // Snapshot device lists for each backend before the shared-state lock so
+    // the UI closure doesn't borrow `mgr` twice.
+    let mgr_devices: std::collections::HashMap<AudioBackendKind, Vec<String>> =
+        AudioBackendKind::ALL.iter()
+            .map(|k| (*k, mgr.cached_devices_for(*k).to_vec()))
+            .collect();
 
     let mut remove_input: Option<u32> = None;
     let mut rename_input: Vec<(u32, String)> = Vec::new();
+    let mut set_backend: Vec<(u32, AudioBackendKind)> = Vec::new();
     let mut set_device: Vec<(u32, String)> = Vec::new();
     let mut set_rate: Vec<(u32, Option<u32>)> = Vec::new();
     let mut set_buffer: Vec<(u32, Option<u32>)> = Vec::new();
@@ -46,6 +51,21 @@ pub fn show(ui: &mut Ui, mgr: &mut AudioInputManager) {
                                 }
                             });
 
+                            ui.horizontal(|ui| {
+                                ui.label("Backend:");
+                                egui::ComboBox::from_id_salt(("backend", c.id))
+                                    .selected_text(c.backend.label())
+                                    .show_ui(ui, |ui| {
+                                        for k in AudioBackendKind::ALL {
+                                            if ui.selectable_label(c.backend == *k, k.label()).clicked() {
+                                                set_backend.push((c.id, *k));
+                                            }
+                                        }
+                                    });
+                            });
+                            let available_devices = mgr_devices.get(&c.backend)
+                                .cloned()
+                                .unwrap_or_default();
                             ui.horizontal(|ui| {
                                 ui.label("Device:");
                                 let label = if c.device_name.is_empty() { "(none)".to_string() } else { c.device_name.clone() };
@@ -176,6 +196,7 @@ pub fn show(ui: &mut Ui, mgr: &mut AudioInputManager) {
 
     // Apply queued mutations after the lock is released.
     for (id, name) in rename_input { mgr.rename(id, name); }
+    for (id, b) in set_backend { mgr.set_backend(id, b); }
     for (id, dev) in set_device { mgr.set_device(id, dev); }
     for (id, sr) in set_rate { mgr.set_sample_rate(id, sr); }
     for (id, bs) in set_buffer { mgr.set_buffer_size(id, bs); }

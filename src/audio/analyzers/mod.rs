@@ -143,7 +143,7 @@ impl AnalyzerInstance {
 /// Spawn an analyzer of the given kind, subscribed to the audio chunk stream.
 pub fn spawn_analyzer(
     kind: AnalyzerKind,
-    rx: crossbeam_channel::Receiver<crate::audio::device::AudioChunk>,
+    rx: crossbeam_channel::Receiver<crate::audio::backend::AudioChunk>,
     sample_rate: u32,
 ) -> AnalyzerInstance {
     match kind {
@@ -168,4 +168,4 @@ pub fn spawn_analyzer(
 
 /// Holder used by the manager so each analyzer can be dropped & recreated when
 /// the audio input is reopened (e.g. after a sample-rate change).
-pub type SharedAudioChunkRx = Arc<crossbeam_channel::Receiver<crate::audio::device::AudioChunk>>;
+pub type SharedAudioChunkRx = Arc<crossbeam_channel::Receiver<crate::audio::backend::AudioChunk>>;

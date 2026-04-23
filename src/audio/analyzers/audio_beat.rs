@@ -15,7 +15,7 @@ use num_complex::Complex32;
 use parking_lot::RwLock;
 use realfft::{RealFftPlanner, RealToComplex};
 
-use crate::audio::device::AudioChunk;
+use crate::audio::backend::AudioChunk;
 use crate::engine::types::{ParamDef, ParamValue};
 
 const ANALYSIS_WINDOW: usize = 1024;

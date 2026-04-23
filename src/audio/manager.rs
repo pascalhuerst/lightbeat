@@ -2,14 +2,15 @@
 //! `InputControllerManager`: persistent configs in SetupFile, runtime state
 //! kept here for the engine and UI to read.
 
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 
 use crate::audio::analyzers::{AnalyzerConfig, AnalyzerInstance, AnalyzerKind, spawn_analyzer};
-use crate::audio::device::{
-    self, DEFAULT_SAMPLE_RATE, DeviceInfo, InputStream, StreamRequest, mk_subscriber,
+use crate::audio::backend::{
+    AudioBackendKind, DEFAULT_SAMPLE_RATE, InputStream, StreamRequest, backend_for, mk_subscriber,
 };
 use crate::engine::types::{ParamDef, ParamValue};
 
@@ -23,7 +24,11 @@ const DEVICE_RESCAN_INTERVAL: Duration = Duration::from_secs(3);
 pub struct AudioInputConfig {
     pub id: u32,
     pub name: String,
-    /// cpal device display name; empty = no mapping yet.
+    /// Which audio backend owns this input. Defaults to Cpal so setups that
+    /// predate the backend selector still load unchanged.
+    #[serde(default)]
+    pub backend: AudioBackendKind,
+    /// Backend-specific device display name; empty = no mapping yet.
     pub device_name: String,
     #[serde(default)]
     pub sample_rate: Option<u32>,
@@ -38,6 +43,7 @@ pub struct AudioInputConfig {
 pub struct AudioInputRuntime {
     pub id: u32,
     pub name: String,
+    pub backend: AudioBackendKind,
     pub device_name: String,
     pub sample_rate: Option<u32>,
     pub buffer_size_frames: Option<u32>,
@@ -47,7 +53,7 @@ pub struct AudioInputRuntime {
     /// kept in lockstep with `analyzer_kinds`.
     pub analyzers: Vec<AnalyzerInstance>,
     pub status: ConnectionStatus,
-    /// Negotiated sample rate from cpal once the stream opens (0 until then).
+    /// Negotiated sample rate from the backend once the stream opens (0 until then).
     pub actual_sample_rate: u32,
     pub actual_buffer_frames: usize,
     /// Audio Input node id currently bound to this input (None = available).
@@ -60,6 +66,7 @@ impl AudioInputRuntime {
         Self {
             id: c.id,
             name: c.name.clone(),
+            backend: c.backend,
             device_name: c.device_name.clone(),
             sample_rate: c.sample_rate,
             buffer_size_frames: c.buffer_size_frames,
@@ -76,6 +83,7 @@ impl AudioInputRuntime {
         AudioInputConfig {
             id: self.id,
             name: self.name.clone(),
+            backend: self.backend,
             device_name: self.device_name.clone(),
             sample_rate: self.sample_rate,
             buffer_size_frames: self.buffer_size_frames,
@@ -138,21 +146,22 @@ pub type SharedAudioInputs = Arc<Mutex<Vec<AudioInputRuntime>>>;
 
 pub struct AudioInputManager {
     pub shared: SharedAudioInputs,
-    /// Active per-input cpal streams. Dropped when the corresponding input is
-    /// removed or its config (device/rate/buffer) changes.
+    /// Active per-input streams. Dropped when the corresponding input is
+    /// removed or its config (backend/device/rate/buffer) changes.
     streams: Vec<ActiveStream>,
-    /// Cached device list so we don't re-enumerate on every UI frame
-    /// (cpal/ALSA enumeration is slow and stderr-noisy).
-    cached_device_names: Vec<String>,
+    /// Cached device names per backend so we don't re-enumerate on every UI
+    /// frame (backend enumeration can be slow and stderr-noisy).
+    cached_devices: HashMap<AudioBackendKind, Vec<String>>,
     last_device_scan: Option<Instant>,
 }
 
 struct ActiveStream {
     input_id: u32,
+    backend: AudioBackendKind,
     device_name: String,
     /// What the user *requested*. Compared against the desired config to
-    /// decide whether the stream needs to be reopened. Cpal may negotiate a
-    /// different actual rate, but that's irrelevant for matching.
+    /// decide whether the stream needs to be reopened. The backend may
+    /// negotiate a different actual rate, but that's irrelevant for matching.
     requested_sample_rate: Option<u32>,
     buffer_size: Option<u32>,
     _stream: InputStream,
@@ -163,12 +172,12 @@ impl AudioInputManager {
         Self {
             shared: Arc::new(Mutex::new(Vec::new())),
             streams: Vec::new(),
-            cached_device_names: Vec::new(),
+            cached_devices: HashMap::new(),
             last_device_scan: None,
         }
     }
 
-    /// Common sample rates to offer in the UI. Cpal will negotiate the
+    /// Common sample rates to offer in the UI. The backend negotiates the
     /// closest one the device actually supports — no per-device probing.
     pub const COMMON_SAMPLE_RATES: &'static [u32] = &[44_100, 48_000, 88_200, 96_000, 192_000];
 
@@ -199,22 +208,25 @@ impl AudioInputManager {
         }
     }
 
-    /// Cached list of available device names. Used by the UI; only refreshed
-    /// by `tick_reconnect`'s throttled scan or an explicit `force_rescan`.
-    pub fn cached_devices(&self) -> &[String] {
-        &self.cached_device_names
+    /// Cached device names for a specific backend — used by the UI's device
+    /// dropdown. Refreshed by `force_rescan` or the throttled scan in
+    /// `tick_reconnect`.
+    pub fn cached_devices_for(&self, backend: AudioBackendKind) -> &[String] {
+        self.cached_devices.get(&backend).map(|v| v.as_slice()).unwrap_or(&[])
     }
 
-    /// Force a fresh device enumeration (UI "Refresh" button).
-    /// Note: sample-rate probing is *not* done here — that's per-device
-    /// enumeration via `supported_input_configs` which on Linux/ALSA spams
-    /// stderr with dmix/dsnoop errors. We expose a fixed common-rate list
-    /// in the UI and let cpal negotiate the actual rate at stream open.
+    /// Force a fresh device enumeration across all backends (UI "Refresh" button).
     pub fn force_rescan(&mut self) {
         self.last_device_scan = Some(Instant::now());
-        let devs = device::list_inputs();
-        self.cached_device_names = devs.iter().map(|d| d.name.clone()).collect();
-        self.reconcile_with(devs);
+        self.rescan_devices();
+        self.reconcile();
+    }
+
+    fn rescan_devices(&mut self) {
+        for kind in AudioBackendKind::ALL {
+            let names = backend_for(*kind).list_input_names();
+            self.cached_devices.insert(*kind, names);
+        }
     }
 
     /// Replace the entire input set (called on setup load/undo/redo).
@@ -237,6 +249,7 @@ impl AudioInputManager {
         state.push(AudioInputRuntime {
             id,
             name,
+            backend: AudioBackendKind::default(),
             device_name: String::new(),
             sample_rate: Some(DEFAULT_SAMPLE_RATE),
             buffer_size_frames: None,
@@ -264,6 +277,22 @@ impl AudioInputManager {
         if let Some(c) = state.iter_mut().find(|c| c.id == id) {
             c.name = name;
         }
+    }
+
+    /// Switch the backend for an input. Clears the device-name mapping since
+    /// device names aren't portable across backends.
+    pub fn set_backend(&mut self, id: u32, backend: AudioBackendKind) {
+        {
+            let mut state = self.shared.lock().unwrap();
+            if let Some(c) = state.iter_mut().find(|c| c.id == id) {
+                if c.backend == backend { return; }
+                c.backend = backend;
+                c.device_name = String::new();
+                c.status = ConnectionStatus::Disconnected;
+                c.analyzers.clear();
+            }
+        }
+        self.reconcile();
     }
 
     pub fn set_device(&mut self, id: u32, device_name: String) {
@@ -306,8 +335,8 @@ impl AudioInputManager {
                 c.analyzer_kinds.push(kind);
             }
         }
-        // cpal streams are immutable after creation — drop the existing
-        // stream so reconcile re-opens it with the new subscriber set.
+        // Streams are immutable after creation — drop the existing stream so
+        // reconcile re-opens it with the new subscriber set.
         self.streams.retain(|s| s.input_id != input_id);
         self.reconcile();
     }
@@ -349,29 +378,28 @@ impl AudioInputManager {
             return;
         }
         self.last_device_scan = Some(Instant::now());
-        let devs = device::list_inputs();
-        self.cached_device_names = devs.iter().map(|d| d.name.clone()).collect();
-        self.reconcile_with(devs);
+        self.rescan_devices();
+        self.reconcile_internal();
     }
 
     fn reconcile(&mut self) {
-        let devs = device::list_inputs();
-        self.cached_device_names = devs.iter().map(|d| d.name.clone()).collect();
+        self.rescan_devices();
         self.last_device_scan = Some(Instant::now());
-        self.reconcile_with(devs);
+        self.reconcile_internal();
     }
 
-    fn reconcile_with(&mut self, available: Vec<DeviceInfo>) {
+    fn reconcile_internal(&mut self) {
         // Snapshot desired configs from the persistent kind list (not the
         // live `analyzers` vec — that's only populated after a successful
         // stream open).
-        let desired: Vec<(u32, String, Option<u32>, Option<u32>, Vec<AnalyzerKind>)> = {
+        let desired: Vec<(u32, AudioBackendKind, String, Option<u32>, Option<u32>, Vec<AnalyzerKind>)> = {
             let state = self.shared.lock().unwrap();
             state
                 .iter()
                 .map(|c| {
                     (
                         c.id,
+                        c.backend,
                         c.device_name.clone(),
                         c.sample_rate,
                         c.buffer_size_frames,
@@ -383,20 +411,24 @@ impl AudioInputManager {
 
         // Drop streams whose configured request no longer matches (or whose
         // device disappeared). We compare the *request*, not the negotiated
-        // rate — cpal may pick a different rate when the device can't honor
-        // the request, and we don't want that to cause a respawn loop.
+        // rate — the backend may pick a different rate when the device can't
+        // honor the request, and we don't want that to cause a respawn loop.
+        let cached = self.cached_devices.clone();
         self.streams.retain(|s| {
-            desired.iter().any(|(id, name, sr, bs, _)| {
+            desired.iter().any(|(id, backend, name, sr, bs, _)| {
                 *id == s.input_id
+                    && *backend == s.backend
                     && *name == s.device_name
                     && *sr == s.requested_sample_rate
                     && *bs == s.buffer_size
-                    && available.iter().any(|d| d.name == s.device_name)
+                    && cached.get(&s.backend)
+                        .map(|names| names.iter().any(|n| n == &s.device_name))
+                        .unwrap_or(false)
             })
         });
 
         // Clear stale analyzer instances on inputs whose stream was just dropped.
-        // Their threads exited when the cpal stream closed (recv() returned Err
+        // Their threads exited when the stream closed (recv() returned Err
         // because the senders were dropped); the stale handles would otherwise
         // expose frozen output values.
         {
@@ -410,7 +442,7 @@ impl AudioInputManager {
         }
 
         // Open streams for desired configs that don't have one yet.
-        for (id, device_name, sr, bs, kinds) in &desired {
+        for (id, backend, device_name, sr, bs, kinds) in &desired {
             if device_name.is_empty() {
                 let mut state = self.shared.lock().unwrap();
                 if let Some(c) = state.iter_mut().find(|c| c.id == *id) {
@@ -422,16 +454,14 @@ impl AudioInputManager {
             if already_open {
                 continue;
             }
-            let dev = match available.iter().find(|d| &d.name == device_name) {
-                Some(d) => d,
-                None => {
-                    let mut state = self.shared.lock().unwrap();
-                    if let Some(c) = state.iter_mut().find(|c| c.id == *id) {
-                        c.status = ConnectionStatus::Waiting;
-                    }
-                    continue;
+            let available_for_backend = cached.get(backend).cloned().unwrap_or_default();
+            if !available_for_backend.iter().any(|n| n == device_name) {
+                let mut state = self.shared.lock().unwrap();
+                if let Some(c) = state.iter_mut().find(|c| c.id == *id) {
+                    c.status = ConnectionStatus::Waiting;
                 }
-            };
+                continue;
+            }
 
             // Build subscribers — one per analyzer.
             let mut senders = Vec::with_capacity(kinds.len());
@@ -446,7 +476,8 @@ impl AudioInputManager {
                 sample_rate: *sr,
                 buffer_size_frames: *bs,
             };
-            match device::open_input(&dev.device, request, senders) {
+            let backend_impl = backend_for(*backend);
+            match backend_impl.open_input(device_name, request, senders) {
                 Ok(stream) => {
                     let actual_sr = stream.sample_rate;
                     let actual_bs = stream.observed_chunk_frames();
@@ -459,6 +490,7 @@ impl AudioInputManager {
 
                     self.streams.push(ActiveStream {
                         input_id: *id,
+                        backend: *backend,
                         device_name: device_name.clone(),
                         requested_sample_rate: *sr,
                         buffer_size: *bs,
@@ -474,7 +506,7 @@ impl AudioInputManager {
                     }
                 }
                 Err(e) => {
-                    eprintln!("[audio] open '{}': {}", device_name, e);
+                    eprintln!("[audio/{}] open '{}': {}", backend.label(), device_name, e);
                     let mut state = self.shared.lock().unwrap();
                     if let Some(c) = state.iter_mut().find(|c| c.id == *id) {
                         c.status = ConnectionStatus::Waiting;

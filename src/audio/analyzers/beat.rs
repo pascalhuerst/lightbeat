@@ -14,7 +14,7 @@ use parking_lot::RwLock;
 use realfft::{RealFftPlanner, RealToComplex};
 use rustfft::{Fft as RFft, FftPlanner as RFftPlanner};
 
-use crate::audio::device::AudioChunk;
+use crate::audio::backend::AudioChunk;
 use crate::engine::types::{ParamDef, ParamValue};
 
 const ANALYSIS_WINDOW: usize = 1024;

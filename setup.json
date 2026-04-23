@@ -6742,6 +6742,7 @@
     {
       "id": 1,
       "name": "Pipewire",
+      "backend": "Cpal",
       "device_name": "pipewire",
       "sample_rate": 48000,
       "buffer_size_frames": null,
@@ -6759,6 +6760,15 @@
           "kind": "AudioBeat"
         }
       ]
+    },
+    {
+      "id": 2,
+      "name": "Audio Input",
+      "backend": "Cpal",
+      "device_name": "",
+      "sample_rate": 48000,
+      "buffer_size_frames": null,
+      "analyzers": []
     }
   ]
 }
