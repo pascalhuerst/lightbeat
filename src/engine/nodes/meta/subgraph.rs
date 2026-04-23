@@ -142,9 +142,14 @@ impl InnerGraph {
             node.set_input_connections(&per_node_connected[i]);
         }
 
-        // 1. Process all inner nodes.
-        for node in self.nodes.iter_mut() {
-            node.process();
+        // 1. Process all inner nodes — skipping disabled ones.
+        let disabled_mask: Vec<bool> = self.shared_states.iter()
+            .map(|s| s.lock().unwrap().disabled)
+            .collect();
+        for (i, node) in self.nodes.iter_mut().enumerate() {
+            if !disabled_mask.get(i).copied().unwrap_or(false) {
+                node.process();
+            }
         }
 
         // 2. Propagate connections (including bridge connections).
@@ -245,9 +250,15 @@ impl InnerGraph {
             }
         }
 
-        // 4. Update shared state for UI.
+        // 4. Update shared state for UI. Disabled inner nodes skip the
+        // heavy display / save_data / buffer sync paths — same trick as
+        // the root graph's tick.
         for (i, node) in self.nodes.iter().enumerate() {
             let mut shared = self.shared_states[i].lock().unwrap();
+            shared.inputs_connected = per_node_connected[i].clone();
+            if disabled_mask.get(i).copied().unwrap_or(false) {
+                continue;
+            }
             let total_out = total_channels(node.outputs());
             for ch in 0..total_out.min(shared.outputs.len()) {
                 shared.outputs[ch] = node.read_output(ch);
@@ -256,7 +267,6 @@ impl InnerGraph {
             for ch in 0..total_in.min(shared.inputs.len()) {
                 shared.inputs[ch] = node.read_input(ch);
             }
-            shared.inputs_connected = per_node_connected[i].clone();
             shared.current_params = node.params();
             shared.save_data = node.save_data();
             node.update_display(&mut shared);

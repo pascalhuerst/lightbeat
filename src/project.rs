@@ -75,6 +75,11 @@ pub struct SavedNode {
     /// Inner graph for Subgraph nodes (recursive).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub inner_graph: Option<ProjectFile>,
+    /// Whether this node is currently disabled (engine skips its tick).
+    /// Defaults to false; the `skip_serializing_if` keeps disabled-less
+    /// nodes from writing the field.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub disabled: bool,
 }
 
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
@@ -150,6 +155,7 @@ pub fn save_level(level: &GraphLevel, graph: &NodeGraph) -> ProjectFile {
         }
 
         let data = shared.save_data.clone();
+        let disabled = shared.disabled;
         drop(shared);
 
         // For Subgraph nodes, recursively save the inner level.
@@ -169,6 +175,7 @@ pub fn save_level(level: &GraphLevel, graph: &NodeGraph) -> ProjectFile {
             params,
             data,
             inner_graph,
+            disabled,
         });
     }
 
@@ -247,6 +254,7 @@ pub fn load_graph(graph: &mut NodeGraph, project: &ProjectFile) -> Vec<usize> {
                     };
                     shared.pending_params.push((sp.index, val));
                 }
+                shared.disabled = saved.disabled;
             }
 
             // For Subgraph nodes, restore port definitions on the widget

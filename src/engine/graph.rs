@@ -152,9 +152,16 @@ impl EngineGraph {
             node.set_input_connections(&per_node_connected[i]);
         }
 
-        // 1. Process all nodes.
-        for node in self.nodes.iter_mut() {
-            node.process();
+        // 1. Process all nodes — skipping disabled ones. Disabled nodes
+        // keep their previous tick's output values, so downstream signal
+        // flow freezes instead of dropping to zero.
+        let disabled_mask: Vec<bool> = self.shared_states.iter()
+            .map(|s| s.lock().unwrap().disabled)
+            .collect();
+        for (i, node) in self.nodes.iter_mut().enumerate() {
+            if !disabled_mask.get(i).copied().unwrap_or(false) {
+                node.process();
+            }
         }
 
         // 2. Propagate signals through connections.
@@ -210,8 +217,17 @@ impl EngineGraph {
         }
 
         // 4. Update shared state for UI.
+        // For disabled nodes we skip update_display / save_data / shared
+        // buffer copies — their values are all frozen so repeating the
+        // work each tick accomplishes nothing. `inputs_connected` still
+        // refreshes so the UI sees live wire state even on off nodes
+        // (so you can still see what's wired where before re-enabling).
         for (i, node) in self.nodes.iter().enumerate() {
             let mut shared = self.shared_states[i].lock().unwrap();
+            shared.inputs_connected = per_node_connected[i].clone();
+            if disabled_mask.get(i).copied().unwrap_or(false) {
+                continue;
+            }
             let total_out = total_channels(node.outputs());
             for ch in 0..total_out.min(shared.outputs.len()) {
                 shared.outputs[ch] = node.read_output(ch);
@@ -220,7 +236,6 @@ impl EngineGraph {
             for ch in 0..total_in.min(shared.inputs.len()) {
                 shared.inputs[ch] = node.read_input(ch);
             }
-            shared.inputs_connected = per_node_connected[i].clone();
             shared.current_params = node.params();
             shared.save_data = node.save_data();
             node.update_display(&mut shared);

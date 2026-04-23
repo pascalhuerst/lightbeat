@@ -1328,6 +1328,7 @@ impl NodeGraph {
             let in_highlights: Vec<f32> = (0..inputs.len())
                 .map(|pi| level.nodes[i].input_highlight(pi, now))
                 .collect();
+            let disabled = level.nodes[i].shared_state().lock().unwrap().disabled;
             draw_node_chrome(
                 &painter,
                 level.nodes[i].title(),
@@ -1337,6 +1338,7 @@ impl NodeGraph {
                 &outputs,
                 &in_highlights,
                 &out_highlights,
+                disabled,
                 node_rects[i],
                 selected,
                 portal_peer,
@@ -1381,6 +1383,25 @@ impl NodeGraph {
 
                 level.nodes[i].show_content(&mut content_ui, z);
             }
+        }
+
+        // -- Disabled-node wash --
+        // Drawn AFTER widget content so it actually covers things like the
+        // fader's coloured fill or the XY pad's cyan knob. Near-opaque gray
+        // so no colour from the widget's own painter leaks through.
+        let level = self.active();
+        for i in 0..level.nodes.len() {
+            let disabled = level.nodes[i].shared_state().lock().unwrap().disabled;
+            if !disabled { continue; }
+            let rect = node_rects[i];
+            let body_rect = Rect::from_min_max(
+                Pos2::new(rect.min.x, rect.min.y + NODE_TITLE_HEIGHT * z),
+                rect.max,
+            );
+            painter.rect_filled(
+                body_rect, NODE_CORNER_RADIUS,
+                Color32::from_rgba_unmultiplied(28, 28, 30, 225),
+            );
         }
 
         // -- Draw selection rectangle --
@@ -2342,6 +2363,27 @@ impl NodeGraph {
 
             // --- Node selection and dragging ---
             if primary_pressed && on_canvas && !self.drag.dragging_nodes && self.drag.resizing_node.is_none() {
+                // --- Title-bar enable/disable toggle hit-test ---
+                // Runs before the selection / drag logic so clicks on the
+                // toggle never start a title drag.
+                {
+                    let mut toggle_hit: Option<usize> = None;
+                    for i in (0..self.active().nodes.len()).rev() {
+                        if i >= node_rects.len() { break; }
+                        let t = title_toggle_rect(node_rects[i], z);
+                        if t.contains(pointer_pos) {
+                            toggle_hit = Some(i);
+                            break;
+                        }
+                    }
+                    if let Some(i) = toggle_hit {
+                        let shared = self.active().nodes[i].shared_state().clone();
+                        let mut s = shared.lock().unwrap();
+                        s.disabled = !s.disabled;
+                        return;
+                    }
+                }
+
                 let mut clicked_node = None;
                 let level = self.active();
                 for i in (0..level.nodes.len()).rev() {
@@ -3068,6 +3110,19 @@ fn node_content_rect(rect: Rect, zoom: f32) -> Rect {
 const SELECTED_BORDER: Color32 = Color32::from_rgb(100, 160, 255);
 const PORTAL_PEER_BORDER: Color32 = Color32::from_rgb(220, 180, 80);
 
+/// Rect of the title-bar enable/disable toggle (a small button at the
+/// right edge of the title bar). Shared between the renderer and the
+/// interaction hit-test so the click region and the visible glyph are
+/// always aligned.
+fn title_toggle_rect(node_rect: Rect, zoom: f32) -> Rect {
+    let title_h = NODE_TITLE_HEIGHT * zoom;
+    let btn_size = 14.0 * zoom;
+    let inset = 5.0 * zoom;
+    let cx = node_rect.max.x - inset - btn_size * 0.5;
+    let cy = node_rect.min.y + title_h * 0.5;
+    Rect::from_center_size(Pos2::new(cx, cy), Vec2::splat(btn_size))
+}
+
 fn draw_node_chrome(
     painter: &Painter,
     title: &str,
@@ -3077,6 +3132,7 @@ fn draw_node_chrome(
     outputs: &[UiPortDef],
     in_highlights: &[f32],
     out_highlights: &[f32],
+    disabled: bool,
     rect: Rect,
     selected: bool,
     portal_peer: bool,
@@ -3089,49 +3145,89 @@ fn draw_node_chrome(
     // Accent glow: a soft halo behind the node in the accent colour, so
     // "important" node kinds (subgraphs, portals…) stand out even when not
     // selected. Portal-peer glow takes precedence so linked-portal pairs
-    // keep their amber indicator regardless of accent.
-    if portal_peer {
-        let halo = rect.expand(3.0);
-        painter.rect_filled(
-            halo,
-            NODE_CORNER_RADIUS + 3.0,
-            Color32::from_rgba_unmultiplied(220, 180, 80, 40),
-        );
-    } else if let Some(a) = accent {
-        let halo = rect.expand(2.5);
-        painter.rect_filled(
-            halo,
-            NODE_CORNER_RADIUS + 2.5,
-            Color32::from_rgba_unmultiplied(a.r(), a.g(), a.b(), 50),
-        );
+    // keep their amber indicator regardless of accent. All accents are
+    // suppressed when disabled — a disabled node reads as pure grayscale
+    // chrome so the "off" state is obvious at a glance.
+    if !disabled {
+        if portal_peer {
+            let halo = rect.expand(3.0);
+            painter.rect_filled(
+                halo,
+                NODE_CORNER_RADIUS + 3.0,
+                Color32::from_rgba_unmultiplied(220, 180, 80, 40),
+            );
+        } else if let Some(a) = accent {
+            let halo = rect.expand(2.5);
+            painter.rect_filled(
+                halo,
+                NODE_CORNER_RADIUS + 2.5,
+                Color32::from_rgba_unmultiplied(a.r(), a.g(), a.b(), 50),
+            );
+        }
     }
 
-    // Body
-    painter.rect_filled(rect, NODE_CORNER_RADIUS, NODE_BG);
+    // Body — darker flat gray when disabled so the overlay later looks
+    // uniform, regular dark when enabled.
+    let body_bg = if disabled { Color32::from_gray(32) } else { NODE_BG };
+    painter.rect_filled(rect, NODE_CORNER_RADIUS, body_bg);
 
-    // Title bar — accent-tinted when provided, otherwise the neutral dark.
-    // Mix with the dark default so white title text keeps contrast even
-    // with bright accent colours.
-    let title_bg = accent
-        .map(|a| mix_color(a, NODE_TITLE_BG, 0.45))
-        .unwrap_or(NODE_TITLE_BG);
+    // Title bar — accent-tinted when enabled; when disabled, strip the
+    // accent and use a neutral darker gray so no colour leaks into the
+    // title chrome.
+    let title_bg = if disabled {
+        Color32::from_gray(38)
+    } else {
+        accent
+            .map(|a| mix_color(a, NODE_TITLE_BG, 0.45))
+            .unwrap_or(NODE_TITLE_BG)
+    };
     let title_rect = Rect::from_min_size(rect.min, Vec2::new(rect.width(), NODE_TITLE_HEIGHT * zoom));
     painter.rect_filled(
         title_rect,
         egui::CornerRadius { nw: NODE_CORNER_RADIUS as u8, ne: NODE_CORNER_RADIUS as u8, sw: 0, se: 0 },
         title_bg,
     );
+    // Title text is nudged slightly left so it doesn't crash into the
+    // disable toggle we draw on the right edge.
+    let title_text_center = Pos2::new(
+        title_rect.center().x - 10.0 * zoom,
+        title_rect.center().y,
+    );
+    let title_color = if disabled { Color32::from_gray(150) } else { Color32::WHITE };
     painter.text(
-        title_rect.center(),
+        title_text_center,
         egui::Align2::CENTER_CENTER,
         title,
         egui::FontId::proportional(13.0 * zoom),
-        Color32::WHITE,
+        title_color,
     );
 
-    // Border. Priority: selected > portal_peer > accent > default.
+    // Enable / disable toggle at the right of the title bar.
+    let toggle = title_toggle_rect(rect, zoom);
+    let (fg, stroke_col) = if disabled {
+        (Color32::from_gray(80), Color32::from_gray(150))
+    } else {
+        (Color32::from_rgb(80, 200, 140), Color32::from_rgb(200, 240, 220))
+    };
+    // Outer ring.
+    painter.circle_stroke(toggle.center(), toggle.width() * 0.4,
+        Stroke::new(1.5 * zoom.max(0.5), stroke_col));
+    // Inner "power" stub — a short vertical tick through the top of the ring.
+    let tick_top = Pos2::new(toggle.center().x, toggle.center().y - toggle.height() * 0.38);
+    let tick_bot = Pos2::new(toggle.center().x, toggle.center().y - toggle.height() * 0.08);
+    painter.line_segment([tick_top, tick_bot], Stroke::new(1.5 * zoom.max(0.5), stroke_col));
+    // Filled dot when enabled so the active state reads at a glance.
+    if !disabled {
+        painter.circle_filled(toggle.center(), toggle.width() * 0.15, fg);
+    }
+
+    // Border. Priority: selected > disabled > portal_peer > accent > default.
+    // Disabled nodes render with neutral gray chrome — only "selected"
+    // wins over it since selection must always be visible.
     let border = if selected {
         Stroke::new(2.0, SELECTED_BORDER)
+    } else if disabled {
+        Stroke::new(1.0, Color32::from_gray(80))
     } else if portal_peer {
         Stroke::new(2.0, PORTAL_PEER_BORDER)
     } else if let Some(a) = accent {
@@ -3145,14 +3241,14 @@ fn draw_node_chrome(
     for (i, ui_port) in inputs.iter().enumerate() {
         let pos = port_pos_z(rect.min, rect.width(), PortDir::Input, i, zoom);
         let hi = in_highlights.get(i).copied().unwrap_or(0.0);
-        draw_port(painter, pos, ui_port, hi, zoom);
+        draw_port(painter, pos, ui_port, hi, zoom, disabled);
     }
 
     // Output ports
     for (i, ui_port) in outputs.iter().enumerate() {
         let pos = port_pos_z(rect.min, rect.width(), PortDir::Output, i, zoom);
         let hi = out_highlights.get(i).copied().unwrap_or(0.0);
-        draw_port(painter, pos, ui_port, hi, zoom);
+        draw_port(painter, pos, ui_port, hi, zoom, disabled);
     }
 
     // Resize handle (small triangle in bottom-right corner)
@@ -3335,20 +3431,28 @@ fn draw_scope(ui: &mut Ui, samples: &[f32], line_color: Color32) {
     }
 }
 
-fn draw_port(painter: &Painter, pos: Pos2, ui_port: &UiPortDef, highlight: f32, zoom: f32) {
+fn draw_port(
+    painter: &Painter,
+    pos: Pos2,
+    ui_port: &UiPortDef,
+    highlight: f32,
+    zoom: f32,
+    node_disabled: bool,
+) {
     let type_color = ui_port.def.port_type.color();
     let fill = ui_port.fill_color.unwrap_or(type_color);
     let stroke_width = if ui_port.fill_color.is_some() { 3.0 } else { 1.5 };
     let r = PORT_RADIUS * zoom;
     // Outer glow when port is transiently highlighted.
-    if highlight > 0.0 && !ui_port.disabled {
+    if highlight > 0.0 && !ui_port.disabled && !node_disabled {
         let alpha = (highlight.clamp(0.0, 1.0) * 255.0) as u8;
         let glow = Color32::from_rgba_unmultiplied(255, 255, 255, alpha);
         painter.circle_filled(pos, r + 4.0 * zoom, glow.linear_multiply(0.25));
         painter.circle_stroke(pos, r + 3.0 * zoom, Stroke::new(2.0, glow));
     }
-    if ui_port.disabled {
-        // Hollow grayed-out port: not connectable.
+    if ui_port.disabled || node_disabled {
+        // Hollow grayed-out port. Node-disabled ports read the same as
+        // individually-disabled ones so the whole node looks uniformly off.
         let dim = Color32::from_gray(70);
         painter.circle_filled(pos, r, Color32::from_gray(40));
         painter.circle_stroke(pos, r, Stroke::new(1.0, dim));

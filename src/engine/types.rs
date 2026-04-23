@@ -234,6 +234,11 @@ pub struct NodeSharedState {
     /// that are overridden by a wired input, and by widgets that need to
     /// render differently when a port is wired.
     pub inputs_connected: Vec<bool>,
+    /// When true, the engine skips this node's `process` each tick. Output
+    /// values freeze at whatever they were last computed — downstream
+    /// nodes therefore see a held signal rather than a sudden zero drop.
+    /// Toggled from the node title bar; persisted with the project.
+    pub disabled: bool,
     /// Current parameter definitions with values (written by engine, read by UI).
     pub current_params: Vec<ParamDef>,
     /// Custom display state (e.g. scope buffers, step sequencer values).
@@ -253,6 +258,7 @@ impl NodeSharedState {
             outputs: vec![0.0; num_outputs],
             inputs: vec![0.0; num_inputs],
             inputs_connected: Vec::new(),
+            disabled: false,
             current_params: Vec::new(),
             display: None,
             pending_params: Vec::new(),

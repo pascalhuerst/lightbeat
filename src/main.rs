@@ -1290,6 +1290,7 @@ impl LightBeatApp {
             params: Vec::new(),
             data: Some(data),
             inner_graph: Some(inner),
+            disabled: false,
         };
 
         // Load this single node into the active level via the existing
