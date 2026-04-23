@@ -3,6 +3,7 @@ use egui::{self, Ui};
 use super::nodes::node::NodeWidget;
 use super::nodes::types::PortTypeUi;
 use crate::engine::types::{ParamDef, ParamValue, PortDef, PortType};
+use crate::theme;
 
 /// Read params from a node's shared state.
 fn read_params(node: &dyn NodeWidget) -> Vec<ParamDef> {
@@ -67,7 +68,7 @@ fn show_port_value(ui: &mut Ui, def: &PortDef, values: &[f32], base: usize) {
                 );
                 cp.rect_filled(cr.rect, 2.0, color);
                 ui.colored_label(
-                    egui::Color32::from_gray(100),
+                    theme::TEXT_FAINT,
                     format!("#{:02X}{:02X}{:02X}", (rv * 255.0) as u8, (gv * 255.0) as u8, (bv * 255.0) as u8),
                 );
             }
@@ -75,7 +76,7 @@ fn show_port_value(ui: &mut Ui, def: &PortDef, values: &[f32], base: usize) {
                 let pan = values.get(base).copied().unwrap_or(0.0);
                 let tilt = values.get(base + 1).copied().unwrap_or(0.0);
                 ui.colored_label(
-                    egui::Color32::from_gray(120),
+                    theme::TEXT_FAINT,
                     format!("P:{:.2} T:{:.2}", pan, tilt),
                 );
             }
@@ -96,7 +97,7 @@ fn show_port_value(ui: &mut Ui, def: &PortDef, values: &[f32], base: usize) {
             }
             _ => {
                 let val = values.get(base).copied().unwrap_or(0.0);
-                ui.colored_label(egui::Color32::from_gray(120), format!("{:.2}", val));
+                ui.colored_label(theme::TEXT_FAINT, format!("{:.2}", val));
             }
         }
     });
@@ -107,7 +108,7 @@ pub fn show_inspector(ui: &mut Ui, node: &mut dyn NodeWidget) {
     ui.heading(node.title());
     let desc = node.description();
     if !desc.is_empty() {
-        ui.colored_label(egui::Color32::from_gray(140), desc);
+        ui.colored_label(theme::TEXT_DIM, desc);
     }
     ui.separator();
 

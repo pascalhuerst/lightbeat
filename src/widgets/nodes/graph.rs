@@ -10,10 +10,22 @@ const MAGNETIC_RADIUS: f32 = 20.0;
 const BEZIER_SEGMENTS: usize = 40;
 const CONNECTION_THICKNESS: f32 = 2.5;
 const NODE_CORNER_RADIUS: f32 = 6.0;
-const NODE_BG: Color32 = Color32::from_rgb(38, 38, 42);
-const NODE_TITLE_BG: Color32 = Color32::from_rgb(50, 50, 56);
-const NODE_BORDER: Color32 = Color32::from_rgb(70, 70, 78);
-const GRID_COLOR: Color32 = Color32::from_rgb(30, 30, 34);
+
+// Node / chrome colours moved into the central theme module. Re-exported
+// with the original names here so the existing call sites don't all need
+// to change at once, and so the names still read naturally in context.
+use crate::theme::{
+    CHECKER_A, CHECKER_B, NODE_BG, NODE_BG_DISABLED, NODE_BORDER, NODE_BORDER_DISABLED,
+    NODE_TITLE_BG, NODE_TITLE_BG_DISABLED, NODE_TITLE_DISABLED_OVERLAY,
+    PORTAL_PEER_BORDER, PORTAL_PEER_HALO, PORT_DISABLED_FILL,
+    PORT_DISABLED_STROKE, SCOPE_BG, SCOPE_BORDER, SCOPE_ZERO_LINE,
+    SELECTED_BORDER, SELECTION_RECT_FILL, STATUS_OK,
+    TEXT_DISABLED, TEXT_PRIMARY, WIRE_SELECTED_HALO,
+    CANVAS_BG as THEME_CANVAS_BG, GRID as THEME_GRID,
+};
+// Keep local aliases for the names used most frequently in this file so
+// the visual signature of the code doesn't change.
+const GRID_COLOR: Color32 = THEME_GRID;
 const GRID_SPACING: f32 = 30.0;
 
 // ---------------------------------------------------------------------------
@@ -1239,7 +1251,7 @@ impl NodeGraph {
                     // Soft white halo behind the wire, then redraw the wire
                     // on top so the type colour still reads.
                     draw_bezier(&painter, from_pos, to_pos,
-                        Color32::from_rgba_unmultiplied(255, 255, 255, 180),
+                        WIRE_SELECTED_HALO,
                         CONNECTION_THICKNESS + 4.0);
                 }
                 draw_bezier(&painter, from_pos, to_pos, from_type.color(),
@@ -1400,7 +1412,7 @@ impl NodeGraph {
             );
             painter.rect_filled(
                 body_rect, NODE_CORNER_RADIUS,
-                Color32::from_rgba_unmultiplied(28, 28, 30, 225),
+                NODE_TITLE_DISABLED_OVERLAY,
             );
         }
 
@@ -1411,7 +1423,7 @@ impl NodeGraph {
             && let Some(current) = ui.input(|i| i.pointer.hover_pos()) {
                 let sel_rect = Rect::from_two_pos(start, current);
                 let crossing = current.x < start.x;
-                painter.rect_filled(sel_rect, 0.0, Color32::from_rgba_premultiplied(100, 160, 255, 30));
+                painter.rect_filled(sel_rect, 0.0, SELECTION_RECT_FILL);
                 if crossing {
                     draw_dashed_rect(&painter, sel_rect, SELECTED_BORDER);
                 } else {
@@ -3107,8 +3119,6 @@ fn node_content_rect(rect: Rect, zoom: f32) -> Rect {
     )
 }
 
-const SELECTED_BORDER: Color32 = Color32::from_rgb(100, 160, 255);
-const PORTAL_PEER_BORDER: Color32 = Color32::from_rgb(220, 180, 80);
 
 /// Rect of the title-bar enable/disable toggle (a small button at the
 /// right edge of the title bar). Shared between the renderer and the
@@ -3154,7 +3164,7 @@ fn draw_node_chrome(
             painter.rect_filled(
                 halo,
                 NODE_CORNER_RADIUS + 3.0,
-                Color32::from_rgba_unmultiplied(220, 180, 80, 40),
+                PORTAL_PEER_HALO,
             );
         } else if let Some(a) = accent {
             let halo = rect.expand(2.5);
@@ -3168,14 +3178,14 @@ fn draw_node_chrome(
 
     // Body — darker flat gray when disabled so the overlay later looks
     // uniform, regular dark when enabled.
-    let body_bg = if disabled { Color32::from_gray(32) } else { NODE_BG };
+    let body_bg = if disabled { NODE_BG_DISABLED } else { NODE_BG };
     painter.rect_filled(rect, NODE_CORNER_RADIUS, body_bg);
 
     // Title bar — accent-tinted when enabled; when disabled, strip the
     // accent and use a neutral darker gray so no colour leaks into the
     // title chrome.
     let title_bg = if disabled {
-        Color32::from_gray(38)
+        NODE_TITLE_BG_DISABLED
     } else {
         accent
             .map(|a| mix_color(a, NODE_TITLE_BG, 0.45))
@@ -3193,7 +3203,7 @@ fn draw_node_chrome(
         title_rect.center().x - 10.0 * zoom,
         title_rect.center().y,
     );
-    let title_color = if disabled { Color32::from_gray(150) } else { Color32::WHITE };
+    let title_color = if disabled { TEXT_DISABLED } else { TEXT_PRIMARY };
     painter.text(
         title_text_center,
         egui::Align2::CENTER_CENTER,
@@ -3205,9 +3215,9 @@ fn draw_node_chrome(
     // Enable / disable toggle at the right of the title bar.
     let toggle = title_toggle_rect(rect, zoom);
     let (fg, stroke_col) = if disabled {
-        (Color32::from_gray(80), Color32::from_gray(150))
+        (NODE_BORDER_DISABLED, TEXT_DISABLED)
     } else {
-        (Color32::from_rgb(80, 200, 140), Color32::from_rgb(200, 240, 220))
+        (STATUS_OK, Color32::from_rgb(200, 240, 220))
     };
     // Outer ring.
     painter.circle_stroke(toggle.center(), toggle.width() * 0.4,
@@ -3227,7 +3237,7 @@ fn draw_node_chrome(
     let border = if selected {
         Stroke::new(2.0, SELECTED_BORDER)
     } else if disabled {
-        Stroke::new(1.0, Color32::from_gray(80))
+        Stroke::new(1.0, NODE_BORDER_DISABLED)
     } else if portal_peer {
         Stroke::new(2.0, PORTAL_PEER_BORDER)
     } else if let Some(a) = accent {
@@ -3291,7 +3301,7 @@ fn draw_color_preview(ui: &mut Ui, values: &[f32]) {
     let b = values.get(2).copied().unwrap_or(0.0).clamp(0.0, 1.0);
     painter.rect_filled(rect, 3.0,
         Color32::from_rgb((r * 255.0) as u8, (g * 255.0) as u8, (b * 255.0) as u8));
-    painter.rect_stroke(rect, 3.0, Stroke::new(1.0, Color32::from_gray(80)), StrokeKind::Inside);
+    painter.rect_stroke(rect, 3.0, Stroke::new(1.0, SCOPE_BORDER), StrokeKind::Inside);
 }
 
 /// Four-swatch row for Palette ports. Channels are laid out as 4 × RGB.
@@ -3312,7 +3322,7 @@ fn draw_palette_preview(ui: &mut Ui, values: &[f32]) {
         painter.rect_filled(slot_rect, 0.0,
             Color32::from_rgb((r * 255.0) as u8, (g * 255.0) as u8, (b * 255.0) as u8));
     }
-    painter.rect_stroke(rect, 3.0, Stroke::new(1.0, Color32::from_gray(80)), StrokeKind::Inside);
+    painter.rect_stroke(rect, 3.0, Stroke::new(1.0, SCOPE_BORDER), StrokeKind::Inside);
 }
 
 /// Sampled gradient preview (same renderer as Gradient Source etc., just
@@ -3330,11 +3340,7 @@ fn draw_gradient_preview(ui: &mut Ui, values: &[f32]) {
     let rows = (rect.height() / cell).ceil() as i32;
     for y in 0..rows {
         for x in 0..cols {
-            let color = if (x + y) % 2 == 0 {
-                Color32::from_gray(40)
-            } else {
-                Color32::from_gray(70)
-            };
+            let color = if (x + y) % 2 == 0 { CHECKER_A } else { CHECKER_B };
             let cr = Rect::from_min_size(
                 Pos2::new(rect.min.x + x as f32 * cell, rect.min.y + y as f32 * cell),
                 Vec2::splat(cell),
@@ -3362,7 +3368,7 @@ fn draw_gradient_preview(ui: &mut Ui, values: &[f32]) {
             );
         }
     }
-    painter.rect_stroke(rect, 3.0, Stroke::new(1.0, Color32::from_gray(80)), StrokeKind::Inside);
+    painter.rect_stroke(rect, 3.0, Stroke::new(1.0, SCOPE_BORDER), StrokeKind::Inside);
 }
 
 /// Small pan/tilt crosshair preview. Pan 0..1 is x-axis, tilt 0..1 is y-axis.
@@ -3370,17 +3376,17 @@ fn draw_position_preview(ui: &mut Ui, pan: f32, tilt: f32) {
     let size = Vec2::new(80.0, 80.0);
     let (resp, painter) = ui.allocate_painter(size, Sense::hover());
     let rect = resp.rect;
-    painter.rect_filled(rect, 3.0, Color32::from_gray(24));
-    painter.rect_stroke(rect, 3.0, Stroke::new(1.0, Color32::from_gray(80)), StrokeKind::Inside);
+    painter.rect_filled(rect, 3.0, SCOPE_BG);
+    painter.rect_stroke(rect, 3.0, Stroke::new(1.0, SCOPE_BORDER), StrokeKind::Inside);
     let mid = rect.center();
-    let guide = Stroke::new(0.5, Color32::from_gray(60));
+    let guide = Stroke::new(0.5, SCOPE_ZERO_LINE);
     painter.line_segment([Pos2::new(rect.min.x, mid.y), Pos2::new(rect.max.x, mid.y)], guide);
     painter.line_segment([Pos2::new(mid.x, rect.min.y), Pos2::new(mid.x, rect.max.y)], guide);
     let dot = Pos2::new(
         rect.min.x + pan.clamp(0.0, 1.0) * rect.width(),
         rect.min.y + tilt.clamp(0.0, 1.0) * rect.height(),
     );
-    painter.circle_filled(dot, 4.0, Color32::from_rgb(80, 200, 140));
+    painter.circle_filled(dot, 4.0, STATUS_OK);
     painter.circle_stroke(dot, 4.0, Stroke::new(1.0, Color32::from_gray(20)));
 }
 
@@ -3392,8 +3398,8 @@ fn draw_scope(ui: &mut Ui, samples: &[f32], line_color: Color32) {
     let size = Vec2::new(180.0, 60.0);
     let (resp, painter) = ui.allocate_painter(size, Sense::hover());
     let rect = resp.rect;
-    painter.rect_filled(rect, 3.0, Color32::from_gray(24));
-    painter.rect_stroke(rect, 3.0, Stroke::new(1.0, Color32::from_gray(80)), StrokeKind::Inside);
+    painter.rect_filled(rect, 3.0, SCOPE_BG);
+    painter.rect_stroke(rect, 3.0, Stroke::new(1.0, SCOPE_BORDER), StrokeKind::Inside);
     if samples.is_empty() { return; }
     let mut min_v = f32::INFINITY;
     let mut max_v = f32::NEG_INFINITY;
@@ -3414,7 +3420,7 @@ fn draw_scope(ui: &mut Ui, samples: &[f32], line_color: Color32) {
     if zero_y >= rect.min.y && zero_y <= rect.max.y {
         painter.line_segment(
             [Pos2::new(rect.min.x, zero_y), Pos2::new(rect.max.x, zero_y)],
-            Stroke::new(0.5, Color32::from_gray(60)),
+            Stroke::new(0.5, SCOPE_ZERO_LINE),
         );
     }
 
@@ -3453,9 +3459,8 @@ fn draw_port(
     if ui_port.disabled || node_disabled {
         // Hollow grayed-out port. Node-disabled ports read the same as
         // individually-disabled ones so the whole node looks uniformly off.
-        let dim = Color32::from_gray(70);
-        painter.circle_filled(pos, r, Color32::from_gray(40));
-        painter.circle_stroke(pos, r, Stroke::new(1.0, dim));
+        painter.circle_filled(pos, r, PORT_DISABLED_FILL);
+        painter.circle_stroke(pos, r, Stroke::new(1.0, PORT_DISABLED_STROKE));
     } else {
         painter.circle_filled(pos, r, fill);
         painter.circle_stroke(pos, r, Stroke::new(stroke_width, type_color));
@@ -3473,7 +3478,7 @@ fn draw_port(
 }
 
 fn draw_grid(painter: &Painter, rect: Rect, pan: Vec2, zoom: f32) {
-    painter.rect_filled(rect, 0.0, Color32::from_rgb(22, 22, 26));
+    painter.rect_filled(rect, 0.0, THEME_CANVAS_BG);
 
     let spacing = GRID_SPACING * zoom;
     let offset_x = pan.x.rem_euclid(spacing);

@@ -13,6 +13,7 @@ use egui_extras::{Column, TableBuilder};
 use crate::color::{Gradient, GradientStop};
 use crate::engine::nodes::math::lookup::{LookupColumn, LookupDisplay, port_type_to_str};
 use crate::engine::types::*;
+use crate::theme;
 use crate::widgets::nodes::math::gradient_source::SharedGradientLibrary;
 use crate::widgets::nodes::node::NodeWidget;
 use crate::widgets::nodes::types::UiPortDef;
@@ -400,9 +401,9 @@ impl NodeWidget for LookupWidget {
                             let txt = egui::RichText::new(format!("{:>3}", r))
                                 .monospace()
                                 .color(if is_current {
-                                    Color32::from_rgb(80, 200, 240)
+                                    theme::STATUS_ACTIVE
                                 } else {
-                                    Color32::from_gray(180)
+                                    theme::TEXT_MUTED
                                 })
                                 .strong();
                             ui.label(txt);
@@ -496,7 +497,7 @@ fn preview_color(pt: PortType, data: &[f32], base: usize) -> Color32 {
         }
         PortType::Logic => {
             let on = data.get(base).copied().unwrap_or(0.0) >= 0.5;
-            if on { Color32::from_rgb(240, 200, 40) } else { Color32::from_gray(40) }
+            if on { theme::PORT_LOGIC } else { Color32::from_gray(40) }
         }
         _ => {
             let v = data.get(base).copied().unwrap_or(0.0).clamp(0.0, 1.0);

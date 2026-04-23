@@ -3110,47 +3110,7 @@
       "to_port": 0
     }
   ],
-  "frames": [
-    {
-      "id": 72,
-      "title": "Main Fader In/Out",
-      "color": [
-        146,
-        0,
-        0,
-        255
-      ],
-      "notes": "",
-      "pos": [
-        -1195.448,
-        1063.1997
-      ],
-      "size": [
-        327.80246,
-        319.82355
-      ]
-    },
-    {
-      "id": 75,
-      "title": "This is a test, how a standart output coud look like",
-      "color": [
-        255,
-        255,
-        255,
-        255
-      ],
-      "notes": "",
-      "pos": [
-        -2187.5845,
-        1089.9543
-      ],
-      "size": [
-        909.6211,
-        301.34116
-      ]
-    }
-  ],
   "view": {
-    "show_library": false
+    "show_library": true
   }
 }

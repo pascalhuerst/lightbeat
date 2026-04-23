@@ -5,6 +5,7 @@ use egui::{self, Color32, Ui};
 use crate::engine::nodes::ui::button::{ButtonDisplay, ButtonMode};
 use crate::engine::nodes::ui::common::MouseOverrideMode;
 use crate::engine::types::*;
+use crate::theme;
 use crate::widgets::fader::highlight_alpha;
 use crate::widgets::nodes::node::NodeWidget;
 use crate::widgets::nodes::types::UiPortDef;
@@ -123,7 +124,7 @@ impl NodeWidget for ButtonWidget {
 
         let pressed = matches!(self.mode, ButtonMode::Toggle) && self.state;
         let fill = if pressed {
-            Color32::from_rgb(80, 200, 240)
+            theme::STATUS_ACTIVE
         } else {
             Color32::from_gray(60)
         };
@@ -143,7 +144,7 @@ impl NodeWidget for ButtonWidget {
         painter.rect_filled(rect, 3.0, fill);
         let border = if self.override_active {
             // Bright orange border to indicate override is active.
-            Color32::from_rgb(220, 150, 40)
+            theme::STATUS_OVERRIDE
         } else if resp.hovered() {
             Color32::from_gray(140)
         } else {
@@ -168,13 +169,13 @@ impl NodeWidget for ButtonWidget {
             let dot_r = 4.0 * zoom;
             let dot_pos = egui::pos2(rect.max.x - dot_r - 3.0, rect.min.y + dot_r + 3.0);
             let in_color = if self.input_value >= 0.5 {
-                Color32::from_rgb(80, 200, 240)
+                theme::STATUS_ACTIVE
             } else {
                 Color32::from_gray(80)
             };
             painter.circle_filled(dot_pos, dot_r, in_color);
             painter.circle_stroke(dot_pos, dot_r,
-                egui::Stroke::new(1.0, Color32::from_rgb(220, 150, 40)));
+                egui::Stroke::new(1.0, theme::STATUS_OVERRIDE));
         }
 
         if interactive {

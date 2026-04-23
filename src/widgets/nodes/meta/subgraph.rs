@@ -6,6 +6,7 @@ use crate::engine::nodes::meta::subgraph::{
     SubgraphPortDef,
 };
 use crate::engine::types::*;
+use crate::theme;
 use crate::widgets::nodes::node::NodeWidget;
 use crate::widgets::nodes::types::UiPortDef;
 
@@ -110,9 +111,7 @@ impl NodeWidget for SubgraphWidget {
     }
 
     fn accent_color(&self) -> Option<Color32> {
-        // Magenta-rose: a "this is a container" accent. Distinct from any
-        // port-type colour so the node reads as "special" at a glance.
-        Some(Color32::from_rgb(190, 90, 150))
+        Some(theme::ACCENT_SUBGRAPH)
     }
 
     fn show_content(&mut self, ui: &mut Ui, _zoom: f32) {
@@ -170,16 +169,16 @@ impl NodeWidget for SubgraphWidget {
             ui.separator();
             ui.label(egui::RichText::new("Description").strong());
             if self.macro_description.is_empty() {
-                ui.colored_label(egui::Color32::from_gray(140), "(no description)");
+                ui.colored_label(theme::TEXT_DIM, "(no description)");
             } else {
                 ui.label(&self.macro_description);
             }
             ui.separator();
             ui.label(egui::RichText::new("Path").strong());
             if self.macro_path.is_empty() {
-                ui.colored_label(egui::Color32::from_gray(140), "(unknown)");
+                ui.colored_label(theme::TEXT_DIM, "(unknown)");
             } else {
-                ui.colored_label(egui::Color32::from_gray(200), &self.macro_path);
+                ui.colored_label(theme::TEXT_SUBTLE, &self.macro_path);
             }
             return;
         }

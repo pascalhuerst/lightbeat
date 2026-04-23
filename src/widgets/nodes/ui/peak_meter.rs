@@ -4,6 +4,7 @@ use egui::{self, Color32, Pos2, Rect, Sense, Stroke, StrokeKind, Ui};
 
 use crate::engine::nodes::ui::peak_meter::{PeakMeterDisplay, PeakMeterOrientation};
 use crate::engine::types::*;
+use crate::theme;
 use crate::widgets::nodes::node::NodeWidget;
 use crate::widgets::nodes::types::UiPortDef;
 
@@ -23,14 +24,13 @@ const CLIP_DISPLAY_DURATION: f64 = 1.5;
 
 const BG_COLOR: Color32 = Color32::from_gray(22);
 const BORDER_COLOR: Color32 = Color32::from_gray(60);
-const GREEN_COLOR: Color32 = Color32::from_rgb(80, 200, 100);
-const YELLOW_COLOR: Color32 = Color32::from_rgb(230, 200, 60);
-const RED_COLOR: Color32 = Color32::from_rgb(230, 70, 60);
-const HOLD_COLOR: Color32 = Color32::from_rgb(220, 220, 220);
-// Dark gray at ~50% alpha — premultiplied (40 * 128/255 ≈ 20).
-const RMS_COLOR: Color32 = Color32::from_rgba_premultiplied(20, 20, 20, 128);
+const GREEN_COLOR: Color32 = theme::METER_GREEN;
+const YELLOW_COLOR: Color32 = theme::METER_YELLOW;
+const RED_COLOR: Color32 = theme::METER_RED;
+const HOLD_COLOR: Color32 = theme::METER_PEAK_HOLD;
+const RMS_COLOR: Color32 = theme::METER_RMS_OVERLAY;
 const CLIP_OFF_COLOR: Color32 = Color32::from_gray(40);
-const SCALE_LABEL_COLOR: Color32 = Color32::from_gray(140);
+const SCALE_LABEL_COLOR: Color32 = theme::TEXT_DIM;
 const SCALE_TICK_COLOR: Color32 = Color32::from_gray(70);
 
 const DB_TICKS: &[i32] = &[0, -3, -6, -12, -18, -24, -36, -48, -60];
@@ -192,11 +192,11 @@ impl NodeWidget for PeakMeterWidget {
         });
         ui.horizontal(|ui| {
             ui.label("Peak:");
-            ui.colored_label(Color32::from_gray(200), format!("{:.3} ({:+.1} dB)", self.peak, level_to_db(self.peak)));
+            ui.colored_label(theme::TEXT_SUBTLE, format!("{:.3} ({:+.1} dB)", self.peak, level_to_db(self.peak)));
         });
         ui.horizontal(|ui| {
             ui.label("RMS:");
-            ui.colored_label(Color32::from_gray(200), format!("{:.3} ({:+.1} dB)", self.rms, level_to_db(self.rms)));
+            ui.colored_label(theme::TEXT_SUBTLE, format!("{:.3} ({:+.1} dB)", self.rms, level_to_db(self.rms)));
         });
         ui.horizontal(|ui| {
             if ui.small_button("Reset clip").clicked() {

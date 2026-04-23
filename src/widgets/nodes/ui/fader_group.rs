@@ -5,13 +5,14 @@ use egui::{self, Color32, Ui, Vec2};
 use crate::engine::nodes::ui::common::MouseOverrideMode;
 use crate::engine::nodes::ui::fader_group::FaderGroupDisplay;
 use crate::engine::types::*;
+use crate::theme;
 use crate::widgets::fader::{self, highlight_alpha, FaderStyle, Orientation};
 use crate::widgets::nodes::node::NodeWidget;
 use crate::widgets::nodes::types::UiPortDef;
 use crate::widgets::nodes::ui::fader::draw_override_indicator;
 
 const HIGHLIGHT_DURATION: f64 = 0.5;
-const OVERRIDE_OVERLAY_COLOR: Color32 = Color32::from_rgba_premultiplied(220, 150, 40, 130);
+const OVERRIDE_OVERLAY_COLOR: Color32 = theme::STATUS_OVERRIDE_OVERLAY;
 const CENTER_LINE_COLOR: Color32 = Color32::from_gray(110);
 
 pub struct FaderGroupWidget {
@@ -411,7 +412,7 @@ impl NodeWidget for FaderGroupWidget {
 
                             if self.override_active[idx] {
                                 ui.colored_label(
-                                    Color32::from_rgb(220, 150, 40),
+                                    theme::STATUS_OVERRIDE,
                                     format!("{:.3}", self.override_values[idx]),
                                 );
                             } else {

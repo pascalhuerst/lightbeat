@@ -11,6 +11,7 @@ mod interfaces;
 mod link_controller;
 mod objects;
 mod project;
+mod theme;
 mod widgets;
 
 use std::path::PathBuf;

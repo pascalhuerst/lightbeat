@@ -4,6 +4,7 @@ use egui::{self, Color32, Ui};
 
 use crate::engine::nodes::transport::delay::TriggerDelayDisplay;
 use crate::engine::types::*;
+use crate::theme;
 use crate::widgets::nodes::node::NodeWidget;
 use crate::widgets::nodes::types::UiPortDef;
 
@@ -74,7 +75,7 @@ impl NodeWidget for TriggerDelayWidget {
             }
 
             let color = if pending {
-                Color32::from_rgb(240, 200, 40)
+                theme::PORT_LOGIC
             } else {
                 Color32::from_gray(180)
             };

@@ -3,6 +3,8 @@ pub use crate::engine::types::*;
 
 use egui::Color32;
 
+use crate::theme;
+
 // ---------------------------------------------------------------------------
 // UI extensions for PortType
 // ---------------------------------------------------------------------------
@@ -15,14 +17,14 @@ pub trait PortTypeUi {
 impl PortTypeUi for PortType {
     fn color(&self) -> Color32 {
         match self {
-            PortType::Logic => Color32::from_rgb(240, 200, 40),
-            PortType::Phase => Color32::from_rgb(180, 100, 220),
-            PortType::Untyped => Color32::from_rgb(220, 80, 80),
-            PortType::Any => Color32::from_gray(160),
-            PortType::Color => Color32::from_rgb(60, 200, 220),
-            PortType::Position => Color32::from_rgb(80, 200, 140),
-            PortType::Palette => Color32::from_rgb(220, 180, 100),
-            PortType::Gradient => Color32::from_rgb(40, 200, 180),
+            PortType::Logic => theme::PORT_LOGIC,
+            PortType::Phase => theme::PORT_PHASE,
+            PortType::Untyped => theme::PORT_UNTYPED,
+            PortType::Any => theme::PORT_ANY,
+            PortType::Color => theme::PORT_COLOR,
+            PortType::Position => theme::PORT_POSITION,
+            PortType::Palette => theme::PORT_PALETTE,
+            PortType::Gradient => theme::PORT_GRADIENT,
         }
     }
 }

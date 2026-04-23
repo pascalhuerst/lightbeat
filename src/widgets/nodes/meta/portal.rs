@@ -6,6 +6,7 @@ use crate::engine::nodes::meta::portal::{
 };
 use crate::engine::nodes::meta::subgraph::PORT_TYPE_NAMES;
 use crate::engine::types::*;
+use crate::theme;
 use crate::widgets::nodes::node::NodeWidget;
 use crate::widgets::nodes::types::UiPortDef;
 
@@ -73,7 +74,7 @@ impl NodeWidget for PortalInWidget {
     // Amber accent — matches the portal-peer halo so the colour identity
     // reads "these nodes are a linked wireless pair" whether or not a
     // peer is currently selected.
-    fn accent_color(&self) -> Option<Color32> { Some(Color32::from_rgb(220, 170, 60)) }
+    fn accent_color(&self) -> Option<Color32> { Some(theme::ACCENT_PORTAL) }
     fn portal_key(&self) -> Option<String> {
         if self.name.is_empty() { None } else { Some(self.name.clone()) }
     }
@@ -92,14 +93,14 @@ impl NodeWidget for PortalInWidget {
         }
 
         if self.name.is_empty() {
-            ui.colored_label(Color32::from_gray(140), "(unnamed)");
+            ui.colored_label(theme::TEXT_DIM, "(unnamed)");
         } else if self.duplicate_name {
             ui.colored_label(
-                Color32::from_rgb(220, 150, 60),
+                theme::STATUS_WARNING,
                 format!("{} — duplicate!", self.name),
             );
         } else {
-            ui.colored_label(Color32::from_gray(200), &self.name);
+            ui.colored_label(theme::TEXT_SUBTLE, &self.name);
         }
     }
 
@@ -222,7 +223,7 @@ impl NodeWidget for PortalOutWidget {
     // Amber accent — matches the portal-peer halo so the colour identity
     // reads "these nodes are a linked wireless pair" whether or not a
     // peer is currently selected.
-    fn accent_color(&self) -> Option<Color32> { Some(Color32::from_rgb(220, 170, 60)) }
+    fn accent_color(&self) -> Option<Color32> { Some(theme::ACCENT_PORTAL) }
     fn portal_key(&self) -> Option<String> {
         if self.bound_name.is_empty() { None } else { Some(self.bound_name.clone()) }
     }
@@ -244,12 +245,12 @@ impl NodeWidget for PortalOutWidget {
         }
 
         if self.bound_name.is_empty() {
-            ui.colored_label(Color32::from_gray(140), "(pick a Portal In)");
+            ui.colored_label(theme::TEXT_DIM, "(pick a Portal In)");
         } else if self.connected {
-            ui.colored_label(Color32::from_gray(200), &self.bound_name);
+            ui.colored_label(theme::TEXT_SUBTLE, &self.bound_name);
         } else {
             ui.colored_label(
-                Color32::from_rgb(220, 150, 60),
+                theme::STATUS_WARNING,
                 format!("{} (not connected)", self.bound_name),
             );
         }
@@ -295,7 +296,7 @@ impl NodeWidget for PortalOutWidget {
 
         if !self.bound_name.is_empty() && !self.connected {
             ui.colored_label(
-                Color32::from_rgb(220, 150, 60),
+                theme::STATUS_WARNING,
                 "No Portal In publishing this name yet.",
             );
         }

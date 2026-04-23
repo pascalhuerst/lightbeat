@@ -4,6 +4,7 @@ use egui::{self, Color32, Pos2, Sense, Stroke, StrokeKind, Ui, Vec2};
 
 use crate::engine::nodes::ui::xy_pad::{XyPadDisplay, XyPadMode};
 use crate::engine::types::*;
+use crate::theme;
 use crate::widgets::nodes::node::NodeWidget;
 use crate::widgets::nodes::types::UiPortDef;
 
@@ -133,7 +134,7 @@ impl NodeWidget for XyPadWidget {
 
         // Knob: filled cyan circle with a dark outline for contrast.
         let knob_r = 6.0;
-        painter.circle_filled(knob, knob_r, Color32::from_rgb(80, 200, 240));
+        painter.circle_filled(knob, knob_r, theme::STATUS_ACTIVE);
         painter.circle_stroke(knob, knob_r, Stroke::new(1.5, Color32::from_gray(20)));
 
         // Interaction — click or drag anywhere inside the pad to reposition.

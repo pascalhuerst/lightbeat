@@ -5,14 +5,14 @@ use egui::{self, Color32, Ui};
 use crate::engine::nodes::ui::common::MouseOverrideMode;
 use crate::engine::nodes::ui::fader::{FaderDisplay, FaderOrientation};
 use crate::engine::types::*;
+use crate::theme;
 use crate::widgets::fader::{self, highlight_alpha, FaderStyle};
 use crate::widgets::nodes::node::NodeWidget;
 use crate::widgets::nodes::types::UiPortDef;
 
 const HIGHLIGHT_DURATION: f64 = 0.5;
-/// Semi-transparent overlay color showing the override value while it's active.
-const OVERRIDE_OVERLAY_COLOR: Color32 = Color32::from_rgba_premultiplied(220, 150, 40, 130);
-const OVERRIDE_ICON_COLOR: Color32 = Color32::from_rgb(255, 180, 60);
+const OVERRIDE_OVERLAY_COLOR: Color32 = theme::STATUS_OVERRIDE_OVERLAY;
+const OVERRIDE_ICON_COLOR: Color32 = theme::STATUS_OVERRIDE_ICON;
 const CENTER_LINE_COLOR: Color32 = Color32::from_gray(110);
 
 /// Icon string indicating how the override clears for the given mode.
@@ -311,7 +311,7 @@ pub fn cell_inspector_section(
         if *inputs_enabled {
             ui.horizontal(|ui| {
                 ui.label("Input:");
-                ui.colored_label(Color32::from_gray(180), format!("{:.3}", input_value));
+                ui.colored_label(theme::TEXT_MUTED, format!("{:.3}", input_value));
             });
         }
         ui.horizontal(|ui| {
@@ -335,7 +335,7 @@ pub fn cell_inspector_section(
         if override_active {
             ui.horizontal(|ui| {
                 ui.label("Override:");
-                ui.colored_label(Color32::from_rgb(220, 150, 40), format!("{:.3}", override_value));
+                ui.colored_label(theme::STATUS_OVERRIDE, format!("{:.3}", override_value));
             });
         }
         ui.horizontal(|ui| {

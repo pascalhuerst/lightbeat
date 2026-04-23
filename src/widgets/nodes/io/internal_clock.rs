@@ -4,6 +4,7 @@ use egui::{self, Color32, Ui};
 
 use crate::engine::nodes::io::internal_clock::InternalClockDisplay;
 use crate::engine::types::*;
+use crate::theme;
 use crate::widgets::nodes::node::NodeWidget;
 use crate::widgets::nodes::types::UiPortDef;
 
@@ -106,7 +107,7 @@ impl NodeWidget for InternalClockWidget {
 
         let beat_color = if beat_on {
             if is_downbeat { Color32::from_rgb(255, 255, 255) }
-            else { Color32::from_rgb(240, 200, 40) }
+            else { theme::PORT_LOGIC }
         } else {
             Color32::from_gray(40)
         };
