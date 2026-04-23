@@ -20,7 +20,6 @@ impl ClockGenWidget {
 impl NodeWidget for ClockGenWidget {
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { "Clock Gen" }
-    fn title(&self) -> &str { "Clock Gen" }
     fn description(&self) -> &'static str { "Generates N evenly spaced triggers per phase cycle." }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> {

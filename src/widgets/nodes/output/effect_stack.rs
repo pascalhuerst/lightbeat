@@ -125,7 +125,6 @@ impl EffectStackWidget {
 impl NodeWidget for EffectStackWidget {
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { "Effect Stack" }
-    fn title(&self) -> &str { "Effect Stack" }
     fn description(&self) -> &'static str {
         "Composes multiple LED-strip effects with blend modes onto the selected group(s)."
     }

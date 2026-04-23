@@ -40,7 +40,6 @@ impl EnvelopeWidget {
 impl NodeWidget for EnvelopeWidget {
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { "ADSR" }
-    fn title(&self) -> &str { "ADSR" }
     fn description(&self) -> &'static str { "Attack-decay-sustain-release envelope shaping a value over time when triggered by a gate." }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> {

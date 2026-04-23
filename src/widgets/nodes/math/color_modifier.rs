@@ -43,7 +43,6 @@ impl ColorModifierWidget {
 impl NodeWidget for ColorModifierWidget {
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { "Color Modifier" }
-    fn title(&self) -> &str { "Color Modifier" }
     fn description(&self) -> &'static str {
         "Applies a HSV / brightness / alpha operation to a Color or Gradient signal. For gradients the op is applied to every active stop. Amount is 1.0 = identity for scale ops, 0.0 = identity for Hue Shift."
     }

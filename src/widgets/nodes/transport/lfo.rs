@@ -32,7 +32,6 @@ impl LfoWidget {
 impl NodeWidget for LfoWidget {
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { "LFO" }
-    fn title(&self) -> &str { "LFO" }
     fn description(&self) -> &'static str {
         "Low-frequency oscillator: sine, triangle, saw, square, or random; rate in Hz."
     }

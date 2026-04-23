@@ -26,7 +26,6 @@ impl ClockDividerWidget {
 impl NodeWidget for ClockDividerWidget {
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { "Clock Divider" }
-    fn title(&self) -> &str { "Clock Divider" }
     fn description(&self) -> &'static str { "Emits one trigger for every N input triggers." }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> {

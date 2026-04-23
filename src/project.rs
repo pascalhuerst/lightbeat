@@ -137,7 +137,7 @@ pub fn save_level(level: &GraphLevel, graph: &NodeGraph) -> ProjectFile {
         let node_id = state.id;
 
         // Skip bridge pseudo-nodes — they're reconstructed on load.
-        if node.type_name() == "GraphInput" || node.type_name() == "GraphOutput" {
+        if node.type_name() == "Graph Input" || node.type_name() == "Graph Output" {
             continue;
         }
 
@@ -309,8 +309,8 @@ pub fn load_graph(graph: &mut NodeGraph, project: &ProjectFile) -> Vec<usize> {
             }
 
             // Restore Group Output widget state from save_data.
-            if saved.type_name == "Group Output" {
-                if let Some(data) = &saved.data {
+            if saved.type_name == "Group Output"
+                && let Some(data) = &saved.data {
                     let n = graph.node_mut(idx);
                     if let Some(grp) = n.as_any_mut().downcast_mut::<GroupWidget>() {
                         if let Some(ids) = data.get("group_ids").and_then(|v| v.as_array()) {
@@ -322,7 +322,6 @@ pub fn load_graph(graph: &mut NodeGraph, project: &ProjectFile) -> Vec<usize> {
                         grp.push_config_to_engine();
                     }
                 }
-            }
 
             // Restore Fader widget input-port state so wires don't get
             // dropped by `cleanup_stale_connections` on the first frame.

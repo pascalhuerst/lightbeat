@@ -19,7 +19,6 @@ impl ChangeDetectWidget {
 impl NodeWidget for ChangeDetectWidget {
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { "Change Detect" }
-    fn title(&self) -> &str { "Change Detect" }
     fn description(&self) -> &'static str { "Fires a logic pulse whenever the input value changes." }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> {

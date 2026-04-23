@@ -36,7 +36,6 @@ impl ValueDisplayWidget {
 impl NodeWidget for ValueDisplayWidget {
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { "Value Display" }
-    fn title(&self) -> &str { "Value Display" }
     fn description(&self) -> &'static str { "Shows a numeric value. Name appears above the value and on parent subgraph nodes." }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> {

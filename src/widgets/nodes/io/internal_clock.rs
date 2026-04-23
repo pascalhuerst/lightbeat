@@ -40,7 +40,6 @@ impl InternalClockWidget {
 impl NodeWidget for InternalClockWidget {
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { "Internal Clock" }
-    fn title(&self) -> &str { "Internal Clock" }
     fn description(&self) -> &'static str { "Standalone BPM clock with manual transport; outputs beat, play state, and phase." }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> {

@@ -128,7 +128,7 @@ impl ProcessNode for GroupProcessNode {
                         }
                         if !in_current { continue; }
 
-                        let (lo, hi) = active_range.unwrap();
+                        let (lo, _hi) = active_range.unwrap();
                         let t = if span > 0.0 { (logical - lo) / span } else { 0.0 };
                         let (sampled, alpha) = gradient.sample_with_alpha(t);
                         let cur = ch.pixel(i);

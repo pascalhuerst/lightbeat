@@ -84,7 +84,6 @@ impl GroupWidget {
 impl NodeWidget for GroupWidget {
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { "Group Output" }
-    fn title(&self) -> &str { "Group Output" }
     fn description(&self) -> &'static str {
         "Writes a gradient across a sub-range of the group's strip pixels every tick. \
          The `select` and `width` inputs position a window on the group's 0..1 logical \

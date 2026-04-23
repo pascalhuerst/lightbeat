@@ -40,7 +40,6 @@ fn delay_label(exp: i32) -> String {
 impl NodeWidget for TriggerDelayWidget {
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { "Trigger Delay" }
-    fn title(&self) -> &str { "Trigger Delay" }
     fn description(&self) -> &'static str { "Delays incoming triggers by a beat-aligned amount before passing them through." }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> {

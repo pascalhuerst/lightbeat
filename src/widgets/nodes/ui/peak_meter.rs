@@ -96,9 +96,7 @@ impl PeakMeterWidget {
 impl NodeWidget for PeakMeterWidget {
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { "Peak Level Meter" }
-    fn title(&self) -> &str {
-        if self.name.is_empty() { "Peak Meter" } else { self.name.as_str() }
-    }
+    fn title(&self) -> &str { &self.name }
     fn description(&self) -> &'static str {
         "Level meter: green/yellow/red dB scale, RMS overlay, peak hold and clip indicator."
     }

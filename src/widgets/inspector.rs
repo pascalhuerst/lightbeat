@@ -105,7 +105,19 @@ fn show_port_value(ui: &mut Ui, def: &PortDef, values: &[f32], base: usize) {
 
 /// Draw the inspector panel for a single selected node.
 pub fn show_inspector(ui: &mut Ui, node: &mut dyn NodeWidget) {
-    ui.heading(node.title());
+    let title = node.title();
+    let type_name = node.type_name();
+    // User-set custom title takes the big heading slot; an empty title means
+    // "no custom name" so we skip the heading entirely.
+    if !title.is_empty() {
+        ui.heading(title);
+    }
+    // The node type is always shown in its own muted slot so every inspector
+    // header has the same visual anchor — "what kind of thing is this".
+    ui.colored_label(
+        theme::TEXT_DIM,
+        egui::RichText::new(type_name).small().italics(),
+    );
     let desc = node.description();
     if !desc.is_empty() {
         ui.colored_label(theme::TEXT_DIM, desc);

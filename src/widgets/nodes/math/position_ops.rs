@@ -19,7 +19,6 @@ impl PositionMergeWidget {
 impl NodeWidget for PositionMergeWidget {
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { "Position Merge" }
-    fn title(&self) -> &str { "Pos Merge" }
     fn description(&self) -> &'static str { "Combines pan and tilt values into a single position output." }
     fn ui_inputs(&self) -> Vec<UiPortDef> {
         vec![
@@ -51,7 +50,6 @@ impl PositionSplitWidget {
 impl NodeWidget for PositionSplitWidget {
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { "Position Split" }
-    fn title(&self) -> &str { "Pos Split" }
     fn description(&self) -> &'static str { "Splits a position into separate pan and tilt component outputs." }
     fn ui_inputs(&self) -> Vec<UiPortDef> {
         vec![UiPortDef::from_def(&PortDef::new("position", PortType::Position))]

@@ -219,7 +219,6 @@ impl LookupWidget {
 impl NodeWidget for LookupWidget {
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { "Lookup" }
-    fn title(&self) -> &str { "Lookup" }
     fn description(&self) -> &'static str {
         "Table with one row selected by the `index` input. Each column becomes its own typed output (Untyped / Logic / Phase / Color / Position / Palette)."
     }

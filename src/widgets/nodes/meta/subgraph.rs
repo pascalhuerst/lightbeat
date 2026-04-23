@@ -38,7 +38,7 @@ impl SubgraphWidget {
         Self {
             id,
             shared,
-            name: "Subgraph".to_string(),
+            name: String::new(),
             input_defs: Vec::new(),
             output_defs: Vec::new(),
             wants_open: false,
@@ -316,9 +316,6 @@ impl NodeWidget for GraphInputWidget {
         BRIDGE_IN_NODE_ID
     }
     fn type_name(&self) -> &'static str {
-        "GraphInput"
-    }
-    fn title(&self) -> &str {
         "Graph Input"
     }
 
@@ -413,9 +410,6 @@ impl NodeWidget for GraphOutputWidget {
         BRIDGE_OUT_NODE_ID
     }
     fn type_name(&self) -> &'static str {
-        "GraphOutput"
-    }
-    fn title(&self) -> &str {
         "Graph Output"
     }
 

@@ -20,7 +20,6 @@ impl SampleHoldWidget {
 impl NodeWidget for SampleHoldWidget {
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { "Sample & Hold" }
-    fn title(&self) -> &str { "Sample & Hold" }
     fn description(&self) -> &'static str {
         "Captures the value input on each rising edge of the trigger input."
     }

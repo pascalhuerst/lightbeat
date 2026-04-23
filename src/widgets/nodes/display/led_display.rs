@@ -34,7 +34,6 @@ impl LedDisplayWidget {
 impl NodeWidget for LedDisplayWidget {
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { "LED Display" }
-    fn title(&self) -> &str { "LED Display" }
     fn description(&self) -> &'static str { "Shows a value (0..1) as a glowing LED. Name appears above the LED and on parent subgraph nodes." }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> {

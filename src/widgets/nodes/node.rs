@@ -16,7 +16,19 @@ use super::types::UiPortDef;
 pub trait NodeWidget: Any {
     fn node_id(&self) -> NodeId;
     fn type_name(&self) -> &'static str;
-    fn title(&self) -> &str;
+    /// User-assigned label for this specific instance. Default: empty,
+    /// meaning "no custom title set — fall back to the type name wherever
+    /// a display label is needed". Nodes with a name/label field should
+    /// return that field's current value; empty string signals "unset".
+    fn title(&self) -> &str { "" }
+
+    /// What to render in the canvas title bar and breadcrumbs: the user's
+    /// title if they've set one, otherwise the node type. Not meant to be
+    /// overridden by individual widgets.
+    fn display_title(&self) -> &str {
+        let t = self.title();
+        if t.is_empty() { self.type_name() } else { t }
+    }
 
     /// UI port definitions (may include fill colors for display).
     fn ui_inputs(&self) -> Vec<UiPortDef>;

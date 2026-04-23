@@ -927,11 +927,10 @@ impl NodeGraph {
             ) else { continue };
             let pts = bezier_sample(from_pos, to_pos, 20);
             let d = point_to_polyline_distance(pointer, &pts);
-            if d <= tolerance {
-                if best.as_ref().map(|(db, _)| d < *db).unwrap_or(true) {
+            if d <= tolerance
+                && best.as_ref().map(|(db, _)| d < *db).unwrap_or(true) {
                     best = Some((d, conn.clone()));
                 }
-            }
         }
         best.map(|(_, c)| c)
     }
@@ -1328,7 +1327,7 @@ impl NodeGraph {
             let disabled = level.nodes[i].shared_state().lock().unwrap().disabled;
             draw_node_chrome(
                 &painter,
-                level.nodes[i].title(),
+                level.nodes[i].display_title(),
                 level.nodes[i].resizable(),
                 level.nodes[i].accent_color(),
                 &inputs,
@@ -2445,7 +2444,7 @@ impl NodeGraph {
     fn navigate_into(&mut self, subgraph_node_index: usize) {
         let level = self.active();
         let subgraph_id = level.states[subgraph_node_index].id;
-        let label = level.nodes[subgraph_node_index].title().to_string();
+        let label = level.nodes[subgraph_node_index].display_title().to_string();
 
         // Get port defs by reading the SubgraphWidget's display from shared state.
         // The widget's ports are also reflected in its ui_inputs/ui_outputs.
@@ -3323,7 +3322,7 @@ fn draw_dashed_rect(painter: &Painter, rect: Rect, color: Color32) {
     let gap = 4.0;
     let seg = dash + gap;
 
-    let mut draw_dashed_segment = |from: Pos2, to: Pos2| {
+    let draw_dashed_segment = |from: Pos2, to: Pos2| {
         let diff = to - from;
         let len = diff.length();
         if len <= 0.0 { return; }

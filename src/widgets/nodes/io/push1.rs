@@ -45,7 +45,6 @@ impl Push1Widget {
 impl NodeWidget for Push1Widget {
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { "Push 1" }
-    fn title(&self) -> &str { "Push 1" }
     fn description(&self) -> &'static str {
         "Ableton Push 1 dedicated node. Groups the device's controls into \
          (trigger, address, value) channels — e.g. one `pad trig` pulse per \

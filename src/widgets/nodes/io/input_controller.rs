@@ -78,7 +78,6 @@ impl InputControllerWidget {
 impl NodeWidget for InputControllerWidget {
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { "Input Controller" }
-    fn title(&self) -> &str { "Input Controller" }
     fn description(&self) -> &'static str {
         "Outputs the current value of each learned input on the selected controller."
     }

@@ -23,7 +23,6 @@ impl PaletteToGradientWidget {
 impl NodeWidget for PaletteToGradientWidget {
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { "Palette to Gradient" }
-    fn title(&self) -> &str { "Palette → Gradient" }
     fn description(&self) -> &'static str {
         "Builds a 4-stop gradient from a palette and one position per palette colour. \
          Wire `pos1..pos4` to drive stop positions from the graph, or set them in the inspector."

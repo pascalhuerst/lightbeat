@@ -21,7 +21,6 @@ impl TriggerHoldWidget {
 impl NodeWidget for TriggerHoldWidget {
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { "Trigger Hold" }
-    fn title(&self) -> &str { "Trigger Hold" }
     fn description(&self) -> &'static str {
         "Holds a trigger high for N ticks after each rising edge. Duration via input or param."
     }

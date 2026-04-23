@@ -145,9 +145,7 @@ impl FaderGroupWidget {
 impl NodeWidget for FaderGroupWidget {
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { "Fader Group" }
-    fn title(&self) -> &str {
-        if self.name.is_empty() { "Fader Group" } else { self.name.as_str() }
-    }
+    fn title(&self) -> &str { &self.name }
     fn description(&self) -> &'static str {
         "Grid of faders. Each cell has its own input enable, mouse override mode, and bipolar setting."
     }

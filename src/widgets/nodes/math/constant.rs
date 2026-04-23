@@ -28,7 +28,6 @@ impl ConstantWidget {
 impl NodeWidget for ConstantWidget {
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { ConstantProcessNode::type_name_for(self.port_type) }
-    fn title(&self) -> &str { self.type_name() }
     fn description(&self) -> &'static str { "Constant value source for any port type, edited via the inspector." }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> { vec![] }

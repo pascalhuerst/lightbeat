@@ -40,7 +40,6 @@ impl ColorDisplayWidget {
 impl NodeWidget for ColorDisplayWidget {
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { "Color Display" }
-    fn title(&self) -> &str { "Color Display" }
     fn description(&self) -> &'static str {
         "Shows a color swatch, palette (4-color set), or gradient preview. Mode auto-detected from the first connected wire."
     }

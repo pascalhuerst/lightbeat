@@ -54,7 +54,6 @@ impl MultiplexerWidget {
 impl NodeWidget for MultiplexerWidget {
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { "Multiplexer" }
-    fn title(&self) -> &str { "Multiplexer" }
     fn description(&self) -> &'static str {
         "Routes one of N typed inputs to a single output based on the `select` index (rounded, clamped 0..N-1). Port type auto-detected from the first connection; slot count set in the inspector."
     }
@@ -143,7 +142,6 @@ impl DemultiplexerWidget {
 impl NodeWidget for DemultiplexerWidget {
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { "Demultiplexer" }
-    fn title(&self) -> &str { "Demultiplexer" }
     fn description(&self) -> &'static str {
         "Routes a typed input to one of N outputs based on the `select` index. Unselected outputs emit zero. Port type auto-detected from the first connection; slot count set in the inspector."
     }

@@ -34,7 +34,6 @@ impl ClockWidget {
 impl NodeWidget for ClockWidget {
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { "Clock" }
-    fn title(&self) -> &str { "Clock" }
     fn description(&self) -> &'static str { "Master clock synced to Ableton Link peers; outputs beat, play state, and phase." }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> { vec![] }

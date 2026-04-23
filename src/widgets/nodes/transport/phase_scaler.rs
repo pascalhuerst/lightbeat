@@ -36,7 +36,6 @@ fn exponent_label(exp: i32) -> String {
 impl NodeWidget for PhaseScalerWidget {
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { "Phase Scaler" }
-    fn title(&self) -> &str { "Phase Scaler" }
     fn description(&self) -> &'static str { "Multiplies or divides phase rate by a power of two to speed up or slow down cycles." }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> {

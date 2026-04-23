@@ -119,7 +119,6 @@ impl ColorMergeWidget {
 impl NodeWidget for ColorMergeWidget {
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { "Color Merge" }
-    fn title(&self) -> &str { "Color Merge" }
     fn description(&self) -> &'static str { "Combines components into a color. Mode (RGB/HSV/RGBW/CMY/Palette) is auto-detected from the first connection." }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> {
@@ -196,7 +195,6 @@ impl ColorSplitWidget {
 impl NodeWidget for ColorSplitWidget {
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { "Color Split" }
-    fn title(&self) -> &str { "Color Split" }
     fn description(&self) -> &'static str { "Splits a color into components. Mode (RGB/HSV/RGBW/CMY/Palette) is auto-detected from the first connection." }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> {

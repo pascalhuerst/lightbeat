@@ -106,9 +106,6 @@ impl NodeWidget for AudioInputWidget {
     fn type_name(&self) -> &'static str {
         "Audio Input"
     }
-    fn title(&self) -> &str {
-        "Audio Input"
-    }
     fn description(&self) -> &'static str {
         "Outputs analyzer values from the selected audio input. Add analyzers in the Audio Inputs window."
     }

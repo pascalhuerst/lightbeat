@@ -40,7 +40,6 @@ impl StepSequencerWidget {
 impl NodeWidget for StepSequencerWidget {
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { "Step Sequencer" }
-    fn title(&self) -> &str { "Step Sequencer" }
     fn description(&self) -> &'static str { "N-step pattern advanced by phase; outputs current step value, index, and per-step trigger." }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> {

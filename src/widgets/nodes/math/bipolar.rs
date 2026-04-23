@@ -20,7 +20,6 @@ impl BipolarWidget {
 impl NodeWidget for BipolarWidget {
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { "Bipolar" }
-    fn title(&self) -> &str { "Bipolar" }
     fn description(&self) -> &'static str {
         "Maps a unipolar input (0..1) to a bipolar signal centered on `center` with ±range/2 swing. \
          Formula: out = (in - 0.5) * range + center. Defaults (range=1, center=0) give -0.5..+0.5."

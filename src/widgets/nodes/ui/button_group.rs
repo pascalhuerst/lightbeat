@@ -93,9 +93,7 @@ impl ButtonGroupWidget {
 impl NodeWidget for ButtonGroupWidget {
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { "Button Group" }
-    fn title(&self) -> &str {
-        if self.name.is_empty() { "Button Group" } else { self.name.as_str() }
-    }
+    fn title(&self) -> &str { &self.name }
     fn description(&self) -> &'static str {
         "Grid of buttons with one Logic output per cell. Trigger or Toggle mode applies to all."
     }

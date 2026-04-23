@@ -6114,8 +6114,8 @@
       "name": "BCF2000",
       "kind": {
         "Bcf2000": {
-          "hw_input_port": "BCF2000:BCF2000 MIDI 1 24:0",
-          "hw_output_port": "BCF2000:BCF2000 MIDI 1 24:0"
+          "hw_input_port": "BCF2000:BCF2000 MIDI 1 20:0",
+          "hw_output_port": "BCF2000:BCF2000 MIDI 1 20:0"
         }
       },
       "inputs": [
@@ -6741,10 +6741,10 @@
   "audio_inputs": [
     {
       "id": 1,
-      "name": "Audio Input",
+      "name": "Pipewire",
       "device_name": "pipewire",
       "sample_rate": 48000,
-      "buffer_size_frames": 4096,
+      "buffer_size_frames": null,
       "analyzers": [
         {
           "kind": "Beat"

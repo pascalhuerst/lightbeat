@@ -61,13 +61,7 @@ impl NodeWidget for PortalInWidget {
     fn type_name(&self) -> &'static str {
         "Portal In"
     }
-    fn title(&self) -> &str {
-        if self.name.is_empty() {
-            "Portal In"
-        } else {
-            self.name.as_str()
-        }
-    }
+    fn title(&self) -> &str { &self.name }
     fn description(&self) -> &'static str {
         "Publishes its inputs under a name. Any Portal Out bound to the same name mirrors these ports as outputs — wireless cables for tidy graphs."
     }
@@ -240,13 +234,7 @@ impl NodeWidget for PortalOutWidget {
     fn type_name(&self) -> &'static str {
         "Portal Out"
     }
-    fn title(&self) -> &str {
-        if self.bound_name.is_empty() {
-            "Portal Out"
-        } else {
-            self.bound_name.as_str()
-        }
-    }
+    fn title(&self) -> &str { &self.bound_name }
     fn description(&self) -> &'static str {
         "Mirrors a Portal In's inputs as outputs. Select which Portal In to follow by name in the inspector."
     }
