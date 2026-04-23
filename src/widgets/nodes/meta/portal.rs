@@ -176,6 +176,8 @@ impl NodeWidget for PortalInWidget {
         }
     }
 
+    fn show_port_labels(&self) -> bool { true }
+
     fn as_any_mut(&mut self) -> &mut dyn Any {
         self
     }
@@ -349,6 +351,8 @@ impl NodeWidget for PortalOutWidget {
             ui.colored_label(theme::SEM_WARNING, "No Portal In publishing this name yet.");
         }
     }
+
+    fn show_port_labels(&self) -> bool { true }
 
     fn as_any_mut(&mut self) -> &mut dyn Any {
         self

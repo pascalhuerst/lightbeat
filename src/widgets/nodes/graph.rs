@@ -1338,6 +1338,7 @@ impl NodeGraph {
                 node_rects[i],
                 selected,
                 portal_peer,
+                level.nodes[i].show_port_labels(),
                 z,
             );
         }
@@ -2995,6 +2996,7 @@ fn draw_node_chrome(
     rect: Rect,
     selected: bool,
     portal_peer: bool,
+    show_port_labels: bool,
     zoom: f32,
 ) {
     // Shadow
@@ -3089,6 +3091,13 @@ fn draw_node_chrome(
         let pos = port_pos_z(rect.min, rect.width(), PortDir::Input, i, zoom);
         let hi = in_highlights.get(i).copied().unwrap_or(0.0);
         draw_port(painter, pos, ui_port, hi, zoom, disabled);
+        if show_port_labels {
+            let pad = 6.0 * zoom;
+            let label_x = pos.x + PORT_RADIUS * zoom + pad;
+            let right_limit = rect.max.x - (PORT_RADIUS + 8.0) * zoom;
+            draw_port_label(painter, &ui_port.def.name, label_x, pos.y,
+                (right_limit - label_x).max(0.0), egui::Align::LEFT, zoom);
+        }
     }
 
     // Output ports
@@ -3096,6 +3105,13 @@ fn draw_node_chrome(
         let pos = port_pos_z(rect.min, rect.width(), PortDir::Output, i, zoom);
         let hi = out_highlights.get(i).copied().unwrap_or(0.0);
         draw_port(painter, pos, ui_port, hi, zoom, disabled);
+        if show_port_labels {
+            let pad = 6.0 * zoom;
+            let label_right = pos.x - PORT_RADIUS * zoom - pad;
+            let left_limit = rect.min.x + (PORT_RADIUS + 8.0) * zoom;
+            draw_port_label(painter, &ui_port.def.name, label_right, pos.y,
+                (label_right - left_limit).max(0.0), egui::Align::RIGHT, zoom);
+        }
     }
 
     // Resize handle (small triangle in bottom-right corner)
@@ -3300,6 +3316,52 @@ fn draw_port(
             Color32::BLACK,
         );
     }
+}
+
+/// Render a port-name label next to a port dot. `anchor_x` is where the
+/// label edge closest to the dot sits; `align` picks which edge (LEFT =
+/// label grows rightward from `anchor_x`, RIGHT = label grows leftward).
+/// If the full text doesn't fit within `max_width`, the label is truncated
+/// with an ellipsis. If even a 2-character truncation doesn't fit, the
+/// label is skipped entirely — better nothing than "…".
+fn draw_port_label(
+    painter: &Painter,
+    text: &str,
+    anchor_x: f32,
+    center_y: f32,
+    max_width: f32,
+    align: egui::Align,
+    zoom: f32,
+) {
+    if max_width <= 0.0 || text.is_empty() { return; }
+    let font = egui::FontId::proportional(11.0 * zoom.max(0.5));
+    let color = theme::TEXT_DIM;
+
+    let full = painter.layout_no_wrap(text.to_string(), font.clone(), color);
+    let galley = if full.size().x <= max_width {
+        full
+    } else {
+        // Try progressively shorter prefixes with an ellipsis until one fits.
+        let chars: Vec<char> = text.chars().collect();
+        let mut chosen = None;
+        for n in (2..chars.len()).rev() {
+            let trunc: String = chars[..n].iter().collect::<String>() + "…";
+            let g = painter.layout_no_wrap(trunc, font.clone(), color);
+            if g.size().x <= max_width {
+                chosen = Some(g);
+                break;
+            }
+        }
+        match chosen { Some(g) => g, None => return }
+    };
+
+    let x = match align {
+        egui::Align::LEFT => anchor_x,
+        egui::Align::RIGHT => anchor_x - galley.size().x,
+        egui::Align::Center => anchor_x - galley.size().x * 0.5,
+    };
+    let y = center_y - galley.size().y * 0.5;
+    painter.galley(Pos2::new(x, y), galley, color);
 }
 
 fn draw_grid(painter: &Painter, rect: Rect, pan: Vec2, zoom: f32) {

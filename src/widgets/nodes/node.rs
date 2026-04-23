@@ -88,6 +88,13 @@ pub trait NodeWidget: Any {
     /// Use when the widget renders its own per-port summary in `show_inspector`.
     fn inspector_hides_default_ports(&self) -> bool { false }
 
+    /// When true, the canvas renderer draws each port's name next to its
+    /// port dot (labels auto-truncate with ellipsis if they don't fit, and
+    /// are skipped entirely if nothing can fit). Meant for nodes that
+    /// render nothing in their content area (Portal, Graph Input/Output)
+    /// — otherwise the label would overlap the widget's own UI. Default: off.
+    fn show_port_labels(&self) -> bool { false }
+
     /// Param indices that are currently overridden by a wired input and
     /// should be hidden from the auto-inspector. Pattern: when an input
     /// port is wired, the wire's value supersedes the matching param;

@@ -341,6 +341,8 @@ impl NodeWidget for GraphInputWidget {
 
     fn show_content(&mut self, _ui: &mut Ui, _zoom: f32) {}
 
+    fn show_port_labels(&self) -> bool { true }
+
     fn as_any_mut(&mut self) -> &mut dyn Any {
         self
     }
@@ -434,6 +436,8 @@ impl NodeWidget for GraphOutputWidget {
     }
 
     fn show_content(&mut self, _ui: &mut Ui, _zoom: f32) {}
+
+    fn show_port_labels(&self) -> bool { true }
 
     fn as_any_mut(&mut self) -> &mut dyn Any {
         self
