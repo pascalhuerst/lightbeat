@@ -42,6 +42,7 @@ use engine::nodes::ui::fader::FaderProcessNode;
 use engine::nodes::ui::fader_group::FaderGroupProcessNode;
 use engine::nodes::ui::peak_meter::PeakMeterProcessNode;
 use engine::nodes::ui::xy_pad::XyPadProcessNode;
+use engine::nodes::ui::gradient_stops::GradientStopsProcessNode;
 use engine::nodes::math::bipolar::BipolarProcessNode;
 use engine::nodes::math::change_detect::ChangeDetectProcessNode;
 use engine::nodes::math::schmitt::SchmittTriggerProcessNode;
@@ -90,6 +91,7 @@ use widgets::nodes::ui::fader::FaderWidget;
 use widgets::nodes::ui::fader_group::FaderGroupWidget;
 use widgets::nodes::ui::peak_meter::PeakMeterWidget;
 use widgets::nodes::ui::xy_pad::XyPadWidget;
+use widgets::nodes::ui::gradient_stops::GradientStopsWidget;
 use widgets::nodes::math::bipolar::BipolarWidget;
 use widgets::nodes::math::change_detect::ChangeDetectWidget;
 use widgets::nodes::math::schmitt::SchmittTriggerWidget;
@@ -393,8 +395,13 @@ impl LightBeatApp {
             Box::new(FaderGroupWidget::new(id, new_shared_state(256, 256)))
         });
         self.graph.register_node("UI", "XY Pad", |id| {
-            // No inputs. 4 outputs (bilinear corner weights).
-            Box::new(XyPadWidget::new(id, new_shared_state(0, 4)))
+            // No inputs; outputs x and y (0..1).
+            Box::new(XyPadWidget::new(id, new_shared_state(0, 2)))
+        });
+        self.graph.register_node("UI", "Gradient Stops", |id| {
+            // 1 Palette input (12 channels) for the live preview, 4 position
+            // outputs to feed Palette → Gradient's pos1..pos4.
+            Box::new(GradientStopsWidget::new(id, new_shared_state(12, 4)))
         });
         self.graph.register_node("UI", "Peak Level Meter", |id| {
             Box::new(PeakMeterWidget::new(id, new_shared_state(2, 0)))
@@ -724,6 +731,7 @@ impl LightBeatApp {
                 "Fader Group" => Some(Box::new(FaderGroupProcessNode::new(id))),
                 "Peak Level Meter" => Some(Box::new(PeakMeterProcessNode::new(id))),
                 "XY Pad" => Some(Box::new(XyPadProcessNode::new(id))),
+                "Gradient Stops" => Some(Box::new(GradientStopsProcessNode::new(id))),
                 "Phase Scaler" => Some(Box::new(PhaseScalerProcessNode::new(id))),
                 "LFO" => Some(Box::new(LfoProcessNode::new(id))),
                 "Step Sequencer" => Some(Box::new(StepSequencerProcessNode::new(id))),
