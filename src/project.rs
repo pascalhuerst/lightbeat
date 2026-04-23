@@ -493,8 +493,12 @@ pub fn load_graph(graph: &mut NodeGraph, project: &ProjectFile) -> Vec<usize> {
         graph.add_connection(from, to);
     }
 
-    // Restore decorative frames into the active level.
-    {
+    // Restore decorative frames into the active level. Only touch the
+    // active level's frames when the project actually carries some — this
+    // is the same function that's used to graft a macro (single Subgraph
+    // node with empty frames) into an existing level, and wiping the
+    // user's frames there would silently discard them on every macro drop.
+    if !project.frames.is_empty() {
         let target = graph.frames_mut();
         target.clear();
         for sf in &project.frames {

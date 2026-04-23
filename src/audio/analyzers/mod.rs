@@ -14,9 +14,9 @@
 //!   the same audio sample window. This is what makes onsets, envelope
 //!   levels, and peak meters phase-coherent in the graph.
 
-pub mod audio_beat;
 pub mod beat;
 pub mod envelope;
+pub mod onset;
 pub mod peak_level;
 pub mod worker;
 
@@ -32,18 +32,18 @@ pub use worker::{AnalyzerFrame, AnalyzerWorker, SharedAnalyzerFrame};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum AnalyzerKind {
     Beat,
-    AudioBeat,
+    Onset,
     PeakLevel,
     Envelope,
 }
 
 impl AnalyzerKind {
-    pub const ALL: [Self; 4] = [Self::Beat, Self::AudioBeat, Self::PeakLevel, Self::Envelope];
+    pub const ALL: [Self; 4] = [Self::Beat, Self::Onset, Self::PeakLevel, Self::Envelope];
 
     pub fn label(&self) -> &'static str {
         match self {
-            AnalyzerKind::Beat => "Beat",
-            AnalyzerKind::AudioBeat => "Audio Beat (aubio)",
+            AnalyzerKind::Beat => "Beat (onset + BPM)",
+            AnalyzerKind::Onset => "Onset (LP)",
             AnalyzerKind::PeakLevel => "Peak Level",
             AnalyzerKind::Envelope => "Envelope",
         }
@@ -53,9 +53,13 @@ impl AnalyzerKind {
     /// port declaration and for display slicing in the Audio Input node.
     pub fn outputs(&self) -> Vec<PortDef> {
         match self {
-            AnalyzerKind::Beat | AnalyzerKind::AudioBeat => vec![
+            AnalyzerKind::Beat => vec![
                 PortDef::new("onset", PortType::Logic),
                 PortDef::new("bpm", PortType::Untyped),
+            ],
+            AnalyzerKind::Onset => vec![
+                PortDef::new("onset", PortType::Logic),
+                PortDef::new("odf", PortType::Untyped),
             ],
             AnalyzerKind::PeakLevel => vec![
                 PortDef::new("peak", PortType::Untyped),
@@ -73,7 +77,7 @@ impl AnalyzerKind {
     pub fn default_params(&self) -> Vec<ParamDef> {
         match self {
             AnalyzerKind::Beat => beat::beat_params(),
-            AnalyzerKind::AudioBeat => audio_beat::audio_beat_params(),
+            AnalyzerKind::Onset => onset::onset_params(),
             AnalyzerKind::PeakLevel => peak_level::peak_params(),
             AnalyzerKind::Envelope => envelope::envelope_params(),
         }
@@ -146,7 +150,7 @@ pub fn create_analyzer(
 ) -> (AnalyzerHandle, Box<dyn AnalyzerProc>) {
     match kind {
         AnalyzerKind::Beat => beat::create(sample_rate),
-        AnalyzerKind::AudioBeat => audio_beat::create(sample_rate),
+        AnalyzerKind::Onset => onset::create(sample_rate),
         AnalyzerKind::PeakLevel => peak_level::create(sample_rate),
         AnalyzerKind::Envelope => envelope::create(sample_rate),
     }

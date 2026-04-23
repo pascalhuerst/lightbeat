@@ -188,7 +188,7 @@ impl NodeWidget for AudioInputWidget {
         let _style = FaderStyle::default();
         for (i, (kind, vals)) in self.analyzer_results.iter().enumerate() {
             match kind {
-                AnalyzerKind::Beat | AnalyzerKind::AudioBeat => {
+                AnalyzerKind::Beat => {
                     let bpm = vals.get(1).copied().unwrap_or(0.0);
                     ui.horizontal(|ui| {
                         ui.colored_label(Color32::from_gray(120), format!("a{}", i));
@@ -197,6 +197,16 @@ impl NodeWidget for AudioInputWidget {
                         } else {
                             ui.colored_label(Color32::from_gray(120), "BPM —");
                         }
+                    });
+                }
+                AnalyzerKind::Onset => {
+                    // The Onset analyzer's index-1 output is the raw ODF
+                    // value (unnormalised flux) — useful for a scope, not
+                    // for an in-node label. Just show the analyzer tag.
+                    let odf = vals.get(1).copied().unwrap_or(0.0);
+                    ui.horizontal(|ui| {
+                        ui.colored_label(Color32::from_gray(120), format!("a{}", i));
+                        ui.colored_label(Color32::from_gray(150), format!("ODF {:.1}", odf));
                     });
                 }
                 AnalyzerKind::PeakLevel => {

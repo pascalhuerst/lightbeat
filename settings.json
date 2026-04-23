@@ -5,7 +5,7 @@
   "inspector_mode": "Auto",
   "dmx_bypass_on_startup": false,
   "window_size": null,
-  "window_maximized": false,
+  "window_maximized": true,
   "recent_projects": [
     "/home/paso/LightBeat/test_project_audio_1.json",
     "/home/paso/LightBeat/test_project_1.json",

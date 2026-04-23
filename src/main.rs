@@ -44,6 +44,7 @@ use engine::nodes::ui::peak_meter::PeakMeterProcessNode;
 use engine::nodes::ui::xy_pad::XyPadProcessNode;
 use engine::nodes::math::bipolar::BipolarProcessNode;
 use engine::nodes::math::change_detect::ChangeDetectProcessNode;
+use engine::nodes::math::schmitt::SchmittTriggerProcessNode;
 use engine::nodes::math::flipflop::{FlipFlopProcessNode, JkFlipFlopProcessNode};
 use engine::nodes::math::color_modifier::ColorModifierProcessNode;
 use engine::nodes::math::color_ops::{ColorMergeProcessNode, ColorSplitProcessNode};
@@ -91,6 +92,7 @@ use widgets::nodes::ui::peak_meter::PeakMeterWidget;
 use widgets::nodes::ui::xy_pad::XyPadWidget;
 use widgets::nodes::math::bipolar::BipolarWidget;
 use widgets::nodes::math::change_detect::ChangeDetectWidget;
+use widgets::nodes::math::schmitt::SchmittTriggerWidget;
 use widgets::nodes::math::flipflop::{FlipFlopKind, FlipFlopWidget};
 use widgets::nodes::math::color_modifier::ColorModifierWidget;
 use widgets::nodes::math::color_ops::{ColorMergeWidget, ColorSplitWidget};
@@ -400,7 +402,7 @@ impl LightBeatApp {
 
         // Transport
         self.graph.register_node("Transport", "Phase Scaler", |id| {
-            Box::new(PhaseScalerWidget::new(id, new_shared_state(1, 1)))
+            Box::new(PhaseScalerWidget::new(id, new_shared_state(2, 1)))
         });
         self.graph.register_node("Transport", "LFO", |id| {
             Box::new(LfoWidget::new(id, new_shared_state(1, 2)))
@@ -480,6 +482,9 @@ impl LightBeatApp {
         });
         self.graph.register_node("Math", "Change Detect", |id| {
             Box::new(ChangeDetectWidget::new(id, new_shared_state(2, 2)))
+        });
+        self.graph.register_node("Math", "Schmitt Trigger", |id| {
+            Box::new(SchmittTriggerWidget::new(id, new_shared_state(1, 1)))
         });
 
         // Compare
@@ -775,6 +780,7 @@ impl LightBeatApp {
                 "Lookup" => Some(Box::new(LookupProcessNode::new(id))),
                 "Counter" => Some(Box::new(CounterProcessNode::new(id))),
                 "Change Detect" => Some(Box::new(ChangeDetectProcessNode::new(id))),
+                "Schmitt Trigger" => Some(Box::new(SchmittTriggerProcessNode::new(id))),
                 "Const Value" => Some(Box::new(ConstantProcessNode::new(id, PortType::Untyped, 0.0))),
                 "Const Logic" => Some(Box::new(ConstantProcessNode::new(id, PortType::Logic, 0.0))),
                 "Const Phase" => Some(Box::new(ConstantProcessNode::new(id, PortType::Phase, 0.0))),

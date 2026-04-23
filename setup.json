@@ -6740,40 +6740,16 @@
   ],
   "audio_inputs": [
     {
-      "id": 1,
-      "name": "cpal",
-      "backend": "Cpal",
-      "device_name": "pipewire",
-      "sample_rate": 48000,
-      "buffer_size_frames": null,
-      "analyzers": [
-        {
-          "kind": "Beat"
-        },
-        {
-          "kind": "PeakLevel"
-        },
-        {
-          "kind": "Envelope"
-        },
-        {
-          "kind": "AudioBeat"
-        }
-      ]
-    },
-    {
       "id": 2,
       "name": "Jack Input",
+      "enabled": true,
       "backend": "Jack",
       "device_name": "Loopback Analog Stereo:capture_FL",
       "sample_rate": 48000,
-      "buffer_size_frames": 256,
+      "buffer_size_frames": 1024,
       "analyzers": [
         {
           "kind": "Beat"
-        },
-        {
-          "kind": "AudioBeat"
         },
         {
           "kind": "PeakLevel"

@@ -16,3 +16,4 @@ pub mod palette_select;
 pub mod palette_to_gradient;
 pub mod position_ops;
 pub mod scaler;
+pub mod schmitt;

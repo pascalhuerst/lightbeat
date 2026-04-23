@@ -96,13 +96,11 @@ impl ProcessNode for AudioInputProcessNode {
             return;
         };
 
-        // Port layout follows the live analyzer set. Empty until the worker
-        // comes up; gets rebuilt whenever the analyzer set changes.
-        let kinds: Vec<AnalyzerKind> = input
-            .analyzer_handles
-            .iter()
-            .map(|h| h.kind)
-            .collect();
+        // Port layout follows the persistent `analyzer_kinds` — the config,
+        // not the live handles. This means disabling the audio input (which
+        // clears the live handles/frame) leaves the port list intact, so
+        // wires in the graph survive a disable → enable toggle.
+        let kinds: Vec<AnalyzerKind> = input.analyzer_kinds.clone();
         if kinds != self.cached_kinds {
             let mut expected: Vec<PortDef> = Vec::new();
             for (i, k) in kinds.iter().enumerate() {
@@ -120,6 +118,10 @@ impl ProcessNode for AudioInputProcessNode {
         // Read the latest phase-aligned analyzer frame.
         let Some(frame_arc) = input.analyzer_frame.clone() else {
             for v in &mut self.output_values { *v = 0.0; }
+            // Reset onset caches so a future re-enable (worker restart with
+            // onset_counter back at 0) doesn't edge-detect against our
+            // pre-disable cache value and fire a spurious pulse.
+            for c in self.caches.iter_mut() { *c = AnalyzerCache::default(); }
             self.display_name = input.name.clone();
             self.display_params = input.analyzer_param_defs();
             self.display_outputs = self.outputs.iter().enumerate()
@@ -139,7 +141,7 @@ impl ProcessNode for AudioInputProcessNode {
         let mut slot = 0;
         for (ai, k) in self.cached_kinds.iter().enumerate() {
             let n = k.outputs().len();
-            let is_trigger = matches!(k, AnalyzerKind::Beat | AnalyzerKind::AudioBeat);
+            let is_trigger = matches!(k, AnalyzerKind::Beat | AnalyzerKind::Onset);
             let onset_pulse = if is_trigger {
                 let cur = frame.onset_counts.get(ai).copied().unwrap_or(0);
                 let prev = self.caches[ai].last_onset_count;

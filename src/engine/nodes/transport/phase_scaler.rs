@@ -6,6 +6,8 @@ pub struct PhaseScalerProcessNode {
     offset: f32,
     phase_in: f32,
     prev_phase_in: f32,
+    reset_in: f32,
+    prev_reset: f32,
     phase_out: f32,
     cycle_counter: u64,
     inputs: Vec<PortDef>,
@@ -20,9 +22,14 @@ impl PhaseScalerProcessNode {
             offset: 0.0,
             phase_in: 0.0,
             prev_phase_in: 0.0,
+            reset_in: 0.0,
+            prev_reset: 0.0,
             phase_out: 0.0,
             cycle_counter: 0,
-            inputs: vec![PortDef::new("phase", PortType::Phase)],
+            inputs: vec![
+                PortDef::new("phase", PortType::Phase),
+                PortDef::new("reset", PortType::Logic),
+            ],
             outputs: vec![PortDef::new("phase", PortType::Phase)],
         }
     }
@@ -40,17 +47,37 @@ impl ProcessNode for PhaseScalerProcessNode {
     fn outputs(&self) -> &[PortDef] { &self.outputs }
 
     fn read_input(&self, port_index: usize) -> f32 {
-        match port_index { 0 => self.phase_in, _ => 0.0 }
+        match port_index {
+            0 => self.phase_in,
+            1 => self.reset_in,
+            _ => 0.0,
+        }
     }
 
     fn write_input(&mut self, port_index: usize, value: f32) {
-        if port_index == 0 { self.phase_in = value; }
+        match port_index {
+            0 => self.phase_in = value,
+            1 => self.reset_in = value,
+            _ => {}
+        }
     }
 
     fn process(&mut self) {
-        let delta = self.phase_in - self.prev_phase_in;
-        if delta < -0.5 { self.cycle_counter += 1; }
-        self.prev_phase_in = self.phase_in;
+        // Rising edge on `reset` resyncs the sub-cycle phase to the input:
+        // clears the multi-cycle accumulator (only used in divide mode) and
+        // latches `prev_phase_in` so the next tick doesn't see a spurious
+        // wrap. After this, a divide-by-N scaler starts its next window
+        // from sample 0, aligned to wherever the input's phase is now.
+        let reset_edge = self.prev_reset < 0.5 && self.reset_in >= 0.5;
+        self.prev_reset = self.reset_in;
+        if reset_edge {
+            self.cycle_counter = 0;
+            self.prev_phase_in = self.phase_in;
+        } else {
+            let delta = self.phase_in - self.prev_phase_in;
+            if delta < -0.5 { self.cycle_counter += 1; }
+            self.prev_phase_in = self.phase_in;
+        }
 
         if self.exponent >= 0 {
             let multiplier = (1u64 << self.exponent) as f32;

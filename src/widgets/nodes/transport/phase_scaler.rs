@@ -19,7 +19,10 @@ impl PhaseScalerWidget {
         Self {
             id,
             shared,
-            inputs: vec![PortDef::new("phase", PortType::Phase)],
+            inputs: vec![
+                PortDef::new("phase", PortType::Phase),
+                PortDef::new("reset", PortType::Logic),
+            ],
             outputs: vec![PortDef::new("phase", PortType::Phase)],
         }
     }
@@ -36,7 +39,12 @@ fn exponent_label(exp: i32) -> String {
 impl NodeWidget for PhaseScalerWidget {
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { "Phase Scaler" }
-    fn description(&self) -> &'static str { "Multiplies or divides phase rate by a power of two to speed up or slow down cycles." }
+    fn description(&self) -> &'static str {
+        "Multiplies or divides phase rate by a power of two to speed up or \
+         slow down cycles. A rising edge on `reset` resyncs the sub-cycle \
+         counter — useful to keep a divided phase aligned to an external \
+         downbeat or a detected onset."
+    }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> {
         self.inputs.iter().map(UiPortDef::from_def).collect()
