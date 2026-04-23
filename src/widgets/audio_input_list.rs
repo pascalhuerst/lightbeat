@@ -22,6 +22,7 @@ pub fn show(ui: &mut Ui, mgr: &mut AudioInputManager) {
 
     let mut remove_input: Option<u32> = None;
     let mut rename_input: Vec<(u32, String)> = Vec::new();
+    let mut set_enabled: Vec<(u32, bool)> = Vec::new();
     let mut set_backend: Vec<(u32, AudioBackendKind)> = Vec::new();
     let mut set_device: Vec<(u32, String)> = Vec::new();
     let mut set_rate: Vec<(u32, Option<u32>)> = Vec::new();
@@ -48,6 +49,16 @@ pub fn show(ui: &mut Ui, mgr: &mut AudioInputManager) {
                                 let mut name = c.name.clone();
                                 if ui.text_edit_singleline(&mut name).changed() {
                                     rename_input.push((c.id, name));
+                                }
+                                let mut enabled = c.enabled;
+                                if ui.checkbox(&mut enabled, "Enabled")
+                                    .on_hover_text(
+                                        "When off, this input releases its device and stops all \
+                                         analyzers. Turn on to reconnect.",
+                                    )
+                                    .changed()
+                                {
+                                    set_enabled.push((c.id, enabled));
                                 }
                             });
 
@@ -85,6 +96,7 @@ pub fn show(ui: &mut Ui, mgr: &mut AudioInputManager) {
                                     ConnectionStatus::Connected => ("Connected", Color32::from_rgb(80, 200, 80)),
                                     ConnectionStatus::Waiting => ("Waiting", Color32::from_rgb(220, 180, 60)),
                                     ConnectionStatus::Disconnected => ("No mapping", Color32::from_gray(140)),
+                                    ConnectionStatus::Disabled => ("Disabled", Color32::from_gray(120)),
                                 };
                                 ui.colored_label(status_color, status_text);
                             });
@@ -152,12 +164,12 @@ pub fn show(ui: &mut Ui, mgr: &mut AudioInputManager) {
                             ui.separator();
                             ui.label(egui::RichText::new("Analyzers").strong());
 
-                            if c.analyzers.is_empty() {
+                            if c.analyzer_kinds.is_empty() {
                                 ui.colored_label(Color32::from_gray(120), "No analyzers.");
                             }
-                            for (idx, a) in c.analyzers.iter().enumerate() {
+                            for (idx, kind) in c.analyzer_kinds.iter().enumerate() {
                                 ui.horizontal(|ui| {
-                                    ui.label(format!("{}. {}", idx + 1, a.kind.label()));
+                                    ui.label(format!("{}. {}", idx + 1, kind.label()));
                                     if ui.small_button(egui_phosphor::regular::X).clicked() {
                                         remove_analyzer.push((c.id, idx));
                                     }
@@ -196,6 +208,7 @@ pub fn show(ui: &mut Ui, mgr: &mut AudioInputManager) {
 
     // Apply queued mutations after the lock is released.
     for (id, name) in rename_input { mgr.rename(id, name); }
+    for (id, on) in set_enabled { mgr.set_enabled(id, on); }
     for (id, b) in set_backend { mgr.set_backend(id, b); }
     for (id, dev) in set_device { mgr.set_device(id, dev); }
     for (id, sr) in set_rate { mgr.set_sample_rate(id, sr); }

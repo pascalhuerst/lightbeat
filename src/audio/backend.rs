@@ -19,7 +19,7 @@ pub const DEFAULT_SAMPLE_RATE: u32 = 48_000;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum AudioBackendKind {
     Cpal,
-    // Pipewire, Alsa — to be added.
+    Jack,
 }
 
 impl Default for AudioBackendKind {
@@ -27,11 +27,15 @@ impl Default for AudioBackendKind {
 }
 
 impl AudioBackendKind {
-    pub const ALL: &'static [AudioBackendKind] = &[AudioBackendKind::Cpal];
+    pub const ALL: &'static [AudioBackendKind] = &[
+        AudioBackendKind::Cpal,
+        AudioBackendKind::Jack,
+    ];
 
     pub fn label(self) -> &'static str {
         match self {
             AudioBackendKind::Cpal => "cpal",
+            AudioBackendKind::Jack => "jack",
         }
     }
 }
@@ -125,6 +129,7 @@ pub trait AudioBackend: Send + Sync {
 pub fn backend_for(kind: AudioBackendKind) -> &'static dyn AudioBackend {
     match kind {
         AudioBackendKind::Cpal => &crate::audio::cpal_device::CpalBackend,
+        AudioBackendKind::Jack => &crate::audio::jack_device::JackBackend,
     }
 }
 

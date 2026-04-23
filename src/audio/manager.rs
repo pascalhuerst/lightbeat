@@ -8,7 +8,9 @@ use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 
-use crate::audio::analyzers::{AnalyzerConfig, AnalyzerInstance, AnalyzerKind, spawn_analyzer};
+use crate::audio::analyzers::{
+    AnalyzerConfig, AnalyzerHandle, AnalyzerKind, AnalyzerWorker, SharedAnalyzerFrame,
+};
 use crate::audio::backend::{
     AudioBackendKind, DEFAULT_SAMPLE_RATE, InputStream, StreamRequest, backend_for, mk_subscriber,
 };
@@ -20,10 +22,17 @@ const DEVICE_RESCAN_INTERVAL: Duration = Duration::from_secs(3);
 
 // ---------- persistent config (SetupFile) ----------------------------------
 
+fn default_enabled() -> bool { true }
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AudioInputConfig {
     pub id: u32,
     pub name: String,
+    /// When false, the manager does not open a stream for this input, does
+    /// not spawn analyzer threads, and the device is left alone. Flip back
+    /// to true to claim the device again.
+    #[serde(default = "default_enabled")]
+    pub enabled: bool,
     /// Which audio backend owns this input. Defaults to Cpal so setups that
     /// predate the backend selector still load unchanged.
     #[serde(default)]
@@ -43,15 +52,21 @@ pub struct AudioInputConfig {
 pub struct AudioInputRuntime {
     pub id: u32,
     pub name: String,
+    pub enabled: bool,
     pub backend: AudioBackendKind,
     pub device_name: String,
     pub sample_rate: Option<u32>,
     pub buffer_size_frames: Option<u32>,
     /// Desired analyzer kinds. Source of truth for reconcile and save.
     pub analyzer_kinds: Vec<AnalyzerKind>,
-    /// Live analyzer instances. Populated by reconcile when the stream opens;
-    /// kept in lockstep with `analyzer_kinds`.
-    pub analyzers: Vec<AnalyzerInstance>,
+    /// Live per-analyzer handles (thread-safe param access). Populated by
+    /// reconcile when the stream opens; kept in lockstep with
+    /// `analyzer_kinds`. Empty until a stream is up.
+    pub analyzer_handles: Vec<AnalyzerHandle>,
+    /// Shared frame produced by the analyzer worker — holds the latest
+    /// delay-aligned snapshot of all analyzer outputs. `None` until the
+    /// stream is up.
+    pub analyzer_frame: Option<SharedAnalyzerFrame>,
     pub status: ConnectionStatus,
     /// Negotiated sample rate from the backend once the stream opens (0 until then).
     pub actual_sample_rate: u32,
@@ -66,12 +81,14 @@ impl AudioInputRuntime {
         Self {
             id: c.id,
             name: c.name.clone(),
+            enabled: c.enabled,
             backend: c.backend,
             device_name: c.device_name.clone(),
             sample_rate: c.sample_rate,
             buffer_size_frames: c.buffer_size_frames,
             analyzer_kinds: c.analyzers.iter().map(|a| a.kind).collect(),
-            analyzers: Vec::new(),
+            analyzer_handles: Vec::new(),
+            analyzer_frame: None,
             status: ConnectionStatus::Disconnected,
             actual_sample_rate: 0,
             actual_buffer_frames: 0,
@@ -83,6 +100,7 @@ impl AudioInputRuntime {
         AudioInputConfig {
             id: self.id,
             name: self.name.clone(),
+            enabled: self.enabled,
             backend: self.backend,
             device_name: self.device_name.clone(),
             sample_rate: self.sample_rate,
@@ -97,9 +115,9 @@ impl AudioInputRuntime {
 
     pub fn analyzer_param_defs(&self) -> Vec<ParamDef> {
         let mut defs = Vec::new();
-        for (i, a) in self.analyzers.iter().enumerate() {
+        for (i, h) in self.analyzer_handles.iter().enumerate() {
             let prefix = format!("a{}.", i);
-            for mut def in a.current_params() {
+            for mut def in h.current_params() {
                 let name = match &mut def {
                     ParamDef::Float { name, .. } => name,
                     ParamDef::Int { name, .. } => name,
@@ -116,8 +134,8 @@ impl AudioInputRuntime {
     /// Route a `set_param` call by global index to (analyzer_index, local_index).
     pub fn route_param(&self, global_index: usize) -> Option<(usize, usize)> {
         let mut acc = 0usize;
-        for (ai, a) in self.analyzers.iter().enumerate() {
-            let n = a.current_params().len();
+        for (ai, h) in self.analyzer_handles.iter().enumerate() {
+            let n = h.current_params().len();
             if global_index < acc + n {
                 return Some((ai, global_index - acc));
             }
@@ -128,7 +146,7 @@ impl AudioInputRuntime {
 
     pub fn set_param(&self, global_index: usize, value: ParamValue) {
         if let Some((ai, local)) = self.route_param(global_index) {
-            self.analyzers[ai].set_param(local, value);
+            self.analyzer_handles[ai].set_param(local, value);
         }
     }
 }
@@ -138,6 +156,7 @@ pub enum ConnectionStatus {
     Disconnected,
     Connected,
     Waiting,
+    Disabled,
 }
 
 pub type SharedAudioInputs = Arc<Mutex<Vec<AudioInputRuntime>>>;
@@ -164,7 +183,11 @@ struct ActiveStream {
     /// negotiate a different actual rate, but that's irrelevant for matching.
     requested_sample_rate: Option<u32>,
     buffer_size: Option<u32>,
+    /// Analyzer kinds active on this stream's worker. Used so a change in
+    /// analyzer set forces a worker rebuild.
+    analyzer_kinds: Vec<AnalyzerKind>,
     _stream: InputStream,
+    _worker: AnalyzerWorker,
 }
 
 impl AudioInputManager {
@@ -249,12 +272,14 @@ impl AudioInputManager {
         state.push(AudioInputRuntime {
             id,
             name,
+            enabled: true,
             backend: AudioBackendKind::default(),
             device_name: String::new(),
             sample_rate: Some(DEFAULT_SAMPLE_RATE),
             buffer_size_frames: None,
             analyzer_kinds: Vec::new(),
-            analyzers: Vec::new(),
+            analyzer_handles: Vec::new(),
+            analyzer_frame: None,
             status: ConnectionStatus::Disconnected,
             actual_sample_rate: 0,
             actual_buffer_frames: 0,
@@ -279,6 +304,26 @@ impl AudioInputManager {
         }
     }
 
+    /// Enable or disable the input. When disabled, the stream is torn down
+    /// (the device is released) and no analyzers run. When re-enabled,
+    /// reconcile opens a fresh stream on the next tick.
+    pub fn set_enabled(&mut self, id: u32, enabled: bool) {
+        {
+            let mut state = self.shared.lock().unwrap();
+            if let Some(c) = state.iter_mut().find(|c| c.id == id) {
+                if c.enabled == enabled { return; }
+                c.enabled = enabled;
+                if !enabled {
+                    c.analyzer_handles.clear(); c.analyzer_frame = None;
+                    c.status = ConnectionStatus::Disabled;
+                    c.actual_sample_rate = 0;
+                    c.actual_buffer_frames = 0;
+                }
+            }
+        }
+        self.reconcile();
+    }
+
     /// Switch the backend for an input. Clears the device-name mapping since
     /// device names aren't portable across backends.
     pub fn set_backend(&mut self, id: u32, backend: AudioBackendKind) {
@@ -289,7 +334,7 @@ impl AudioInputManager {
                 c.backend = backend;
                 c.device_name = String::new();
                 c.status = ConnectionStatus::Disconnected;
-                c.analyzers.clear();
+                c.analyzer_handles.clear(); c.analyzer_frame = None;
             }
         }
         self.reconcile();
@@ -301,7 +346,7 @@ impl AudioInputManager {
             if let Some(c) = state.iter_mut().find(|c| c.id == id) {
                 c.device_name = device_name;
                 c.status = ConnectionStatus::Disconnected;
-                c.analyzers.clear(); // analyzer threads are tied to a stream — start fresh
+                c.analyzer_handles.clear(); c.analyzer_frame = None; // analyzer threads are tied to a stream — start fresh
             }
         }
         self.reconcile();
@@ -312,7 +357,7 @@ impl AudioInputManager {
             let mut state = self.shared.lock().unwrap();
             if let Some(c) = state.iter_mut().find(|c| c.id == id) {
                 c.sample_rate = rate;
-                c.analyzers.clear();
+                c.analyzer_handles.clear(); c.analyzer_frame = None;
             }
         }
         self.reconcile();
@@ -371,7 +416,9 @@ impl AudioInputManager {
         let has_pending = {
             let state = self.shared.lock().unwrap();
             state.iter().any(|c| {
-                !c.device_name.is_empty() && !self.streams.iter().any(|s| s.input_id == c.id)
+                c.enabled
+                    && !c.device_name.is_empty()
+                    && !self.streams.iter().any(|s| s.input_id == c.id)
             })
         };
         if !has_pending {
@@ -392,13 +439,14 @@ impl AudioInputManager {
         // Snapshot desired configs from the persistent kind list (not the
         // live `analyzers` vec — that's only populated after a successful
         // stream open).
-        let desired: Vec<(u32, AudioBackendKind, String, Option<u32>, Option<u32>, Vec<AnalyzerKind>)> = {
+        let desired: Vec<(u32, bool, AudioBackendKind, String, Option<u32>, Option<u32>, Vec<AnalyzerKind>)> = {
             let state = self.shared.lock().unwrap();
             state
                 .iter()
                 .map(|c| {
                     (
                         c.id,
+                        c.enabled,
                         c.backend,
                         c.device_name.clone(),
                         c.sample_rate,
@@ -409,40 +457,53 @@ impl AudioInputManager {
                 .collect()
         };
 
-        // Drop streams whose configured request no longer matches (or whose
-        // device disappeared). We compare the *request*, not the negotiated
-        // rate — the backend may pick a different rate when the device can't
-        // honor the request, and we don't want that to cause a respawn loop.
+        // Drop streams whose configured request no longer matches (disabled,
+        // backend/device changed, analyzer set changed, device disappeared).
+        // We compare the *request*, not the negotiated rate — the backend
+        // may pick a different rate when the device can't honor the
+        // request, and we don't want that to cause a respawn loop.
         let cached = self.cached_devices.clone();
         self.streams.retain(|s| {
-            desired.iter().any(|(id, backend, name, sr, bs, _)| {
+            desired.iter().any(|(id, enabled, backend, name, sr, bs, kinds)| {
                 *id == s.input_id
+                    && *enabled
                     && *backend == s.backend
                     && *name == s.device_name
                     && *sr == s.requested_sample_rate
                     && *bs == s.buffer_size
+                    && *kinds == s.analyzer_kinds
                     && cached.get(&s.backend)
                         .map(|names| names.iter().any(|n| n == &s.device_name))
                         .unwrap_or(false)
             })
         });
 
-        // Clear stale analyzer instances on inputs whose stream was just dropped.
-        // Their threads exited when the stream closed (recv() returned Err
-        // because the senders were dropped); the stale handles would otherwise
-        // expose frozen output values.
+        // Clear stale analyzer handles/frame on inputs whose stream was just
+        // dropped. The worker thread exits when the stream closes (the audio
+        // subscriber's senders are dropped), so keeping the handles around
+        // would just leak frozen values.
         {
             let live_ids: Vec<u32> = self.streams.iter().map(|s| s.input_id).collect();
             let mut state = self.shared.lock().unwrap();
             for c in state.iter_mut() {
-                if !live_ids.contains(&c.id) && !c.analyzers.is_empty() {
-                    c.analyzers.clear();
+                if !live_ids.contains(&c.id) {
+                    c.analyzer_handles.clear();
+                    c.analyzer_frame = None;
                 }
             }
         }
 
         // Open streams for desired configs that don't have one yet.
-        for (id, backend, device_name, sr, bs, kinds) in &desired {
+        for (id, enabled, backend, device_name, sr, bs, kinds) in &desired {
+            if !*enabled {
+                let mut state = self.shared.lock().unwrap();
+                if let Some(c) = state.iter_mut().find(|c| c.id == *id) {
+                    c.status = ConnectionStatus::Disabled;
+                    c.actual_sample_rate = 0;
+                    c.actual_buffer_frames = 0;
+                }
+                continue;
+            }
             if device_name.is_empty() {
                 let mut state = self.shared.lock().unwrap();
                 if let Some(c) = state.iter_mut().find(|c| c.id == *id) {
@@ -463,30 +524,24 @@ impl AudioInputManager {
                 continue;
             }
 
-            // Build subscribers — one per analyzer.
-            let mut senders = Vec::with_capacity(kinds.len());
-            let mut rxs = Vec::with_capacity(kinds.len());
-            for _ in kinds {
-                let (tx, rx) = mk_subscriber();
-                senders.push(tx);
-                rxs.push(rx);
-            }
+            // One subscriber for the single worker thread.
+            let (tx, rx) = mk_subscriber();
 
             let request = StreamRequest {
                 sample_rate: *sr,
                 buffer_size_frames: *bs,
             };
             let backend_impl = backend_for(*backend);
-            match backend_impl.open_input(device_name, request, senders) {
+            match backend_impl.open_input(device_name, request, vec![tx]) {
                 Ok(stream) => {
                     let actual_sr = stream.sample_rate;
                     let actual_bs = stream.observed_chunk_frames();
 
-                    // Spawn analyzer instances.
-                    let mut analyzers: Vec<AnalyzerInstance> = Vec::with_capacity(kinds.len());
-                    for (kind, rx) in kinds.iter().zip(rxs) {
-                        analyzers.push(spawn_analyzer(*kind, rx, actual_sr));
-                    }
+                    // One worker thread for this input — runs all analyzers
+                    // in lockstep per chunk and emits a phase-aligned frame.
+                    let worker = AnalyzerWorker::spawn(rx, actual_sr, kinds);
+                    let handles = worker.handles.clone();
+                    let frame = worker.frame.clone();
 
                     self.streams.push(ActiveStream {
                         input_id: *id,
@@ -494,12 +549,15 @@ impl AudioInputManager {
                         device_name: device_name.clone(),
                         requested_sample_rate: *sr,
                         buffer_size: *bs,
+                        analyzer_kinds: kinds.clone(),
                         _stream: stream,
+                        _worker: worker,
                     });
 
                     let mut state = self.shared.lock().unwrap();
                     if let Some(c) = state.iter_mut().find(|c| c.id == *id) {
-                        c.analyzers = analyzers;
+                        c.analyzer_handles = handles;
+                        c.analyzer_frame = Some(frame);
                         c.status = ConnectionStatus::Connected;
                         c.actual_sample_rate = actual_sr;
                         c.actual_buffer_frames = actual_bs;

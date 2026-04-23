@@ -14,4 +14,5 @@
 pub mod analyzers;
 pub mod backend;
 pub mod cpal_device;
+pub mod jack_device;
 pub mod manager;

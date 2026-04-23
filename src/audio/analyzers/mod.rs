@@ -1,24 +1,32 @@
 //! Audio analyzer implementations.
 //!
-//! Each analyzer:
-//! - Spawns a worker thread reading f32 audio chunks from a crossbeam
-//!   subscriber.
-//! - Owns a small `Shared*Output` block that the engine reads each tick.
-//! - Owns a `SharedParams` block that the UI/inspector mutates.
+//! Architecture:
 //!
-//! Analyzer kinds are identified by `AnalyzerKind`. New analyzers are added
-//! by extending the enum and `AnalyzerInstance`.
+//! - One worker thread per audio input (`worker::AnalyzerWorker`) runs every
+//!   analyzer in lockstep on each incoming audio chunk. No cross-thread race
+//!   between analyzers.
+//! - Each analyzer implements `AnalyzerProc` — called only from the worker
+//!   thread — plus exposes an `AnalyzerHandle` that the UI/engine use to
+//!   read/set params (thread-safe via an internal `Arc<RwLock<…>>`).
+//! - Analyzers declare their algorithmic `output_latency_samples()`. The
+//!   worker maintains small per-analyzer FIFOs and holds the faster outputs
+//!   back to match the slowest, so all values in an `AnalyzerFrame` refer to
+//!   the same audio sample window. This is what makes onsets, envelope
+//!   levels, and peak meters phase-coherent in the graph.
 
 pub mod audio_beat;
 pub mod beat;
 pub mod envelope;
 pub mod peak_level;
+pub mod worker;
 
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
 use crate::engine::types::{ParamDef, ParamValue, PortDef, PortType};
+
+pub use worker::{AnalyzerFrame, AnalyzerWorker, SharedAnalyzerFrame};
 
 /// Persistent identifier for an analyzer type.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -40,36 +48,11 @@ impl AnalyzerKind {
             AnalyzerKind::Envelope => "Envelope",
         }
     }
-}
 
-/// Persistent per-analyzer config (currently just kind; per-kind params are
-/// edited live on the audio input node and not part of the saved setup).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct AnalyzerConfig {
-    pub kind: AnalyzerKind,
-}
-
-impl AnalyzerConfig {
-    pub fn new(kind: AnalyzerKind) -> Self { Self { kind } }
-}
-
-/// One running analyzer instance.
-pub struct AnalyzerInstance {
-    pub kind: AnalyzerKind,
-    /// Implementation-specific live state.
-    pub state: AnalyzerState,
-}
-
-pub enum AnalyzerState {
-    Beat(beat::BeatAnalyzer),
-    AudioBeat(audio_beat::AudioBeatAnalyzer),
-    PeakLevel(peak_level::PeakLevelAnalyzer),
-    Envelope(envelope::EnvelopeAnalyzer),
-}
-
-impl AnalyzerInstance {
-    pub fn outputs_for_kind(kind: AnalyzerKind) -> Vec<PortDef> {
-        match kind {
+    /// Output port layout for a given analyzer kind. Used both for engine
+    /// port declaration and for display slicing in the Audio Input node.
+    pub fn outputs(&self) -> Vec<PortDef> {
+        match self {
             AnalyzerKind::Beat | AnalyzerKind::AudioBeat => vec![
                 PortDef::new("onset", PortType::Logic),
                 PortDef::new("bpm", PortType::Untyped),
@@ -84,88 +67,87 @@ impl AnalyzerInstance {
         }
     }
 
-    pub fn params_for_kind(kind: AnalyzerKind) -> Vec<ParamDef> {
-        match kind {
+    /// Default `ParamDef` list for this analyzer kind. Used by the UI when
+    /// the kind is first added; once the analyzer is live, `AnalyzerHandle`
+    /// reflects the actual (possibly-edited) param values.
+    pub fn default_params(&self) -> Vec<ParamDef> {
+        match self {
             AnalyzerKind::Beat => beat::beat_params(),
             AnalyzerKind::AudioBeat => audio_beat::audio_beat_params(),
             AnalyzerKind::PeakLevel => peak_level::peak_params(),
             AnalyzerKind::Envelope => envelope::envelope_params(),
         }
     }
-
-    /// Read the current output values (one per output port).
-    pub fn read_outputs(&self) -> Vec<f32> {
-        match &self.state {
-            AnalyzerState::Beat(b) => b.read_outputs(),
-            AnalyzerState::AudioBeat(b) => b.read_outputs(),
-            AnalyzerState::PeakLevel(p) => p.read_outputs(),
-            AnalyzerState::Envelope(e) => e.read_outputs(),
-        }
-    }
-
-    /// `read_onset_count` style trigger detection — engine compares to its
-    /// previous tick's value to fire one-tick output edges. Returns 0 for
-    /// analyzer kinds that don't produce a trigger output at index 0.
-    pub fn onset_count(&self) -> u64 {
-        match &self.state {
-            AnalyzerState::Beat(b) => b.onset_count(),
-            AnalyzerState::AudioBeat(b) => b.onset_count(),
-            AnalyzerState::PeakLevel(_) => 0,
-            AnalyzerState::Envelope(_) => 0,
-        }
-    }
-
-    /// True if output index 0 is a trigger that should be edge-detected from
-    /// `onset_count`. False for purely continuous analyzers.
-    pub fn first_output_is_trigger(&self) -> bool {
-        matches!(self.state, AnalyzerState::Beat(_) | AnalyzerState::AudioBeat(_))
-    }
-
-    pub fn set_param(&self, index: usize, value: ParamValue) {
-        match &self.state {
-            AnalyzerState::Beat(b) => b.set_param(index, value),
-            AnalyzerState::AudioBeat(b) => b.set_param(index, value),
-            AnalyzerState::PeakLevel(p) => p.set_param(index, value),
-            AnalyzerState::Envelope(e) => e.set_param(index, value),
-        }
-    }
-
-    pub fn current_params(&self) -> Vec<ParamDef> {
-        match &self.state {
-            AnalyzerState::Beat(b) => b.current_params(),
-            AnalyzerState::AudioBeat(b) => b.current_params(),
-            AnalyzerState::PeakLevel(p) => p.current_params(),
-            AnalyzerState::Envelope(e) => e.current_params(),
-        }
-    }
 }
 
-/// Spawn an analyzer of the given kind, subscribed to the audio chunk stream.
-pub fn spawn_analyzer(
+/// Persistent per-analyzer config (currently just kind; per-kind params are
+/// edited live on the audio input node and not part of the saved setup).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AnalyzerConfig {
+    pub kind: AnalyzerKind,
+}
+
+impl AnalyzerConfig {
+    pub fn new(kind: AnalyzerKind) -> Self { Self { kind } }
+}
+
+/// Worker-side trait: only called from the analyzer worker thread. Each
+/// analyzer implementation owns its DSP state here.
+pub trait AnalyzerProc: Send {
+    fn kind(&self) -> AnalyzerKind;
+    fn num_outputs(&self) -> usize;
+    /// When true, index 0 of this analyzer's outputs is a trigger (edge-
+    /// detected downstream via `onset_count`).
+    fn first_output_is_trigger(&self) -> bool { false }
+    /// How many audio samples *behind* the latest chunk's end does the
+    /// current output represent? Fast analyzers (envelope, peak meter)
+    /// return 0; onset detectors return their picker lookback.
+    fn output_latency_samples(&self) -> u32 { 0 }
+    /// Process one chunk of mono f32 audio. Implementations update their
+    /// internal state so that `outputs()` / `onset_count()` reflect the
+    /// post-chunk result.
+    fn step(&mut self, samples: &[f32]);
+    /// Current analyzer output values, in declared port order.
+    fn outputs(&self) -> Vec<f32>;
+    /// Monotonic counter of onsets detected so far. Defaults to 0 for
+    /// analyzers that don't produce a trigger output.
+    fn onset_count(&self) -> u64 { 0 }
+}
+
+/// Thread-safe handle to an analyzer's parameters. Created alongside the
+/// `AnalyzerProc`; lives on the manager / UI side. The closures capture the
+/// analyzer's internal `Arc<RwLock<…>>` so the worker and handle share one
+/// source of truth for params.
+#[derive(Clone)]
+pub struct AnalyzerHandle {
+    pub kind: AnalyzerKind,
+    get_params: Arc<dyn Fn() -> Vec<ParamDef> + Send + Sync>,
+    set_param: Arc<dyn Fn(usize, ParamValue) + Send + Sync>,
+}
+
+impl AnalyzerHandle {
+    pub fn new(
+        kind: AnalyzerKind,
+        get_params: Arc<dyn Fn() -> Vec<ParamDef> + Send + Sync>,
+        set_param: Arc<dyn Fn(usize, ParamValue) + Send + Sync>,
+    ) -> Self {
+        Self { kind, get_params, set_param }
+    }
+
+    pub fn current_params(&self) -> Vec<ParamDef> { (self.get_params)() }
+    pub fn set_param(&self, index: usize, value: ParamValue) { (self.set_param)(index, value) }
+}
+
+/// Factory: create the (handle, proc) pair for a given analyzer kind at the
+/// given stream sample rate. Used by the worker when spawning analyzers.
+pub fn create_analyzer(
     kind: AnalyzerKind,
-    rx: crossbeam_channel::Receiver<crate::audio::backend::AudioChunk>,
     sample_rate: u32,
-) -> AnalyzerInstance {
+) -> (AnalyzerHandle, Box<dyn AnalyzerProc>) {
     match kind {
-        AnalyzerKind::Beat => {
-            let analyzer = beat::BeatAnalyzer::spawn(rx, sample_rate);
-            AnalyzerInstance { kind, state: AnalyzerState::Beat(analyzer) }
-        }
-        AnalyzerKind::AudioBeat => {
-            let analyzer = audio_beat::AudioBeatAnalyzer::spawn(rx, sample_rate);
-            AnalyzerInstance { kind, state: AnalyzerState::AudioBeat(analyzer) }
-        }
-        AnalyzerKind::PeakLevel => {
-            let analyzer = peak_level::PeakLevelAnalyzer::spawn(rx, sample_rate);
-            AnalyzerInstance { kind, state: AnalyzerState::PeakLevel(analyzer) }
-        }
-        AnalyzerKind::Envelope => {
-            let analyzer = envelope::EnvelopeAnalyzer::spawn(rx, sample_rate);
-            AnalyzerInstance { kind, state: AnalyzerState::Envelope(analyzer) }
-        }
+        AnalyzerKind::Beat => beat::create(sample_rate),
+        AnalyzerKind::AudioBeat => audio_beat::create(sample_rate),
+        AnalyzerKind::PeakLevel => peak_level::create(sample_rate),
+        AnalyzerKind::Envelope => envelope::create(sample_rate),
     }
 }
-
-/// Holder used by the manager so each analyzer can be dropped & recreated when
-/// the audio input is reopened (e.g. after a sample-rate change).
-pub type SharedAudioChunkRx = Arc<crossbeam_channel::Receiver<crate::audio::backend::AudioChunk>>;

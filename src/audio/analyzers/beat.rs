@@ -1,20 +1,17 @@
 //! Onset + BPM detector. Ported from `beat_detection_tests/src/detectors/neo_beat_detection.rs`.
 //!
-//! Outputs (in order): `onset` (Logic, edge-detected from a u64 counter) and
-//! `bpm` (Untyped, latest BPM estimate).
+//! Outputs (in order): `onset` (Logic, edge-detected downstream from the
+//! monotonic onset counter) and `bpm` (Untyped, latest BPM estimate).
 
 use std::collections::VecDeque;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::thread;
 
-use crossbeam_channel::Receiver;
 use num_complex::Complex32;
 use parking_lot::RwLock;
 use realfft::{RealFftPlanner, RealToComplex};
 use rustfft::{Fft as RFft, FftPlanner as RFftPlanner};
 
-use crate::audio::backend::AudioChunk;
+use crate::audio::analyzers::{AnalyzerHandle, AnalyzerKind, AnalyzerProc};
 use crate::engine::types::{ParamDef, ParamValue};
 
 const ANALYSIS_WINDOW: usize = 1024;
@@ -30,6 +27,11 @@ const BELLO_MEDIAN_WINDOW_S: f64 = 0.10;
 const CGD_WINDOW_S: f64 = 2.0;
 const CGD_UPDATE_HZ: f64 = 10.0;
 const CGD_RADIUS: f32 = 1.05;
+
+/// Picker lookback in STFT frames. Both Bello and VPD emit at `f_m1` —
+/// the middle of a 3-frame window — so the current onset refers to an
+/// event `PICKER_FRAME_LAG` hops back.
+const PICKER_FRAME_LAG: u32 = 2;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NeoOdfMethod { SuperFlux, ComplexDomain, RectifiedComplex, SpectralFlux }
@@ -77,7 +79,6 @@ impl Default for BeatParams {
     }
 }
 
-/// Engine-side `ParamDef` definitions for beat analyzer params.
 pub fn beat_params() -> Vec<ParamDef> {
     let d = BeatParams::default();
     params_for(&d)
@@ -104,100 +105,65 @@ fn params_for(p: &BeatParams) -> Vec<ParamDef> {
 
 pub type SharedBeatParams = Arc<RwLock<BeatParams>>;
 
-/// Live outputs published by the worker.
-pub struct BeatOutputs {
-    pub onset_count: AtomicU64,
-    pub bpm: parking_lot::Mutex<f32>,
+fn apply_param(params: &SharedBeatParams, index: usize, value: ParamValue) {
+    let mut p = params.write();
+    match index {
+        0 => p.odf = NeoOdfMethod::from_index(value.as_i64() as usize),
+        1 => p.picker = NeoPicker::from_index(value.as_i64() as usize),
+        2 => p.cgd_smooth = matches!(value, ParamValue::Bool(true)),
+        3 => p.silence_db = value.as_f32(),
+        4 => p.threshold = value.as_f32(),
+        5 => p.min_ioi_ms = value.as_f32(),
+        _ => {}
+    }
 }
 
-pub struct BeatAnalyzer {
-    pub params: SharedBeatParams,
-    pub outputs: Arc<BeatOutputs>,
-    _join: Option<thread::JoinHandle<()>>,
+pub struct BeatProc {
+    params: SharedBeatParams,
+    current: BeatParams,
+    stft: Stft,
+    filterbank: LogFilterbank,
+    odf: Odf,
+    picker: Picker,
+    tempo: TempoTracker,
+    cgd: Option<CgdSmoother>,
+    onset_counter: u64,
+    bpm: f32,
 }
 
-impl BeatAnalyzer {
-    pub fn spawn(rx: Receiver<AudioChunk>, sample_rate: u32) -> Self {
-        let params = Arc::new(RwLock::new(BeatParams::default()));
-        let outputs = Arc::new(BeatOutputs {
-            onset_count: AtomicU64::new(0),
-            bpm: parking_lot::Mutex::new(0.0),
-        });
-        let p_clone = params.clone();
-        let o_clone = outputs.clone();
-        let join = thread::Builder::new()
-            .name("lightbeat-beat-analyzer".into())
-            .spawn(move || run(rx, sample_rate, p_clone, o_clone))
-            .expect("spawn beat analyzer thread");
-        Self { params, outputs, _join: Some(join) }
-    }
+impl AnalyzerProc for BeatProc {
+    fn kind(&self) -> AnalyzerKind { AnalyzerKind::Beat }
+    fn num_outputs(&self) -> usize { 2 }
+    fn first_output_is_trigger(&self) -> bool { true }
+    fn output_latency_samples(&self) -> u32 { PICKER_FRAME_LAG * HOP_SIZE as u32 }
 
-    pub fn read_outputs(&self) -> Vec<f32> {
-        // onset (index 0) is computed by the engine via edge detection on the
-        // shared onset_count; we publish 0.0 here as a placeholder.
-        let bpm = *self.outputs.bpm.lock();
-        vec![0.0, bpm]
-    }
-
-    pub fn onset_count(&self) -> u64 {
-        self.outputs.onset_count.load(Ordering::Relaxed)
-    }
-
-    pub fn current_params(&self) -> Vec<ParamDef> {
+    fn step(&mut self, samples: &[f32]) {
         let p = *self.params.read();
-        params_for(&p)
-    }
-
-    pub fn set_param(&self, index: usize, value: ParamValue) {
-        let mut p = self.params.write();
-        match index {
-            0 => p.odf = NeoOdfMethod::from_index(value.as_i64() as usize),
-            1 => p.picker = NeoPicker::from_index(value.as_i64() as usize),
-            2 => p.cgd_smooth = matches!(value, ParamValue::Bool(true)),
-            3 => p.silence_db = value.as_f32(),
-            4 => p.threshold = value.as_f32(),
-            5 => p.min_ioi_ms = value.as_f32(),
-            _ => {}
-        }
-    }
-}
-
-// ---------- worker -----------------------------------------------------------
-
-fn run(rx: Receiver<AudioChunk>, sample_rate: u32, params: SharedBeatParams, outputs: Arc<BeatOutputs>) {
-    let mut stft = Stft::new(ANALYSIS_WINDOW, HOP_SIZE);
-    let odf_rate = sample_rate as f64 / HOP_SIZE as f64;
-    let num_bins = ANALYSIS_WINDOW / 2 + 1;
-    let filterbank = LogFilterbank::new(num_bins, sample_rate, FB_F_MIN_HZ, FB_F_MAX_HZ, FB_BANDS_PER_OCTAVE);
-
-    let mut current = *params.read();
-    let mut odf = Odf::new(current.odf, filterbank.num_bands(), num_bins);
-    let mut picker = Picker::new(current.picker, odf_rate, &current);
-    let mut tempo = TempoTracker::new(odf_rate);
-    let mut cgd = if current.cgd_smooth && cgd_applicable(current.odf) {
-        Some(CgdSmoother::new(odf_rate))
-    } else { None };
-
-    while let Ok(chunk) = rx.recv() {
-        let p = *params.read();
-        if p != current {
-            if p.odf != current.odf {
-                odf = Odf::new(p.odf, filterbank.num_bands(), num_bins);
-                tempo = TempoTracker::new(odf_rate);
+        if p != self.current {
+            if p.odf != self.current.odf {
+                self.odf = Odf::new(p.odf, self.filterbank.num_bands(), ANALYSIS_WINDOW / 2 + 1);
+                self.tempo = TempoTracker::new(self.stft.odf_rate);
             }
-            if p.picker != current.picker {
-                picker = Picker::new(p.picker, odf_rate, &p);
+            if p.picker != self.current.picker {
+                self.picker = Picker::new(p.picker, self.stft.odf_rate, &p);
             } else {
-                picker.apply_params(odf_rate, &p);
+                self.picker.apply_params(self.stft.odf_rate, &p);
             }
             let want_cgd = p.cgd_smooth && cgd_applicable(p.odf);
-            if want_cgd != cgd.is_some() {
-                cgd = if want_cgd { Some(CgdSmoother::new(odf_rate)) } else { None };
+            if want_cgd != self.cgd.is_some() {
+                self.cgd = if want_cgd { Some(CgdSmoother::new(self.stft.odf_rate)) } else { None };
             }
-            current = p;
+            self.current = p;
         }
-
-        stft.push(&chunk.mono_f32, |_frame_idx, spectrum, frame_rms| {
+        let current = self.current;
+        let filterbank = &self.filterbank;
+        let odf = &mut self.odf;
+        let picker = &mut self.picker;
+        let tempo = &mut self.tempo;
+        let cgd = &mut self.cgd;
+        let onset_counter = &mut self.onset_counter;
+        let bpm_out = &mut self.bpm;
+        self.stft.push(samples, |_frame_idx, spectrum, frame_rms| {
             let log_bands = filterbank.apply_log(spectrum);
             let flux = odf.step(spectrum, &log_bands);
             let smoothed = match cgd.as_mut() {
@@ -207,14 +173,50 @@ fn run(rx: Receiver<AudioChunk>, sample_rate: u32, params: SharedBeatParams, out
             tempo.push(smoothed);
             let frame_db = 20.0 * frame_rms.max(1e-9).log10();
             let gated = frame_db < current.silence_db;
-            if let Some(_lookback) = picker.step(smoothed, gated) {
-                outputs.onset_count.fetch_add(1, Ordering::Relaxed);
+            if picker.step(smoothed, gated).is_some() {
+                *onset_counter += 1;
             }
             if let Some(bpm) = tempo.estimate() {
-                *outputs.bpm.lock() = bpm as f32;
+                *bpm_out = bpm as f32;
             }
         });
     }
+
+    fn outputs(&self) -> Vec<f32> {
+        // Index 0 is the trigger slot — the worker tracks it via onset_count
+        // and the engine edge-detects. We just pass 0.0 through here.
+        vec![0.0, self.bpm]
+    }
+
+    fn onset_count(&self) -> u64 { self.onset_counter }
+}
+
+pub fn create(sample_rate: u32) -> (AnalyzerHandle, Box<dyn AnalyzerProc>) {
+    let params = Arc::new(RwLock::new(BeatParams::default()));
+    let current = *params.read();
+
+    let stft = Stft::new(ANALYSIS_WINDOW, HOP_SIZE, sample_rate);
+    let num_bins = ANALYSIS_WINDOW / 2 + 1;
+    let filterbank = LogFilterbank::new(num_bins, sample_rate, FB_F_MIN_HZ, FB_F_MAX_HZ, FB_BANDS_PER_OCTAVE);
+    let odf = Odf::new(current.odf, filterbank.num_bands(), num_bins);
+    let picker = Picker::new(current.picker, stft.odf_rate, &current);
+    let tempo = TempoTracker::new(stft.odf_rate);
+    let cgd = if current.cgd_smooth && cgd_applicable(current.odf) {
+        Some(CgdSmoother::new(stft.odf_rate))
+    } else { None };
+
+    let p_get = params.clone();
+    let get_params = Arc::new(move || params_for(&*p_get.read()))
+        as Arc<dyn Fn() -> Vec<ParamDef> + Send + Sync>;
+    let p_set = params.clone();
+    let set_param = Arc::new(move |idx: usize, v: ParamValue| apply_param(&p_set, idx, v))
+        as Arc<dyn Fn(usize, ParamValue) + Send + Sync>;
+
+    let proc = Box::new(BeatProc {
+        params, current, stft, filterbank, odf, picker, tempo, cgd,
+        onset_counter: 0, bpm: 0.0,
+    });
+    (AnalyzerHandle::new(AnalyzerKind::Beat, get_params, set_param), proc)
 }
 
 fn cgd_applicable(odf: NeoOdfMethod) -> bool { !matches!(odf, NeoOdfMethod::SuperFlux) }
@@ -231,10 +233,11 @@ struct Stft {
     spectrum: Vec<Complex32>,
     frame_in: Vec<f32>,
     frame_idx: u64,
+    odf_rate: f64,
 }
 
 impl Stft {
-    fn new(fft_size: usize, hop_size: usize) -> Self {
+    fn new(fft_size: usize, hop_size: usize, sample_rate: u32) -> Self {
         let window = hann_window(fft_size);
         let mut planner = RealFftPlanner::<f32>::new();
         let plan = planner.plan_fft_forward(fft_size);
@@ -246,6 +249,7 @@ impl Stft {
             plan, scratch, spectrum,
             frame_in: vec![0.0; fft_size],
             frame_idx: 0,
+            odf_rate: sample_rate as f64 / hop_size as f64,
         }
     }
     fn push(&mut self, samples: &[f32], mut on_frame: impl FnMut(u64, &[Complex32], f32)) {

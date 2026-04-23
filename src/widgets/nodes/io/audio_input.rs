@@ -84,7 +84,7 @@ impl AudioInputWidget {
             // AudioInputProcessNode::process): per-analyzer prefixed ports.
             let mut outs = Vec::new();
             for (i, kind) in input.analyzer_kinds.iter().enumerate() {
-                for p in crate::audio::analyzers::AnalyzerInstance::outputs_for_kind(*kind) {
+                for p in kind.outputs() {
                     outs.push((format!("a{}.{}", i, p.name), p.port_type, 0.0));
                 }
             }

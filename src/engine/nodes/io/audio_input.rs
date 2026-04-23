@@ -1,4 +1,4 @@
-use crate::audio::analyzers::{AnalyzerInstance, AnalyzerKind};
+use crate::audio::analyzers::AnalyzerKind;
 use crate::audio::manager::SharedAudioInputs;
 use crate::engine::types::*;
 
@@ -23,6 +23,7 @@ pub struct AudioInputDisplay {
     pub analyzer_results: Vec<(AnalyzerKind, Vec<f32>)>,
 }
 
+/// Per-analyzer edge-detection cache for onset triggers.
 #[derive(Default, Clone, Copy)]
 struct AnalyzerCache {
     last_onset_count: u64,
@@ -32,9 +33,12 @@ pub struct AudioInputProcessNode {
     id: NodeId,
     /// Bound audio input id (0 = none selected).
     input_id: u32,
+    /// Port layout — rebuilt when the bound input's analyzer set changes.
     outputs: Vec<PortDef>,
     output_values: Vec<f32>,
-    /// Per-analyzer cached state for edge detection on onset counters.
+    /// Analyzer kinds currently reflected in the port layout.
+    cached_kinds: Vec<AnalyzerKind>,
+    /// Per-analyzer onset-count cache (same order as `cached_kinds`).
     caches: Vec<AnalyzerCache>,
     display_outputs: Vec<(String, PortType, f32)>,
     display_name: String,
@@ -50,6 +54,7 @@ impl AudioInputProcessNode {
             input_id: 0,
             outputs: Vec::new(),
             output_values: Vec::new(),
+            cached_kinds: Vec::new(),
             caches: Vec::new(),
             display_outputs: Vec::new(),
             display_name: String::new(),
@@ -86,83 +91,94 @@ impl ProcessNode for AudioInputProcessNode {
             self.display_params.clear();
             self.display_analyzer_results.clear();
             self.outputs.clear();
+            self.cached_kinds.clear();
+            self.caches.clear();
             return;
         };
 
-        // Build expected port layout from analyzers.
-        let mut expected: Vec<PortDef> = Vec::new();
-        for (i, a) in input.analyzers.iter().enumerate() {
-            let prefix = format!("a{}.", i);
-            for p in crate::audio::analyzers::AnalyzerInstance::outputs_for_kind(a.kind) {
-                expected.push(PortDef::new(format!("{}{}", prefix, p.name), p.port_type));
+        // Port layout follows the live analyzer set. Empty until the worker
+        // comes up; gets rebuilt whenever the analyzer set changes.
+        let kinds: Vec<AnalyzerKind> = input
+            .analyzer_handles
+            .iter()
+            .map(|h| h.kind)
+            .collect();
+        if kinds != self.cached_kinds {
+            let mut expected: Vec<PortDef> = Vec::new();
+            for (i, k) in kinds.iter().enumerate() {
+                let prefix = format!("a{}.", i);
+                for p in k.outputs() {
+                    expected.push(PortDef::new(format!("{}{}", prefix, p.name), p.port_type));
+                }
             }
-        }
-        let layout_changed = expected.len() != self.outputs.len()
-            || expected
-                .iter()
-                .zip(self.outputs.iter())
-                .any(|(a, b)| a.name != b.name || a.port_type != b.port_type);
-        if layout_changed {
             self.outputs = expected;
             self.output_values = vec![0.0; self.outputs.len()];
-            self.caches = vec![AnalyzerCache::default(); input.analyzers.len()];
-        }
-        if self.caches.len() != input.analyzers.len() {
-            self.caches = vec![AnalyzerCache::default(); input.analyzers.len()];
+            self.caches = vec![AnalyzerCache::default(); kinds.len()];
+            self.cached_kinds = kinds.clone();
         }
 
-        // Read each analyzer's outputs and slot them into output_values.
-        // For analyzers whose first output is a trigger (Beat), edge-detect
-        // from the onset counter. Continuous-only analyzers (PeakLevel) pass
-        // their values through unchanged.
-        let mut idx = 0;
-        for (ai, a) in input.analyzers.iter().enumerate() {
-            let raw = a.read_outputs();
-            let trigger_at_zero = a.first_output_is_trigger();
-            let onset_pulse = if trigger_at_zero {
-                let cur_onset = a.onset_count();
-                let prev_onset = self.caches[ai].last_onset_count;
-                self.caches[ai].last_onset_count = cur_onset;
-                if cur_onset != prev_onset && prev_onset != 0 {
-                    1.0
-                } else {
-                    0.0
-                }
-            } else {
-                0.0
-            };
+        // Read the latest phase-aligned analyzer frame.
+        let Some(frame_arc) = input.analyzer_frame.clone() else {
+            for v in &mut self.output_values { *v = 0.0; }
+            self.display_name = input.name.clone();
+            self.display_params = input.analyzer_param_defs();
+            self.display_outputs = self.outputs.iter().enumerate()
+                .map(|(i, p)| (p.name.clone(), p.port_type, self.output_values[i]))
+                .collect();
+            self.display_analyzer_results.clear();
+            return;
+        };
+        // Drop the state lock before touching the frame mutex so the audio
+        // worker and the engine tick can't deadlock each other.
+        drop(state);
+        let frame = frame_arc.lock().clone();
 
-            for (j, mut v) in raw.into_iter().enumerate() {
-                if trigger_at_zero && j == 0 {
-                    v = onset_pulse;
+        // Slot analyzer values into the output buffer. For analyzers whose
+        // first output is a trigger (Beat, AudioBeat), edge-detect from the
+        // monotonic onset counter emitted by the worker.
+        let mut slot = 0;
+        for (ai, k) in self.cached_kinds.iter().enumerate() {
+            let n = k.outputs().len();
+            let is_trigger = matches!(k, AnalyzerKind::Beat | AnalyzerKind::AudioBeat);
+            let onset_pulse = if is_trigger {
+                let cur = frame.onset_counts.get(ai).copied().unwrap_or(0);
+                let prev = self.caches[ai].last_onset_count;
+                self.caches[ai].last_onset_count = cur;
+                if cur != prev && prev != 0 { 1.0 } else { 0.0 }
+            } else { 0.0 };
+            for j in 0..n {
+                let v = frame.values.get(slot + j).copied().unwrap_or(0.0);
+                let out = if is_trigger && j == 0 { onset_pulse } else { v };
+                if let Some(s) = self.output_values.get_mut(slot + j) {
+                    *s = out;
                 }
-                if let Some(slot) = self.output_values.get_mut(idx) {
-                    *slot = v;
-                }
-                idx += 1;
             }
+            slot += n;
         }
 
-        // Snapshot for display.
-        self.display_name = input.name.clone();
+        // Snapshot for display (re-lock briefly to read name + params).
+        let state = self.audio.lock().unwrap();
+        let input = state.iter().find(|c| c.id == self.input_id);
+        if let Some(input) = input {
+            self.display_name = input.name.clone();
+            self.display_params = input.analyzer_param_defs();
+        }
+        drop(state);
+
         self.display_outputs = self
             .outputs
             .iter()
             .enumerate()
             .map(|(i, p)| (p.name.clone(), p.port_type, self.output_values[i]))
             .collect();
-        self.display_params = input.analyzer_param_defs();
-
-        // Per-analyzer kind + values, for kind-specific mini visualisations.
-        // Slice output_values back into per-analyzer chunks.
         self.display_analyzer_results.clear();
         let mut o = 0;
-        for a in &input.analyzers {
-            let n = AnalyzerInstance::outputs_for_kind(a.kind).len();
+        for k in &self.cached_kinds {
+            let n = k.outputs().len();
             let vals: Vec<f32> = (o..o + n)
                 .map(|i| self.output_values.get(i).copied().unwrap_or(0.0))
                 .collect();
-            self.display_analyzer_results.push((a.kind, vals));
+            self.display_analyzer_results.push((*k, vals));
             o += n;
         }
     }
@@ -196,6 +212,7 @@ impl ProcessNode for AudioInputProcessNode {
             self.outputs.clear();
             self.output_values.clear();
             self.caches.clear();
+            self.cached_kinds.clear();
         }
 
         // Apply saved param values by name. Looks up the analyzer params on
@@ -233,9 +250,5 @@ impl ProcessNode for AudioInputProcessNode {
             outputs: self.display_outputs.clone(),
             analyzer_results: self.display_analyzer_results.clone(),
         }));
-        // Also surface params via current_params so the standard inspector
-        // renders them. Engine main loop overwrites `current_params` from
-        // `node.params()` already, so this is redundant — but mirror once
-        // in case ordering ever changes.
     }
 }
