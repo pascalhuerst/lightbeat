@@ -3,10 +3,11 @@ use egui::{Color32, Ui};
 
 use crate::engine::nodes::math::logic_gate::{LogicDisplay, LogicOp};
 use crate::engine::types::*;
+use crate::theme;
 use crate::widgets::nodes::node::NodeWidget;
 use crate::widgets::nodes::types::UiPortDef;
 
-const ADD_PORT_FILL: Color32 = Color32::from_rgb(80, 200, 100);
+const ADD_PORT_FILL: Color32 = theme::SEM_SUCCESS;
 
 pub struct LogicGateWidget {
     id: NodeId,

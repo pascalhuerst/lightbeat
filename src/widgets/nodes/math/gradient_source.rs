@@ -7,6 +7,7 @@ use crate::color::{GradientStop, Rgb};
 use crate::engine::nodes::math::gradient_source::GradientSourceDisplay;
 use crate::engine::types::*;
 use crate::objects::gradient_preset::GradientPreset;
+use crate::theme;
 use crate::widgets::nodes::node::NodeWidget;
 use crate::widgets::nodes::types::UiPortDef;
 
@@ -212,9 +213,9 @@ impl NodeWidget for GradientSourceWidget {
                 );
             }
         } else {
-            painter.rect_filled(bar_rect, 2.0, Color32::from_gray(40));
+            painter.rect_filled(bar_rect, 2.0, theme::BG);
         }
-        painter.rect_stroke(bar_rect, 2.0, Stroke::new(1.0, Color32::from_gray(80)), StrokeKind::Inside);
+        painter.rect_stroke(bar_rect, 2.0, Stroke::new(1.0, theme::STROKE), StrokeKind::Inside);
 
         // Double-click on the bar (not on a handle) creates a new stop at
         // the clicked position, sampled from the current gradient so the
@@ -301,14 +302,14 @@ impl NodeWidget for GradientSourceWidget {
                 (s.alpha.clamp(0.0, 1.0) * 255.0) as u8,
             );
             let stroke = if h_resp.hovered() || h_resp.dragged() {
-                Stroke::new(1.5, Color32::WHITE)
+                Stroke::new(1.5, theme::TEXT_BRIGHT)
             } else {
                 Stroke::new(1.0, Color32::from_gray(120))
             };
             // Tick connecting handle to its position on the bar.
             painter.line_segment(
                 [Pos2::new(x, bar_rect.max.y), Pos2::new(x, handle_rect.min.y)],
-                Stroke::new(1.0, Color32::from_gray(140)),
+                Stroke::new(1.0, theme::TEXT_DIM),
             );
             painter.rect_filled(handle_rect, 2.0, fill);
             painter.rect_stroke(handle_rect, 2.0, stroke, StrokeKind::Inside);
@@ -445,7 +446,7 @@ fn draw_checker(painter: &egui::Painter, rect: egui::Rect) {
     let cell = 6.0;
     let cols = (rect.width() / cell).ceil() as i32;
     let rows = (rect.height() / cell).ceil() as i32;
-    let c1 = Color32::from_gray(40);
+    let c1 = theme::BG;
     let c2 = Color32::from_gray(70);
     for y in 0..rows {
         for x in 0..cols {

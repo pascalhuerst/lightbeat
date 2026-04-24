@@ -5,6 +5,7 @@ use egui::{self, Color32, Ui};
 use crate::engine::nodes::io::push1::Push1Display;
 use crate::engine::types::*;
 use crate::input_controller::{InputControllerKind, SharedControllers};
+use crate::theme;
 use crate::widgets::nodes::node::NodeWidget;
 use crate::widgets::nodes::types::UiPortDef;
 
@@ -122,9 +123,9 @@ impl NodeWidget for Push1Widget {
         if self.controller_id == 0 {
             ui.colored_label(Color32::from_gray(120), "No Push 1 bound");
         } else if self.connected {
-            ui.colored_label(Color32::from_rgb(80, 200, 100), &self.controller_name);
+            ui.colored_label(theme::SEM_SUCCESS, &self.controller_name);
         } else {
-            ui.colored_label(Color32::from_rgb(220, 180, 60), format!("{} (not connected)", self.controller_name));
+            ui.colored_label(theme::SEM_WARNING, format!("{} (not connected)", self.controller_name));
         }
     }
 
@@ -162,7 +163,7 @@ impl NodeWidget for Push1Widget {
 
         if controllers.is_empty() {
             ui.colored_label(
-                Color32::from_gray(140),
+                theme::TEXT_DIM,
                 "No Push 1 configured. Add one in the Input Controllers window.",
             );
         }

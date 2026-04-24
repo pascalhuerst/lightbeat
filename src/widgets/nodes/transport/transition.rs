@@ -4,6 +4,7 @@ use egui::{self, Color32, Pos2, Sense, Stroke, Ui, Vec2};
 use crate::engine::nodes::transport::easing::EasingCurve;
 use crate::engine::nodes::transport::transition::{TransitionDisplay, TransitionMode};
 use crate::engine::types::*;
+use crate::theme;
 use crate::widgets::nodes::node::NodeWidget;
 use crate::widgets::nodes::types::UiPortDef;
 
@@ -119,7 +120,7 @@ impl NodeWidget for TransitionWidget {
             let x = rect.min.x + phase * rect.width();
             let v = curve.apply(phase);
             let y = rect.max.y - v.clamp(0.0, 1.0) * rect.height();
-            painter.circle_filled(Pos2::new(x, y), 4.0, Color32::WHITE);
+            painter.circle_filled(Pos2::new(x, y), 4.0, theme::TEXT_BRIGHT);
         }
     }
 

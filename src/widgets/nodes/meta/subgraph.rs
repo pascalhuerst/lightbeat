@@ -64,6 +64,40 @@ impl SubgraphWidget {
             "macro_path": self.macro_path,
         }));
     }
+
+    /// Restore the port-affecting widget state (name, input/output port
+    /// definitions, lock/macro metadata) directly from save_data. Called
+    /// by the project loader and by paste, BEFORE cleanup_stale_connections
+    /// or navigate_into reads `ui_inputs` / `ui_outputs` — without this
+    /// early restore, a freshly duplicated subgraph would navigate into
+    /// an inner level with empty bridge-node ports, and connections into
+    /// those ports would be lost.
+    pub fn restore_from_save_data(&mut self, data: &serde_json::Value) {
+        if let Some(name) = data.get("name").and_then(|v| v.as_str()) {
+            self.name = name.to_string();
+        }
+        if let Some(inputs) = data.get("inputs").and_then(|v| v.as_array()) {
+            self.input_defs = inputs
+                .iter()
+                .filter_map(|v| serde_json::from_value::<SubgraphPortDef>(v.clone()).ok())
+                .collect();
+        }
+        if let Some(outputs) = data.get("outputs").and_then(|v| v.as_array()) {
+            self.output_defs = outputs
+                .iter()
+                .filter_map(|v| serde_json::from_value::<SubgraphPortDef>(v.clone()).ok())
+                .collect();
+        }
+        if let Some(b) = data.get("locked").and_then(|v| v.as_bool()) {
+            self.locked = b;
+        }
+        if let Some(s) = data.get("macro_description").and_then(|v| v.as_str()) {
+            self.macro_description = s.to_string();
+        }
+        if let Some(s) = data.get("macro_path").and_then(|v| v.as_str()) {
+            self.macro_path = s.to_string();
+        }
+    }
 }
 
 impl NodeWidget for SubgraphWidget {
@@ -164,7 +198,7 @@ impl NodeWidget for SubgraphWidget {
         if self.locked {
             ui.horizontal(|ui| {
                 ui.label("Name:");
-                ui.colored_label(egui::Color32::from_gray(220), &self.name);
+                ui.colored_label(theme::TEXT, &self.name);
             });
             ui.separator();
             ui.label(egui::RichText::new("Description").strong());
@@ -374,7 +408,7 @@ fn draw_inner_display_row(ui: &mut Ui, d: &InnerValueDisplay) {
                 }
                 _ => {
                     ui.colored_label(
-                        Color32::from_gray(220),
+                        theme::TEXT,
                         egui::RichText::new(format!("{:.3}", d.value)).monospace(),
                     );
                 }

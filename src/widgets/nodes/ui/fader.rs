@@ -338,7 +338,7 @@ pub fn cell_inspector_section(
         }
         ui.horizontal(|ui| {
             ui.label("Output:");
-            ui.colored_label(Color32::from_gray(220), format!("{:.3}", output_value));
+            ui.colored_label(theme::TEXT, format!("{:.3}", output_value));
         });
         if ui.checkbox(bipolar, "Bipolar").changed() {
             changed = true;

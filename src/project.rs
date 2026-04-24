@@ -140,6 +140,32 @@ pub struct SavedConnection {
     pub to_port: usize,
 }
 
+/// Rewrite every `NodeId` inside `project` to a freshly allocated id.
+/// Used when deep-cloning a subtree (duplicating a Subgraph) — the
+/// original's inner node ids are still live in the running graph, so the
+/// duplicate needs its own namespace. Each level is remapped in its own
+/// scope (so connections that reference its nodes are rewritten using
+/// that level's local map), and `inner_graph` children are recursed
+/// through. Bridge pseudo-ids (`u64::MAX - 1`, `u64::MAX`) are never in
+/// the map and pass through unchanged.
+pub fn remap_ids_inplace<F: FnMut() -> u64>(project: &mut ProjectFile, alloc: &mut F) {
+    let mut id_map: std::collections::HashMap<u64, u64> = std::collections::HashMap::new();
+    for node in &mut project.nodes {
+        let new_id = alloc();
+        id_map.insert(node.id, new_id);
+        node.id = new_id;
+    }
+    for conn in &mut project.connections {
+        if let Some(&new) = id_map.get(&conn.from_node) { conn.from_node = new; }
+        if let Some(&new) = id_map.get(&conn.to_node) { conn.to_node = new; }
+    }
+    for node in &mut project.nodes {
+        if let Some(ref mut inner) = node.inner_graph {
+            remap_ids_inplace(inner, alloc);
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Save
 // ---------------------------------------------------------------------------

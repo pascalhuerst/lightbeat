@@ -4,6 +4,7 @@ use egui::{self, Color32, Pos2, Sense, Stroke, StrokeKind, Ui, Vec2};
 
 use crate::color::Gradient;
 use crate::engine::types::*;
+use crate::theme;
 use crate::widgets::nodes::node::NodeWidget;
 use crate::widgets::nodes::types::UiPortDef;
 
@@ -94,9 +95,9 @@ impl NodeWidget for PaletteToGradientWidget {
                 );
             }
         } else {
-            painter.rect_filled(rect, 2.0, Color32::from_gray(40));
+            painter.rect_filled(rect, 2.0, theme::BG);
         }
-        painter.rect_stroke(rect, 2.0, Stroke::new(1.0, Color32::from_gray(80)), StrokeKind::Inside);
+        painter.rect_stroke(rect, 2.0, Stroke::new(1.0, theme::STROKE), StrokeKind::Inside);
     }
 
     fn as_any_mut(&mut self) -> &mut dyn Any { self }
@@ -105,7 +106,7 @@ impl NodeWidget for PaletteToGradientWidget {
 fn draw_checker(painter: &egui::Painter, rect: egui::Rect, cell: f32) {
     let cols = (rect.width() / cell).ceil() as i32;
     let rows = (rect.height() / cell).ceil() as i32;
-    let c1 = Color32::from_gray(40);
+    let c1 = theme::BG;
     let c2 = Color32::from_gray(70);
     for y in 0..rows {
         for x in 0..cols {

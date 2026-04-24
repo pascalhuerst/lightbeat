@@ -278,7 +278,7 @@ impl NodeWidget for LookupWidget {
             if r == self.current_row {
                 painter.rect_stroke(
                     row_rect, 1.0,
-                    Stroke::new(2.0, Color32::WHITE),
+                    Stroke::new(2.0, theme::TEXT_BRIGHT),
                     StrokeKind::Inside,
                 );
             }
@@ -496,7 +496,7 @@ fn preview_color(pt: PortType, data: &[f32], base: usize) -> Color32 {
         }
         PortType::Logic => {
             let on = data.get(base).copied().unwrap_or(0.0) >= 0.5;
-            if on { theme::TYPE_LOGIC } else { Color32::from_gray(40) }
+            if on { theme::TYPE_LOGIC } else { theme::BG }
         }
         _ => {
             let v = data.get(base).copied().unwrap_or(0.0).clamp(0.0, 1.0);
@@ -550,9 +550,9 @@ fn edit_cell(
                     }
                 }
                 let stroke = if resp.hovered() {
-                    Stroke::new(1.5, Color32::WHITE)
+                    Stroke::new(1.5, theme::TEXT_BRIGHT)
                 } else {
-                    Stroke::new(1.0, Color32::from_gray(80))
+                    Stroke::new(1.0, theme::STROKE)
                 };
                 painter.rect_stroke(rect, 2.0, stroke, StrokeKind::Inside);
 
@@ -576,7 +576,7 @@ fn edit_cell(
                         ui.set_min_width(220.0);
                         if presets.is_empty() {
                             ui.colored_label(
-                                Color32::from_gray(140),
+                                theme::TEXT_DIM,
                                 "No gradient presets yet. Save one from a Gradient Source node.",
                             );
                             return;
@@ -711,7 +711,7 @@ fn edit_cell(
 fn draw_checker(painter: &egui::Painter, rect: egui::Rect, cell: f32) {
     let cols = (rect.width() / cell).ceil() as i32;
     let rows = (rect.height() / cell).ceil() as i32;
-    let c1 = Color32::from_gray(40);
+    let c1 = theme::BG;
     let c2 = Color32::from_gray(70);
     for y in 0..rows {
         for x in 0..cols {

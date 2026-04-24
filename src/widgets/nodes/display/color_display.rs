@@ -8,6 +8,7 @@ use crate::engine::nodes::display::color_display::{
 };
 use crate::engine::types::*;
 use crate::objects::color_palette::PALETTE_SIZE;
+use crate::theme;
 use crate::widgets::nodes::node::NodeWidget;
 use crate::widgets::nodes::types::UiPortDef;
 
@@ -119,7 +120,7 @@ impl NodeWidget for ColorDisplayWidget {
                 let gradient = Gradient::from_channels(&channels);
                 let stops = gradient.stops();
                 if stops.is_empty() {
-                    painter.rect_filled(rect, 2.0, Color32::from_gray(40));
+                    painter.rect_filled(rect, 2.0, theme::BG);
                 } else {
                     let samples = (rect.width() as usize).max(16).min(512);
                     for i in 0..samples {
@@ -157,7 +158,7 @@ impl NodeWidget for ColorDisplayWidget {
                     }
                 }
 
-                painter.rect_stroke(rect, 2.0, Stroke::new(1.0, Color32::from_gray(80)), StrokeKind::Inside);
+                painter.rect_stroke(rect, 2.0, Stroke::new(1.0, theme::STROKE), StrokeKind::Inside);
             }
             _ => {
                 // Single color mode.
@@ -173,7 +174,7 @@ impl NodeWidget for ColorDisplayWidget {
                 painter.rect_filled(rect, 4.0, color);
 
                 let luma = r * 0.299 + g * 0.587 + b * 0.114;
-                let text_color = if luma > 0.5 { Color32::BLACK } else { Color32::WHITE };
+                let text_color = if luma > 0.5 { Color32::BLACK } else { theme::TEXT_BRIGHT };
                 painter.text(
                     rect.center(),
                     egui::Align2::CENTER_CENTER,
@@ -192,7 +193,7 @@ fn draw_checker(painter: &egui::Painter, rect: egui::Rect) {
     let cell = 6.0;
     let cols = (rect.width() / cell).ceil() as i32;
     let rows = (rect.height() / cell).ceil() as i32;
-    let c1 = Color32::from_gray(40);
+    let c1 = theme::BG;
     let c2 = Color32::from_gray(70);
     for y in 0..rows {
         for x in 0..cols {

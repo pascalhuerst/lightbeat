@@ -6,6 +6,7 @@ use crate::audio::analyzers::AnalyzerKind;
 use crate::audio::manager::{AudioInputManager, SharedAudioInputs};
 use crate::engine::nodes::io::audio_input::AudioInputDisplay;
 use crate::engine::types::*;
+use crate::theme;
 use crate::widgets::fader::FaderStyle;
 use crate::widgets::nodes::node::NodeWidget;
 use crate::widgets::nodes::types::UiPortDef;
@@ -306,7 +307,7 @@ impl NodeWidget for AudioInputWidget {
             for (name, _ty, value) in &self.outputs {
                 ui.horizontal(|ui| {
                     ui.label(name);
-                    ui.colored_label(Color32::from_gray(180), format!("{:.2}", value));
+                    ui.colored_label(theme::TEXT_MUTED, format!("{:.2}", value));
                 });
             }
         }

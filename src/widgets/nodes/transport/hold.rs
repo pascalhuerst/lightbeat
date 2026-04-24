@@ -4,6 +4,7 @@ use egui::{self, Color32, Ui};
 
 use crate::engine::nodes::transport::hold::TriggerHoldDisplay;
 use crate::engine::types::*;
+use crate::theme;
 use crate::widgets::nodes::node::NodeWidget;
 use crate::widgets::nodes::types::UiPortDef;
 
@@ -51,7 +52,7 @@ impl NodeWidget for TriggerHoldWidget {
         ui.horizontal(|ui| {
             if remaining > 0 {
                 ui.colored_label(
-                    Color32::from_rgb(80, 200, 100),
+                    theme::SEM_SUCCESS,
                     format!("HIGH {}/{}", remaining, dur),
                 );
             } else {

@@ -9,6 +9,7 @@ use crate::input_controller::x1::{
     button_led_index, button_name, encoder_name, pot_name,
 };
 use crate::input_controller::{InputControllerKind, SharedControllers};
+use crate::theme;
 use crate::widgets::nodes::node::NodeWidget;
 use crate::widgets::nodes::types::UiPortDef;
 
@@ -106,10 +107,10 @@ impl NodeWidget for X1Widget {
         if self.controller_id == 0 {
             ui.colored_label(Color32::from_gray(120), "No X1 bound");
         } else if self.connected {
-            ui.colored_label(Color32::from_rgb(80, 200, 100), &self.controller_name);
+            ui.colored_label(theme::SEM_SUCCESS, &self.controller_name);
         } else {
             ui.colored_label(
-                Color32::from_rgb(220, 180, 60),
+                theme::SEM_WARNING,
                 format!("{} (not connected)", self.controller_name),
             );
         }
@@ -149,7 +150,7 @@ impl NodeWidget for X1Widget {
 
         if controllers.is_empty() {
             ui.colored_label(
-                Color32::from_gray(140),
+                theme::TEXT_DIM,
                 "No X1 configured. Add one in the Input Controllers window.",
             );
         }

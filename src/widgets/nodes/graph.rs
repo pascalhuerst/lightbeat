@@ -157,6 +157,10 @@ struct ClipboardNode {
     /// any captured connections (`ClipboardConn`) onto the freshly
     /// allocated ids.
     original_id: NodeId,
+    /// For Subgraph copies: the inner level's `ProjectFile` so duplicate
+    /// recreates the nested content (nodes, connections, frames, nested
+    /// subgraphs, ...). `None` for non-subgraph copies.
+    inner_graph: Option<crate::project::ProjectFile>,
 }
 
 /// A connection snapshot captured alongside `ClipboardNode`s — remembers
@@ -1673,6 +1677,16 @@ impl NodeGraph {
             let data = shared.save_data.clone();
             drop(shared);
 
+            // For Subgraph nodes, snapshot the inner level so duplicate
+            // recreates the nested content instead of leaving an empty
+            // shell behind.
+            let inner_graph = if node.type_name() == "Subgraph" {
+                self.find_level_for_subgraph(state.id)
+                    .map(|lvl| crate::project::save_level(lvl, self))
+            } else {
+                None
+            };
+
             new_clip.push(ClipboardNode {
                 type_name: node.type_name().to_string(),
                 size: state.size_override,
@@ -1680,6 +1694,7 @@ impl NodeGraph {
                 data,
                 offset: state.pos - origin,
                 original_id: state.id,
+                inner_graph,
             });
         }
 
@@ -1778,11 +1793,13 @@ impl NodeGraph {
                             data["name"] = serde_json::Value::String(next);
                         }
 
-                    // Widget-side restore for the four portal kinds —
-                    // makes `ui_inputs` / `ui_outputs` immediately reflect
-                    // the duplicated port layout so wires survive the
-                    // first-frame cleanup. Mirrors `project.rs`'s load
-                    // dispatch.
+                    // Widget-side restore for the four portal kinds and
+                    // for Subgraph — makes `ui_inputs` / `ui_outputs`
+                    // immediately reflect the duplicated port layout so
+                    // `navigate_into` (used below for deep-copying a
+                    // subgraph) and `cleanup_stale_connections` see the
+                    // real ports on the first frame. Mirrors `project.rs`'s
+                    // load dispatch.
                     {
                         let n = self.active_mut().nodes[idx].as_mut();
                         if let Some(w) = n.as_any_mut().downcast_mut::<OutputPortalTxWidget>() {
@@ -1793,6 +1810,9 @@ impl NodeGraph {
                             w.restore_from_save_data(&data);
                         } else if let Some(w) = n.as_any_mut().downcast_mut::<InputPortalTxWidget>() {
                             w.restore_from_save_data(&data);
+                        } else if let Some(w) = n.as_any_mut().downcast_mut::<SubgraphWidget>() {
+                            w.restore_from_save_data(&data);
+                            w.push_config();
                         }
                     }
 
@@ -1805,6 +1825,22 @@ impl NodeGraph {
 
                 id_map.insert(cn.original_id, id);
                 self.selected_nodes.push(idx);
+
+                // Subgraph deep-clone: the clipboard carries a snapshot
+                // of the original's inner level. Remap its NodeIds to
+                // fresh ones (the originals are still live), navigate
+                // into the fresh duplicate, and load the remapped inner
+                // graph — same path as project-file load, so nested
+                // subgraphs recurse through the same machinery.
+                if cn.type_name == "Subgraph"
+                    && let Some(inner) = cn.inner_graph.clone() {
+                        let mut inner = inner;
+                        crate::project::remap_ids_inplace(&mut inner, &mut || self.alloc_id().0);
+                        let parent_level = self.active_level;
+                        self.navigate_into(idx);
+                        let _ = crate::project::load_graph(self, &inner);
+                        self.navigate_to_level(parent_level);
+                    }
             }
         }
 

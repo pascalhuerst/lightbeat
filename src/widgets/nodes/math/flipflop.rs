@@ -1,8 +1,9 @@
 use std::any::Any;
 
-use egui::{self, Color32, Ui};
+use egui::{self, Ui};
 
 use crate::engine::types::*;
+use crate::theme;
 use crate::widgets::nodes::node::NodeWidget;
 use crate::widgets::nodes::types::UiPortDef;
 
@@ -74,9 +75,9 @@ impl NodeWidget for FlipFlopWidget {
             shared.outputs.first().copied().unwrap_or(0.0) >= 0.5
         };
         let (text, color) = if q {
-            ("Q HIGH", Color32::from_rgb(80, 200, 100))
+            ("Q HIGH", theme::SEM_SUCCESS)
         } else {
-            ("Q LOW", Color32::from_gray(140))
+            ("Q LOW", theme::TEXT_DIM)
         };
         ui.colored_label(color, text);
     }

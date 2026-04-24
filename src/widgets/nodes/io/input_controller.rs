@@ -5,6 +5,7 @@ use egui::{self, Color32, Ui};
 use crate::engine::nodes::io::input_controller::InputControllerDisplay;
 use crate::engine::types::*;
 use crate::input_controller::SharedControllers;
+use crate::theme;
 use crate::widgets::nodes::node::NodeWidget;
 use crate::widgets::nodes::types::UiPortDef;
 
@@ -121,7 +122,7 @@ impl NodeWidget for InputControllerWidget {
             ui.colored_label(Color32::from_gray(120), "Controller has no inputs");
         } else {
             ui.colored_label(
-                Color32::from_gray(140),
+                theme::TEXT_DIM,
                 format!("{} input(s)", self.outputs.len()),
             );
         }
@@ -169,7 +170,7 @@ impl NodeWidget for InputControllerWidget {
             for (name, _ty, value) in &self.outputs {
                 ui.horizontal(|ui| {
                     ui.label(name);
-                    ui.colored_label(Color32::from_gray(180), format!("{:.2}", value));
+                    ui.colored_label(theme::TEXT_MUTED, format!("{:.2}", value));
                 });
             }
         }

@@ -6,6 +6,7 @@ use crate::engine::nodes::math::color_modifier::{
     ColorModifierDisplay, MODIFIER_OP_NAMES, ModifierOp,
 };
 use crate::engine::types::*;
+use crate::theme;
 use crate::widgets::nodes::node::NodeWidget;
 use crate::widgets::nodes::types::UiPortDef;
 
@@ -108,7 +109,7 @@ impl NodeWidget for ColorModifierWidget {
             ui.colored_label(Color32::from_gray(120), "Connect to set type");
         } else {
             ui.colored_label(
-                Color32::from_gray(140),
+                theme::TEXT_DIM,
                 format!("{} · {:.2}", MODIFIER_OP_NAMES[self.op.to_index()], amount),
             );
         }
@@ -116,7 +117,7 @@ impl NodeWidget for ColorModifierWidget {
 
     fn show_inspector(&mut self, ui: &mut Ui) {
         self.sync_from_display();
-        ui.colored_label(egui::Color32::from_gray(140), match self.op {
+        ui.colored_label(theme::TEXT_DIM, match self.op {
             ModifierOp::HueShift => "amount = hue rotation (0..1 = full turn)",
             ModifierOp::Saturation => "amount = saturation multiplier (1.0 = pass-through)",
             ModifierOp::Value => "amount = value/brightness multiplier (HSV V)",

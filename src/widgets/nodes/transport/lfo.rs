@@ -60,7 +60,7 @@ impl NodeWidget for LfoWidget {
 
         // Rate label.
         ui.colored_label(
-            Color32::from_gray(140),
+            theme::TEXT_DIM,
             egui::RichText::new(format!("{:.2} Hz", rate_hz))
                 .monospace().size(10.0 * zoom),
         );
@@ -74,7 +74,7 @@ impl NodeWidget for LfoWidget {
         );
         let rect = resp.rect;
         // Background
-        painter.rect_filled(rect, 2.0, Color32::from_gray(30));
+        painter.rect_filled(rect, 2.0, theme::BG_GRID);
         // Center line
         let cy = rect.center().y;
         painter.line_segment(

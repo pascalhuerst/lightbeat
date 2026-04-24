@@ -4,6 +4,7 @@ use egui::{self, Color32, Pos2, Sense, Stroke, StrokeKind, Ui, Vec2};
 
 use crate::engine::nodes::display::scope::ScopeDisplay;
 use crate::engine::types::*;
+use crate::theme;
 use crate::widgets::nodes::node::NodeWidget;
 use crate::widgets::nodes::types::UiPortDef;
 
@@ -138,7 +139,7 @@ fn draw_scope(
     let rect = response.rect;
 
     let bg = Color32::from_gray(20);
-    let grid_color = Color32::from_gray(40);
+    let grid_color = theme::BG;
 
     painter.rect_filled(rect, 2.0, bg);
     painter.rect_stroke(rect, 2.0, Stroke::new(1.0, Color32::from_gray(50)), StrokeKind::Inside);

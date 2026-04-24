@@ -190,11 +190,11 @@ impl NodeWidget for ButtonGroupWidget {
                 let fill = if pressed {
                     theme::SEM_PRIMARY
                 } else if resp.hovered() {
-                    Color32::from_gray(80)
+                    theme::STROKE
                 } else {
                     Color32::from_gray(60)
                 };
-                let text_color = if pressed { Color32::BLACK } else { Color32::WHITE };
+                let text_color = if pressed { Color32::BLACK } else { theme::TEXT_BRIGHT };
 
                 let painter = ui.painter_at(inner);
                 painter.rect_filled(inner, 3.0, fill);
@@ -202,7 +202,7 @@ impl NodeWidget for ButtonGroupWidget {
                 let border = if override_active {
                     theme::SEM_WARNING
                 } else if resp.hovered() {
-                    Color32::from_gray(140)
+                    theme::TEXT_DIM
                 } else {
                     Color32::from_gray(90)
                 };
@@ -224,7 +224,7 @@ impl NodeWidget for ButtonGroupWidget {
                     let in_color = if self.input_values.get(idx).copied().unwrap_or(0.0) >= 0.5 {
                         theme::SEM_PRIMARY
                     } else {
-                        Color32::from_gray(80)
+                        theme::STROKE
                     };
                     painter.circle_filled(dot_pos, dot_r, in_color);
                     painter.circle_stroke(dot_pos, dot_r,
@@ -324,7 +324,7 @@ impl NodeWidget for ButtonGroupWidget {
         } else if self.inputs_enabled && self.mode == ButtonMode::Trigger {
             ui.indent("bg_input_opts", |ui| {
                 ui.colored_label(
-                    Color32::from_gray(140),
+                    theme::TEXT_DIM,
                     "Trigger mode: input rising edges fire the corresponding output. No override.",
                 );
             });

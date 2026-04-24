@@ -1,17 +1,14 @@
 use std::any::Any;
 
-use egui::{self, Color32, Pos2, Sense, Stroke, Ui, Vec2};
+use egui::{self, Pos2, Sense, Stroke, Ui, Vec2};
 
 use crate::engine::nodes::transport::envelope::EnvelopeDisplay;
 use crate::engine::types::*;
+use crate::theme;
 use crate::widgets::nodes::node::NodeWidget;
 use crate::widgets::nodes::types::UiPortDef;
 
 const HANDLE_RADIUS: f32 = 4.0;
-const CURVE_COLOR: Color32 = Color32::from_rgb(80, 200, 160);
-const ACTIVE_COLOR: Color32 = Color32::from_rgb(120, 255, 200);
-const HANDLE_COLOR: Color32 = Color32::from_rgb(220, 220, 220);
-const BG_COLOR: Color32 = Color32::from_gray(30);
 
 pub struct EnvelopeWidget {
     id: NodeId,
@@ -72,7 +69,7 @@ impl NodeWidget for EnvelopeWidget {
         let (response, painter) = ui.allocate_painter(Vec2::new(w, h), Sense::click_and_drag());
         let rect = response.rect;
 
-        painter.rect_filled(rect, 2.0, BG_COLOR);
+        painter.rect_filled(rect, 2.0, theme::BG_GRID);
 
         // Layout: divide the width into A, D, S(fixed), R sections.
         // Normalize times to fit the width. Max total time for display.
@@ -105,15 +102,15 @@ impl NodeWidget for EnvelopeWidget {
         let p4 = Pos2::new(x4, y_bot);           // release end
 
         // Draw filled area under curve.
-        let fill_color = CURVE_COLOR.linear_multiply(0.15);
+        let fill_color = theme::SEM_SUCCESS.linear_multiply(0.15);
         let points = vec![p0, p1, p2, p3, p4, Pos2::new(x4, y_bot), Pos2::new(x0, y_bot)];
         painter.add(egui::Shape::convex_polygon(points, fill_color, Stroke::NONE));
 
         // Draw the curve lines.
-        let stroke = Stroke::new(2.0, CURVE_COLOR);
+        let stroke = Stroke::new(2.0, theme::SEM_SUCCESS);
         painter.line_segment([p0, p1], stroke);
         painter.line_segment([p1, p2], stroke);
-        painter.line_segment([p2, p3], Stroke::new(2.0, CURVE_COLOR.linear_multiply(0.6)));
+        painter.line_segment([p2, p3], Stroke::new(2.0, theme::SEM_SUCCESS.linear_multiply(0.6)));
         painter.line_segment([p3, p4], stroke);
 
         // Draw current envelope position indicator.
@@ -129,15 +126,15 @@ impl NodeWidget for EnvelopeWidget {
             painter.circle_filled(
                 Pos2::new(indicator_x.clamp(rect.min.x, rect.max.x), indicator_y),
                 HANDLE_RADIUS * zoom,
-                ACTIVE_COLOR,
+                theme::TEXT_BRIGHT,
             );
         }
 
         // Draw draggable handles at the key points.
         let hr = HANDLE_RADIUS * zoom;
-        painter.circle_filled(p1, hr, HANDLE_COLOR); // attack time
-        painter.circle_filled(p2, hr, HANDLE_COLOR); // decay time + sustain level
-        painter.circle_filled(p4, hr, HANDLE_COLOR); // release time
+        painter.circle_filled(p1, hr, theme::TEXT); // attack time
+        painter.circle_filled(p2, hr, theme::TEXT); // decay time + sustain level
+        painter.circle_filled(p4, hr, theme::TEXT); // release time
 
         // Handle dragging to adjust ADSR params.
         if (response.dragged() || response.clicked())
@@ -185,7 +182,7 @@ impl NodeWidget for EnvelopeWidget {
                 egui::Align2::LEFT_BOTTOM,
                 stage_name,
                 egui::FontId::monospace(9.0 * zoom),
-                ACTIVE_COLOR,
+                theme::TEXT_BRIGHT,
             );
         }
     }

@@ -22,14 +22,14 @@ const PEAK_HOLD_DURATION: f64 = 1.5;
 const PEAK_HOLD_FALLBACK_RATE: f32 = 0.4;
 const CLIP_DISPLAY_DURATION: f64 = 1.5;
 
-const BG_COLOR: Color32 = Color32::from_gray(22);
+const BG_COLOR: Color32 = theme::BG_DEEP;
 const BORDER_COLOR: Color32 = Color32::from_gray(60);
 const GREEN_COLOR: Color32 = theme::SEM_SUCCESS;
 const YELLOW_COLOR: Color32 = theme::TYPE_LOGIC;
 const RED_COLOR: Color32 = theme::SEM_DANGER;
 const HOLD_COLOR: Color32 = theme::TEXT;
 const RMS_COLOR: Color32 = theme::RMS_WASH;
-const CLIP_OFF_COLOR: Color32 = Color32::from_gray(40);
+const CLIP_OFF_COLOR: Color32 = theme::BG;
 const SCALE_LABEL_COLOR: Color32 = theme::TEXT_DIM;
 const SCALE_TICK_COLOR: Color32 = Color32::from_gray(70);
 

@@ -4,6 +4,7 @@ use egui::{self, Color32, Pos2, Sense, Stroke, StrokeKind, Ui, Vec2};
 
 use crate::engine::nodes::ui::gradient_stops::GradientStopsDisplay;
 use crate::engine::types::*;
+use crate::theme;
 use crate::widgets::nodes::node::NodeWidget;
 use crate::widgets::nodes::types::UiPortDef;
 
@@ -126,7 +127,7 @@ impl NodeWidget for GradientStopsWidget {
                 Stroke::new(1.0, col),
             );
         }
-        painter.rect_stroke(strip_rect, 2.0, Stroke::new(1.0, Color32::from_gray(80)), StrokeKind::Inside);
+        painter.rect_stroke(strip_rect, 2.0, Stroke::new(1.0, theme::STROKE), StrokeKind::Inside);
 
         // --- handles: vertical line + dot, in the palette colour.
         let ptr = resp.interact_pointer_pos();
@@ -208,7 +209,7 @@ impl NodeWidget for GradientStopsWidget {
 }
 
 fn sample_stops(stops: &[(f32, Color32)], t: f32) -> Color32 {
-    if stops.is_empty() { return Color32::from_gray(40); }
+    if stops.is_empty() { return theme::BG; }
     if t <= stops[0].0 { return stops[0].1; }
     if t >= stops[stops.len() - 1].0 { return stops[stops.len() - 1].1; }
     // Find the bracketing pair and lerp.
@@ -234,5 +235,5 @@ fn lerp_color(a: Color32, b: Color32, k: f32) -> Color32 {
 /// palette entries.
 fn text_color_for(bg: Color32) -> Color32 {
     let y = 0.2126 * bg.r() as f32 + 0.7152 * bg.g() as f32 + 0.0722 * bg.b() as f32;
-    if y > 140.0 { Color32::BLACK } else { Color32::WHITE }
+    if y > 140.0 { Color32::BLACK } else { theme::TEXT_BRIGHT }
 }

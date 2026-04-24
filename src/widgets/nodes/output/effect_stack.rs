@@ -7,6 +7,7 @@ use crate::engine::nodes::output::effect_stack::{EffectLayerConfig, EffectStackD
 use crate::engine::patterns::{all_pattern_types, create_pattern, pattern_channel_count};
 use crate::engine::types::*;
 use crate::objects::channel::ChannelKind;
+use crate::theme;
 use crate::widgets::fader::highlight_alpha;
 use crate::widgets::nodes::node::NodeWidget;
 use crate::widgets::nodes::output::group::SharedGroupContext;
@@ -168,7 +169,7 @@ impl NodeWidget for EffectStackWidget {
         if self.selected_group_ids.is_empty() {
             ui.colored_label(Color32::from_gray(120), "No groups");
         } else {
-            ui.colored_label(Color32::from_gray(140),
+            ui.colored_label(theme::TEXT_DIM,
                 format!("{} layers, {} strips", self.layers.len(), strip_count));
         }
     }

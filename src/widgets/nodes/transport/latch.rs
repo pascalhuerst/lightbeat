@@ -1,8 +1,9 @@
 use std::any::Any;
 
-use egui::{self, Color32, Ui};
+use egui::{self, Ui};
 
 use crate::engine::types::*;
+use crate::theme;
 use crate::widgets::nodes::node::NodeWidget;
 use crate::widgets::nodes::types::UiPortDef;
 
@@ -40,7 +41,7 @@ impl NodeWidget for LatchWidget {
             let shared = self.shared.lock().unwrap();
             shared.outputs.first().copied().unwrap_or(0.0)
         };
-        ui.colored_label(Color32::from_gray(180), format!("{:.3}", v));
+        ui.colored_label(theme::TEXT_MUTED, format!("{:.3}", v));
     }
 
     fn as_any_mut(&mut self) -> &mut dyn Any { self }

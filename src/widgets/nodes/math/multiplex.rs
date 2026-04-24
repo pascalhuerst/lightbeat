@@ -7,6 +7,7 @@ use crate::engine::nodes::math::multiplex::{
     clamp_slots, type_from_index, type_to_index,
 };
 use crate::engine::types::*;
+use crate::theme;
 use crate::widgets::nodes::node::NodeWidget;
 use crate::widgets::nodes::types::UiPortDef;
 
@@ -97,7 +98,7 @@ impl NodeWidget for MultiplexerWidget {
         if self.port_type == PortType::Any {
             ui.colored_label(Color32::from_gray(120), "Connect to set type");
         } else {
-            ui.colored_label(Color32::from_gray(140), format!("in{} → out", sel));
+            ui.colored_label(theme::TEXT_DIM, format!("in{} → out", sel));
         }
     }
 
@@ -186,7 +187,7 @@ impl NodeWidget for DemultiplexerWidget {
         if self.port_type == PortType::Any {
             ui.colored_label(Color32::from_gray(120), "Connect to set type");
         } else {
-            ui.colored_label(Color32::from_gray(140), format!("in → out{}", sel));
+            ui.colored_label(theme::TEXT_DIM, format!("in → out{}", sel));
         }
     }
 

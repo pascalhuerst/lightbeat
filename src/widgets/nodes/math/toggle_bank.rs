@@ -78,7 +78,7 @@ impl NodeWidget for ToggleBankWidget {
             let y = rect.min.y + row_h * (i as f32 + 0.5);
             let on = self.states.get(i).copied().unwrap_or(false);
             let fill = if on { theme::SEM_PRIMARY } else { Color32::from_gray(60) };
-            let stroke_col = if on { Color32::from_gray(220) } else { Color32::from_gray(120) };
+            let stroke_col = if on { theme::TEXT } else { Color32::from_gray(120) };
 
             let center = egui::pos2(rect.center().x - row_h * 0.9, y);
             painter.circle_filled(center, dot_r, fill);

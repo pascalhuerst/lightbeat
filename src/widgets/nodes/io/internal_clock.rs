@@ -71,7 +71,7 @@ impl NodeWidget for InternalClockWidget {
 
         ui.vertical_centered(|ui| {
             ui.colored_label(
-                Color32::WHITE,
+                theme::TEXT_BRIGHT,
                 egui::RichText::new(format!("{:.1}", bpm)).monospace().size(20.0 * zoom),
             );
             ui.colored_label(
@@ -101,14 +101,14 @@ impl NodeWidget for InternalClockWidget {
             egui::Align2::LEFT_CENTER,
             if playing { "PLAY" } else { "STOP" },
             egui::FontId::monospace(9.0 * zoom),
-            Color32::from_gray(140),
+            theme::TEXT_DIM,
         );
 
         let beat_color = if beat_on {
             if is_downbeat { Color32::from_rgb(255, 255, 255) }
             else { theme::TYPE_LOGIC }
         } else {
-            Color32::from_gray(40)
+            theme::BG
         };
         let beat_center = egui::pos2(row_rect.max.x - led_r - 2.0, row_rect.center().y);
         row_painter.circle_filled(beat_center, led_r, beat_color);

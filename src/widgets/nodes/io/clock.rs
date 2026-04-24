@@ -68,14 +68,14 @@ impl NodeWidget for ClockWidget {
                 Color32::from_gray(100)
             };
             ui.colored_label(link_color, "LINK");
-            ui.colored_label(Color32::from_gray(140), format!("{} peers", num_peers));
+            ui.colored_label(theme::TEXT_DIM, format!("{} peers", num_peers));
         });
 
         ui.add_space(pad);
 
         ui.vertical_centered(|ui| {
             ui.colored_label(
-                Color32::WHITE,
+                theme::TEXT_BRIGHT,
                 egui::RichText::new(format!("{:.1}", tempo)).monospace().size(20.0 * zoom),
             );
             ui.colored_label(
@@ -107,7 +107,7 @@ impl NodeWidget for ClockWidget {
             egui::Align2::LEFT_CENTER,
             if playing { "PLAY" } else { "STOP" },
             egui::FontId::monospace(9.0 * zoom),
-            Color32::from_gray(140),
+            theme::TEXT_DIM,
         );
 
         // Beat LED (right).
@@ -115,7 +115,7 @@ impl NodeWidget for ClockWidget {
             if is_downbeat { Color32::from_rgb(255, 255, 255) }
             else { theme::TYPE_LOGIC }
         } else {
-            Color32::from_gray(40)
+            theme::BG
         };
         let beat_center = egui::pos2(row_rect.max.x - led_r - 2.0, row_rect.center().y);
         row_painter.circle_filled(beat_center, led_r, beat_color);

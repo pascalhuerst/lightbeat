@@ -381,11 +381,11 @@ impl NodeWidget for FaderGroupWidget {
 
                             if self.inputs_enabled[idx] {
                                 ui.colored_label(
-                                    Color32::from_gray(180),
+                                    theme::TEXT_MUTED,
                                     format!("{:.3}", self.input_values[idx]),
                                 );
                             } else {
-                                ui.colored_label(Color32::from_gray(80), "—");
+                                ui.colored_label(theme::STROKE, "—");
                             }
 
                             let mut mode = self.mouse_override[idx];
@@ -414,7 +414,7 @@ impl NodeWidget for FaderGroupWidget {
                                     format!("{:.3}", self.override_values[idx]),
                                 );
                             } else {
-                                ui.colored_label(Color32::from_gray(80), "—");
+                                ui.colored_label(theme::STROKE, "—");
                             }
 
                             if ui.checkbox(&mut self.outputs_enabled[idx], "").changed() {
@@ -423,11 +423,11 @@ impl NodeWidget for FaderGroupWidget {
 
                             if self.outputs_enabled[idx] {
                                 ui.colored_label(
-                                    Color32::from_gray(220),
+                                    theme::TEXT,
                                     format!("{:.3}", self.output_values[idx]),
                                 );
                             } else {
-                                ui.colored_label(Color32::from_gray(80), "—");
+                                ui.colored_label(theme::STROKE, "—");
                             }
 
                             if ui.checkbox(&mut self.bipolar[idx], "").changed() {

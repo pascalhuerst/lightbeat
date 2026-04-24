@@ -3,6 +3,7 @@ use egui::{self, Color32, Sense, Ui, Vec2};
 
 use crate::engine::nodes::display::led_display::LedDisplayData;
 use crate::engine::types::*;
+use crate::theme;
 use crate::widgets::nodes::node::NodeWidget;
 use crate::widgets::nodes::types::UiPortDef;
 
@@ -72,7 +73,7 @@ impl NodeWidget for LedDisplayWidget {
                 egui::Align2::CENTER_CENTER,
                 &name,
                 egui::FontId::proportional(label_size),
-                Color32::from_gray(180),
+                theme::TEXT_MUTED,
             );
             rect = egui::Rect::from_min_max(
                 egui::pos2(rect.min.x, label_rect.max.y + NAME_GAP),
@@ -125,7 +126,7 @@ fn fit_label_size(ui: &Ui, text: &str, area: Vec2) -> f32 {
     for _ in 0..14 {
         let mid = 0.5 * (lo + hi);
         let galley = ui.fonts(|f| {
-            f.layout_no_wrap(text.to_string(), egui::FontId::proportional(mid), Color32::WHITE)
+            f.layout_no_wrap(text.to_string(), egui::FontId::proportional(mid), theme::TEXT_BRIGHT)
         });
         let size = galley.size();
         if size.x <= target_w && size.y <= target_h {

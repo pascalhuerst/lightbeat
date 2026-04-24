@@ -1,6 +1,6 @@
 use std::any::Any;
 
-use egui::{self, Color32, Ui};
+use egui::{self, Ui};
 
 use crate::engine::nodes::transport::delay::TriggerDelayDisplay;
 use crate::engine::types::*;
@@ -76,7 +76,7 @@ impl NodeWidget for TriggerDelayWidget {
             let color = if pending {
                 theme::TYPE_LOGIC
             } else {
-                Color32::from_gray(180)
+                theme::TEXT_MUTED
             };
             ui.colored_label(color, delay_label(exponent));
 
