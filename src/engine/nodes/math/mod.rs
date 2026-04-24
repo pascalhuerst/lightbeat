@@ -17,3 +17,5 @@ pub mod palette_to_gradient;
 pub mod position_ops;
 pub mod scaler;
 pub mod schmitt;
+pub mod toggle_bank;
+pub mod trigger_bank;

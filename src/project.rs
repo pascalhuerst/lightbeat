@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-use crate::engine::nodes::meta::subgraph::{BRIDGE_IN_NODE_ID, SubgraphPortDef};
+use crate::engine::nodes::meta::subgraph::{BRIDGE_IN_NODE_ID, BRIDGE_OUT_NODE_ID, SubgraphPortDef};
 use crate::engine::types::{NodeId, ParamDef, ParamValue, PortDir, PortId};
 use crate::widgets::nodes::display::led_display::LedDisplayWidget;
 use crate::widgets::nodes::display::value_display::ValueDisplayWidget;
@@ -20,6 +20,8 @@ use crate::widgets::nodes::meta::portal::{
 use crate::widgets::nodes::meta::subgraph::SubgraphWidget;
 use crate::widgets::nodes::output::effect_stack::EffectStackWidget;
 use crate::widgets::nodes::output::group::GroupWidget;
+use crate::widgets::nodes::math::toggle_bank::ToggleBankWidget;
+use crate::widgets::nodes::math::trigger_bank::TriggerBankWidget;
 use crate::widgets::nodes::ui::button::ButtonWidget;
 use crate::widgets::nodes::ui::fader::FaderWidget;
 use crate::widgets::nodes::ui::fader_group::FaderGroupWidget;
@@ -41,6 +43,16 @@ pub struct ProjectFile {
     /// (subgraph) levels — only the root level carries view state.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub view: Option<ProjectViewState>,
+    /// Canvas position of the Graph Input bridge pseudo-node inside a
+    /// subgraph level. Not persisted via the `nodes` vec — bridges are
+    /// auto-reconstructed on navigate_into, but their positions are
+    /// user-arrangeable so we save them here. Root level has no bridges,
+    /// so this stays `None` there.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bridge_in_pos: Option<[f32; 2]>,
+    /// Canvas position of the Graph Output bridge pseudo-node.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bridge_out_pos: Option<[f32; 2]>,
 }
 
 /// Persisted view-toggle state for the app's side panels and windows.
@@ -204,9 +216,32 @@ pub fn save_level(level: &GraphLevel, graph: &NodeGraph) -> ProjectFile {
         size: [f.size.x, f.size.y],
     }).collect();
 
+    // Bridge pseudo-node positions. The bridges themselves are
+    // reconstructed on navigate_into, but their user-placed positions
+    // round-trip separately so subgraph layouts survive reopen.
+    let mut bridge_in_pos = None;
+    let mut bridge_out_pos = None;
+    for (i, node) in level.nodes.iter().enumerate() {
+        let id = node.node_id();
+        if id == BRIDGE_IN_NODE_ID {
+            let p = level.states[i].pos;
+            bridge_in_pos = Some([p.x, p.y]);
+        } else if id == BRIDGE_OUT_NODE_ID {
+            let p = level.states[i].pos;
+            bridge_out_pos = Some([p.x, p.y]);
+        }
+    }
+
     // View state is plumbed in by the caller (save_to_file) at the root
     // level only; nested subgraph saves leave it as None.
-    ProjectFile { nodes, connections, frames, view: None }
+    ProjectFile {
+        nodes,
+        connections,
+        frames,
+        view: None,
+        bridge_in_pos,
+        bridge_out_pos,
+    }
 }
 
 pub fn save_graph(graph: &NodeGraph) -> ProjectFile {
@@ -318,6 +353,18 @@ pub fn load_graph(graph: &mut NodeGraph, project: &ProjectFile) -> Vec<usize> {
                     let parent_level = graph.active_level_index();
 
                     graph.navigate_into_by_index(idx);
+
+                    // Restore bridge pseudo-node positions BEFORE the
+                    // recursive load, so nested subgraphs that re-enter
+                    // this level (or the user navigating in) find the
+                    // bridges where they were left.
+                    if let Some([x, y]) = inner_project.bridge_in_pos {
+                        graph.set_node_pos(BRIDGE_IN_NODE_ID, egui::Pos2::new(x, y));
+                    }
+                    if let Some([x, y]) = inner_project.bridge_out_pos {
+                        graph.set_node_pos(BRIDGE_OUT_NODE_ID, egui::Pos2::new(x, y));
+                    }
+
                     let _inner_indices = load_graph(graph, inner_project);
                     graph.navigate_to_level(parent_level);
                 }
@@ -357,6 +404,24 @@ pub fn load_graph(graph: &mut NodeGraph, project: &ProjectFile) -> Vec<usize> {
                     let n = graph.node_mut(idx);
                     if let Some(b) = n.as_any_mut().downcast_mut::<ButtonWidget>() {
                         b.restore_from_save_data(data);
+                    }
+                }
+
+            // Toggle Bank's port count is variable — restore `n` before
+            // cleanup_stale_connections so wires to channels > default
+            // aren't dropped.
+            if saved.type_name == "Toggle Bank"
+                && let Some(data) = &saved.data {
+                    let n = graph.node_mut(idx);
+                    if let Some(tb) = n.as_any_mut().downcast_mut::<ToggleBankWidget>() {
+                        tb.restore_from_save_data(data);
+                    }
+                }
+            if saved.type_name == "Trigger Bank"
+                && let Some(data) = &saved.data {
+                    let n = graph.node_mut(idx);
+                    if let Some(tb) = n.as_any_mut().downcast_mut::<TriggerBankWidget>() {
+                        tb.restore_from_save_data(data);
                     }
                 }
 

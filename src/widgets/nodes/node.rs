@@ -168,26 +168,68 @@ pub const PORT_RADIUS: f32 = 6.0;
 pub const PORT_SPACING: f32 = 22.0;
 pub const PORT_START_Y: f32 = NODE_TITLE_HEIGHT + 14.0;
 pub const NODE_PADDING: f32 = 8.0;
-/// Every N ports, an extra blank slot is inserted so long port lists are
-/// easier to scan. Keeps input/output indexing untouched — only the
-/// rendered Y position is affected.
+/// Within a run of same-typed ports, insert an extra blank slot every
+/// `PORT_GROUP_SIZE` ports so long lists are easier to scan. Additionally
+/// a gap always appears wherever the port type changes, so a lone
+/// trigger (Logic) at the top of a list of values (Untyped) stays
+/// visually isolated instead of eating the first slot of the next group.
 pub const PORT_GROUP_SIZE: usize = 8;
 
-/// Extra vertical offset (in unscaled pixels) accumulated from group gaps
-/// up to and including `index`. Each completed group of `PORT_GROUP_SIZE`
-/// contributes one extra `PORT_SPACING` of blank space above the next port.
-fn port_group_offset(index: usize) -> f32 {
-    (index / PORT_GROUP_SIZE) as f32 * PORT_SPACING
+/// Compute a per-port Y-offset (unscaled pixels, relative to
+/// `PORT_START_Y`) for a list of ports given their types. Gaps are
+/// inserted between runs of different `PortType` and every
+/// `PORT_GROUP_SIZE` ports within a homogeneous run. The returned vec
+/// has `types.len() + 1` entries — the extra trailing value is the
+/// cumulative height (used by `ports_height`).
+fn compute_port_offsets(types: &[crate::engine::types::PortType]) -> Vec<f32> {
+    let mut out = Vec::with_capacity(types.len() + 1);
+    let mut y = 0.0f32;
+    let mut prev: Option<crate::engine::types::PortType> = None;
+    let mut run_idx = 0usize;
+    for &t in types {
+        if let Some(pt) = prev {
+            if pt != t {
+                // Type change — lone triggers / single LEDs / etc. get a
+                // gap so they don't merge into the next group.
+                y += PORT_SPACING;
+                run_idx = 0;
+            } else if run_idx != 0 && run_idx % PORT_GROUP_SIZE == 0 {
+                // Group break within a homogeneous run.
+                y += PORT_SPACING;
+            }
+        }
+        out.push(y);
+        y += PORT_SPACING;
+        run_idx += 1;
+        prev = Some(t);
+    }
+    out.push(y); // cumulative height
+    out
 }
 
 /// Compute port position at zoom=1.
 #[allow(dead_code)]
-pub fn port_pos(node_pos: Pos2, node_width: f32, dir: PortDir, index: usize) -> Pos2 {
-    port_pos_z(node_pos, node_width, dir, index, 1.0)
+pub fn port_pos(
+    node_pos: Pos2,
+    node_width: f32,
+    dir: PortDir,
+    port_types: &[crate::engine::types::PortType],
+    index: usize,
+) -> Pos2 {
+    port_pos_z(node_pos, node_width, dir, port_types, index, 1.0)
 }
 
-pub fn port_pos_z(node_pos: Pos2, node_width: f32, dir: PortDir, index: usize, zoom: f32) -> Pos2 {
-    let base = PORT_START_Y + index as f32 * PORT_SPACING + port_group_offset(index);
+pub fn port_pos_z(
+    node_pos: Pos2,
+    node_width: f32,
+    dir: PortDir,
+    port_types: &[crate::engine::types::PortType],
+    index: usize,
+    zoom: f32,
+) -> Pos2 {
+    let offsets = compute_port_offsets(port_types);
+    let offset = offsets.get(index).copied().unwrap_or(index as f32 * PORT_SPACING);
+    let base = PORT_START_Y + offset;
     let y = node_pos.y + base * zoom;
     let x = match dir {
         PortDir::Input => node_pos.x,
@@ -196,12 +238,14 @@ pub fn port_pos_z(node_pos: Pos2, node_width: f32, dir: PortDir, index: usize, z
     Pos2::new(x, y)
 }
 
-pub fn ports_height(num_inputs: usize, num_outputs: usize) -> f32 {
-    let max_ports = num_inputs.max(num_outputs).max(1);
-    // `port_group_offset(max_ports)` accounts for every gap that sits
-    // *above* port index `max_ports` — equivalent to the gaps between
-    // groups when there are `max_ports` ports in total.
-    PORT_START_Y + max_ports as f32 * PORT_SPACING + port_group_offset(max_ports) + NODE_PADDING
+pub fn ports_height(
+    input_types: &[crate::engine::types::PortType],
+    output_types: &[crate::engine::types::PortType],
+) -> f32 {
+    let in_h = compute_port_offsets(input_types).last().copied().unwrap_or(PORT_SPACING);
+    let out_h = compute_port_offsets(output_types).last().copied().unwrap_or(PORT_SPACING);
+    let max_h = in_h.max(out_h).max(PORT_SPACING);
+    PORT_START_Y + max_h + NODE_PADDING
 }
 
 pub fn make_port_id(

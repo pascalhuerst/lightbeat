@@ -4,6 +4,9 @@ use super::node::*;
 use super::types::*;
 use crate::engine::nodes::meta::subgraph::{SubgraphPortDef, port_type_to_idx, BRIDGE_IN_NODE_ID, BRIDGE_OUT_NODE_ID};
 use crate::engine::types::{Connection, NodeId, ParamDef, ParamValue, PortDir, PortId, PortType, SubgraphInnerCmd};
+use crate::widgets::nodes::meta::portal::{
+    InputPortalRxWidget, InputPortalTxWidget, OutputPortalRxWidget, OutputPortalTxWidget,
+};
 use crate::widgets::nodes::meta::subgraph::{SubgraphWidget, GraphInputWidget, GraphOutputWidget};
 
 const MAGNETIC_RADIUS: f32 = 20.0;
@@ -150,6 +153,21 @@ struct ClipboardNode {
     data: Option<serde_json::Value>,
     /// Offset from the first copied node's position.
     offset: Vec2,
+    /// The NodeId the snapshot was taken from. Used on paste to rewrite
+    /// any captured connections (`ClipboardConn`) onto the freshly
+    /// allocated ids.
+    original_id: NodeId,
+}
+
+/// A connection snapshot captured alongside `ClipboardNode`s — remembers
+/// the source/destination by their *original* NodeIds so paste can remap
+/// them onto the new node ids.
+#[derive(Clone)]
+struct ClipboardConn {
+    from_node: NodeId,
+    from_index: usize,
+    to_node: NodeId,
+    to_index: usize,
 }
 
 pub struct NodeGraph {
@@ -182,6 +200,10 @@ pub struct NodeGraph {
     frame_drag: Option<FrameDrag>,
     canvas_rect: Rect,
     clipboard: Vec<ClipboardNode>,
+    /// Connections between the clipboard's nodes, stored by original
+    /// NodeIds. On paste we rewrite these onto the newly-allocated ids so
+    /// the duplicate keeps its internal wiring.
+    clipboard_connections: Vec<ClipboardConn>,
     /// Set to true to fit the view to content on the next frame.
     fit_pending: bool,
 }
@@ -241,6 +263,7 @@ impl NodeGraph {
             frame_drag: None,
             canvas_rect: Rect::NOTHING,
             clipboard: Vec::new(),
+            clipboard_connections: Vec::new(),
             fit_pending: false,
         }
     }
@@ -344,7 +367,9 @@ impl NodeGraph {
             let min_w = node.min_width();
             let inputs = node.ui_inputs();
             let outputs = node.ui_outputs();
-            let port_h = ports_height(inputs.len(), outputs.len());
+            let in_types: Vec<PortType> = inputs.iter().map(|p| p.def.port_type).collect();
+            let out_types: Vec<PortType> = outputs.iter().map(|p| p.def.port_type).collect();
+            let port_h = ports_height(&in_types, &out_types);
             let content_h = PORT_START_Y + node.min_content_height() + NODE_PADDING;
             let min_h = port_h.max(content_h);
             let size = level.states[i]
@@ -575,6 +600,17 @@ impl NodeGraph {
         self.active_mut().states[index].size_override = Some(size);
     }
 
+    /// Move a node (identified by `NodeId`) on the active level to `pos`.
+    /// No-op if the id isn't present. Used by project load to restore
+    /// positions of nodes that aren't in the normal `nodes` vec (bridge
+    /// pseudo-nodes).
+    pub fn set_node_pos(&mut self, id: NodeId, pos: Pos2) {
+        let level = self.active_mut();
+        if let Some(s) = level.states.iter_mut().find(|s| s.id == id) {
+            s.pos = pos;
+        }
+    }
+
     /// Access root level directly (for save/load which always operates on root).
     pub fn root_level(&self) -> &GraphLevel { &self.levels[0] }
 
@@ -691,9 +727,10 @@ impl NodeGraph {
                 let node_id = level.states[i].id;
 
                 let inputs = level.nodes[i].ui_inputs();
+                let in_types: Vec<PortType> = inputs.iter().map(|p| p.def.port_type).collect();
                 let mut base = 0usize;
                 for (pi, up) in inputs.iter().enumerate() {
-                    let pos = port_pos_z(rect.min, rect.width(), PortDir::Input, pi, z);
+                    let pos = port_pos_z(rect.min, rect.width(), PortDir::Input, &in_types, pi, z);
                     if pos.distance(pointer) < radius {
                         found = Some((
                             make_port_id(node_id, PortDir::Input, pi),
@@ -706,9 +743,10 @@ impl NodeGraph {
                     base += up.def.port_type.channel_count();
                 }
                 let outputs = level.nodes[i].ui_outputs();
+                let out_types: Vec<PortType> = outputs.iter().map(|p| p.def.port_type).collect();
                 let mut base = 0usize;
                 for (pi, up) in outputs.iter().enumerate() {
-                    let pos = port_pos_z(rect.min, rect.width(), PortDir::Output, pi, z);
+                    let pos = port_pos_z(rect.min, rect.width(), PortDir::Output, &out_types, pi, z);
                     if pos.distance(pointer) < radius {
                         found = Some((
                             make_port_id(node_id, PortDir::Output, pi),
@@ -846,16 +884,18 @@ impl NodeGraph {
             let rect = node_rects[i];
             let radius = (PORT_RADIUS + 4.0) * z;
             let outs = level.nodes[i].ui_outputs();
+            let out_types: Vec<PortType> = outs.iter().map(|p| p.def.port_type).collect();
             for (pi, _) in outs.iter().enumerate() {
-                let pos = port_pos_z(rect.min, rect.width(), PortDir::Output, pi, z);
+                let pos = port_pos_z(rect.min, rect.width(), PortDir::Output, &out_types, pi, z);
                 if pos.distance(pointer) < radius {
                     ui.ctx().set_cursor_icon(egui::CursorIcon::Crosshair);
                     return;
                 }
             }
             let ins = level.nodes[i].ui_inputs();
+            let in_types: Vec<PortType> = ins.iter().map(|p| p.def.port_type).collect();
             for (pi, _) in ins.iter().enumerate() {
-                let pos = port_pos_z(rect.min, rect.width(), PortDir::Input, pi, z);
+                let pos = port_pos_z(rect.min, rect.width(), PortDir::Input, &in_types, pi, z);
                 if pos.distance(pointer) < radius {
                     ui.ctx().set_cursor_icon(egui::CursorIcon::Crosshair);
                     return;
@@ -1302,7 +1342,9 @@ impl NodeGraph {
                 let min_w = n.min_width();
                 let inputs = n.ui_inputs();
                 let outputs = n.ui_outputs();
-                let port_h = ports_height(inputs.len(), outputs.len());
+                let in_types: Vec<PortType> = inputs.iter().map(|p| p.def.port_type).collect();
+                let out_types: Vec<PortType> = outputs.iter().map(|p| p.def.port_type).collect();
+                let port_h = ports_height(&in_types, &out_types);
                 let content_h = PORT_START_Y + n.min_content_height() + NODE_PADDING;
                 let min_h = port_h.max(content_h);
                 let size = level.states[i]
@@ -1597,6 +1639,7 @@ impl NodeGraph {
 
     fn copy_selected(&mut self) {
         self.clipboard.clear();
+        self.clipboard_connections.clear();
         if self.selected_nodes.is_empty() {
             return;
         }
@@ -1636,9 +1679,32 @@ impl NodeGraph {
                 params,
                 data,
                 offset: state.pos - origin,
+                original_id: state.id,
             });
         }
+
+        // Capture connections whose endpoints are both inside the selection
+        // so duplicate preserves the internal wiring.
+        let selected_ids: std::collections::HashSet<NodeId> = selected
+            .iter()
+            .map(|&i| self.active().states[i].id)
+            .collect();
+        let mut conns = Vec::new();
+        for conn in &self.active().connections {
+            if selected_ids.contains(&conn.from.node)
+                && selected_ids.contains(&conn.to.node)
+            {
+                conns.push(ClipboardConn {
+                    from_node: conn.from.node,
+                    from_index: conn.from.index,
+                    to_node: conn.to.node,
+                    to_index: conn.to.index,
+                });
+            }
+        }
+
         self.clipboard = new_clip;
+        self.clipboard_connections = conns;
     }
 
     /// Pick a name for a duplicated node with a name-like identifier
@@ -1663,6 +1729,12 @@ impl NodeGraph {
 
         self.selected_nodes.clear();
         let clip = std::mem::take(&mut self.clipboard);
+        let conns = std::mem::take(&mut self.clipboard_connections);
+
+        // original_id → new_id. Populated as we create each duplicate so
+        // we can rewrite the captured connections.
+        let mut id_map: std::collections::HashMap<NodeId, NodeId> =
+            std::collections::HashMap::new();
 
         for cn in &clip {
             let id = self.alloc_id();
@@ -1686,10 +1758,11 @@ impl NodeGraph {
                 // Dispatch the source node's save_data to the duplicate's
                 // process node so per-instance settings (fader-group rows/cols
                 // and enable flags, controller bindings, layer stacks, etc.)
-                // survive copy-paste. Widgets that read live state from
-                // `shared.display` will sync on the next tick; widgets that
-                // need early port-layout restore (so wires we're about to
-                // paste-wire aren't dropped) are handled below.
+                // survive copy-paste. Widgets with dynamic ports (the four
+                // portal kinds) also need their port layout restored on the
+                // widget side BEFORE `cleanup_stale_connections` runs on
+                // the next frame — otherwise any internal wire we just
+                // duplicated into those ports would be culled.
                 if let Some(mut data) = cn.data.clone() {
                     // Portal "defining" widgets (Output Portal TX, Input
                     // Portal RX) publish under a unique name. Dropping a
@@ -1704,6 +1777,25 @@ impl NodeGraph {
                             let next = Self::next_name_suffix(name);
                             data["name"] = serde_json::Value::String(next);
                         }
+
+                    // Widget-side restore for the four portal kinds —
+                    // makes `ui_inputs` / `ui_outputs` immediately reflect
+                    // the duplicated port layout so wires survive the
+                    // first-frame cleanup. Mirrors `project.rs`'s load
+                    // dispatch.
+                    {
+                        let n = self.active_mut().nodes[idx].as_mut();
+                        if let Some(w) = n.as_any_mut().downcast_mut::<OutputPortalTxWidget>() {
+                            w.restore_from_save_data(&data);
+                        } else if let Some(w) = n.as_any_mut().downcast_mut::<OutputPortalRxWidget>() {
+                            w.restore_from_save_data(&data);
+                        } else if let Some(w) = n.as_any_mut().downcast_mut::<InputPortalRxWidget>() {
+                            w.restore_from_save_data(&data);
+                        } else if let Some(w) = n.as_any_mut().downcast_mut::<InputPortalTxWidget>() {
+                            w.restore_from_save_data(&data);
+                        }
+                    }
+
                     let node_id = self.active().nodes[idx].node_id();
                     self.push_engine_cmd(EngineCommand::LoadData {
                         node_id,
@@ -1711,11 +1803,27 @@ impl NodeGraph {
                     });
                 }
 
+                id_map.insert(cn.original_id, id);
                 self.selected_nodes.push(idx);
             }
         }
 
+        // Re-create internal connections on the duplicate. For each
+        // captured connection, look up both endpoints in the id map and
+        // call add_connection with the rewritten PortIds — this also
+        // queues the engine's AddConnection command.
+        for c in &conns {
+            if let (Some(&new_from), Some(&new_to)) =
+                (id_map.get(&c.from_node), id_map.get(&c.to_node))
+            {
+                let from = PortId { node: new_from, index: c.from_index, dir: PortDir::Output };
+                let to = PortId { node: new_to, index: c.to_index, dir: PortDir::Input };
+                self.add_connection(from, to);
+            }
+        }
+
         self.clipboard = clip;
+        self.clipboard_connections = conns;
     }
 
     fn duplicate_selected(&mut self) {
@@ -1798,7 +1906,9 @@ impl NodeGraph {
             let min_w = n.min_width();
             let inputs = n.ui_inputs();
             let outputs = n.ui_outputs();
-            let port_h = ports_height(inputs.len(), outputs.len());
+            let in_types: Vec<PortType> = inputs.iter().map(|p| p.def.port_type).collect();
+            let out_types: Vec<PortType> = outputs.iter().map(|p| p.def.port_type).collect();
+            let port_h = ports_height(&in_types, &out_types);
             let content_h = PORT_START_Y + n.min_content_height() + NODE_PADDING;
             let min_h = port_h.max(content_h);
             let size = level.states[i].size_override
@@ -2000,6 +2110,7 @@ impl NodeGraph {
                 } else {
                     (level.nodes[i].ui_outputs(), PortDir::Output)
                 };
+                let port_types: Vec<PortType> = ports.iter().map(|p| p.def.port_type).collect();
                 for (pi, ui_port) in ports.iter().enumerate() {
                     if ui_port.disabled {
                         continue;
@@ -2010,8 +2121,9 @@ impl NodeGraph {
                     if level.states[i].id == dc_from_node {
                         continue;
                     }
-                    let pos =
-                        port_pos_z(node_rects[i].min, node_rects[i].width(), target_dir, pi, z);
+                    let pos = port_pos_z(
+                        node_rects[i].min, node_rects[i].width(),
+                        target_dir, &port_types, pi, z);
                     let dist = pos.distance(pointer_pos);
                     if dist < best_dist {
                         best_dist = dist;
@@ -2125,8 +2237,9 @@ impl NodeGraph {
                 let node_id = level.states[i].id;
 
                 let outputs = level.nodes[i].ui_outputs();
+                let out_types: Vec<PortType> = outputs.iter().map(|p| p.def.port_type).collect();
                 for (pi, ui_port) in outputs.iter().enumerate() {
-                    let pos = port_pos_z(rect.min, rect.width(), PortDir::Output, pi, z);
+                    let pos = port_pos_z(rect.min, rect.width(), PortDir::Output, &out_types, pi, z);
                     if pos.distance(pointer_pos) < (PORT_RADIUS + 4.0) * z {
                         self.drag.drawing_conn = Some(DrawingConnection {
                             from: make_port_id(node_id, PortDir::Output, pi),
@@ -2140,12 +2253,13 @@ impl NodeGraph {
                         return;
                     }
                 }
-                let input_ports: Vec<(usize, Pos2, PortType)> = level.nodes[i]
-                    .ui_inputs()
+                let in_list = level.nodes[i].ui_inputs();
+                let in_types: Vec<PortType> = in_list.iter().map(|p| p.def.port_type).collect();
+                let input_ports: Vec<(usize, Pos2, PortType)> = in_list
                     .iter()
                     .enumerate()
                     .map(|(pi, up)| {
-                        let pos = port_pos_z(rect.min, rect.width(), PortDir::Input, pi, z);
+                        let pos = port_pos_z(rect.min, rect.width(), PortDir::Input, &in_types, pi, z);
                         (pi, pos, up.def.port_type)
                     })
                     .collect();
@@ -2157,7 +2271,7 @@ impl NodeGraph {
                             self.remove_connection_to(input_id);
                             let level = self.active();
                             if let Some(from_pos) = port_screen_pos_from_rects(
-                                &level.states, node_rects, old_from, z,
+                                &level.nodes, &level.states, node_rects, old_from, z,
                             ) {
                                 self.drag.drawing_conn = Some(DrawingConnection {
                                     from: old_from,
@@ -2238,7 +2352,9 @@ impl NodeGraph {
                 let min_w = n.min_width();
                 let inputs = n.ui_inputs();
                 let outputs = n.ui_outputs();
-                let port_h = ports_height(inputs.len(), outputs.len());
+                let in_types: Vec<PortType> = inputs.iter().map(|p| p.def.port_type).collect();
+                let out_types: Vec<PortType> = outputs.iter().map(|p| p.def.port_type).collect();
+                let port_h = ports_height(&in_types, &out_types);
                 let content_h = PORT_START_Y + n.min_content_height() + NODE_PADDING;
                 let min_h = port_h.max(content_h);
                 let current = level.states[idx].size_override.unwrap_or(Vec2::new(min_w, min_h));
@@ -2469,8 +2585,10 @@ impl NodeGraph {
         // Hover cursor and tooltips over ports.
         for i in 0..level.nodes.len() {
             let rect = node_rects[i];
-            for (pi, ui_port) in level.nodes[i].ui_outputs().iter().enumerate() {
-                let pos = port_pos_z(rect.min, rect.width(), PortDir::Output, pi, z);
+            let outs = level.nodes[i].ui_outputs();
+            let out_types: Vec<PortType> = outs.iter().map(|p| p.def.port_type).collect();
+            for (pi, ui_port) in outs.iter().enumerate() {
+                let pos = port_pos_z(rect.min, rect.width(), PortDir::Output, &out_types, pi, z);
                 if pos.distance(pointer_pos) < (PORT_RADIUS + 4.0) * z {
                     ui.ctx().set_cursor_icon(CursorIcon::PointingHand);
                     egui::show_tooltip_at(ui.ctx(), ui.layer_id(), egui::Id::new(("port_tip", i, pi, 1)), pos + egui::vec2(10.0, -10.0), |ui| {
@@ -2478,8 +2596,10 @@ impl NodeGraph {
                     });
                 }
             }
-            for (pi, ui_port) in level.nodes[i].ui_inputs().iter().enumerate() {
-                let pos = port_pos_z(rect.min, rect.width(), PortDir::Input, pi, z);
+            let ins = level.nodes[i].ui_inputs();
+            let in_types: Vec<PortType> = ins.iter().map(|p| p.def.port_type).collect();
+            for (pi, ui_port) in ins.iter().enumerate() {
+                let pos = port_pos_z(rect.min, rect.width(), PortDir::Input, &in_types, pi, z);
                 if pos.distance(pointer_pos) < (PORT_RADIUS + 4.0) * z {
                     ui.ctx().set_cursor_icon(CursorIcon::PointingHand);
                     egui::show_tooltip_at(ui.ctx(), ui.layer_id(), egui::Id::new(("port_tip", i, pi, 0)), pos + egui::vec2(10.0, -10.0), |ui| {
@@ -3037,6 +3157,7 @@ impl NodeGraph {
 
 /// Get port screen pos using precomputed node rects (for use during interaction handling).
 fn port_screen_pos_from_rects(
+    nodes: &[Box<dyn NodeWidget>],
     states: &[NodeState],
     node_rects: &[Rect],
     port_id: PortId,
@@ -3044,7 +3165,12 @@ fn port_screen_pos_from_rects(
 ) -> Option<Pos2> {
     let idx = states.iter().position(|s| s.id == port_id.node)?;
     let rect = node_rects[idx];
-    Some(port_pos_z(rect.min, rect.width(), port_id.dir, port_id.index, zoom))
+    let ports = match port_id.dir {
+        PortDir::Input => nodes[idx].ui_inputs(),
+        PortDir::Output => nodes[idx].ui_outputs(),
+    };
+    let port_types: Vec<PortType> = ports.iter().map(|p| p.def.port_type).collect();
+    Some(port_pos_z(rect.min, rect.width(), port_id.dir, &port_types, port_id.index, zoom))
 }
 
 fn node_content_rect(rect: Rect, zoom: f32) -> Rect {
@@ -3189,8 +3315,10 @@ fn draw_node_chrome(
     painter.rect_stroke(rect, NODE_CORNER_RADIUS, border, StrokeKind::Inside);
 
     // Input ports
+    let in_types: Vec<PortType> = inputs.iter().map(|p| p.def.port_type).collect();
+    let out_types: Vec<PortType> = outputs.iter().map(|p| p.def.port_type).collect();
     for (i, ui_port) in inputs.iter().enumerate() {
-        let pos = port_pos_z(rect.min, rect.width(), PortDir::Input, i, zoom);
+        let pos = port_pos_z(rect.min, rect.width(), PortDir::Input, &in_types, i, zoom);
         let hi = in_highlights.get(i).copied().unwrap_or(0.0);
         draw_port(painter, pos, ui_port, hi, zoom, disabled);
         if show_port_labels {
@@ -3204,7 +3332,7 @@ fn draw_node_chrome(
 
     // Output ports
     for (i, ui_port) in outputs.iter().enumerate() {
-        let pos = port_pos_z(rect.min, rect.width(), PortDir::Output, i, zoom);
+        let pos = port_pos_z(rect.min, rect.width(), PortDir::Output, &out_types, i, zoom);
         let hi = out_highlights.get(i).copied().unwrap_or(0.0);
         draw_port(painter, pos, ui_port, hi, zoom, disabled);
         if show_port_labels {
@@ -3593,7 +3721,12 @@ fn port_screen_pos(
     let width = states[idx].size_override
         .map(|s| s.x)
         .unwrap_or(nodes[idx].min_width()) * zoom;
-    Some(port_pos_z(pos, width, port_id.dir, port_id.index, zoom))
+    let ports = match port_id.dir {
+        PortDir::Input => nodes[idx].ui_inputs(),
+        PortDir::Output => nodes[idx].ui_outputs(),
+    };
+    let port_types: Vec<PortType> = ports.iter().map(|p| p.def.port_type).collect();
+    Some(port_pos_z(pos, width, port_id.dir, &port_types, port_id.index, zoom))
 }
 
 fn port_type_for(

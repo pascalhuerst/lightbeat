@@ -48,6 +48,8 @@ use engine::nodes::ui::gradient_stops::GradientStopsProcessNode;
 use engine::nodes::math::bipolar::BipolarProcessNode;
 use engine::nodes::math::change_detect::ChangeDetectProcessNode;
 use engine::nodes::math::schmitt::SchmittTriggerProcessNode;
+use engine::nodes::math::toggle_bank::ToggleBankProcessNode;
+use engine::nodes::math::trigger_bank::TriggerBankProcessNode;
 use engine::nodes::math::flipflop::{FlipFlopProcessNode, JkFlipFlopProcessNode};
 use engine::nodes::math::color_modifier::ColorModifierProcessNode;
 use engine::nodes::math::color_ops::{ColorMergeProcessNode, ColorSplitProcessNode};
@@ -100,6 +102,8 @@ use widgets::nodes::ui::gradient_stops::GradientStopsWidget;
 use widgets::nodes::math::bipolar::BipolarWidget;
 use widgets::nodes::math::change_detect::ChangeDetectWidget;
 use widgets::nodes::math::schmitt::SchmittTriggerWidget;
+use widgets::nodes::math::toggle_bank::ToggleBankWidget;
+use widgets::nodes::math::trigger_bank::TriggerBankWidget;
 use widgets::nodes::math::flipflop::{FlipFlopKind, FlipFlopWidget};
 use widgets::nodes::math::color_modifier::ColorModifierWidget;
 use widgets::nodes::math::color_ops::{ColorMergeWidget, ColorSplitWidget};
@@ -519,6 +523,14 @@ impl LightBeatApp {
         self.graph.register_node("Math", "Schmitt Trigger", |id| {
             Box::new(SchmittTriggerWidget::new(id, new_shared_state(1, 1)))
         });
+        self.graph.register_node("Math", "Toggle Bank", |id| {
+            // Up to 16 channels, each Logic in and out.
+            Box::new(ToggleBankWidget::new(id, new_shared_state(16, 16)))
+        });
+        self.graph.register_node("Math", "Trigger Bank", |id| {
+            // Up to 16 channels, each Untyped in and Logic out.
+            Box::new(TriggerBankWidget::new(id, new_shared_state(16, 16)))
+        });
 
         // Compare
         self.graph.register_node("Compare", ">=", |id| {
@@ -832,6 +844,8 @@ impl LightBeatApp {
                 "Counter" => Some(Box::new(CounterProcessNode::new(id))),
                 "Change Detect" => Some(Box::new(ChangeDetectProcessNode::new(id))),
                 "Schmitt Trigger" => Some(Box::new(SchmittTriggerProcessNode::new(id))),
+                "Toggle Bank" => Some(Box::new(ToggleBankProcessNode::new(id))),
+                "Trigger Bank" => Some(Box::new(TriggerBankProcessNode::new(id))),
                 "Const Value" => Some(Box::new(ConstantProcessNode::new(id, PortType::Untyped, 0.0))),
                 "Const Logic" => Some(Box::new(ConstantProcessNode::new(id, PortType::Logic, 0.0))),
                 "Const Phase" => Some(Box::new(ConstantProcessNode::new(id, PortType::Phase, 0.0))),
@@ -1188,6 +1202,8 @@ impl LightBeatApp {
             connections: Vec::new(),
             frames: Vec::new(),
             view: None,
+            bridge_in_pos: None,
+            bridge_out_pos: None,
         };
         self.apply_project(&empty);
         self.project_path = None;
@@ -1600,7 +1616,14 @@ impl LightBeatApp {
 
         // Load this single node into the active level via the existing
         // project loader machinery (handles inner-graph descent + bridges).
-        let pf = project::ProjectFile { nodes: vec![saved.clone()], connections: Vec::new(), frames: Vec::new(), view: None };
+        let pf = project::ProjectFile {
+            nodes: vec![saved.clone()],
+            connections: Vec::new(),
+            frames: Vec::new(),
+            view: None,
+            bridge_in_pos: None,
+            bridge_out_pos: None,
+        };
         let _indices = project::load_graph(&mut self.graph, &pf);
 
         // Spawn engine nodes + send queued commands + load_data, same as
