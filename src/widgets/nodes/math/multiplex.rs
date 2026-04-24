@@ -3,7 +3,7 @@ use std::any::Any;
 use egui::{self, Color32, Ui};
 
 use crate::engine::nodes::math::multiplex::{
-    MUX_DEFAULT_SLOTS, MUX_MAX_SLOTS, MUX_MIN_SLOTS, MUX_TYPE_NAMES, MuxDisplay,
+    MUX_DEFAULT_SLOTS, MUX_MAX_SLOTS, MUX_MIN_SLOTS, MUX_TYPE_NAMES, MuxDisplay, SelectMode,
     clamp_slots, type_from_index, type_to_index,
 };
 use crate::engine::types::*;
@@ -21,6 +21,11 @@ fn push_slots(shared: &SharedState, slots: usize) {
     s.pending_params.push((1, ParamValue::Int(slots as i64)));
 }
 
+fn push_select_mode(shared: &SharedState, mode: SelectMode) {
+    let mut s = shared.lock().unwrap();
+    s.pending_params.push((2, ParamValue::Choice(mode.to_index())));
+}
+
 // ---------------------------------------------------------------------------
 // Multiplexer widget
 // ---------------------------------------------------------------------------
@@ -30,17 +35,24 @@ pub struct MultiplexerWidget {
     shared: SharedState,
     port_type: PortType,
     slots: usize,
+    select_mode: SelectMode,
 }
 
 impl MultiplexerWidget {
     pub fn new(id: NodeId, shared: SharedState) -> Self {
-        Self { id, shared, port_type: PortType::Any, slots: MUX_DEFAULT_SLOTS }
+        Self {
+            id, shared,
+            port_type: PortType::Any,
+            slots: MUX_DEFAULT_SLOTS,
+            select_mode: SelectMode::Index,
+        }
     }
 
     /// Apply restored state before the first frame's stale-connection sweep.
-    pub fn set_state_from_load(&mut self, port_type: PortType, slots: usize) {
+    pub fn set_state_from_load(&mut self, port_type: PortType, slots: usize, mode: SelectMode) {
         self.port_type = port_type;
         self.slots = clamp_slots(slots);
+        self.select_mode = mode;
     }
 
     fn sync_from_display(&mut self) {
@@ -48,6 +60,7 @@ impl MultiplexerWidget {
         if let Some(d) = shared.display.as_ref().and_then(|d| d.downcast_ref::<MuxDisplay>()) {
             if d.port_type != self.port_type { self.port_type = d.port_type; }
             if d.slots != self.slots { self.slots = d.slots; }
+            if d.select_mode != self.select_mode { self.select_mode = d.select_mode; }
         }
     }
 }
@@ -56,11 +69,16 @@ impl NodeWidget for MultiplexerWidget {
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { "Multiplexer" }
     fn description(&self) -> &'static str {
-        "Routes one of N typed inputs to a single output based on the `select` index (rounded, clamped 0..N-1). Port type auto-detected from the first connection; slot count set in the inspector."
+        "Routes one of N typed inputs to a single output. In Index select \
+         mode (default) `select` is an integer (rounded, clamped). In \
+         Phase select mode `select` accepts a 0..1 phase swept across \
+         slots — wire in a Clock or LFO for beat-synced switching. Port \
+         type auto-detected from the first data connection."
     }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> {
-        let mut v = vec![UiPortDef::from_def(&PortDef::new("select", PortType::Untyped))];
+        let sel_ty = self.select_mode.select_port_type();
+        let mut v = vec![UiPortDef::from_def(&PortDef::new("select", sel_ty))];
         for i in 0..self.slots {
             v.push(UiPortDef::from_def(&PortDef::new(format!("in{}", i), self.port_type)));
         }
@@ -104,7 +122,23 @@ impl NodeWidget for MultiplexerWidget {
 
     fn show_inspector(&mut self, ui: &mut Ui) {
         self.sync_from_display();
-        let _ = ui;
+        ui.horizontal(|ui| {
+            ui.label("Select:");
+            let mut mode = self.select_mode;
+            egui::ComboBox::from_id_salt(("mux_sel_mode", self.id.0))
+                .selected_text(mode.label())
+                .show_ui(ui, |ui| {
+                    for m in SelectMode::ALL {
+                        if ui.selectable_label(mode == m, m.label()).clicked() {
+                            mode = m;
+                        }
+                    }
+                });
+            if mode != self.select_mode {
+                self.select_mode = mode;
+                push_select_mode(&self.shared, mode);
+            }
+        });
     }
 
     fn as_any_mut(&mut self) -> &mut dyn Any { self }
@@ -119,16 +153,23 @@ pub struct DemultiplexerWidget {
     shared: SharedState,
     port_type: PortType,
     slots: usize,
+    select_mode: SelectMode,
 }
 
 impl DemultiplexerWidget {
     pub fn new(id: NodeId, shared: SharedState) -> Self {
-        Self { id, shared, port_type: PortType::Any, slots: MUX_DEFAULT_SLOTS }
+        Self {
+            id, shared,
+            port_type: PortType::Any,
+            slots: MUX_DEFAULT_SLOTS,
+            select_mode: SelectMode::Index,
+        }
     }
 
-    pub fn set_state_from_load(&mut self, port_type: PortType, slots: usize) {
+    pub fn set_state_from_load(&mut self, port_type: PortType, slots: usize, mode: SelectMode) {
         self.port_type = port_type;
         self.slots = clamp_slots(slots);
+        self.select_mode = mode;
     }
 
     fn sync_from_display(&mut self) {
@@ -136,6 +177,7 @@ impl DemultiplexerWidget {
         if let Some(d) = shared.display.as_ref().and_then(|d| d.downcast_ref::<MuxDisplay>()) {
             if d.port_type != self.port_type { self.port_type = d.port_type; }
             if d.slots != self.slots { self.slots = d.slots; }
+            if d.select_mode != self.select_mode { self.select_mode = d.select_mode; }
         }
     }
 }
@@ -149,7 +191,7 @@ impl NodeWidget for DemultiplexerWidget {
 
     fn ui_inputs(&self) -> Vec<UiPortDef> {
         vec![
-            UiPortDef::from_def(&PortDef::new("select", PortType::Untyped)),
+            UiPortDef::from_def(&PortDef::new("select", self.select_mode.select_port_type())),
             UiPortDef::from_def(&PortDef::new("in", self.port_type)),
         ]
     }
@@ -218,6 +260,25 @@ impl NodeWidget for DemultiplexerWidget {
             self.slots = slots;
             push_slots(&self.shared, self.slots);
         }
+
+        ui.separator();
+        ui.horizontal(|ui| {
+            ui.label("Select:");
+            let mut mode = self.select_mode;
+            egui::ComboBox::from_id_salt(("demux_sel_mode", self.id.0))
+                .selected_text(mode.label())
+                .show_ui(ui, |ui| {
+                    for m in SelectMode::ALL {
+                        if ui.selectable_label(mode == m, m.label()).clicked() {
+                            mode = m;
+                        }
+                    }
+                });
+            if mode != self.select_mode {
+                self.select_mode = mode;
+                push_select_mode(&self.shared, mode);
+            }
+        });
     }
 
     fn as_any_mut(&mut self) -> &mut dyn Any { self }

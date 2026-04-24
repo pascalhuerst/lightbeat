@@ -1,12 +1,21 @@
 use crate::engine::types::*;
 
-/// Detects whether an input value has changed since the last trigger.
-/// On each trigger rising edge, compares current input to the snapshot
-/// from the previous trigger. Outputs 1.0 if different, 0.0 if same.
+/// Detects when an input `value` changes. Two modes, selected
+/// automatically by whether the `trigger` input is wired:
+///
+/// - **Gated** (trigger wired): on each `trigger` rising edge, compare
+///   current `value` to the snapshot taken on the previous trigger.
+///   `changed` latches to 1 if different, 0 if same (holds until the
+///   next trigger). `trigger` output pulses one tick when a change is
+///   detected.
+/// - **Continuous** (trigger unwired): compare `value` to the previous
+///   tick's value. Both `changed` and `trigger` outputs pulse one tick
+///   whenever the value shifts more than `threshold`.
 pub struct ChangeDetectProcessNode {
     id: NodeId,
     trigger_in: f32,
     value_in: f32,
+    trigger_connected: bool,
     prev_trigger: bool,
     snapshot: f32,
     output: f32,
@@ -22,6 +31,7 @@ impl ChangeDetectProcessNode {
             id,
             trigger_in: 0.0,
             value_in: 0.0,
+            trigger_connected: false,
             prev_trigger: false,
             snapshot: 0.0,
             output: 0.0,
@@ -52,19 +62,35 @@ impl ProcessNode for ChangeDetectProcessNode {
         match pi { 0 => self.trigger_in, 1 => self.value_in, _ => 0.0 }
     }
 
+    fn set_input_connections(&mut self, connected: &[bool]) {
+        self.trigger_connected = connected.first().copied().unwrap_or(false);
+    }
+
     fn process(&mut self) {
-        let gate = self.trigger_in >= 0.5;
         self.trigger_out = 0.0;
 
-        if gate && !self.prev_trigger {
+        if self.trigger_connected {
+            // Gated mode — only check on trigger rising edges.
+            let gate = self.trigger_in >= 0.5;
+            if gate && !self.prev_trigger {
+                let changed = (self.value_in - self.snapshot).abs() > self.threshold;
+                self.output = if changed { 1.0 } else { 0.0 };
+                if changed {
+                    self.trigger_out = 1.0;
+                }
+                self.snapshot = self.value_in;
+            }
+            self.prev_trigger = gate;
+        } else {
+            // Continuous mode — pulse whenever the value shifts between
+            // consecutive ticks. Both outputs carry the same one-tick
+            // pulse; `snapshot` holds the previous-tick value.
             let changed = (self.value_in - self.snapshot).abs() > self.threshold;
             self.output = if changed { 1.0 } else { 0.0 };
-            if changed {
-                self.trigger_out = 1.0;
-            }
+            self.trigger_out = self.output;
             self.snapshot = self.value_in;
+            self.prev_trigger = false;
         }
-        self.prev_trigger = gate;
     }
 
     fn read_output(&self, pi: usize) -> f32 {

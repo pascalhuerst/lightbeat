@@ -8,8 +8,10 @@ pub struct PhaseScalerProcessNode {
     prev_phase_in: f32,
     reset_in: f32,
     prev_reset: f32,
-    /// Last written value on the `exp` input (index 2). Interpreted as a
-    /// 0..1 input mapped linearly onto the `-6..6` exponent range.
+    /// Last written value on the `exp` input (index 2). Interpreted as
+    /// the raw exponent value (rounded to the nearest integer and
+    /// clamped into -6..=6), so `-3` on the wire gives exponent -3 —
+    /// identical to setting the param to -3 with nothing wired.
     exp_in: f32,
     exp_connected: bool,
     /// Last written value on the `offset` input (index 3). Phase-typed so
@@ -32,7 +34,7 @@ impl PhaseScalerProcessNode {
             prev_phase_in: 0.0,
             reset_in: 0.0,
             prev_reset: 0.0,
-            exp_in: 0.5,
+            exp_in: 0.0,
             exp_connected: false,
             offset_in: 0.0,
             offset_connected: false,
@@ -87,11 +89,11 @@ impl ProcessNode for PhaseScalerProcessNode {
 
     fn process(&mut self) {
         // Resolve exponent + offset: wired input overrides the param.
-        // Exponent input maps a 0..1 signal linearly onto -6..=6 (mid at
-        // 0.5 → exponent 0, matches the param default).
+        // Exponent input is taken directly — a wire carrying `-3` gives
+        // exponent -3, matching the inspector's "Exponent" slider. The
+        // value is rounded and clamped to the engine's supported range.
         let exponent = if self.exp_connected {
-            let mapped = (self.exp_in.clamp(0.0, 1.0) * 12.0 - 6.0).round() as i32;
-            mapped.clamp(-6, 6)
+            (self.exp_in.round() as i32).clamp(-6, 6)
         } else {
             self.exponent
         };

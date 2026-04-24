@@ -49,6 +49,9 @@ use engine::nodes::math::bipolar::BipolarProcessNode;
 use engine::nodes::math::change_detect::ChangeDetectProcessNode;
 use engine::nodes::math::schmitt::SchmittTriggerProcessNode;
 use engine::nodes::math::toggle_bank::ToggleBankProcessNode;
+use engine::nodes::math::gain::GainProcessNode;
+use engine::nodes::math::phase_accumulator::PhaseAccumulatorProcessNode;
+use engine::nodes::math::port_hub::PortHubProcessNode;
 use engine::nodes::math::trigger_bank::TriggerBankProcessNode;
 use engine::nodes::math::flipflop::{FlipFlopProcessNode, JkFlipFlopProcessNode};
 use engine::nodes::math::color_modifier::ColorModifierProcessNode;
@@ -103,6 +106,9 @@ use widgets::nodes::math::bipolar::BipolarWidget;
 use widgets::nodes::math::change_detect::ChangeDetectWidget;
 use widgets::nodes::math::schmitt::SchmittTriggerWidget;
 use widgets::nodes::math::toggle_bank::ToggleBankWidget;
+use widgets::nodes::math::gain::GainWidget;
+use widgets::nodes::math::phase_accumulator::PhaseAccumulatorWidget;
+use widgets::nodes::math::port_hub::PortHubWidget;
 use widgets::nodes::math::trigger_bank::TriggerBankWidget;
 use widgets::nodes::math::flipflop::{FlipFlopKind, FlipFlopWidget};
 use widgets::nodes::math::color_modifier::ColorModifierWidget;
@@ -436,7 +442,7 @@ impl LightBeatApp {
 
         // Transport
         self.graph.register_node("Transport", "Phase Scaler", |id| {
-            Box::new(PhaseScalerWidget::new(id, new_shared_state(2, 1)))
+            Box::new(PhaseScalerWidget::new(id, new_shared_state(4, 1)))
         });
         self.graph.register_node("Transport", "LFO", |id| {
             Box::new(LfoWidget::new(id, new_shared_state(1, 2)))
@@ -444,7 +450,7 @@ impl LightBeatApp {
         self.graph.register_node("Transport", "Step Sequencer", |id| {
             Box::new(StepSequencerWidget::new(id, new_shared_state(2, 3)))
         });
-        self.graph.register_node("Transport", "ADSR", |id| {
+        self.graph.register_node("Transport", "Envelope", |id| {
             Box::new(EnvelopeWidget::new(id, new_shared_state(2, 2)))
         });
         self.graph.register_node("Transport", "Trigger Delay", |id| {
@@ -530,6 +536,17 @@ impl LightBeatApp {
         self.graph.register_node("Math", "Trigger Bank", |id| {
             // Up to 16 channels, each Untyped in and Logic out.
             Box::new(TriggerBankWidget::new(id, new_shared_state(16, 16)))
+        });
+        self.graph.register_node("Math", "Gain", |id| {
+            Box::new(GainWidget::new(id, new_shared_state(1, 1)))
+        });
+        self.graph.register_node("Math", "Phase Accumulator", |id| {
+            Box::new(PhaseAccumulatorWidget::new(id, new_shared_state(2, 1)))
+        });
+        self.graph.register_node("Math", "Port Hub", |id| {
+            // Max channels = MUX_MAX_SLOTS (16) × max channels per type
+            // (Gradient = 40) = 640. Round up to 1024 for headroom.
+            Box::new(PortHubWidget::new(id, new_shared_state(1024, 1024)))
         });
 
         // Compare
@@ -790,7 +807,7 @@ impl LightBeatApp {
                 "LFO" => Some(Box::new(LfoProcessNode::new(id))),
                 "Step Sequencer" => Some(Box::new(StepSequencerProcessNode::new(id))),
                 "Scope" => Some(Box::new(ScopeProcessNode::new(id))),
-                "ADSR" => Some(Box::new(EnvelopeProcessNode::new(id))),
+                "Envelope" => Some(Box::new(EnvelopeProcessNode::new(id))),
                 "Trigger Delay" => Some(Box::new(TriggerDelayProcessNode::new(id))),
                 "Trigger Hold" => Some(Box::new(TriggerHoldProcessNode::new(id))),
                 "Sample & Hold" => Some(Box::new(SampleHoldProcessNode::new(id))),
@@ -846,6 +863,9 @@ impl LightBeatApp {
                 "Schmitt Trigger" => Some(Box::new(SchmittTriggerProcessNode::new(id))),
                 "Toggle Bank" => Some(Box::new(ToggleBankProcessNode::new(id))),
                 "Trigger Bank" => Some(Box::new(TriggerBankProcessNode::new(id))),
+                "Gain" => Some(Box::new(GainProcessNode::new(id))),
+                "Phase Accumulator" => Some(Box::new(PhaseAccumulatorProcessNode::new(id))),
+                "Port Hub" => Some(Box::new(PortHubProcessNode::new(id))),
                 "Const Value" => Some(Box::new(ConstantProcessNode::new(id, PortType::Untyped, 0.0))),
                 "Const Logic" => Some(Box::new(ConstantProcessNode::new(id, PortType::Logic, 0.0))),
                 "Const Phase" => Some(Box::new(ConstantProcessNode::new(id, PortType::Phase, 0.0))),

@@ -293,6 +293,10 @@ pub fn load_graph(graph: &mut NodeGraph, project: &ProjectFile) -> Vec<usize> {
         let type_name: &str = match saved.type_name.as_str() {
             "Portal In" => "Output Portal TX",
             "Portal Out" => "Output Portal RX",
+            // ADSR was renamed to "Envelope" when the node gained
+            // multiple envelope kinds. Old projects still save under
+            // the former type_name.
+            "ADSR" => "Envelope",
             other => other,
         };
         if let Some(node) = graph.create_from_registry(type_name, id) {
@@ -574,14 +578,90 @@ pub fn load_graph(graph: &mut NodeGraph, project: &ProjectFile) -> Vec<usize> {
                     .map(|p| p.value.as_f64() as usize);
                 let slots = saved.params.iter().find(|p| p.index == 1)
                     .map(|p| p.value.as_f64() as usize);
+                let mode_idx = saved.params.iter().find(|p| p.index == 2)
+                    .map(|p| p.value.as_f64() as usize);
                 let pt = type_idx.map(crate::engine::nodes::math::multiplex::type_from_index)
                     .unwrap_or(crate::engine::types::PortType::Any);
                 let s = slots.unwrap_or(crate::engine::nodes::math::multiplex::MUX_DEFAULT_SLOTS);
+                let m = mode_idx
+                    .map(crate::engine::nodes::math::multiplex::SelectMode::from_index)
+                    .unwrap_or(crate::engine::nodes::math::multiplex::SelectMode::Index);
                 let n = graph.node_mut(idx);
                 if let Some(w) = n.as_any_mut().downcast_mut::<MultiplexerWidget>() {
-                    w.set_state_from_load(pt, s);
+                    w.set_state_from_load(pt, s, m);
                 } else if let Some(w) = n.as_any_mut().downcast_mut::<DemultiplexerWidget>() {
+                    w.set_state_from_load(pt, s, m);
+                }
+            }
+            // Port Hub shares the Mux/Demux pattern: its Type and Slots
+            // are stored as params 0 and 1. Restore early so paired
+            // in/out wires survive the first-frame stale-connection sweep.
+            if saved.type_name == "Port Hub" {
+                let type_idx = saved.params.iter().find(|p| p.index == 0)
+                    .map(|p| p.value.as_f64() as usize);
+                let slots = saved.params.iter().find(|p| p.index == 1)
+                    .map(|p| p.value.as_f64() as usize);
+                let pt = type_idx
+                    .map(crate::engine::nodes::math::multiplex::type_from_index)
+                    .unwrap_or(crate::engine::types::PortType::Untyped);
+                let s = slots.unwrap_or(
+                    crate::engine::nodes::math::port_hub::HUB_DEFAULT_SLOTS,
+                );
+                let n = graph.node_mut(idx);
+                if let Some(w) = n.as_any_mut()
+                    .downcast_mut::<crate::widgets::nodes::math::port_hub::PortHubWidget>()
+                {
                     w.set_state_from_load(pt, s);
+                }
+            }
+
+            // Counter: `Select Mode` lives at param index 2. Restore
+            // early so a Phase-typed wire into the `phase` port survives
+            // the first frame when the saved mode is Phase.
+            if saved.type_name == "Counter" {
+                let mode_idx = saved.params.iter().find(|p| p.index == 2)
+                    .map(|p| p.value.as_f64() as usize);
+                let m = mode_idx
+                    .map(crate::engine::nodes::math::multiplex::SelectMode::from_index)
+                    .unwrap_or(crate::engine::nodes::math::multiplex::SelectMode::Index);
+                let n = graph.node_mut(idx);
+                if let Some(w) = n.as_any_mut()
+                    .downcast_mut::<crate::widgets::nodes::math::counter::CounterWidget>()
+                {
+                    w.set_state_from_load(m);
+                }
+            }
+
+            // Envelope: `Mode` is at param index 4. Restore before the
+            // first-frame sweep so port labels (gate vs. unused) are
+            // already in sync with the saved kind.
+            if type_name == "Envelope" {
+                let mode_idx = saved.params.iter().find(|p| p.index == 4)
+                    .map(|p| p.value.as_f64() as usize);
+                let k = mode_idx
+                    .map(crate::engine::nodes::transport::envelope::EnvelopeKind::from_index)
+                    .unwrap_or(crate::engine::nodes::transport::envelope::EnvelopeKind::Adsr);
+                let n = graph.node_mut(idx);
+                if let Some(w) = n.as_any_mut()
+                    .downcast_mut::<crate::widgets::nodes::transport::envelope::EnvelopeWidget>()
+                {
+                    w.set_state_from_load(k);
+                }
+            }
+
+            // Palette Select: `Select Mode` is at param index 0. Same
+            // early-restore reasoning as Counter.
+            if saved.type_name == "Palette Select" {
+                let mode_idx = saved.params.iter().find(|p| p.index == 0)
+                    .map(|p| p.value.as_f64() as usize);
+                let m = mode_idx
+                    .map(crate::engine::nodes::math::multiplex::SelectMode::from_index)
+                    .unwrap_or(crate::engine::nodes::math::multiplex::SelectMode::Index);
+                let n = graph.node_mut(idx);
+                if let Some(w) = n.as_any_mut()
+                    .downcast_mut::<crate::widgets::nodes::math::palette_select::PaletteSelectWidget>()
+                {
+                    w.set_state_from_load(m);
                 }
             }
 

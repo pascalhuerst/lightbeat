@@ -1,4 +1,5 @@
 use crate::color::Rgb;
+use crate::engine::nodes::math::multiplex::SelectMode;
 use crate::engine::types::*;
 use crate::objects::color_palette::{ColorPalette, PALETTE_SIZE};
 
@@ -9,12 +10,14 @@ pub struct PaletteSelectDisplay {
     pub current_palette_index: usize,
     pub current_colors: [Rgb; PALETTE_SIZE],
     pub palette_count: usize,
+    pub select_mode: SelectMode,
 }
 
 pub struct PaletteSelectProcessNode {
     id: NodeId,
     group_index_in: f32,
     palette_index_in: f32,
+    select_mode: SelectMode,
     /// Group IDs (for save/restore).
     group_ids: Vec<u32>,
     /// Groups with their palettes (updated via load_data from widget).
@@ -28,21 +31,29 @@ pub struct PaletteSelectProcessNode {
 
 impl PaletteSelectProcessNode {
     pub fn new(id: NodeId) -> Self {
-        Self {
+        let mut node = Self {
             id,
             group_index_in: 0.0,
             palette_index_in: 0.0,
+            select_mode: SelectMode::Index,
             group_ids: Vec::new(),
             groups: Vec::new(),
             current_group: 0,
             current_palette: 0,
             current_colors: [Rgb::BLACK; PALETTE_SIZE],
-            inputs: vec![
-                PortDef::new("group", PortType::Untyped),
-                PortDef::new("palette", PortType::Untyped),
-            ],
+            inputs: Vec::new(),
             outputs: vec![PortDef::new("palette", PortType::Palette)],
-        }
+        };
+        node.rebuild_ports();
+        node
+    }
+
+    fn rebuild_ports(&mut self) {
+        let pt = self.select_mode.select_port_type();
+        self.inputs = vec![
+            PortDef::new("group", pt),
+            PortDef::new("palette", pt),
+        ];
     }
 }
 
@@ -65,7 +76,7 @@ impl ProcessNode for PaletteSelectProcessNode {
             return;
         }
 
-        let gi = (self.group_index_in.round() as i64).rem_euclid(self.groups.len() as i64) as usize;
+        let gi = resolve_index(self.group_index_in, self.select_mode, self.groups.len());
         self.current_group = gi;
 
         let (_, palettes) = &self.groups[gi];
@@ -75,7 +86,7 @@ impl ProcessNode for PaletteSelectProcessNode {
             return;
         }
 
-        let pi = (self.palette_index_in.round() as i64).rem_euclid(palettes.len() as i64) as usize;
+        let pi = resolve_index(self.palette_index_in, self.select_mode, palettes.len());
         self.current_palette = pi;
         self.current_colors = palettes[pi].colors;
     }
@@ -118,6 +129,24 @@ impl ProcessNode for PaletteSelectProcessNode {
         }
     }
 
+    fn params(&self) -> Vec<ParamDef> {
+        vec![ParamDef::Choice {
+            name: "Select Mode".into(),
+            value: self.select_mode.to_index(),
+            options: SelectMode::ALL.iter().map(|m| m.label().to_string()).collect(),
+        }]
+    }
+
+    fn set_param(&mut self, index: usize, value: ParamValue) {
+        if index == 0 {
+            let new_mode = SelectMode::from_index(value.as_usize());
+            if new_mode != self.select_mode {
+                self.select_mode = new_mode;
+                self.rebuild_ports();
+            }
+        }
+    }
+
     fn update_display(&self, shared: &mut NodeSharedState) {
         let palette_count = self.groups.get(self.current_group)
             .map(|(_, s)| s.len()).unwrap_or(0);
@@ -128,6 +157,22 @@ impl ProcessNode for PaletteSelectProcessNode {
             current_palette_index: self.current_palette,
             current_colors: self.current_colors,
             palette_count,
+            select_mode: self.select_mode,
         }));
+    }
+}
+
+/// Resolve a `select` input value (raw float) into a slot index `[0, n)`
+/// under the given `mode`. `Index` rounds + wraps; `Phase` maps 0..1
+/// onto [0, n) and wraps elsewhere.
+fn resolve_index(sel: f32, mode: SelectMode, n: usize) -> usize {
+    if n == 0 { return 0; }
+    match mode {
+        SelectMode::Index => (sel.round() as i64).rem_euclid(n as i64) as usize,
+        SelectMode::Phase => {
+            let p = sel.rem_euclid(1.0);
+            ((p * n as f32).floor() as i64)
+                .clamp(0, n as i64 - 1) as usize
+        }
     }
 }

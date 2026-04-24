@@ -67,7 +67,11 @@ impl InternalClockProcessNode {
             ],
             outputs: vec![
                 PortDef::new("beat", PortType::Logic),
-                PortDef::new("play", PortType::Logic),
+                // `play` is a held 1/0 level rather than a one-tick
+                // pulse, so expose it as a value (Untyped). Downstream
+                // nodes can treat it like any other 0..1 signal — gate
+                // meters, fade in an effect while playing, etc.
+                PortDef::new("play", PortType::Untyped),
                 PortDef::new("phase", PortType::Phase),
             ],
         }

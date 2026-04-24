@@ -43,10 +43,52 @@ pub fn clamp_slots(n: usize) -> usize {
     n.clamp(MUX_MIN_SLOTS, MUX_MAX_SLOTS)
 }
 
+/// How the `select` input is interpreted.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SelectMode {
+    /// Raw integer index — rounded and clamped to `0..slots-1`. `select`
+    /// port is `Untyped`.
+    Index,
+    /// 0..1 phase swept across all slots — `idx = floor(phase * slots)`,
+    /// clamped to `slots-1`. `select` port is `Phase` so Phase-typed
+    /// sources (clocks, LFOs) connect directly.
+    Phase,
+}
+
+impl SelectMode {
+    pub const ALL: [Self; 2] = [Self::Index, Self::Phase];
+    pub fn to_index(self) -> usize {
+        Self::ALL.iter().position(|m| *m == self).unwrap_or(0)
+    }
+    pub fn from_index(i: usize) -> Self {
+        Self::ALL.get(i).copied().unwrap_or(Self::Index)
+    }
+    pub fn label(self) -> &'static str {
+        match self { Self::Index => "Index", Self::Phase => "Phase" }
+    }
+    /// Port type to advertise for the `select` input in this mode.
+    pub fn select_port_type(self) -> PortType {
+        match self { Self::Index => PortType::Untyped, Self::Phase => PortType::Phase }
+    }
+}
+
 pub struct MuxDisplay {
     pub port_type: PortType,
     pub slots: usize,
     pub selected: usize,
+    pub select_mode: SelectMode,
+}
+
+/// Given raw `sel` value and `select_mode`, compute the slot index.
+fn resolve_slot(sel: f32, mode: SelectMode, slots: usize) -> usize {
+    let last = slots.saturating_sub(1) as i32;
+    match mode {
+        SelectMode::Index => (sel.round() as i32).clamp(0, last) as usize,
+        SelectMode::Phase => {
+            let p = sel.rem_euclid(1.0);
+            ((p * slots as f32).floor() as i32).clamp(0, last) as usize
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -57,6 +99,7 @@ pub struct MultiplexerProcessNode {
     id: NodeId,
     port_type: PortType,
     slots: usize,
+    select_mode: SelectMode,
     /// Layout: [select][slot0 channels ...][slot1 channels ...] ... [slotN-1]
     input_values: Vec<f32>,
     output_values: Vec<f32>,
@@ -71,6 +114,7 @@ impl MultiplexerProcessNode {
             id,
             port_type: PortType::Any,
             slots: MUX_DEFAULT_SLOTS,
+            select_mode: SelectMode::Index,
             input_values: vec![0.0; 1 + MUX_MAX_SLOTS * MAX_SLOT_CHANNELS],
             output_values: vec![0.0; MAX_SLOT_CHANNELS],
             selected: 0,
@@ -83,7 +127,7 @@ impl MultiplexerProcessNode {
 
     fn rebuild(&mut self) {
         let pt = self.port_type;
-        let mut ins = vec![PortDef::new("select", PortType::Untyped)];
+        let mut ins = vec![PortDef::new("select", self.select_mode.select_port_type())];
         for i in 0..self.slots {
             ins.push(PortDef::new(format!("in{}", i), pt));
         }
@@ -114,7 +158,7 @@ impl ProcessNode for MultiplexerProcessNode {
         }
         let n = self.port_type.channel_count();
         let sel = self.input_values[0];
-        let idx = (sel.round() as i32).clamp(0, self.slots as i32 - 1) as usize;
+        let idx = resolve_slot(sel, self.select_mode, self.slots);
         self.selected = idx;
         let base = 1 + idx * n;
         for c in 0..n {
@@ -139,6 +183,11 @@ impl ProcessNode for MultiplexerProcessNode {
                 min: MUX_MIN_SLOTS as i64,
                 max: MUX_MAX_SLOTS as i64,
             },
+            ParamDef::Choice {
+                name: "Select Mode".into(),
+                value: self.select_mode.to_index(),
+                options: SelectMode::ALL.iter().map(|m| m.label().to_string()).collect(),
+            },
         ]
     }
 
@@ -158,6 +207,16 @@ impl ProcessNode for MultiplexerProcessNode {
                     self.rebuild();
                 }
             }
+            2 => {
+                let new_mode = SelectMode::from_index(value.as_usize());
+                if new_mode != self.select_mode {
+                    self.select_mode = new_mode;
+                    // Only the `select` port type depends on the mode —
+                    // the other inputs / outputs are unchanged. Still
+                    // cheapest to rebuild the port list.
+                    self.rebuild();
+                }
+            }
             _ => {}
         }
     }
@@ -167,6 +226,7 @@ impl ProcessNode for MultiplexerProcessNode {
             port_type: self.port_type,
             slots: self.slots,
             selected: self.selected,
+            select_mode: self.select_mode,
         }));
     }
 }
@@ -179,6 +239,7 @@ pub struct DemultiplexerProcessNode {
     id: NodeId,
     port_type: PortType,
     slots: usize,
+    select_mode: SelectMode,
     /// Layout: [select][input channels ...]
     input_values: Vec<f32>,
     /// Layout: [slot0 channels ...][slot1 channels ...] ... [slotN-1]
@@ -194,6 +255,7 @@ impl DemultiplexerProcessNode {
             id,
             port_type: PortType::Any,
             slots: MUX_DEFAULT_SLOTS,
+            select_mode: SelectMode::Index,
             input_values: vec![0.0; 1 + MAX_SLOT_CHANNELS],
             output_values: vec![0.0; MUX_MAX_SLOTS * MAX_SLOT_CHANNELS],
             selected: 0,
@@ -207,7 +269,7 @@ impl DemultiplexerProcessNode {
     fn rebuild(&mut self) {
         let pt = self.port_type;
         self.inputs = vec![
-            PortDef::new("select", PortType::Untyped),
+            PortDef::new("select", self.select_mode.select_port_type()),
             PortDef::new("in", pt),
         ];
         self.outputs = (0..self.slots)
@@ -238,7 +300,7 @@ impl ProcessNode for DemultiplexerProcessNode {
         }
         let n = self.port_type.channel_count();
         let sel = self.input_values[0];
-        let idx = (sel.round() as i32).clamp(0, self.slots as i32 - 1) as usize;
+        let idx = resolve_slot(sel, self.select_mode, self.slots);
         self.selected = idx;
         for v in self.output_values.iter_mut() { *v = 0.0; }
         let base = idx * n;
@@ -264,6 +326,11 @@ impl ProcessNode for DemultiplexerProcessNode {
                 min: MUX_MIN_SLOTS as i64,
                 max: MUX_MAX_SLOTS as i64,
             },
+            ParamDef::Choice {
+                name: "Select Mode".into(),
+                value: self.select_mode.to_index(),
+                options: SelectMode::ALL.iter().map(|m| m.label().to_string()).collect(),
+            },
         ]
     }
 
@@ -283,6 +350,13 @@ impl ProcessNode for DemultiplexerProcessNode {
                     self.rebuild();
                 }
             }
+            2 => {
+                let new_mode = SelectMode::from_index(value.as_usize());
+                if new_mode != self.select_mode {
+                    self.select_mode = new_mode;
+                    self.rebuild();
+                }
+            }
             _ => {}
         }
     }
@@ -292,6 +366,7 @@ impl ProcessNode for DemultiplexerProcessNode {
             port_type: self.port_type,
             slots: self.slots,
             selected: self.selected,
+            select_mode: self.select_mode,
         }));
     }
 }

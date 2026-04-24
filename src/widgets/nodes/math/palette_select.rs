@@ -3,6 +3,7 @@ use std::sync::{Arc, Mutex};
 
 use egui::{self, Color32, Sense, Ui, Vec2};
 
+use crate::engine::nodes::math::multiplex::SelectMode;
 use crate::engine::nodes::math::palette_select::PaletteSelectDisplay;
 use crate::engine::types::*;
 use crate::objects::color_palette::{ColorPalette, ColorPaletteGroup, PALETTE_SIZE};
@@ -29,11 +30,32 @@ pub struct PaletteSelectWidget {
     palette_ctx: SharedPaletteContext,
     /// Ordered list of group IDs this node uses.
     selected_group_ids: Vec<u32>,
+    select_mode: SelectMode,
 }
 
 impl PaletteSelectWidget {
     pub fn new(id: NodeId, shared: SharedState, palette_ctx: SharedPaletteContext) -> Self {
-        Self { id, shared, palette_ctx, selected_group_ids: Vec::new() }
+        Self {
+            id,
+            shared,
+            palette_ctx,
+            selected_group_ids: Vec::new(),
+            select_mode: SelectMode::Index,
+        }
+    }
+
+    /// Apply restored state before the first frame's stale-connection
+    /// sweep — mirrors Mux/Demux/Counter's loader path.
+    pub fn set_state_from_load(&mut self, mode: SelectMode) {
+        self.select_mode = mode;
+    }
+
+    fn sync_from_display(&mut self) {
+        let shared = self.shared.lock().unwrap();
+        if let Some(d) = shared.display.as_ref().and_then(|d| d.downcast_ref::<PaletteSelectDisplay>())
+            && d.select_mode != self.select_mode {
+                self.select_mode = d.select_mode;
+            }
     }
 
     fn push_data_to_engine(&self) {
@@ -64,9 +86,10 @@ impl NodeWidget for PaletteSelectWidget {
     fn description(&self) -> &'static str { "Picks a palette (a set of 4 colors) from a palette group, indexed by group and palette index." }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> {
+        let pt = self.select_mode.select_port_type();
         vec![
-            UiPortDef::from_def(&PortDef::new("group", PortType::Untyped)),
-            UiPortDef::from_def(&PortDef::new("palette", PortType::Untyped)),
+            UiPortDef::from_def(&PortDef::new("group", pt)),
+            UiPortDef::from_def(&PortDef::new("palette", pt)),
         ]
     }
     fn ui_outputs(&self) -> Vec<UiPortDef> {
@@ -79,6 +102,7 @@ impl NodeWidget for PaletteSelectWidget {
     fn shared_state(&self) -> &SharedState { &self.shared }
 
     fn show_content(&mut self, ui: &mut Ui, _zoom: f32) {
+        self.sync_from_display();
         let shared = self.shared.lock().unwrap();
         let display = shared.display.as_ref()
             .and_then(|d| d.downcast_ref::<PaletteSelectDisplay>());

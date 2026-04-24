@@ -30,7 +30,7 @@ impl InternalClockWidget {
             ],
             outputs: vec![
                 PortDef::new("beat", PortType::Logic),
-                PortDef::new("play", PortType::Logic),
+                PortDef::new("play", PortType::Untyped),
                 PortDef::new("phase", PortType::Phase),
             ],
         }

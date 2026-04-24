@@ -45,7 +45,10 @@ impl NodeWidget for PhaseScalerWidget {
         "Multiplies or divides phase rate by a power of two to speed up or \
          slow down cycles. A rising edge on `reset` resyncs the sub-cycle \
          counter — useful to keep a divided phase aligned to an external \
-         downbeat or a detected onset."
+         downbeat or a detected onset. Wiring the `exp` input overrides \
+         the param: its value is taken directly as the exponent \
+         (rounded, clamped to -6..=6), so feeding a Phase Accumulator or \
+         other integer source works without any scaling."
     }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> {

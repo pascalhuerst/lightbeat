@@ -1770,6 +1770,77 @@ impl NodeGraph {
                     self.active_mut().states[idx].size_override = Some(size);
                 }
 
+                // Widgets with dynamic port layouts computed from params
+                // (Mux/Demux/PortHub use `port_type` + `slots`,
+                // Counter/PaletteSelect use `select_mode`) need their
+                // fields restored from the captured params *before*
+                // `cleanup_stale_connections` runs on the next frame —
+                // otherwise the duplicated node would briefly report
+                // default ports and any wire we're about to re-add in
+                // the connection-remap loop below could be culled.
+                // Mirrors the dispatch in `move_selection_to_subgraph`.
+                {
+                    use crate::engine::nodes::math::multiplex::{
+                        SelectMode, type_from_index,
+                    };
+                    let type_idx = cn.params.iter().find(|(pi, _)| *pi == 0).map(|(_, v)| v.as_usize());
+                    let slots = cn.params.iter().find(|(pi, _)| *pi == 1).map(|(_, v)| v.as_usize());
+                    let n = self.active_mut().nodes[idx].as_mut();
+                    if let Some(w) = n.as_any_mut()
+                        .downcast_mut::<crate::widgets::nodes::math::multiplex::MultiplexerWidget>()
+                    {
+                        let pt = type_idx.map(type_from_index).unwrap_or(PortType::Any);
+                        let s = slots.unwrap_or(
+                            crate::engine::nodes::math::multiplex::MUX_DEFAULT_SLOTS,
+                        );
+                        let m = cn.params.iter().find(|(pi, _)| *pi == 2)
+                            .map(|(_, v)| SelectMode::from_index(v.as_usize()))
+                            .unwrap_or(SelectMode::Index);
+                        w.set_state_from_load(pt, s, m);
+                    } else if let Some(w) = n.as_any_mut()
+                        .downcast_mut::<crate::widgets::nodes::math::multiplex::DemultiplexerWidget>()
+                    {
+                        let pt = type_idx.map(type_from_index).unwrap_or(PortType::Any);
+                        let s = slots.unwrap_or(
+                            crate::engine::nodes::math::multiplex::MUX_DEFAULT_SLOTS,
+                        );
+                        let m = cn.params.iter().find(|(pi, _)| *pi == 2)
+                            .map(|(_, v)| SelectMode::from_index(v.as_usize()))
+                            .unwrap_or(SelectMode::Index);
+                        w.set_state_from_load(pt, s, m);
+                    } else if let Some(w) = n.as_any_mut()
+                        .downcast_mut::<crate::widgets::nodes::math::port_hub::PortHubWidget>()
+                    {
+                        let pt = type_idx.map(type_from_index).unwrap_or(PortType::Untyped);
+                        let s = slots.unwrap_or(
+                            crate::engine::nodes::math::port_hub::HUB_DEFAULT_SLOTS,
+                        );
+                        w.set_state_from_load(pt, s);
+                    } else if let Some(w) = n.as_any_mut()
+                        .downcast_mut::<crate::widgets::nodes::math::counter::CounterWidget>()
+                    {
+                        let m = cn.params.iter().find(|(pi, _)| *pi == 2)
+                            .map(|(_, v)| SelectMode::from_index(v.as_usize()))
+                            .unwrap_or(SelectMode::Index);
+                        w.set_state_from_load(m);
+                    } else if let Some(w) = n.as_any_mut()
+                        .downcast_mut::<crate::widgets::nodes::math::palette_select::PaletteSelectWidget>()
+                    {
+                        let m = cn.params.iter().find(|(pi, _)| *pi == 0)
+                            .map(|(_, v)| SelectMode::from_index(v.as_usize()))
+                            .unwrap_or(SelectMode::Index);
+                        w.set_state_from_load(m);
+                    } else if let Some(w) = n.as_any_mut()
+                        .downcast_mut::<crate::widgets::nodes::transport::envelope::EnvelopeWidget>()
+                    {
+                        use crate::engine::nodes::transport::envelope::EnvelopeKind;
+                        let k = cn.params.iter().find(|(pi, _)| *pi == 4)
+                            .map(|(_, v)| EnvelopeKind::from_index(v.as_usize()))
+                            .unwrap_or(EnvelopeKind::Adsr);
+                        w.set_state_from_load(k);
+                    }
+                }
+
                 // Dispatch the source node's save_data to the duplicate's
                 // process node so per-instance settings (fader-group rows/cols
                 // and enable flags, controller bindings, layer stacks, etc.)
@@ -2905,7 +2976,7 @@ impl NodeGraph {
         inner_states.push(NodeState::new(BRIDGE_OUT_NODE_ID, Pos2::new(500.0, 100.0)));
 
         let mut restore_info: Vec<(NodeId, Vec<(usize, ParamValue)>, Option<serde_json::Value>)> = Vec::new();
-        for (node, state, params, save_data) in moved_nodes {
+        for (mut node, state, params, save_data) in moved_nodes {
             let node_id = node.node_id();
             let new_pos = Pos2::new(
                 state.pos.x - centroid.x + 250.0,
@@ -2915,6 +2986,109 @@ impl NodeGraph {
             if let Some(size) = state.size_override {
                 ns.size_override = Some(size);
             }
+
+            // Mux / Demux / Port Hub widgets compute their port layout
+            // from `port_type` + `slots` (+ `select_mode` for Mux/Demux).
+            // When the engine node behind them is re-spawned inside the
+            // subgraph it boots at defaults, then pending_params catches
+            // up on the next tick. Meanwhile the OLD engine's shared
+            // `display` was left behind by `RemoveNode` — so there's a
+            // window where the widget's `sync_from_display` could snap
+            // back to defaults if anything writes to `display` in the
+            // interim. Force-restore the widget's fields from the
+            // captured params right now so `ui_inputs` / `ui_outputs`
+            // are guaranteed correct for this frame's
+            // `cleanup_stale_connections`.
+            {
+                use crate::engine::nodes::math::multiplex::{
+                    SelectMode, type_from_index,
+                };
+                let type_idx = params.iter().find(|(pi, _)| *pi == 0).map(|(_, v)| v.as_usize());
+                let slots = params.iter().find(|(pi, _)| *pi == 1).map(|(_, v)| v.as_usize());
+                let mode_idx = params.iter().find(|(pi, _)| *pi == 2).map(|(_, v)| v.as_usize());
+                let n: &mut dyn NodeWidget = node.as_mut();
+                if let Some(w) = n.as_any_mut()
+                    .downcast_mut::<crate::widgets::nodes::math::multiplex::MultiplexerWidget>()
+                {
+                    let pt = type_idx.map(type_from_index).unwrap_or(PortType::Any);
+                    let s = slots.unwrap_or(
+                        crate::engine::nodes::math::multiplex::MUX_DEFAULT_SLOTS,
+                    );
+                    let m = mode_idx.map(SelectMode::from_index).unwrap_or(SelectMode::Index);
+                    w.set_state_from_load(pt, s, m);
+                } else if let Some(w) = n.as_any_mut()
+                    .downcast_mut::<crate::widgets::nodes::math::multiplex::DemultiplexerWidget>()
+                {
+                    let pt = type_idx.map(type_from_index).unwrap_or(PortType::Any);
+                    let s = slots.unwrap_or(
+                        crate::engine::nodes::math::multiplex::MUX_DEFAULT_SLOTS,
+                    );
+                    let m = mode_idx.map(SelectMode::from_index).unwrap_or(SelectMode::Index);
+                    w.set_state_from_load(pt, s, m);
+                } else if let Some(w) = n.as_any_mut()
+                    .downcast_mut::<crate::widgets::nodes::math::port_hub::PortHubWidget>()
+                {
+                    let pt = type_idx.map(type_from_index).unwrap_or(PortType::Untyped);
+                    let s = slots.unwrap_or(
+                        crate::engine::nodes::math::port_hub::HUB_DEFAULT_SLOTS,
+                    );
+                    w.set_state_from_load(pt, s);
+                } else if let Some(w) = n.as_any_mut()
+                    .downcast_mut::<crate::widgets::nodes::math::counter::CounterWidget>()
+                {
+                    // Counter's Select Mode is at param index 2.
+                    let m = params.iter().find(|(pi, _)| *pi == 2)
+                        .map(|(_, v)| SelectMode::from_index(v.as_usize()))
+                        .unwrap_or(SelectMode::Index);
+                    w.set_state_from_load(m);
+                } else if let Some(w) = n.as_any_mut()
+                    .downcast_mut::<crate::widgets::nodes::math::palette_select::PaletteSelectWidget>()
+                {
+                    // Palette Select's Select Mode is at param index 0.
+                    let m = params.iter().find(|(pi, _)| *pi == 0)
+                        .map(|(_, v)| SelectMode::from_index(v.as_usize()))
+                        .unwrap_or(SelectMode::Index);
+                    w.set_state_from_load(m);
+                } else if let Some(w) = n.as_any_mut()
+                    .downcast_mut::<crate::widgets::nodes::transport::envelope::EnvelopeWidget>()
+                {
+                    use crate::engine::nodes::transport::envelope::EnvelopeKind;
+                    let k = params.iter().find(|(pi, _)| *pi == 4)
+                        .map(|(_, v)| EnvelopeKind::from_index(v.as_usize()))
+                        .unwrap_or(EnvelopeKind::Adsr);
+                    w.set_state_from_load(k);
+                }
+            }
+
+            // Portal widgets derive their entire port layout from
+            // `save_data` (name / bound_name + `port_defs`). On move,
+            // the engine node is re-spawned at defaults and the widget
+            // could briefly report an empty port list to the first
+            // frame, dropping any wired `bound_name` target or internal
+            // wires. Push the captured save_data through the widget's
+            // own `restore_from_save_data` so `ui_inputs` / `ui_outputs`
+            // already match this frame.
+            if let Some(ref data) = save_data {
+                let n: &mut dyn NodeWidget = node.as_mut();
+                if let Some(w) = n.as_any_mut()
+                    .downcast_mut::<OutputPortalTxWidget>()
+                {
+                    w.restore_from_save_data(data);
+                } else if let Some(w) = n.as_any_mut()
+                    .downcast_mut::<OutputPortalRxWidget>()
+                {
+                    w.restore_from_save_data(data);
+                } else if let Some(w) = n.as_any_mut()
+                    .downcast_mut::<InputPortalRxWidget>()
+                {
+                    w.restore_from_save_data(data);
+                } else if let Some(w) = n.as_any_mut()
+                    .downcast_mut::<InputPortalTxWidget>()
+                {
+                    w.restore_from_save_data(data);
+                }
+            }
+
             inner_states.push(ns);
             inner_nodes.push(node);
             restore_info.push((node_id, params, save_data));
