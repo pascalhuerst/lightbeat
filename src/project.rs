@@ -12,11 +12,15 @@ use crate::widgets::nodes::math::lookup::LookupWidget;
 use crate::widgets::nodes::math::multiplex::{DemultiplexerWidget, MultiplexerWidget};
 use crate::widgets::nodes::io::input_controller::InputControllerWidget;
 use crate::widgets::nodes::io::push1::Push1Widget;
+use crate::widgets::nodes::io::launchpad::LaunchpadWidget;
 use crate::widgets::nodes::io::x1::X1Widget;
-use crate::widgets::nodes::meta::portal::{PortalInWidget, PortalOutWidget};
+use crate::widgets::nodes::meta::portal::{
+    InputPortalRxWidget, InputPortalTxWidget, OutputPortalRxWidget, OutputPortalTxWidget,
+};
 use crate::widgets::nodes::meta::subgraph::SubgraphWidget;
 use crate::widgets::nodes::output::effect_stack::EffectStackWidget;
 use crate::widgets::nodes::output::group::GroupWidget;
+use crate::widgets::nodes::ui::button::ButtonWidget;
 use crate::widgets::nodes::ui::fader::FaderWidget;
 use crate::widgets::nodes::ui::fader_group::FaderGroupWidget;
 use crate::widgets::nodes::{GraphLevel, NodeGraph};
@@ -220,7 +224,17 @@ pub fn load_graph(graph: &mut NodeGraph, project: &ProjectFile) -> Vec<usize> {
 
     for saved in &project.nodes {
         let id = NodeId(saved.id);
-        if let Some(node) = graph.create_from_registry(&saved.type_name, id) {
+        // Legacy project files saved the portal node types under their
+        // pre-rename names. Remap so `create_from_registry` still finds a
+        // factory. The rest of this function continues using `type_name`
+        // instead of `saved.type_name` so downstream string matches pick up
+        // the new names too.
+        let type_name: &str = match saved.type_name.as_str() {
+            "Portal In" => "Output Portal TX",
+            "Portal Out" => "Output Portal RX",
+            other => other,
+        };
+        if let Some(node) = graph.create_from_registry(type_name, id) {
             let idx = graph.add_node(node, egui::Pos2::new(saved.pos[0], saved.pos[1]));
 
             if let Some([w, h]) = saved.size {
@@ -334,20 +348,49 @@ pub fn load_graph(graph: &mut NodeGraph, project: &ProjectFile) -> Vec<usize> {
                     }
                 }
 
+            // Same for Button — its input port only exists when
+            // `inputs_enabled` is true, and that flag's default is false.
+            // Without restoring early, any incoming wire dies on the first
+            // frame before the engine has applied save_data.
+            if saved.type_name == "Button"
+                && let Some(data) = &saved.data {
+                    let n = graph.node_mut(idx);
+                    if let Some(b) = n.as_any_mut().downcast_mut::<ButtonWidget>() {
+                        b.restore_from_save_data(data);
+                    }
+                }
+
             // Portal widgets need their port defs restored before
             // `cleanup_stale_connections` runs, otherwise wires targeting
             // the portal's input/output ports get dropped on the first frame.
-            if saved.type_name == "Portal In"
+            // Each branch matches both the current type name and the
+            // pre-rename legacy name ("Portal In"/"Portal Out") so older
+            // project files keep loading.
+            if matches!(type_name, "Output Portal TX" | "Portal In")
                 && let Some(data) = &saved.data {
                     let n = graph.node_mut(idx);
-                    if let Some(w) = n.as_any_mut().downcast_mut::<PortalInWidget>() {
+                    if let Some(w) = n.as_any_mut().downcast_mut::<OutputPortalTxWidget>() {
                         w.restore_from_save_data(data);
                     }
                 }
-            if saved.type_name == "Portal Out"
+            if matches!(type_name, "Output Portal RX" | "Portal Out")
                 && let Some(data) = &saved.data {
                     let n = graph.node_mut(idx);
-                    if let Some(w) = n.as_any_mut().downcast_mut::<PortalOutWidget>() {
+                    if let Some(w) = n.as_any_mut().downcast_mut::<OutputPortalRxWidget>() {
+                        w.restore_from_save_data(data);
+                    }
+                }
+            if type_name == "Input Portal RX"
+                && let Some(data) = &saved.data {
+                    let n = graph.node_mut(idx);
+                    if let Some(w) = n.as_any_mut().downcast_mut::<InputPortalRxWidget>() {
+                        w.restore_from_save_data(data);
+                    }
+                }
+            if type_name == "Input Portal TX"
+                && let Some(data) = &saved.data {
+                    let n = graph.node_mut(idx);
+                    if let Some(w) = n.as_any_mut().downcast_mut::<InputPortalTxWidget>() {
                         w.restore_from_save_data(data);
                     }
                 }
@@ -382,6 +425,13 @@ pub fn load_graph(graph: &mut NodeGraph, project: &ProjectFile) -> Vec<usize> {
                 && let Some(data) = &saved.data {
                     let n = graph.node_mut(idx);
                     if let Some(w) = n.as_any_mut().downcast_mut::<X1Widget>() {
+                        w.restore_from_save_data(data);
+                    }
+                }
+            if saved.type_name == "Launchpad S"
+                && let Some(data) = &saved.data {
+                    let n = graph.node_mut(idx);
+                    if let Some(w) = n.as_any_mut().downcast_mut::<LaunchpadWidget>() {
                         w.restore_from_save_data(data);
                     }
                 }

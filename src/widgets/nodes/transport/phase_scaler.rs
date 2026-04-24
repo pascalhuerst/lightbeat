@@ -22,6 +22,8 @@ impl PhaseScalerWidget {
             inputs: vec![
                 PortDef::new("phase", PortType::Phase),
                 PortDef::new("reset", PortType::Logic),
+                PortDef::new("exp", PortType::Untyped),
+                PortDef::new("offset", PortType::Phase),
             ],
             outputs: vec![PortDef::new("phase", PortType::Phase)],
         }
@@ -57,6 +59,20 @@ impl NodeWidget for PhaseScalerWidget {
     fn min_content_height(&self) -> f32 { 20.0 }
 
     fn shared_state(&self) -> &SharedState { &self.shared }
+
+    /// When the `exp` / `offset` inputs are wired the corresponding params
+    /// are overridden by the engine. Hide them from the auto-inspector so
+    /// the user isn't editing values that get thrown away.
+    fn overridden_param_indices(&self) -> Vec<usize> {
+        let shared = self.shared.lock().unwrap();
+        let exp_wired = shared.inputs_connected.get(2).copied().unwrap_or(false);
+        let offset_wired = shared.inputs_connected.get(3).copied().unwrap_or(false);
+        drop(shared);
+        let mut v = Vec::new();
+        if exp_wired { v.push(0); }     // param 0 = Exponent
+        if offset_wired { v.push(1); }  // param 1 = Offset
+        v
+    }
 
     fn show_content(&mut self, ui: &mut Ui, _zoom: f32) {
         let shared = self.shared.lock().unwrap();

@@ -49,6 +49,12 @@ pub trait NodeWidget: Any {
     /// the default gray chrome.
     fn accent_color(&self) -> Option<egui::Color32> { None }
 
+    /// Optional icon glyph rendered in the title bar before the node's
+    /// title text. Typically an `egui_phosphor::regular::*` constant. Used
+    /// by special node kinds (portals, macros) to add a visual hook that
+    /// distinguishes them at a glance from generic nodes.
+    fn accent_icon(&self) -> Option<&'static str> { None }
+
     /// Nodes that belong to a "linked set" (currently just portals) return
     /// the key that identifies the set. When the user selects a node with a
     /// portal key, the graph renderer draws a matching outline around every

@@ -7298,6 +7298,1138 @@
           "disable_feedback": true
         }
       ]
+    },
+    {
+      "id": 3,
+      "name": "Launchpad",
+      "kind": {
+        "LaunchpadS": {
+          "hw_input_port": "Launchpad:Launchpad MIDI 1 32:0",
+          "hw_output_port": "Launchpad:Launchpad MIDI 1 32:0"
+        }
+      },
+      "inputs": [
+        {
+          "id": 1,
+          "name": "Pad r1c1",
+          "source": {
+            "Midi": {
+              "NoteVelocity": {
+                "channel": 1,
+                "note": 0
+              }
+            }
+          },
+          "mode": "Value",
+          "disable_feedback": false
+        },
+        {
+          "id": 2,
+          "name": "Pad r1c2",
+          "source": {
+            "Midi": {
+              "NoteVelocity": {
+                "channel": 1,
+                "note": 1
+              }
+            }
+          },
+          "mode": "Value",
+          "disable_feedback": false
+        },
+        {
+          "id": 3,
+          "name": "Pad r1c3",
+          "source": {
+            "Midi": {
+              "NoteVelocity": {
+                "channel": 1,
+                "note": 2
+              }
+            }
+          },
+          "mode": "Value",
+          "disable_feedback": false
+        },
+        {
+          "id": 4,
+          "name": "Pad r1c4",
+          "source": {
+            "Midi": {
+              "NoteVelocity": {
+                "channel": 1,
+                "note": 3
+              }
+            }
+          },
+          "mode": "Value",
+          "disable_feedback": false
+        },
+        {
+          "id": 5,
+          "name": "Pad r1c5",
+          "source": {
+            "Midi": {
+              "NoteVelocity": {
+                "channel": 1,
+                "note": 4
+              }
+            }
+          },
+          "mode": "Value",
+          "disable_feedback": false
+        },
+        {
+          "id": 6,
+          "name": "Pad r1c6",
+          "source": {
+            "Midi": {
+              "NoteVelocity": {
+                "channel": 1,
+                "note": 5
+              }
+            }
+          },
+          "mode": "Value",
+          "disable_feedback": false
+        },
+        {
+          "id": 7,
+          "name": "Pad r1c7",
+          "source": {
+            "Midi": {
+              "NoteVelocity": {
+                "channel": 1,
+                "note": 6
+              }
+            }
+          },
+          "mode": "Value",
+          "disable_feedback": false
+        },
+        {
+          "id": 8,
+          "name": "Pad r1c8",
+          "source": {
+            "Midi": {
+              "NoteVelocity": {
+                "channel": 1,
+                "note": 7
+              }
+            }
+          },
+          "mode": "Value",
+          "disable_feedback": false
+        },
+        {
+          "id": 9,
+          "name": "Pad r2c1",
+          "source": {
+            "Midi": {
+              "NoteVelocity": {
+                "channel": 1,
+                "note": 16
+              }
+            }
+          },
+          "mode": "Value",
+          "disable_feedback": false
+        },
+        {
+          "id": 10,
+          "name": "Pad r2c2",
+          "source": {
+            "Midi": {
+              "NoteVelocity": {
+                "channel": 1,
+                "note": 17
+              }
+            }
+          },
+          "mode": "Value",
+          "disable_feedback": false
+        },
+        {
+          "id": 11,
+          "name": "Pad r2c3",
+          "source": {
+            "Midi": {
+              "NoteVelocity": {
+                "channel": 1,
+                "note": 18
+              }
+            }
+          },
+          "mode": "Value",
+          "disable_feedback": false
+        },
+        {
+          "id": 12,
+          "name": "Pad r2c4",
+          "source": {
+            "Midi": {
+              "NoteVelocity": {
+                "channel": 1,
+                "note": 19
+              }
+            }
+          },
+          "mode": "Value",
+          "disable_feedback": false
+        },
+        {
+          "id": 13,
+          "name": "Pad r2c5",
+          "source": {
+            "Midi": {
+              "NoteVelocity": {
+                "channel": 1,
+                "note": 20
+              }
+            }
+          },
+          "mode": "Value",
+          "disable_feedback": false
+        },
+        {
+          "id": 14,
+          "name": "Pad r2c6",
+          "source": {
+            "Midi": {
+              "NoteVelocity": {
+                "channel": 1,
+                "note": 21
+              }
+            }
+          },
+          "mode": "Value",
+          "disable_feedback": false
+        },
+        {
+          "id": 15,
+          "name": "Pad r2c7",
+          "source": {
+            "Midi": {
+              "NoteVelocity": {
+                "channel": 1,
+                "note": 22
+              }
+            }
+          },
+          "mode": "Value",
+          "disable_feedback": false
+        },
+        {
+          "id": 16,
+          "name": "Pad r2c8",
+          "source": {
+            "Midi": {
+              "NoteVelocity": {
+                "channel": 1,
+                "note": 23
+              }
+            }
+          },
+          "mode": "Value",
+          "disable_feedback": false
+        },
+        {
+          "id": 17,
+          "name": "Pad r3c1",
+          "source": {
+            "Midi": {
+              "NoteVelocity": {
+                "channel": 1,
+                "note": 32
+              }
+            }
+          },
+          "mode": "Value",
+          "disable_feedback": false
+        },
+        {
+          "id": 18,
+          "name": "Pad r3c2",
+          "source": {
+            "Midi": {
+              "NoteVelocity": {
+                "channel": 1,
+                "note": 33
+              }
+            }
+          },
+          "mode": "Value",
+          "disable_feedback": false
+        },
+        {
+          "id": 19,
+          "name": "Pad r3c3",
+          "source": {
+            "Midi": {
+              "NoteVelocity": {
+                "channel": 1,
+                "note": 34
+              }
+            }
+          },
+          "mode": "Value",
+          "disable_feedback": false
+        },
+        {
+          "id": 20,
+          "name": "Pad r3c4",
+          "source": {
+            "Midi": {
+              "NoteVelocity": {
+                "channel": 1,
+                "note": 35
+              }
+            }
+          },
+          "mode": "Value",
+          "disable_feedback": false
+        },
+        {
+          "id": 21,
+          "name": "Pad r3c5",
+          "source": {
+            "Midi": {
+              "NoteVelocity": {
+                "channel": 1,
+                "note": 36
+              }
+            }
+          },
+          "mode": "Value",
+          "disable_feedback": false
+        },
+        {
+          "id": 22,
+          "name": "Pad r3c6",
+          "source": {
+            "Midi": {
+              "NoteVelocity": {
+                "channel": 1,
+                "note": 37
+              }
+            }
+          },
+          "mode": "Value",
+          "disable_feedback": false
+        },
+        {
+          "id": 23,
+          "name": "Pad r3c7",
+          "source": {
+            "Midi": {
+              "NoteVelocity": {
+                "channel": 1,
+                "note": 38
+              }
+            }
+          },
+          "mode": "Value",
+          "disable_feedback": false
+        },
+        {
+          "id": 24,
+          "name": "Pad r3c8",
+          "source": {
+            "Midi": {
+              "NoteVelocity": {
+                "channel": 1,
+                "note": 39
+              }
+            }
+          },
+          "mode": "Value",
+          "disable_feedback": false
+        },
+        {
+          "id": 25,
+          "name": "Pad r4c1",
+          "source": {
+            "Midi": {
+              "NoteVelocity": {
+                "channel": 1,
+                "note": 48
+              }
+            }
+          },
+          "mode": "Value",
+          "disable_feedback": false
+        },
+        {
+          "id": 26,
+          "name": "Pad r4c2",
+          "source": {
+            "Midi": {
+              "NoteVelocity": {
+                "channel": 1,
+                "note": 49
+              }
+            }
+          },
+          "mode": "Value",
+          "disable_feedback": false
+        },
+        {
+          "id": 27,
+          "name": "Pad r4c3",
+          "source": {
+            "Midi": {
+              "NoteVelocity": {
+                "channel": 1,
+                "note": 50
+              }
+            }
+          },
+          "mode": "Value",
+          "disable_feedback": false
+        },
+        {
+          "id": 28,
+          "name": "Pad r4c4",
+          "source": {
+            "Midi": {
+              "NoteVelocity": {
+                "channel": 1,
+                "note": 51
+              }
+            }
+          },
+          "mode": "Value",
+          "disable_feedback": false
+        },
+        {
+          "id": 29,
+          "name": "Pad r4c5",
+          "source": {
+            "Midi": {
+              "NoteVelocity": {
+                "channel": 1,
+                "note": 52
+              }
+            }
+          },
+          "mode": "Value",
+          "disable_feedback": false
+        },
+        {
+          "id": 30,
+          "name": "Pad r4c6",
+          "source": {
+            "Midi": {
+              "NoteVelocity": {
+                "channel": 1,
+                "note": 53
+              }
+            }
+          },
+          "mode": "Value",
+          "disable_feedback": false
+        },
+        {
+          "id": 31,
+          "name": "Pad r4c7",
+          "source": {
+            "Midi": {
+              "NoteVelocity": {
+                "channel": 1,
+                "note": 54
+              }
+            }
+          },
+          "mode": "Value",
+          "disable_feedback": false
+        },
+        {
+          "id": 32,
+          "name": "Pad r4c8",
+          "source": {
+            "Midi": {
+              "NoteVelocity": {
+                "channel": 1,
+                "note": 55
+              }
+            }
+          },
+          "mode": "Value",
+          "disable_feedback": false
+        },
+        {
+          "id": 33,
+          "name": "Pad r5c1",
+          "source": {
+            "Midi": {
+              "NoteVelocity": {
+                "channel": 1,
+                "note": 64
+              }
+            }
+          },
+          "mode": "Value",
+          "disable_feedback": false
+        },
+        {
+          "id": 34,
+          "name": "Pad r5c2",
+          "source": {
+            "Midi": {
+              "NoteVelocity": {
+                "channel": 1,
+                "note": 65
+              }
+            }
+          },
+          "mode": "Value",
+          "disable_feedback": false
+        },
+        {
+          "id": 35,
+          "name": "Pad r5c3",
+          "source": {
+            "Midi": {
+              "NoteVelocity": {
+                "channel": 1,
+                "note": 66
+              }
+            }
+          },
+          "mode": "Value",
+          "disable_feedback": false
+        },
+        {
+          "id": 36,
+          "name": "Pad r5c4",
+          "source": {
+            "Midi": {
+              "NoteVelocity": {
+                "channel": 1,
+                "note": 67
+              }
+            }
+          },
+          "mode": "Value",
+          "disable_feedback": false
+        },
+        {
+          "id": 37,
+          "name": "Pad r5c5",
+          "source": {
+            "Midi": {
+              "NoteVelocity": {
+                "channel": 1,
+                "note": 68
+              }
+            }
+          },
+          "mode": "Value",
+          "disable_feedback": false
+        },
+        {
+          "id": 38,
+          "name": "Pad r5c6",
+          "source": {
+            "Midi": {
+              "NoteVelocity": {
+                "channel": 1,
+                "note": 69
+              }
+            }
+          },
+          "mode": "Value",
+          "disable_feedback": false
+        },
+        {
+          "id": 39,
+          "name": "Pad r5c7",
+          "source": {
+            "Midi": {
+              "NoteVelocity": {
+                "channel": 1,
+                "note": 70
+              }
+            }
+          },
+          "mode": "Value",
+          "disable_feedback": false
+        },
+        {
+          "id": 40,
+          "name": "Pad r5c8",
+          "source": {
+            "Midi": {
+              "NoteVelocity": {
+                "channel": 1,
+                "note": 71
+              }
+            }
+          },
+          "mode": "Value",
+          "disable_feedback": false
+        },
+        {
+          "id": 41,
+          "name": "Pad r6c1",
+          "source": {
+            "Midi": {
+              "NoteVelocity": {
+                "channel": 1,
+                "note": 80
+              }
+            }
+          },
+          "mode": "Value",
+          "disable_feedback": false
+        },
+        {
+          "id": 42,
+          "name": "Pad r6c2",
+          "source": {
+            "Midi": {
+              "NoteVelocity": {
+                "channel": 1,
+                "note": 81
+              }
+            }
+          },
+          "mode": "Value",
+          "disable_feedback": false
+        },
+        {
+          "id": 43,
+          "name": "Pad r6c3",
+          "source": {
+            "Midi": {
+              "NoteVelocity": {
+                "channel": 1,
+                "note": 82
+              }
+            }
+          },
+          "mode": "Value",
+          "disable_feedback": false
+        },
+        {
+          "id": 44,
+          "name": "Pad r6c4",
+          "source": {
+            "Midi": {
+              "NoteVelocity": {
+                "channel": 1,
+                "note": 83
+              }
+            }
+          },
+          "mode": "Value",
+          "disable_feedback": false
+        },
+        {
+          "id": 45,
+          "name": "Pad r6c5",
+          "source": {
+            "Midi": {
+              "NoteVelocity": {
+                "channel": 1,
+                "note": 84
+              }
+            }
+          },
+          "mode": "Value",
+          "disable_feedback": false
+        },
+        {
+          "id": 46,
+          "name": "Pad r6c6",
+          "source": {
+            "Midi": {
+              "NoteVelocity": {
+                "channel": 1,
+                "note": 85
+              }
+            }
+          },
+          "mode": "Value",
+          "disable_feedback": false
+        },
+        {
+          "id": 47,
+          "name": "Pad r6c7",
+          "source": {
+            "Midi": {
+              "NoteVelocity": {
+                "channel": 1,
+                "note": 86
+              }
+            }
+          },
+          "mode": "Value",
+          "disable_feedback": false
+        },
+        {
+          "id": 48,
+          "name": "Pad r6c8",
+          "source": {
+            "Midi": {
+              "NoteVelocity": {
+                "channel": 1,
+                "note": 87
+              }
+            }
+          },
+          "mode": "Value",
+          "disable_feedback": false
+        },
+        {
+          "id": 49,
+          "name": "Pad r7c1",
+          "source": {
+            "Midi": {
+              "NoteVelocity": {
+                "channel": 1,
+                "note": 96
+              }
+            }
+          },
+          "mode": "Value",
+          "disable_feedback": false
+        },
+        {
+          "id": 50,
+          "name": "Pad r7c2",
+          "source": {
+            "Midi": {
+              "NoteVelocity": {
+                "channel": 1,
+                "note": 97
+              }
+            }
+          },
+          "mode": "Value",
+          "disable_feedback": false
+        },
+        {
+          "id": 51,
+          "name": "Pad r7c3",
+          "source": {
+            "Midi": {
+              "NoteVelocity": {
+                "channel": 1,
+                "note": 98
+              }
+            }
+          },
+          "mode": "Value",
+          "disable_feedback": false
+        },
+        {
+          "id": 52,
+          "name": "Pad r7c4",
+          "source": {
+            "Midi": {
+              "NoteVelocity": {
+                "channel": 1,
+                "note": 99
+              }
+            }
+          },
+          "mode": "Value",
+          "disable_feedback": false
+        },
+        {
+          "id": 53,
+          "name": "Pad r7c5",
+          "source": {
+            "Midi": {
+              "NoteVelocity": {
+                "channel": 1,
+                "note": 100
+              }
+            }
+          },
+          "mode": "Value",
+          "disable_feedback": false
+        },
+        {
+          "id": 54,
+          "name": "Pad r7c6",
+          "source": {
+            "Midi": {
+              "NoteVelocity": {
+                "channel": 1,
+                "note": 101
+              }
+            }
+          },
+          "mode": "Value",
+          "disable_feedback": false
+        },
+        {
+          "id": 55,
+          "name": "Pad r7c7",
+          "source": {
+            "Midi": {
+              "NoteVelocity": {
+                "channel": 1,
+                "note": 102
+              }
+            }
+          },
+          "mode": "Value",
+          "disable_feedback": false
+        },
+        {
+          "id": 56,
+          "name": "Pad r7c8",
+          "source": {
+            "Midi": {
+              "NoteVelocity": {
+                "channel": 1,
+                "note": 103
+              }
+            }
+          },
+          "mode": "Value",
+          "disable_feedback": false
+        },
+        {
+          "id": 57,
+          "name": "Pad r8c1",
+          "source": {
+            "Midi": {
+              "NoteVelocity": {
+                "channel": 1,
+                "note": 112
+              }
+            }
+          },
+          "mode": "Value",
+          "disable_feedback": false
+        },
+        {
+          "id": 58,
+          "name": "Pad r8c2",
+          "source": {
+            "Midi": {
+              "NoteVelocity": {
+                "channel": 1,
+                "note": 113
+              }
+            }
+          },
+          "mode": "Value",
+          "disable_feedback": false
+        },
+        {
+          "id": 59,
+          "name": "Pad r8c3",
+          "source": {
+            "Midi": {
+              "NoteVelocity": {
+                "channel": 1,
+                "note": 114
+              }
+            }
+          },
+          "mode": "Value",
+          "disable_feedback": false
+        },
+        {
+          "id": 60,
+          "name": "Pad r8c4",
+          "source": {
+            "Midi": {
+              "NoteVelocity": {
+                "channel": 1,
+                "note": 115
+              }
+            }
+          },
+          "mode": "Value",
+          "disable_feedback": false
+        },
+        {
+          "id": 61,
+          "name": "Pad r8c5",
+          "source": {
+            "Midi": {
+              "NoteVelocity": {
+                "channel": 1,
+                "note": 116
+              }
+            }
+          },
+          "mode": "Value",
+          "disable_feedback": false
+        },
+        {
+          "id": 62,
+          "name": "Pad r8c6",
+          "source": {
+            "Midi": {
+              "NoteVelocity": {
+                "channel": 1,
+                "note": 117
+              }
+            }
+          },
+          "mode": "Value",
+          "disable_feedback": false
+        },
+        {
+          "id": 63,
+          "name": "Pad r8c7",
+          "source": {
+            "Midi": {
+              "NoteVelocity": {
+                "channel": 1,
+                "note": 118
+              }
+            }
+          },
+          "mode": "Value",
+          "disable_feedback": false
+        },
+        {
+          "id": 64,
+          "name": "Pad r8c8",
+          "source": {
+            "Midi": {
+              "NoteVelocity": {
+                "channel": 1,
+                "note": 119
+              }
+            }
+          },
+          "mode": "Value",
+          "disable_feedback": false
+        },
+        {
+          "id": 65,
+          "name": "Side 1",
+          "source": {
+            "Midi": {
+              "NoteVelocity": {
+                "channel": 1,
+                "note": 8
+              }
+            }
+          },
+          "mode": "Value",
+          "disable_feedback": false
+        },
+        {
+          "id": 66,
+          "name": "Side 2",
+          "source": {
+            "Midi": {
+              "NoteVelocity": {
+                "channel": 1,
+                "note": 24
+              }
+            }
+          },
+          "mode": "Value",
+          "disable_feedback": false
+        },
+        {
+          "id": 67,
+          "name": "Side 3",
+          "source": {
+            "Midi": {
+              "NoteVelocity": {
+                "channel": 1,
+                "note": 40
+              }
+            }
+          },
+          "mode": "Value",
+          "disable_feedback": false
+        },
+        {
+          "id": 68,
+          "name": "Side 4",
+          "source": {
+            "Midi": {
+              "NoteVelocity": {
+                "channel": 1,
+                "note": 56
+              }
+            }
+          },
+          "mode": "Value",
+          "disable_feedback": false
+        },
+        {
+          "id": 69,
+          "name": "Side 5",
+          "source": {
+            "Midi": {
+              "NoteVelocity": {
+                "channel": 1,
+                "note": 72
+              }
+            }
+          },
+          "mode": "Value",
+          "disable_feedback": false
+        },
+        {
+          "id": 70,
+          "name": "Side 6",
+          "source": {
+            "Midi": {
+              "NoteVelocity": {
+                "channel": 1,
+                "note": 88
+              }
+            }
+          },
+          "mode": "Value",
+          "disable_feedback": false
+        },
+        {
+          "id": 71,
+          "name": "Side 7",
+          "source": {
+            "Midi": {
+              "NoteVelocity": {
+                "channel": 1,
+                "note": 104
+              }
+            }
+          },
+          "mode": "Value",
+          "disable_feedback": false
+        },
+        {
+          "id": 72,
+          "name": "Side 8",
+          "source": {
+            "Midi": {
+              "NoteVelocity": {
+                "channel": 1,
+                "note": 120
+              }
+            }
+          },
+          "mode": "Value",
+          "disable_feedback": false
+        },
+        {
+          "id": 73,
+          "name": "Top Up",
+          "source": {
+            "Midi": {
+              "Cc": {
+                "channel": 1,
+                "controller": 104
+              }
+            }
+          },
+          "mode": "Value",
+          "disable_feedback": false
+        },
+        {
+          "id": 74,
+          "name": "Top Down",
+          "source": {
+            "Midi": {
+              "Cc": {
+                "channel": 1,
+                "controller": 105
+              }
+            }
+          },
+          "mode": "Value",
+          "disable_feedback": false
+        },
+        {
+          "id": 75,
+          "name": "Top Left",
+          "source": {
+            "Midi": {
+              "Cc": {
+                "channel": 1,
+                "controller": 106
+              }
+            }
+          },
+          "mode": "Value",
+          "disable_feedback": false
+        },
+        {
+          "id": 76,
+          "name": "Top Right",
+          "source": {
+            "Midi": {
+              "Cc": {
+                "channel": 1,
+                "controller": 107
+              }
+            }
+          },
+          "mode": "Value",
+          "disable_feedback": false
+        },
+        {
+          "id": 77,
+          "name": "Top Session",
+          "source": {
+            "Midi": {
+              "Cc": {
+                "channel": 1,
+                "controller": 108
+              }
+            }
+          },
+          "mode": "Value",
+          "disable_feedback": false
+        },
+        {
+          "id": 78,
+          "name": "Top User 1",
+          "source": {
+            "Midi": {
+              "Cc": {
+                "channel": 1,
+                "controller": 109
+              }
+            }
+          },
+          "mode": "Value",
+          "disable_feedback": false
+        },
+        {
+          "id": 79,
+          "name": "Top User 2",
+          "source": {
+            "Midi": {
+              "Cc": {
+                "channel": 1,
+                "controller": 110
+              }
+            }
+          },
+          "mode": "Value",
+          "disable_feedback": false
+        },
+        {
+          "id": 80,
+          "name": "Top Mixer",
+          "source": {
+            "Midi": {
+              "Cc": {
+                "channel": 1,
+                "controller": 111
+              }
+            }
+          },
+          "mode": "Value",
+          "disable_feedback": false
+        }
+      ]
     }
   ],
   "audio_inputs": [

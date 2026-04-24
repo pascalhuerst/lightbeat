@@ -70,6 +70,16 @@ pub enum InputControllerKind {
     /// by VID/PID (0x17CC / 0x2305); no port config needed. Fixed layout,
     /// no learn mode.
     X1,
+    /// Novation Launchpad S. Class-compliant MIDI device. 8×8 velocity-
+    /// sensitive pad grid, 8 scene/launch buttons along the right, 8 mode
+    /// buttons along the top. Per-pad LED feedback with 4-level red
+    /// brightness encoding (green/amber/orange available in the hardware
+    /// but not exposed by the current feedback path).
+    LaunchpadS {
+        hw_input_port: String,
+        #[serde(default)]
+        hw_output_port: String,
+    },
 }
 
 impl InputControllerKind {
@@ -79,6 +89,7 @@ impl InputControllerKind {
             InputControllerKind::Bcf2000 { .. } => "BCF2000",
             InputControllerKind::Push1 { .. } => "Push 1",
             InputControllerKind::X1 => "X1",
+            InputControllerKind::LaunchpadS { .. } => "Launchpad S",
         }
     }
 
@@ -90,6 +101,7 @@ impl InputControllerKind {
             InputControllerKind::Midi { hw_port_name } => hw_port_name,
             InputControllerKind::Bcf2000 { hw_input_port, .. } => hw_input_port,
             InputControllerKind::Push1 { hw_input_port, .. } => hw_input_port,
+            InputControllerKind::LaunchpadS { hw_input_port, .. } => hw_input_port,
             InputControllerKind::X1 => "",
         }
     }
@@ -100,6 +112,7 @@ impl InputControllerKind {
             InputControllerKind::Midi { .. } => "",
             InputControllerKind::Bcf2000 { hw_output_port, .. } => hw_output_port,
             InputControllerKind::Push1 { hw_output_port, .. } => hw_output_port,
+            InputControllerKind::LaunchpadS { hw_output_port, .. } => hw_output_port,
             InputControllerKind::X1 => "",
         }
     }
@@ -111,6 +124,7 @@ impl InputControllerKind {
             InputControllerKind::Bcf2000 { .. }
                 | InputControllerKind::Push1 { .. }
                 | InputControllerKind::X1
+                | InputControllerKind::LaunchpadS { .. }
         )
     }
 }
@@ -260,6 +274,7 @@ impl ControllerRuntime {
             InputControllerKind::Bcf2000 { .. } if c.inputs.is_empty() => bcf2000_preset1_inputs(),
             InputControllerKind::Push1 { .. } if c.inputs.is_empty() => push1_preset_inputs(),
             InputControllerKind::X1 if c.inputs.is_empty() => x1::x1_preset_inputs(1),
+            InputControllerKind::LaunchpadS { .. } if c.inputs.is_empty() => launchpad_preset_inputs(),
             _ => c.inputs.clone(),
         };
         let n = inputs.len();
@@ -490,6 +505,73 @@ pub fn push1_preset_inputs() -> Vec<LearnedInput> {
     inputs
 }
 
+// ---------------------------------------------------------------------------
+// Novation Launchpad S — preset layout
+// ---------------------------------------------------------------------------
+
+/// Canonical Launchpad S mapping in the default X-Y layout. Everything on
+/// channel 1. Grid pads + 8 side (scene-launch) buttons share the same
+/// note-number space: `note = row * 16 + col`, with col 0..=7 for grid and
+/// col 8 for the side button. Rows run top (0) to bottom (7). Top mode
+/// buttons are CC 104..=111.
+pub fn launchpad_preset_inputs() -> Vec<LearnedInput> {
+    use self::midi::MidiSource;
+    let ch = 1u8;
+    let mut inputs = Vec::with_capacity(64 + 8 + 8);
+    let mut id: u32 = 1;
+
+    // 8×8 grid — note per pad, velocity-preserving so the graph sees how
+    // hard the pad was hit.
+    for row in 0..8u8 {
+        for col in 0..8u8 {
+            inputs.push(LearnedInput {
+                id,
+                name: format!("Pad r{}c{}", row + 1, col + 1),
+                source: InputSource::Midi(MidiSource::NoteVelocity {
+                    channel: ch,
+                    note: row * 16 + col,
+                }),
+                mode: InputBindingMode::Value,
+                disable_feedback: false,
+            });
+            id += 1;
+        }
+    }
+
+    // 8 side (scene-launch) buttons — also notes, col=8 in the same grid.
+    for row in 0..8u8 {
+        inputs.push(LearnedInput {
+            id,
+            name: format!("Side {}", row + 1),
+            source: InputSource::Midi(MidiSource::NoteVelocity {
+                channel: ch,
+                note: row * 16 + 8,
+            }),
+            mode: InputBindingMode::Value,
+            disable_feedback: false,
+        });
+        id += 1;
+    }
+
+    // 8 top mode buttons — CC 104..=111.
+    let top_names = ["Up", "Down", "Left", "Right", "Session", "User 1", "User 2", "Mixer"];
+    for (i, label) in top_names.iter().enumerate() {
+        inputs.push(LearnedInput {
+            id,
+            name: format!("Top {}", label),
+            source: InputSource::Midi(MidiSource::Cc {
+                channel: ch,
+                controller: 104 + i as u8,
+            }),
+            mode: InputBindingMode::Value,
+            disable_feedback: false,
+        });
+        id += 1;
+    }
+
+    inputs
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConnectionStatus {
     Disconnected,
@@ -629,6 +711,44 @@ impl InputControllerManager {
         id
     }
 
+    /// Add a Novation Launchpad S. MIDI-based; factory layout is
+    /// 64 grid pads + 8 side + 8 top CC buttons.
+    pub fn add_launchpad(&mut self, name: String) -> u32 {
+        let mut state = self.shared.lock().unwrap();
+        let id = state.iter().map(|c| c.id).max().unwrap_or(0) + 1;
+        let inputs = launchpad_preset_inputs();
+        let n = inputs.len();
+        let max_input_id = inputs.iter().map(|i| i.id).max().unwrap_or(0);
+        if max_input_id >= self.next_input_id {
+            self.next_input_id = max_input_id + 1;
+        }
+        state.push(ControllerRuntime {
+            id,
+            name,
+            kind: InputControllerKind::LaunchpadS {
+                hw_input_port: String::new(),
+                hw_output_port: String::new(),
+            },
+            inputs,
+            values: vec![0.0; n],
+            out_values: vec![0.0; n],
+            status: ConnectionStatus::Disconnected,
+            learning: false,
+            learn_buffer: VecDeque::new(),
+            activity_log: VecDeque::with_capacity(ACTIVITY_LOG_CAPACITY),
+            debug_open: false,
+            debug_feedback_override: false,
+            debug_loopback: false,
+            debug_highlight_on_touch: false,
+            last_match_idx: None,
+            last_match_instant: None,
+            relearn_input_id: None,
+        });
+        drop(state);
+        self.reconcile_sessions();
+        id
+    }
+
     /// Add a BCF2000 controller — preset-1 input layout is populated
     /// automatically. `add_controller` is the generic path.
     pub fn add_bcf2000(&mut self, name: String) -> u32 {
@@ -721,6 +841,7 @@ impl InputControllerManager {
                     InputControllerKind::Midi { hw_port_name } => *hw_port_name = port,
                     InputControllerKind::Bcf2000 { hw_input_port, .. } => *hw_input_port = port,
                     InputControllerKind::Push1 { hw_input_port, .. } => *hw_input_port = port,
+                    InputControllerKind::LaunchpadS { hw_input_port, .. } => *hw_input_port = port,
                     InputControllerKind::X1 => {} // no port config
                 }
                 c.status = ConnectionStatus::Disconnected;
@@ -738,6 +859,7 @@ impl InputControllerManager {
                 match &mut c.kind {
                     InputControllerKind::Bcf2000 { hw_output_port, .. } => *hw_output_port = port,
                     InputControllerKind::Push1 { hw_output_port, .. } => *hw_output_port = port,
+                    InputControllerKind::LaunchpadS { hw_output_port, .. } => *hw_output_port = port,
                     _ => {}
                 }
                 c.status = ConnectionStatus::Disconnected;
@@ -830,6 +952,7 @@ impl InputControllerManager {
             let factory = match &c.kind {
                 InputControllerKind::Bcf2000 { .. } => Some(bcf2000_preset1_inputs()),
                 InputControllerKind::Push1 { .. } => Some(push1_preset_inputs()),
+                InputControllerKind::LaunchpadS { .. } => Some(launchpad_preset_inputs()),
                 InputControllerKind::X1 => Some(x1::x1_preset_inputs(self.next_input_id)),
                 _ => None,
             };
@@ -895,7 +1018,8 @@ impl InputControllerManager {
                 .filter_map(|c| match &c.kind {
                     InputControllerKind::Midi { hw_port_name }
                     | InputControllerKind::Bcf2000 { hw_input_port: hw_port_name, .. }
-                    | InputControllerKind::Push1 { hw_input_port: hw_port_name, .. } => {
+                    | InputControllerKind::Push1 { hw_input_port: hw_port_name, .. }
+                    | InputControllerKind::LaunchpadS { hw_input_port: hw_port_name, .. } => {
                         if hw_port_name.is_empty() { return None; }
                         let op = c.kind.output_port();
                         let op = if op.is_empty() { None } else { Some(op.to_string()) };

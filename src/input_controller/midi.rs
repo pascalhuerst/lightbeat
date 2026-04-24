@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 
 use midir::{MidiInput, MidiInputConnection, MidiOutput, MidiOutputConnection};
 
-use super::{InputSource, ActivityLogEntry, SharedControllers, ACTIVITY_LOG_CAPACITY};
+use super::{InputControllerKind, InputSource, ActivityLogEntry, SharedControllers, ACTIVITY_LOG_CAPACITY};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum MidiSource {
@@ -345,19 +345,22 @@ fn run_feedback_worker(
     while !stop.load(Ordering::Relaxed) {
         thread::sleep(POLL_INTERVAL);
 
-        // Snapshot the current out_values + source list + disable flags
-        // under a short lock.
-        let snapshot: Option<(Vec<f32>, Vec<InputSource>, Vec<bool>)> = {
+        // Snapshot the current out_values + source list + disable flags +
+        // controller kind under a short lock. Kind lets the encoder pick
+        // Launchpad-specific LED velocity formatting for NoteVelocity / Cc
+        // sources without a second lookup.
+        let snapshot: Option<(Vec<f32>, Vec<InputSource>, Vec<bool>, InputControllerKind)> = {
             let state = shared.lock().unwrap();
             state.iter().find(|c| c.id == controller_id).map(|c| {
                 (
                     c.out_values.clone(),
                     c.inputs.iter().map(|i| i.source.clone()).collect(),
                     c.inputs.iter().map(|i| i.disable_feedback).collect(),
+                    c.kind.clone(),
                 )
             })
         };
-        let Some((out_values, src, dis)) = snapshot else {
+        let Some((out_values, src, dis, kind)) = snapshot else {
             continue;
         };
 
@@ -375,7 +378,7 @@ fn run_feedback_worker(
             if disabled.get(i).copied().unwrap_or(false) { continue; }
             let prev = last_sent[i];
             if prev == Some(*v) { continue; }
-            let bytes = encode_midi(sources.get(i), *v);
+            let bytes = encode_midi(&kind, sources.get(i), *v);
             if let Some(b) = bytes {
                 let _ = out_conn.send(&b);
                 last_sent[i] = Some(*v);
@@ -384,16 +387,37 @@ fn run_feedback_worker(
     }
 }
 
+/// Launchpad S uses a non-linear velocity byte (bits 0-1 = red intensity,
+/// bits 4-5 = green, bits 2-3 = buffer flags). `0x0C` is "off with copy
+/// bits set". For now we drive red only — map 0..1 to the four available
+/// brightness steps (off, dim, mid, full).
+fn launchpad_color_byte(value: f32) -> u8 {
+    let v = value.clamp(0.0, 1.0);
+    if v <= 0.02 { 0x0C }          // off
+    else if v < 0.34 { 0x0D }      // dim red
+    else if v < 0.67 { 0x0E }      // medium red
+    else { 0x0F }                  // full red
+}
+
 /// Encode a 0..1 value into a MIDI message matching the source kind.
 /// Returns None when the source kind doesn't accept feedback (e.g. relative
-/// encoders — the host can't push a value back that way).
-fn encode_midi(source: Option<&InputSource>, value: f32) -> Option<[u8; 3]> {
+/// encoders — the host can't push a value back that way). `kind` lets us
+/// swap in device-specific encodings (Launchpad S needs a custom velocity
+/// byte for LED colour).
+fn encode_midi(kind: &InputControllerKind, source: Option<&InputSource>, value: f32) -> Option<[u8; 3]> {
     let src = source?;
     let v = value.clamp(0.0, 1.0);
+    let is_launchpad = matches!(kind, InputControllerKind::LaunchpadS { .. });
     match src {
         InputSource::Midi(MidiSource::Cc { channel, controller }) => {
             let status = 0xB0 | ((*channel - 1) & 0x0F);
-            let data = (v * 127.0).round() as u8;
+            // Top row on Launchpad S uses the same color-byte encoding as
+            // pads, not a plain 0..127 scale.
+            let data = if is_launchpad {
+                launchpad_color_byte(v)
+            } else {
+                (v * 127.0).round() as u8
+            };
             Some([status, *controller & 0x7F, data & 0x7F])
         }
         InputSource::Midi(MidiSource::CcRelative { .. }) => None,
@@ -403,10 +427,13 @@ fn encode_midi(source: Option<&InputSource>, value: f32) -> Option<[u8; 3]> {
             Some([status, *note & 0x7F, vel])
         }
         InputSource::Midi(MidiSource::NoteVelocity { channel, note }) => {
-            // Used by Push pads for LED color lighting — velocity is a 0..127
-            // palette index / brightness, pass through scaled.
             let status = 0x90 | ((*channel - 1) & 0x0F);
-            let vel = (v * 127.0).round() as u8;
+            let vel = if is_launchpad {
+                launchpad_color_byte(v)
+            } else {
+                // Push pads: velocity is a 0..127 palette index / brightness.
+                (v * 127.0).round() as u8
+            };
             Some([status, *note & 0x7F, vel & 0x7F])
         }
         InputSource::Midi(MidiSource::PitchBend { channel }) => {

@@ -230,6 +230,9 @@ pub fn show(ui: &mut Ui, mgr: &mut InputControllerManager) {
         if ui.button("+ Add X1").clicked() {
             mgr.add_x1("X1".to_string());
         }
+        if ui.button("+ Add Launchpad S").clicked() {
+            mgr.add_launchpad("Launchpad S".to_string());
+        }
     });
 
     // Apply queued mutations (lock was released above).

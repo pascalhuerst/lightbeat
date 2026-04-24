@@ -69,6 +69,18 @@ impl ButtonWidget {
     fn push_settings(&self) {
         self.push_config(None);
     }
+
+    /// Restore the port-affecting state (specifically `inputs_enabled`,
+    /// which gates whether `ui_inputs()` exposes a port) directly from
+    /// saved data. Called by the project loader *before*
+    /// `cleanup_stale_connections` runs, so a wire targeting the button's
+    /// input port isn't dropped on the first frame while we're still
+    /// waiting for the engine to finish applying `load_data`.
+    pub fn restore_from_save_data(&mut self, data: &serde_json::Value) {
+        if let Some(b) = data.get("inputs_enabled").and_then(|v| v.as_bool()) {
+            self.inputs_enabled = b;
+        }
+    }
 }
 
 impl NodeWidget for ButtonWidget {

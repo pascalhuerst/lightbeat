@@ -35,6 +35,7 @@ use engine::nodes::io::audio_input::AudioInputProcessNode;
 use engine::nodes::io::clock::ClockProcessNode;
 use engine::nodes::io::input_controller::InputControllerProcessNode;
 use engine::nodes::io::push1::Push1ProcessNode;
+use engine::nodes::io::launchpad::LaunchpadProcessNode;
 use engine::nodes::io::x1::X1ProcessNode;
 use engine::nodes::io::internal_clock::InternalClockProcessNode;
 use engine::nodes::ui::button::ButtonProcessNode;
@@ -86,6 +87,7 @@ use widgets::nodes::io::audio_input::AudioInputWidget;
 use widgets::nodes::io::clock::ClockWidget;
 use widgets::nodes::io::input_controller::InputControllerWidget;
 use widgets::nodes::io::push1::Push1Widget;
+use widgets::nodes::io::launchpad::LaunchpadWidget;
 use widgets::nodes::io::x1::X1Widget;
 use widgets::nodes::io::internal_clock::InternalClockWidget;
 use widgets::nodes::ui::button::ButtonWidget;
@@ -203,10 +205,11 @@ struct LightBeatApp {
     gradient_library: widgets::nodes::math::gradient_source::SharedGradientLibrary,
     input_controllers: InputControllerManager,
     audio_inputs: AudioInputManager,
-    /// Shared map of published Portal In names → values. Referenced by both
-    /// Portal In and Portal Out process nodes so data flows between them
-    /// without visible wires.
-    portals: engine::nodes::meta::portal::SharedPortalRegistry,
+    /// Portal registries — one per family so names can overlap.
+    /// `output_portals`: Output Portal TX publishes, RXs read.
+    /// `input_portals`: Input Portal RX publishes port layout, TX writes values.
+    output_portals: engine::nodes::meta::portal::SharedPortalRegistry,
+    input_portals: engine::nodes::meta::portal::SharedPortalRegistry,
     library: LibraryManager,
     show_library: bool,
     library_search: String,
@@ -304,7 +307,10 @@ impl LightBeatApp {
             gradient_library: widgets::nodes::math::gradient_source::new_shared_gradient_library(),
             input_controllers: InputControllerManager::new(),
             audio_inputs: AudioInputManager::new(),
-            portals: std::sync::Arc::new(std::sync::Mutex::new(
+            output_portals: std::sync::Arc::new(std::sync::Mutex::new(
+                engine::nodes::meta::portal::PortalRegistry::default(),
+            )),
+            input_portals: std::sync::Arc::new(std::sync::Mutex::new(
                 engine::nodes::meta::portal::PortalRegistry::default(),
             )),
             library: LibraryManager::new(macros::default_library_root()),
@@ -383,6 +389,12 @@ impl LightBeatApp {
             // 34 button outputs + 4 encoder outputs + 8 pot outputs = 46 outputs.
             // 34 LED feedback inputs. 48/48 covers both with a little headroom.
             Box::new(X1Widget::new(id, new_shared_state(48, 48), ic_shared_x1.clone()))
+        });
+        let ic_shared_lp = self.input_controllers.shared.clone();
+        self.graph.register_node("IO", "Launchpad S", move |id| {
+            // 81 outputs = 64 pads + 8 side + 8 top + 1 "any change" trigger.
+            // 80 LED feedback inputs (one per button).
+            Box::new(LaunchpadWidget::new(id, new_shared_state(80, 81), ic_shared_lp.clone()))
         });
         let ai_shared = self.audio_inputs.shared.clone();
         self.graph.register_node("IO", "Audio Input", move |id| {
@@ -624,16 +636,26 @@ impl LightBeatApp {
             // Start with generous shared state; will resize as ports are added.
             Box::new(SubgraphWidget::new(id, new_shared_state(12, 12)))
         });
-        self.graph.register_node("Meta", "Portal In", |id| {
-            // Generous channel budget — user can add many ports of any type.
-            Box::new(widgets::nodes::meta::portal::PortalInWidget::new(
+        self.graph.register_node("Meta", "Output Portal TX", |id| {
+            Box::new(widgets::nodes::meta::portal::OutputPortalTxWidget::new(
                 id, new_shared_state(64, 0),
             ))
         });
-        let portals_for_out = self.portals.clone();
-        self.graph.register_node("Meta", "Portal Out", move |id| {
-            Box::new(widgets::nodes::meta::portal::PortalOutWidget::new(
-                id, new_shared_state(0, 64), portals_for_out.clone(),
+        let out_portals_for_rx = self.output_portals.clone();
+        self.graph.register_node("Meta", "Output Portal RX", move |id| {
+            Box::new(widgets::nodes::meta::portal::OutputPortalRxWidget::new(
+                id, new_shared_state(0, 64), out_portals_for_rx.clone(),
+            ))
+        });
+        self.graph.register_node("Meta", "Input Portal RX", |id| {
+            Box::new(widgets::nodes::meta::portal::InputPortalRxWidget::new(
+                id, new_shared_state(0, 64),
+            ))
+        });
+        let in_portals_for_tx = self.input_portals.clone();
+        self.graph.register_node("Meta", "Input Portal TX", move |id| {
+            Box::new(widgets::nodes::meta::portal::InputPortalTxWidget::new(
+                id, new_shared_state(64, 0), in_portals_for_tx.clone(),
             ))
         });
 
@@ -738,6 +760,9 @@ impl LightBeatApp {
                 "X1" => Some(Box::new(X1ProcessNode::new(
                     id, self.input_controllers.shared.clone(),
                 ))),
+                "Launchpad S" => Some(Box::new(LaunchpadProcessNode::new(
+                    id, self.input_controllers.shared.clone(),
+                ))),
                 "Audio Input" => Some(Box::new(AudioInputProcessNode::new(
                     id, self.audio_inputs.shared.clone(),
                 ))),
@@ -812,11 +837,25 @@ impl LightBeatApp {
                 "Sin" => Some(Box::new(OscillatorProcessNode::new(id, OscFunc::Sin))),
                 "Cos" => Some(Box::new(OscillatorProcessNode::new(id, OscFunc::Cos))),
                 "Subgraph" => Some(Box::new(SubgraphProcessNode::new(id))),
-                "Portal In" => Some(Box::new(
-                    engine::nodes::meta::portal::PortalInProcessNode::new(id, self.portals.clone()),
+                "Output Portal TX" => Some(Box::new(
+                    engine::nodes::meta::portal::OutputPortalTxProcessNode::new(
+                        id, self.output_portals.clone(),
+                    ),
                 )),
-                "Portal Out" => Some(Box::new(
-                    engine::nodes::meta::portal::PortalOutProcessNode::new(id, self.portals.clone()),
+                "Output Portal RX" => Some(Box::new(
+                    engine::nodes::meta::portal::OutputPortalRxProcessNode::new(
+                        id, self.output_portals.clone(),
+                    ),
+                )),
+                "Input Portal RX" => Some(Box::new(
+                    engine::nodes::meta::portal::InputPortalRxProcessNode::new(
+                        id, self.input_portals.clone(),
+                    ),
+                )),
+                "Input Portal TX" => Some(Box::new(
+                    engine::nodes::meta::portal::InputPortalTxProcessNode::new(
+                        id, self.input_portals.clone(),
+                    ),
                 )),
                 "Group Output" => Some(Box::new(GroupProcessNode::new(id, self.object_store.clone()))),
                 "Effect Stack" => Some(Box::new(EffectStackProcessNode::new(id, self.object_store.clone()))),

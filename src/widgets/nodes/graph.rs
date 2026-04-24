@@ -1075,20 +1075,37 @@ impl NodeGraph {
 
     pub fn show(&mut self, ui: &mut Ui, snap_to_grid: bool) {
         // -- Breadcrumb bar when inside a subgraph --
+        // Walk from the active level up via `parent_level_idx` to get the
+        // actual ancestor chain — `self.levels` is a flat Vec where
+        // siblings live at adjacent indices, so iterating `1..=active_level`
+        // does NOT give a valid path.
         if self.active_level > 0 {
+            let mut crumbs: Vec<(usize, String)> = Vec::new();
+            let mut idx = self.active_level;
+            // Walk up through ancestor subgraph levels. Stop before level 0
+            // (root) — it's rendered as a hardcoded "Root" button below
+            // rather than a crumb, so including it here would duplicate it.
+            while idx != 0 {
+                crumbs.push((idx, self.levels[idx].label.clone()));
+                match self.levels[idx].parent_level_idx {
+                    Some(p) if p != idx => idx = p,
+                    _ => break,
+                }
+            }
+            crumbs.reverse(); // root-most first.
             ui.horizontal(|ui| {
                 if ui.small_button("Root").clicked() {
                     self.navigate_to_level(0);
                 }
-                for i in 1..=self.active_level {
+                let last = crumbs.len().saturating_sub(1);
+                for (i, (level_idx, label)) in crumbs.iter().enumerate() {
                     ui.label(egui_phosphor::regular::CARET_RIGHT);
-                    let label = self.levels[i].label.clone();
-                    if i < self.active_level {
-                        if ui.small_button(&label).clicked() {
-                            self.navigate_to_level(i);
+                    if i < last {
+                        if ui.small_button(label).clicked() {
+                            self.navigate_to_level(*level_idx);
                         }
                     } else {
-                        ui.strong(&label);
+                        ui.strong(label);
                     }
                 }
             });
@@ -1310,12 +1327,14 @@ impl NodeGraph {
 
         // -- Draw node chrome (painter-based, immutable) --
         let now = ui.ctx().input(|i| i.time);
+        let mut any_peer_pulsing = false;
         for i in 0..level.nodes.len() {
             let selected = self.selected_nodes.contains(&i);
             let portal_peer = !selected
                 && level.nodes[i].portal_key()
                     .map(|k| highlighted_portal_keys.contains(&k))
                     .unwrap_or(false);
+            if portal_peer { any_peer_pulsing = true; }
             let inputs = level.nodes[i].ui_inputs();
             let outputs = level.nodes[i].ui_outputs();
             let out_highlights: Vec<f32> = (0..outputs.len())
@@ -1330,6 +1349,7 @@ impl NodeGraph {
                 level.nodes[i].display_title(),
                 level.nodes[i].resizable(),
                 level.nodes[i].accent_color(),
+                level.nodes[i].accent_icon(),
                 &inputs,
                 &outputs,
                 &in_highlights,
@@ -1339,8 +1359,14 @@ impl NodeGraph {
                 selected,
                 portal_peer,
                 level.nodes[i].show_port_labels(),
+                now,
                 z,
             );
+        }
+        // While any portal peer is pulsing, keep the canvas repainting so
+        // the animation is visible without further user input.
+        if any_peer_pulsing {
+            ui.ctx().request_repaint_after(std::time::Duration::from_millis(16));
         }
 
         // -- Draw node content (needs &mut node) --
@@ -1615,6 +1641,21 @@ impl NodeGraph {
         self.clipboard = new_clip;
     }
 
+    /// Pick a name for a duplicated node with a name-like identifier
+    /// (portals, etc.). If the source name ends with a space followed by
+    /// a number, that number is incremented; otherwise ` 2` is appended.
+    /// Intentionally simple — if the generated name still clashes with
+    /// another node in the graph, the user renames via the inspector.
+    fn next_name_suffix(name: &str) -> String {
+        if let Some(space_idx) = name.rfind(' ') {
+            let (base, suffix) = name.split_at(space_idx);
+            if let Ok(n) = suffix.trim_start().parse::<u32>() {
+                return format!("{} {}", base, n + 1);
+            }
+        }
+        format!("{} 2", name)
+    }
+
     fn paste(&mut self, base_pos: Pos2) {
         if self.clipboard.is_empty() {
             return;
@@ -1649,7 +1690,20 @@ impl NodeGraph {
                 // `shared.display` will sync on the next tick; widgets that
                 // need early port-layout restore (so wires we're about to
                 // paste-wire aren't dropped) are handled below.
-                if let Some(data) = cn.data.clone() {
+                if let Some(mut data) = cn.data.clone() {
+                    // Portal "defining" widgets (Output Portal TX, Input
+                    // Portal RX) publish under a unique name. Dropping a
+                    // duplicate with the same name would collide with the
+                    // original's binding — so bump the trailing number on
+                    // the copy. Receiver widgets (OutputPortalRx /
+                    // InputPortalTx) store `bound_name` instead and must
+                    // keep it so the duplicate stays wired to the same
+                    // defining end.
+                    if matches!(cn.type_name.as_str(), "Output Portal TX" | "Input Portal RX")
+                        && let Some(name) = data.get("name").and_then(|v| v.as_str()) {
+                            let next = Self::next_name_suffix(name);
+                            data["name"] = serde_json::Value::String(next);
+                        }
                     let node_id = self.active().nodes[idx].node_id();
                     self.push_engine_cmd(EngineCommand::LoadData {
                         node_id,
@@ -2682,45 +2736,64 @@ impl NodeGraph {
             self.add_connection(from, conn.to);
         }
 
-        // 10. Navigate into the subgraph and populate it.
-        // navigate_into already creates bridge nodes (GraphInput/GraphOutput).
-        self.navigate_into(sub_idx);
+        // 10. Build the new subgraph's inner level directly — do NOT use
+        // `navigate_into`, which has a cache path that would reuse a
+        // pre-existing level with the same `subgraph_id`. For a freshly
+        // created subgraph we want an unambiguously fresh level and we
+        // stay on the root level throughout, so no navigation happens.
+        let mut inner_nodes: Vec<Box<dyn NodeWidget>> = Vec::new();
+        let mut inner_states: Vec<NodeState> = Vec::new();
+        inner_nodes.push(Box::new(GraphInputWidget::new(input_defs.clone())));
+        inner_states.push(NodeState::new(BRIDGE_IN_NODE_ID, Pos2::new(20.0, 100.0)));
+        inner_nodes.push(Box::new(GraphOutputWidget::new(output_defs.clone())));
+        inner_states.push(NodeState::new(BRIDGE_OUT_NODE_ID, Pos2::new(500.0, 100.0)));
 
-        // Add the moved nodes to the inner level (after bridge nodes added by navigate_into).
-        // Collect node IDs, params, and save_data for restoration.
         let mut restore_info: Vec<(NodeId, Vec<(usize, ParamValue)>, Option<serde_json::Value>)> = Vec::new();
-        let level = self.active_mut();
         for (node, state, params, save_data) in moved_nodes {
             let node_id = node.node_id();
             let new_pos = Pos2::new(
                 state.pos.x - centroid.x + 250.0,
                 state.pos.y - centroid.y + 150.0,
             );
-            level.states.push(NodeState::new(node_id, new_pos));
+            let mut ns = NodeState::new(node_id, new_pos);
             if let Some(size) = state.size_override {
-                level.states.last_mut().unwrap().size_override = Some(size);
+                ns.size_override = Some(size);
             }
-            level.nodes.push(node);
+            inner_states.push(ns);
+            inner_nodes.push(node);
             restore_info.push((node_id, params, save_data));
         }
 
-        // Register moved nodes with engine (bridge nodes at indices 0,1 don't need it).
-        let path = self.current_subgraph_path();
-        let moved_count = self.active().nodes.len();
-        for i in 2..moved_count {
-            self.new_nodes.push(NewNode {
-                index: i,
-                subgraph_path: path.clone(),
-            });
+        // Assemble inner connections: preserved internal edges + bridge
+        // stubs for incoming/outgoing crossings.
+        let mut inner_connections: Vec<Connection> = internal_conns.clone();
+        for (conn_idx, conn) in incoming_conns.iter().enumerate() {
+            let port_idx = incoming_port_map[conn_idx];
+            let bridge_conn = Connection {
+                from: PortId { node: BRIDGE_IN_NODE_ID, index: port_idx, dir: PortDir::Output },
+                to: conn.to,
+            };
+            if !inner_connections.contains(&bridge_conn) {
+                inner_connections.push(bridge_conn);
+            }
+        }
+        for (conn_idx, conn) in outgoing_conns.iter().enumerate() {
+            let port_idx = outgoing_port_map[conn_idx];
+            let bridge_conn = Connection {
+                from: conn.from,
+                to: PortId { node: BRIDGE_OUT_NODE_ID, index: port_idx, dir: PortDir::Input },
+            };
+            if !inner_connections.contains(&bridge_conn) {
+                inner_connections.push(bridge_conn);
+            }
         }
 
-        // Restore params and save_data on moved nodes via shared state.
-        // The new engine nodes will pick these up on the next tick.
+        // Stage params and save_data on each moved node's shared state so
+        // the engine picks them up when wire_new_nodes spawns the new
+        // ProcessNode counterpart.
         for (node_id, params, save_data) in restore_info {
-            // Find the widget by node_id in the inner level.
-            let level = self.active();
-            if let Some(idx) = level.states.iter().position(|s| s.id == node_id) {
-                let shared = level.nodes[idx].shared_state();
+            if let Some(idx) = inner_states.iter().position(|s| s.id == node_id) {
+                let shared = inner_nodes[idx].shared_state();
                 let mut state = shared.lock().unwrap();
                 for (pi, val) in params {
                     state.pending_params.push((pi, val));
@@ -2731,44 +2804,56 @@ impl NodeGraph {
             }
         }
 
-        // Add internal connections inside the subgraph.
-        let level = self.active_mut();
-        for conn in &internal_conns {
-            level.connections.push(conn.clone());
-        }
-        for conn in &internal_conns {
-            self.push_engine_cmd(EngineCommand::AddConnection(conn.clone()));
+        let parent_idx = self.active_level;
+        let label = "Subgraph".to_string();
+        let new_level_idx = self.levels.len();
+        self.levels.push(GraphLevel {
+            nodes: inner_nodes,
+            states: inner_states,
+            connections: inner_connections.clone(),
+            pan: Vec2::ZERO,
+            zoom: 1.0,
+            subgraph_id: Some(sub_node_id),
+            parent_level_idx: Some(parent_idx),
+            label,
+            frames: Vec::new(),
+        });
+
+        // Engine-side path to the new subgraph's inner graph. If the user
+        // triggered move-to-subgraph from inside another subgraph, the
+        // ancestors must be included so the engine can route inner
+        // commands to the right nested inner_graph.
+        let mut path = self.current_subgraph_path();
+        path.push(sub_node_id);
+
+        // Register moved nodes with the engine. Bridges (indices 0, 1)
+        // don't need wiring.
+        let moved_count = self.levels[new_level_idx].nodes.len();
+        for i in 2..moved_count {
+            self.new_nodes.push(NewNode {
+                index: i,
+                subgraph_path: path.clone(),
+            });
         }
 
-        // Add bridge connections: BRIDGE_IN -> inner node inputs (using deduplicated port indices).
-        for (conn_idx, conn) in incoming_conns.iter().enumerate() {
-            let port_idx = incoming_port_map[conn_idx];
-            let bridge_conn = Connection {
-                from: PortId { node: BRIDGE_IN_NODE_ID, index: port_idx, dir: PortDir::Output },
-                to: conn.to,
-            };
-            self.active_mut().connections.push(bridge_conn.clone());
-            self.push_engine_cmd(EngineCommand::AddConnection(bridge_conn));
-        }
-        // Inner node outputs -> BRIDGE_OUT (using deduplicated port indices).
-        for (conn_idx, conn) in outgoing_conns.iter().enumerate() {
-            let port_idx = outgoing_port_map[conn_idx];
-            let bridge_conn = Connection {
-                from: conn.from,
-                to: PortId { node: BRIDGE_OUT_NODE_ID, index: port_idx, dir: PortDir::Input },
-            };
-            // Only add if not already added (dedup: multiple outgoing from same source).
-            let level = self.active_mut();
-            if !level.connections.contains(&bridge_conn) {
-                level.connections.push(bridge_conn.clone());
+        // Emit AddConnection for every inner connection, wrapped in the
+        // new subgraph's path. If the subgraph itself lives at root, path
+        // is just [sub_node_id]; if it's nested, all ancestors are
+        // included so the engine's SubgraphInnerCommand router walks the
+        // right chain.
+        for conn in inner_connections {
+            if path.is_empty() {
+                // Can't happen — we always pushed at least sub_node_id.
+                self.pending_engine_cmds.push(EngineCommand::AddConnection(conn));
+            } else {
+                self.pending_engine_cmds.push(EngineCommand::SubgraphInnerCommand {
+                    subgraph_path: path.clone(),
+                    command: Box::new(SubgraphInnerCmd::AddConnection(conn)),
+                });
             }
-            self.push_engine_cmd(EngineCommand::AddConnection(bridge_conn));
         }
 
         self.selected_nodes.clear();
-
-        // Navigate back to the parent level.
-        self.navigate_to_level(self.active_level - 1);
     }
 
     /// Inverse of `move_selection_to_subgraph`: replace the Subgraph at
@@ -2983,11 +3068,13 @@ fn title_toggle_rect(node_rect: Rect, zoom: f32) -> Rect {
     Rect::from_center_size(Pos2::new(cx, cy), Vec2::splat(btn_size))
 }
 
+#[allow(clippy::too_many_arguments)]
 fn draw_node_chrome(
     painter: &Painter,
     title: &str,
     resizable: bool,
     accent: Option<Color32>,
+    accent_icon: Option<&str>,
     inputs: &[UiPortDef],
     outputs: &[UiPortDef],
     in_highlights: &[f32],
@@ -2997,6 +3084,9 @@ fn draw_node_chrome(
     selected: bool,
     portal_peer: bool,
     show_port_labels: bool,
+    // `time` is seconds since an arbitrary epoch (callers pass
+    // `ctx.input(|i| i.time)`). Used to animate the portal-peer halo.
+    time: f64,
     zoom: f32,
 ) {
     // Shadow
@@ -3005,14 +3095,17 @@ fn draw_node_chrome(
 
     // Portal-peer halo: when a portal is the peer of a currently-selected
     // portal, paint an amber halo so the linked pair is easy to find.
+    // Pulses slowly so a user glancing at a busy graph can still catch it.
     // Suppressed when disabled so "off" reads as pure grayscale.
     if !disabled && portal_peer {
+        // 0.5 Hz breathing envelope (one full cycle every 2 s), amplitude
+        // 0.4 around a base level of 0.6 — so alpha rides 0.2..1.0 of the
+        // halo's normal strength.
+        let phase = (time * std::f64::consts::TAU * 0.5).sin() as f32;
+        let env = 0.6 + 0.4 * phase;
+        let halo_color = theme::SEM_WARNING_HALO.linear_multiply(env.clamp(0.1, 1.0));
         let halo = rect.expand(3.0);
-        painter.rect_filled(
-            halo,
-            NODE_CORNER_RADIUS + 3.0,
-            theme::SEM_WARNING_HALO,
-        );
+        painter.rect_filled(halo, NODE_CORNER_RADIUS + 3.0, halo_color);
     }
 
     // Body — darker flat gray when disabled so the overlay later looks
@@ -3037,19 +3130,28 @@ fn draw_node_chrome(
         title_bg,
     );
     // Title text is nudged slightly left so it doesn't crash into the
-    // disable toggle we draw on the right edge.
-    let title_text_center = Pos2::new(
-        title_rect.center().x - 10.0 * zoom,
-        title_rect.center().y,
-    );
+    // disable toggle we draw on the right edge. When the widget exposes
+    // an accent_icon, render it immediately before the title as a visual
+    // hook (portals, macros, etc.).
     let title_color = if disabled { theme::TEXT_DIM } else { theme::TEXT_BRIGHT };
-    painter.text(
-        title_text_center,
-        egui::Align2::CENTER_CENTER,
-        title,
-        egui::FontId::proportional(13.0 * zoom),
-        title_color,
-    );
+    let title_font = egui::FontId::proportional(13.0 * zoom);
+    let title_galley = painter.layout_no_wrap(title.to_string(), title_font.clone(), title_color);
+    let icon_galley = accent_icon.map(|g| {
+        painter.layout_no_wrap(g.to_string(), title_font.clone(), title_color)
+    });
+    let gap = 4.0 * zoom;
+    let total_w = title_galley.size().x
+        + icon_galley.as_ref().map(|g| g.size().x + gap).unwrap_or(0.0);
+    // Shift the block left so it doesn't crash into the disable toggle.
+    let mut cursor_x = title_rect.center().x - total_w * 0.5 - 10.0 * zoom;
+    let center_y = title_rect.center().y;
+    if let Some(ig) = icon_galley {
+        let pos = Pos2::new(cursor_x, center_y - ig.size().y * 0.5);
+        cursor_x += ig.size().x + gap;
+        painter.galley(pos, ig, title_color);
+    }
+    let title_pos = Pos2::new(cursor_x, center_y - title_galley.size().y * 0.5);
+    painter.galley(title_pos, title_galley, title_color);
 
     // Enable / disable toggle at the right of the title bar.
     let toggle = title_toggle_rect(rect, zoom);
