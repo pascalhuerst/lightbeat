@@ -64,22 +64,25 @@ impl NodeWidget for LaunchpadWidget {
     }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> {
+        // Each pad / side / top LED accepts a Color (R, G, B). The engine
+        // quantizes R and G onto the Mk1's 4-level red × 4-level green
+        // palette; B is discarded because the hardware can't show blue.
         let mut v = Vec::with_capacity(N_CONTROLS);
         for row in 0..8u8 {
             for col in 0..8u8 {
                 v.push(UiPortDef::from_def(&PortDef::new(
-                    format!("LED {}", pad_name(row, col)), PortType::Untyped,
+                    format!("LED {}", pad_name(row, col)), PortType::Color,
                 )));
             }
         }
         for row in 0..8u8 {
             v.push(UiPortDef::from_def(&PortDef::new(
-                format!("LED {}", side_name(row)), PortType::Untyped,
+                format!("LED {}", side_name(row)), PortType::Color,
             )));
         }
         for label in TOP_LABELS {
             v.push(UiPortDef::from_def(&PortDef::new(
-                format!("LED top {}", label), PortType::Untyped,
+                format!("LED top {}", label), PortType::Color,
             )));
         }
         v

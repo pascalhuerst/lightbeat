@@ -8438,7 +8438,7 @@
       "name": "Jack Input",
       "enabled": true,
       "backend": "Jack",
-      "device_name": "",
+      "device_name": "Scarlett Solo (3rd Gen.) 0:capture_AUX1",
       "sample_rate": 48000,
       "buffer_size_frames": 1024,
       "analyzers": [

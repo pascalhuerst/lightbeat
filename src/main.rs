@@ -393,8 +393,9 @@ impl LightBeatApp {
         let ic_shared_lp = self.input_controllers.shared.clone();
         self.graph.register_node("IO", "Launchpad S", move |id| {
             // 81 outputs = 64 pads + 8 side + 8 top + 1 "any change" trigger.
-            // 80 LED feedback inputs (one per button).
-            Box::new(LaunchpadWidget::new(id, new_shared_state(80, 81), ic_shared_lp.clone()))
+            // 80 LED feedback inputs, each `Color` (3 channels) = 240
+            // channels. 256 gives a bit of headroom.
+            Box::new(LaunchpadWidget::new(id, new_shared_state(256, 81), ic_shared_lp.clone()))
         });
         let ai_shared = self.audio_inputs.shared.clone();
         self.graph.register_node("IO", "Audio Input", move |id| {

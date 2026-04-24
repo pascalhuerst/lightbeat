@@ -4,8 +4,10 @@
 //! physical button as a named port — 64 grid pads (Untyped, 0..1 velocity),
 //! 8 side scene-launch buttons (same shape), 8 top mode CC buttons (0..1
 //! from CC value), plus an `any change` trigger. Every button has a
-//! matching LED-feedback input; driving a 0..1 signal into it maps to red
-//! brightness on the device (off → dim → mid → full).
+//! matching LED-feedback input typed as `Color` — the node quantizes the
+//! RGB input to the Mk1's 4-level red × 4-level green palette (blue is
+//! ignored; the hardware can't do it). Amber / yellow / orange fall out
+//! of the RG mix.
 
 use crate::engine::types::*;
 use crate::input_controller::midi::MidiSource;
@@ -52,7 +54,10 @@ impl LaunchpadProcessNode {
         let outputs = build_outputs();
         let inputs = build_inputs();
         let n_out = outputs.len();
-        let n_in = inputs.len();
+        // Inputs are `Color` ports (3 channels each). `in_values` is a flat
+        // channel buffer sized to the total channel count, since
+        // `write_input` writes per-channel indices.
+        let n_in_channels = total_channels(&inputs);
         Self {
             id,
             controller_id: 0,
@@ -61,7 +66,7 @@ impl LaunchpadProcessNode {
             outputs,
             out_values: vec![0.0; n_out],
             prev_control_values: Vec::new(),
-            in_values: vec![0.0; n_in],
+            in_values: vec![0.0; n_in_channels],
             out_to_runtime: Vec::new(),
             in_to_runtime: Vec::new(),
             cached_for: 0,
@@ -132,13 +137,23 @@ impl ProcessNode for LaunchpadProcessNode {
         self.out_values[0] = if changed { 1.0 } else { 0.0 };
         self.prev_control_values.copy_from_slice(&self.out_values[1..]);
 
-        // Push LED feedback. Writes go into `c.out_values` which the MIDI
-        // feedback worker turns into LED messages.
+        // Push LED feedback. Each input port is `Color` (R, G, B — 3
+        // channels). We read R and G, quantize to the Mk1's 4-level red
+        // and 4-level green, pack into the color byte, and store it as a
+        // normalized f32 in `c.out_values`. The MIDI feedback worker
+        // sends this as the velocity byte of a NoteOn (or the value byte
+        // of a CC for the top row) — `(v * 127).round()` round-trips the
+        // byte exactly.
         for (pi, &rt_idx) in self.in_to_runtime.iter().enumerate() {
             if rt_idx == usize::MAX { continue; }
-            let v = self.in_values.get(pi).copied().unwrap_or(0.0).clamp(0.0, 1.0);
+            let base = pi * 3;
+            let r = self.in_values.get(base).copied().unwrap_or(0.0).clamp(0.0, 1.0);
+            let g = self.in_values.get(base + 1).copied().unwrap_or(0.0).clamp(0.0, 1.0);
+            let red_level = (r * 3.0).round().clamp(0.0, 3.0) as u8;
+            let green_level = (g * 3.0).round().clamp(0.0, 3.0) as u8;
+            let byte: u8 = 0x0C | red_level | (green_level << 4);
             if let Some(slot) = c.out_values.get_mut(rt_idx) {
-                *slot = v;
+                *slot = byte as f32 / 127.0;
             }
         }
     }
@@ -207,19 +222,20 @@ fn build_outputs() -> Vec<PortDef> {
 }
 
 fn build_inputs() -> Vec<PortDef> {
-    // One LED-feedback input per physical button. Same order as outputs
-    // (minus the "any change" trigger).
+    // One Color LED-feedback input per physical button. Same order as
+    // outputs (minus the "any change" trigger). Each input is 3 channels
+    // (R, G, B) — the B channel is ignored since the Mk1 can't do blue.
     let mut v = Vec::with_capacity(N_CONTROLS);
     for row in 0..8u8 {
         for col in 0..8u8 {
-            v.push(PortDef::new(format!("LED {}", pad_name(row, col)), PortType::Untyped));
+            v.push(PortDef::new(format!("LED {}", pad_name(row, col)), PortType::Color));
         }
     }
     for row in 0..8u8 {
-        v.push(PortDef::new(format!("LED {}", side_name(row)), PortType::Untyped));
+        v.push(PortDef::new(format!("LED {}", side_name(row)), PortType::Color));
     }
     for label in TOP_LABELS {
-        v.push(PortDef::new(format!("LED top {}", label), PortType::Untyped));
+        v.push(PortDef::new(format!("LED top {}", label), PortType::Color));
     }
     v
 }
