@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::time::Duration;
 
 use ringbuf::traits::Consumer;
@@ -15,7 +16,21 @@ pub struct EngineGraph {
     connections: Vec<Connection>,
     dmx: Option<DmxOutputManager>,
     perf: SharedPerfStats,
+    /// NodeId to index in `nodes`. Rebuilt only when nodes are added or
+    /// removed; without it every connection cost a linear scan per tick.
+    node_index: HashMap<NodeId, usize>,
+    /// Scratch buffers reused across ticks so the hot loop does not allocate.
+    per_node_connected: Vec<Vec<bool>>,
+    disabled_mask: Vec<bool>,
+    write_buf: Vec<(usize, usize, f32)>,
+    sync_counter: u32,
 }
+
+/// How often the engine mirrors its state into shared state for the UI.
+/// The UI redraws at ~60 fps, so publishing at 1 kHz threw away 15 of every
+/// 16 updates while paying for `params()` allocation, `save_data()` JSON
+/// construction and display buffer clones on every one of them.
+const UI_SYNC_EVERY_N_TICKS: u32 = 16;
 
 impl EngineGraph {
     pub fn new(
@@ -29,11 +44,24 @@ impl EngineGraph {
             connections: Vec::new(),
             dmx: Some(DmxOutputManager::new(dmx_shared, object_store)),
             perf,
+            node_index: HashMap::new(),
+            per_node_connected: Vec::new(),
+            disabled_mask: Vec::new(),
+            write_buf: Vec::new(),
+            sync_counter: 0,
+        }
+    }
+
+    fn rebuild_node_index(&mut self) {
+        self.node_index.clear();
+        for (i, node) in self.nodes.iter().enumerate() {
+            self.node_index.insert(node.node_id(), i);
         }
     }
 
     fn add_node(&mut self, node: Box<dyn ProcessNode>, shared: SharedState) {
         self.shared_states.push(shared);
+        self.node_index.insert(node.node_id(), self.nodes.len());
         self.nodes.push(node);
     }
 
@@ -43,6 +71,8 @@ impl EngineGraph {
             self.shared_states.remove(idx);
             self.connections
                 .retain(|c| c.from.node != id && c.to.node != id);
+            // Every index after the removed one shifted down.
+            self.rebuild_node_index();
         }
     }
 
@@ -105,6 +135,7 @@ impl EngineGraph {
                 self.nodes.clear();
                 self.shared_states.clear();
                 self.connections.clear();
+                self.node_index.clear();
             }
             EngineCommand::SetInterfaces(interfaces) => {
                 if let Some(dmx) = &mut self.dmx {
@@ -143,46 +174,70 @@ impl EngineGraph {
 
     /// One tick of the engine: process all nodes, propagate signals, update shared state.
     fn tick(&mut self) {
-        // 0. Compute per-node "which logical input ports are connected"
+        // 0. Take everything the UI pushed, in a single lock per node. This
+        // runs before `process` so an edit lands on the tick it arrives, and
+        // before the connection scan below because `load_data` can rebuild a
+        // node's ports.
+        self.disabled_mask.clear();
+        for (i, node) in self.nodes.iter_mut().enumerate() {
+            let (disabled, pending, config_update) = {
+                let mut shared = self.shared_states[i].lock().unwrap();
+                (
+                    shared.disabled,
+                    std::mem::take(&mut shared.pending_params),
+                    shared.pending_config.take(),
+                )
+            };
+            self.disabled_mask.push(disabled);
+            for (idx, val) in pending {
+                node.set_param(idx, val);
+            }
+            if let Some(config) = config_update {
+                node.load_data(&config);
+            }
+        }
+
+        // 1. Compute per-node "which logical input ports are connected"
         //    so nodes can decide whether to honour wired values over their
         //    own params (the "input-overrides-param" pattern).
-        let mut per_node_connected: Vec<Vec<bool>> = self.nodes.iter()
-            .map(|n| vec![false; n.inputs().len()])
-            .collect();
+        self.per_node_connected.resize_with(self.nodes.len(), Vec::new);
+        self.per_node_connected.truncate(self.nodes.len());
+        for (i, node) in self.nodes.iter().enumerate() {
+            let slots = node.inputs().len();
+            let buf = &mut self.per_node_connected[i];
+            buf.clear();
+            buf.resize(slots, false);
+        }
         for conn in &self.connections {
-            if let Some(dst_idx) = self.nodes.iter().position(|n| n.node_id() == conn.to.node)
-                && let Some(slot) = per_node_connected[dst_idx].get_mut(conn.to.index) {
+            if let Some(&dst_idx) = self.node_index.get(&conn.to.node)
+                && let Some(slot) = self.per_node_connected[dst_idx].get_mut(conn.to.index) {
                     *slot = true;
                 }
         }
         for (i, node) in self.nodes.iter_mut().enumerate() {
-            node.set_input_connections(&per_node_connected[i]);
+            node.set_input_connections(&self.per_node_connected[i]);
         }
 
-        // 1. Process all nodes — skipping disabled ones. Disabled nodes
+        // 2. Process all nodes — skipping disabled ones. Disabled nodes
         // keep their previous tick's output values, so downstream signal
         // flow freezes instead of dropping to zero.
-        let disabled_mask: Vec<bool> = self.shared_states.iter()
-            .map(|s| s.lock().unwrap().disabled)
-            .collect();
         for (i, node) in self.nodes.iter_mut().enumerate() {
-            if !disabled_mask.get(i).copied().unwrap_or(false) {
+            if !self.disabled_mask.get(i).copied().unwrap_or(false) {
                 node.process();
             }
         }
 
-        // 2. Propagate signals through connections.
+        // 3. Propagate signals through connections.
         // Multi-channel ports (Color=3, Position=2) expand to multiple float copies.
-        let mut writes: Vec<(usize, usize, f32)> = Vec::new();
+        let mut writes = std::mem::take(&mut self.write_buf);
+        writes.clear();
 
         for conn in &self.connections {
-            let src_node_idx = match self.nodes.iter().position(|n| n.node_id() == conn.from.node) {
-                Some(i) => i,
-                None => continue,
-            };
-            let dst_node_idx = match self.nodes.iter().position(|n| n.node_id() == conn.to.node) {
-                Some(i) => i,
-                None => continue,
+            let (Some(&src_node_idx), Some(&dst_node_idx)) = (
+                self.node_index.get(&conn.from.node),
+                self.node_index.get(&conn.to.node),
+            ) else {
+                continue;
             };
 
             let src_ports = self.nodes[src_node_idx].outputs();
@@ -201,38 +256,42 @@ impl EngineGraph {
             }
         }
 
-        for (dst_idx, channel, val) in writes {
+        for &(dst_idx, channel, val) in &writes {
             self.nodes[dst_idx].write_input(channel, val);
         }
+        self.write_buf = writes;
 
-        // 3. Drain pending param changes from UI (via shared state).
-        for (i, node) in self.nodes.iter_mut().enumerate() {
-            let (pending, config_update) = {
-                let mut shared = self.shared_states[i].lock().unwrap();
-                let pending = std::mem::take(&mut shared.pending_params);
-                // Check for widget-pushed config updates.
-                let config = shared.pending_config.take();
-                (pending, config)
-            };
-            for (idx, val) in pending {
-                node.set_param(idx, val);
-            }
-            // Apply Group Output reconfiguration via load_data.
-            if let Some(config) = config_update {
-                node.load_data(&config);
-            }
-        }
-
-        // 4. Update shared state for UI.
+        // 4. Update shared state for UI, at UI frame rate rather than tick
+        // rate. `params()` allocates a fresh Vec of ParamDefs with owned
+        // Strings, `save_data()` builds a serde_json tree and
+        // `update_display()` clones display buffers — all per node, and all
+        // discarded unread 15 times out of 16 when done every tick.
+        //
         // For disabled nodes we skip update_display / save_data / shared
         // buffer copies — their values are all frozen so repeating the
-        // work each tick accomplishes nothing. `inputs_connected` still
+        // work accomplishes nothing. `inputs_connected` still
         // refreshes so the UI sees live wire state even on off nodes
         // (so you can still see what's wired where before re-enabling).
+        self.sync_counter += 1;
+        if self.sync_counter >= UI_SYNC_EVERY_N_TICKS {
+            self.sync_counter = 0;
+            self.sync_shared_state();
+        }
+
+        // 5. Tick the DMX output manager (merge overrides, send to interfaces).
+        if let Some(dmx) = &mut self.dmx {
+            dmx.tick();
+        }
+    }
+
+    fn sync_shared_state(&mut self) {
         for (i, node) in self.nodes.iter().enumerate() {
             let mut shared = self.shared_states[i].lock().unwrap();
-            shared.inputs_connected = per_node_connected[i].clone();
-            if disabled_mask.get(i).copied().unwrap_or(false) {
+            shared.inputs_connected.clear();
+            shared
+                .inputs_connected
+                .extend_from_slice(&self.per_node_connected[i]);
+            if self.disabled_mask.get(i).copied().unwrap_or(false) {
                 continue;
             }
             let total_out = total_channels(node.outputs());
@@ -246,11 +305,6 @@ impl EngineGraph {
             shared.current_params = node.params();
             shared.save_data = node.save_data();
             node.update_display(&mut shared);
-        }
-
-        // 5. Tick the DMX output manager (merge overrides, send to interfaces).
-        if let Some(dmx) = &mut self.dmx {
-            dmx.tick();
         }
     }
 

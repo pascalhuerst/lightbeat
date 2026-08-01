@@ -187,6 +187,19 @@ impl DmxOutputManager {
     }
 
     pub fn tick(&mut self) {
+        // Everything below exists to produce the next packet: serialising
+        // object values into universe buffers, merging overrides, and
+        // mirroring the result for the DMX monitor. None of it is
+        // accumulative — each pass overwrites the last with current values —
+        // so running it at the full 1 kHz tick rate repeated per-LED colour
+        // conversion for every fixture ~23 times per packet actually sent.
+        // Sampling once per packet loses nothing that reaches the wire.
+        self.send_counter += 1;
+        if self.send_counter < SEND_EVERY_N_TICKS {
+            return;
+        }
+        self.send_counter = 0;
+
         // 0. Ensure UI-requested test universes exist on their interfaces.
         {
             let shared = self.shared.lock().unwrap();
@@ -245,8 +258,8 @@ impl DmxOutputManager {
             }
         }
 
-        // 3. Send to interfaces (rate-limited).
-        self.send_counter += 1;
+        // 3. Send to interfaces. Bypass still runs everything above so the
+        // monitor keeps showing what would go out.
         let shared = self.shared.lock().unwrap();
         let bypass = shared.bypass;
         let blackout = shared.blackout;
@@ -258,9 +271,7 @@ impl DmxOutputManager {
             .collect();
         drop(shared);
 
-        if !bypass && self.send_counter >= SEND_EVERY_N_TICKS {
-            self.send_counter = 0;
-
+        if !bypass {
             for iface in &mut self.interfaces {
                 for (&(net, subnet, uni), universe) in &iface.universes {
                     let mut send_uni = universe.clone();
