@@ -72,6 +72,7 @@ use engine::nodes::math::oscillator::{OscFunc, OscillatorProcessNode};
 use engine::nodes::math::position_ops::{PositionMergeProcessNode, PositionSplitProcessNode};
 use engine::nodes::output::effect_stack::EffectStackProcessNode;
 use engine::nodes::output::group::GroupProcessNode;
+use engine::nodes::output::group_preview::GroupPreviewProcessNode;
 use engine::nodes::transport::clock_divider::ClockDividerProcessNode;
 use engine::nodes::transport::clock_gen::ClockGenProcessNode;
 use engine::nodes::transport::delay::TriggerDelayProcessNode;
@@ -129,6 +130,7 @@ use widgets::nodes::math::oscillator::OscillatorWidget;
 use widgets::nodes::math::position_ops::{PositionMergeWidget, PositionSplitWidget};
 use widgets::nodes::output::effect_stack::EffectStackWidget;
 use widgets::nodes::output::group::GroupWidget;
+use widgets::nodes::output::group_preview::GroupPreviewWidget;
 use widgets::nodes::transport::clock_divider::ClockDividerWidget;
 use widgets::nodes::transport::clock_gen::ClockGenWidget;
 use widgets::nodes::transport::delay::TriggerDelayWidget;
@@ -700,6 +702,10 @@ impl LightBeatApp {
             // Generous initial channel buffer; engine resizes as layers change.
             Box::new(EffectStackWidget::new(id, new_shared_state(64, 0), gctx2.clone()))
         });
+        let gctx3 = self.group_ctx.clone();
+        self.graph.register_node("Display", "Group Output Preview", move |id| {
+            Box::new(GroupPreviewWidget::new(id, new_shared_state(42, 0), gctx3.clone()))
+        });
     }
 
     /// Sync group and object data to the shared context for Group Output widgets.
@@ -893,6 +899,7 @@ impl LightBeatApp {
                     ),
                 )),
                 "Group Output" => Some(Box::new(GroupProcessNode::new(id, self.object_store.clone()))),
+                "Group Output Preview" => Some(Box::new(GroupPreviewProcessNode::new(id, self.object_store.clone()))),
                 "Effect Stack" => Some(Box::new(EffectStackProcessNode::new(id, self.object_store.clone()))),
                 _ => {
                     eprintln!("Unknown node type for engine: {}", type_name);

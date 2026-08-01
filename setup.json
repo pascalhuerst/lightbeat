@@ -4975,7 +4975,8 @@
         9,
         10
       ],
-      "strip_layout": []
+      "strip_layout": [],
+      "preview_columns": 1
     },
     {
       "id": 2,
@@ -4995,7 +4996,8 @@
           "logical_start": 1.0,
           "logical_end": 0.5
         }
-      ]
+      ],
+      "preview_columns": 1
     },
     {
       "id": 3,
@@ -5039,7 +5041,8 @@
           "logical_start": 0.5,
           "logical_end": 1.0
         }
-      ]
+      ],
+      "preview_columns": 1
     }
   ],
   "color_palettes": [

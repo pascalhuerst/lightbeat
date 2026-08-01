@@ -49,6 +49,8 @@ impl GroupCapability {
     }
 }
 
+fn default_preview_columns() -> usize { 1 }
+
 /// A group of objects that can be controlled together.
 /// Capabilities are the UNION of all member objects' channel types.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -61,6 +63,11 @@ pub struct Group {
     /// Strips not listed here are still in the group but have no layout role.
     #[serde(default)]
     pub strip_layout: Vec<StripLayout>,
+    /// How many strips the preview node lays out per row. Purely a
+    /// visual hint — doesn't affect DMX output. Defaults to 1 (all
+    /// strips stacked vertically). A 2×3 shelf sets this to 2.
+    #[serde(default = "default_preview_columns")]
+    pub preview_columns: usize,
 }
 
 impl Group {
@@ -70,6 +77,7 @@ impl Group {
             name: name.into(),
             object_ids: Vec::new(),
             strip_layout: Vec::new(),
+            preview_columns: 1,
         }
     }
 

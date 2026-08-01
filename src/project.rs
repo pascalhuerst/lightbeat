@@ -415,6 +415,24 @@ pub fn load_graph(graph: &mut NodeGraph, project: &ProjectFile) -> Vec<usize> {
                     }
                 }
 
+            // Restore Group Output Preview widget state — same payload
+            // shape as Group Output.
+            if saved.type_name == "Group Output Preview"
+                && let Some(data) = &saved.data {
+                    let n = graph.node_mut(idx);
+                    if let Some(prev) = n.as_any_mut()
+                        .downcast_mut::<crate::widgets::nodes::output::group_preview::GroupPreviewWidget>()
+                    {
+                        if let Some(ids) = data.get("group_ids").and_then(|v| v.as_array()) {
+                            prev.selected_group_ids = ids
+                                .iter()
+                                .filter_map(|v| v.as_u64().map(|n| n as u32))
+                                .collect();
+                        }
+                        prev.push_config_to_engine();
+                    }
+                }
+
             // Restore Fader widget input-port state so wires don't get
             // dropped by `cleanup_stale_connections` on the first frame.
             if saved.type_name == "Fader"
