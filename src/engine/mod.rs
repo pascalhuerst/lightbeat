@@ -9,6 +9,7 @@ use ringbuf::traits::{Producer, Split};
 use ringbuf::HeapRb;
 
 use crate::dmx_io::{SharedDmxState, SharedObjectStore};
+use crate::perf::SharedPerfStats;
 use self::graph::EngineGraph;
 use self::types::EngineCommand;
 
@@ -40,12 +41,16 @@ pub struct EngineHandle {
 }
 
 impl EngineHandle {
-    pub fn start(dmx_shared: SharedDmxState, object_store: SharedObjectStore) -> Self {
+    pub fn start(
+        dmx_shared: SharedDmxState,
+        object_store: SharedObjectStore,
+        perf: SharedPerfStats,
+    ) -> Self {
         let rb = HeapRb::new(COMMAND_BUFFER_SIZE);
         let (command_tx, command_rx) = rb.split();
 
         let handle = thread::spawn(move || {
-            let graph = EngineGraph::new(dmx_shared, object_store);
+            let graph = EngineGraph::new(dmx_shared, object_store, perf);
             graph.run(command_rx);
         });
 

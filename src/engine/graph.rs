@@ -6,6 +6,7 @@ use super::CommandConsumer;
 use super::nodes::meta::subgraph::SubgraphProcessNode;
 use super::types::*;
 use crate::dmx_io::{DmxOutputManager, SharedDmxState, SharedObjectStore};
+use crate::perf::{EngineTickTimer, SharedPerfStats};
 
 /// The engine-side signal graph. Runs on its own thread at ~1kHz.
 pub struct EngineGraph {
@@ -13,15 +14,21 @@ pub struct EngineGraph {
     shared_states: Vec<SharedState>,
     connections: Vec<Connection>,
     dmx: Option<DmxOutputManager>,
+    perf: SharedPerfStats,
 }
 
 impl EngineGraph {
-    pub fn new(dmx_shared: SharedDmxState, object_store: SharedObjectStore) -> Self {
+    pub fn new(
+        dmx_shared: SharedDmxState,
+        object_store: SharedObjectStore,
+        perf: SharedPerfStats,
+    ) -> Self {
         Self {
             nodes: Vec::new(),
             shared_states: Vec::new(),
             connections: Vec::new(),
             dmx: Some(DmxOutputManager::new(dmx_shared, object_store)),
+            perf,
         }
     }
 
@@ -250,13 +257,15 @@ impl EngineGraph {
     /// Run the engine loop. Called from the engine thread.
     /// `command_rx` is the consumer end of the ring buffer.
     pub fn run(mut self, mut command_rx: CommandConsumer) {
+        let perf = self.perf.clone();
+        let mut timer = EngineTickTimer::default();
         loop {
             // Drain all pending commands (non-blocking).
             while let Some(cmd) = command_rx.try_pop() {
                 self.apply_command(cmd);
             }
 
-            self.tick();
+            timer.measure(&perf, || self.tick());
 
             std::thread::sleep(Duration::from_millis(1));
         }

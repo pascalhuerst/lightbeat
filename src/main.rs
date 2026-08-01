@@ -10,6 +10,7 @@ mod setup;
 mod interfaces;
 mod link_controller;
 mod objects;
+mod perf;
 mod project;
 mod theme;
 mod widgets;
@@ -178,9 +179,35 @@ const SETUP_TABS: &[(SetupTab, &str)] = &[
     (SetupTab::InputControllers, "Input Controllers"),
 ];
 
+/// Undo/redo requested from the Edit menu. The menu closure holds `&mut self`,
+/// so the action is recorded and carried out after the panel closes, where a
+/// fresh project/setup snapshot can be built without fighting the borrow.
+#[derive(Clone, Copy)]
+enum UndoAction {
+    UndoProject,
+    RedoProject,
+    UndoSetup,
+    RedoSetup,
+}
+
 struct LightBeatApp {
     graph: NodeGraph,
     engine: EngineHandle,
+    perf: perf::SharedPerfStats,
+    snapshot_timer: perf::UiSnapshotTimer,
+    /// Context time of the last input event that could have mutated the
+    /// project or setup. Undo snapshots are gated on this — see the snapshot
+    /// block in `update`.
+    last_interaction_time: f64,
+    /// Context time of the last undo snapshot, used to cap snapshot rate
+    /// while the interaction window is open.
+    last_snapshot_time: f64,
+    /// Cached Edit-menu enable states, refreshed whenever a snapshot is taken.
+    can_undo_proj: bool,
+    can_redo_proj: bool,
+    can_undo_setup: bool,
+    can_redo_setup: bool,
+    pending_undo_action: Option<UndoAction>,
     beat_clock: BeatClock,
     _subs: Vec<SubscriptionHandle>,
     config: AppConfig,
@@ -285,11 +312,21 @@ impl LightBeatApp {
         }
         let object_store = dmx_io::new_shared_object_store();
         let group_ctx = widgets::nodes::output::group::new_shared_group_context();
-        let engine = EngineHandle::start(dmx_shared.clone(), object_store.clone());
+        let perf = perf::new_shared_perf_stats();
+        let engine = EngineHandle::start(dmx_shared.clone(), object_store.clone(), perf.clone());
 
         let mut app = Self {
             graph: NodeGraph::new(),
             engine,
+            perf,
+            snapshot_timer: perf::UiSnapshotTimer::default(),
+            last_interaction_time: 0.0,
+            last_snapshot_time: 0.0,
+            can_undo_proj: false,
+            can_redo_proj: false,
+            can_undo_setup: false,
+            can_redo_setup: false,
+            pending_undo_action: None,
             beat_clock,
             _subs: Vec::new(),
             config,
@@ -1242,6 +1279,38 @@ impl LightBeatApp {
         self.mark_project_saved();
     }
 
+    /// Apply an undo or redo. Builds the comparison snapshot on demand: the
+    /// per-frame snapshot is gated on recent input and may be a frame or two
+    /// stale, and these only run on a keypress or menu click.
+    fn run_undo_action(&mut self, action: UndoAction) {
+        match action {
+            UndoAction::UndoProject => {
+                let snap = project::save_graph(&self.graph);
+                if let Some(p) = self.project_undoer.undo(&snap).cloned() {
+                    self.apply_project(&p);
+                }
+            }
+            UndoAction::RedoProject => {
+                let snap = project::save_graph(&self.graph);
+                if let Some(p) = self.project_undoer.redo(&snap).cloned() {
+                    self.apply_project(&p);
+                }
+            }
+            UndoAction::UndoSetup => {
+                let snap = self.current_setup();
+                if let Some(s) = self.setup_undoer.undo(&snap).cloned() {
+                    self.apply_setup(&s);
+                }
+            }
+            UndoAction::RedoSetup => {
+                let snap = self.current_setup();
+                if let Some(s) = self.setup_undoer.redo(&snap).cloned() {
+                    self.apply_setup(&s);
+                }
+            }
+        }
+    }
+
     /// Build current SetupFile snapshot (used for both saving and feeding the undoer).
     fn current_setup(&self) -> setup::SetupFile {
         setup::SetupFile {
@@ -1706,12 +1775,58 @@ impl eframe::App for LightBeatApp {
         // visible to the Gradient Source dropdowns.
         self.sync_gradient_library();
 
-        // Built once per frame; cheap (clones small structs).
         let now = ctx.input(|i| i.time);
-        let current_project = project::save_graph(&self.graph);
-        let current_setup = self.current_setup();
-        self.project_undoer.feed_state(now, &current_project);
-        self.setup_undoer.feed_state(now, &current_setup);
+
+        // Undo bookkeeping. This used to rebuild the whole project and setup
+        // every frame — a deep clone of every node's params and save_data plus
+        // several deep comparisons, all scaling with project size rather than
+        // with what is on screen.
+        //
+        // Neither can change except as a result of user input, so snapshots
+        // are gated on having had input recently. Pointer movement alone is
+        // ignored: hovering the canvas mutates nothing. The window has to
+        // outlast `Undoer::stable_time` (1s) because the Undoer only commits
+        // an undo point after seeing an unchanged state for that long.
+        const UNDO_SETTLE_WINDOW: f64 = 2.0;
+        // Bare pointer motion mutates nothing, and egui reports it as two
+        // separate events. Anything not on this list counts as interaction,
+        // so an unrecognised event errs towards taking a snapshot.
+        let interacted = ctx.input(|i| {
+            i.pointer.any_down()
+                || i.events.iter().any(|e| {
+                    !matches!(
+                        e,
+                        egui::Event::PointerMoved(_)
+                            | egui::Event::MouseMoved(_)
+                            | egui::Event::PointerGone
+                    )
+                })
+        });
+        if interacted {
+            self.last_interaction_time = now;
+        }
+        self.snapshot_timer.tick_second(&self.perf, now);
+        // Within the window the Undoer only needs to see the state often
+        // enough to judge stability against its 1 s threshold, so feeding it
+        // at 10 Hz instead of every frame loses nothing.
+        const SNAPSHOT_MIN_INTERVAL: f64 = 0.1;
+        let in_window = now - self.last_interaction_time < UNDO_SETTLE_WINDOW;
+        let due = now - self.last_snapshot_time >= SNAPSHOT_MIN_INTERVAL;
+        if in_window && due {
+            self.last_snapshot_time = now;
+            let started = std::time::Instant::now();
+            let current_project = project::save_graph(&self.graph);
+            let current_setup = self.current_setup();
+            self.snapshot_timer
+                .record(&self.perf, started.elapsed().as_micros() as u64);
+
+            self.project_undoer.feed_state(now, &current_project);
+            self.setup_undoer.feed_state(now, &current_setup);
+            self.can_undo_proj = self.project_undoer.has_undo(&current_project);
+            self.can_redo_proj = self.project_undoer.has_redo(&current_project);
+            self.can_undo_setup = self.setup_undoer.has_undo(&current_setup);
+            self.can_redo_setup = self.setup_undoer.has_redo(&current_setup);
+        }
 
         // Periodic crash-recovery autosave: writes to a separate file, never
         // over the user's project. Only runs when there are unsaved changes.
@@ -1724,10 +1839,8 @@ impl eframe::App for LightBeatApp {
             self.last_autosave_time = now;
         }
 
-        let can_undo_proj = self.project_undoer.has_undo(&current_project);
-        let can_redo_proj = self.project_undoer.has_redo(&current_project);
-        let can_undo_setup = self.setup_undoer.has_undo(&current_setup);
-        let can_redo_setup = self.setup_undoer.has_redo(&current_setup);
+        let (can_undo_proj, can_redo_proj) = (self.can_undo_proj, self.can_redo_proj);
+        let (can_undo_setup, can_redo_setup) = (self.can_undo_setup, self.can_redo_setup);
 
         // Menu bar.
         egui::TopBottomPanel::top("menu_bar").show(ctx, |ui| {
@@ -1791,28 +1904,20 @@ impl eframe::App for LightBeatApp {
                 ui.menu_button("Edit", |ui| {
                     if ui.add_enabled(can_undo_proj, egui::Button::new("Undo Project")).clicked() {
                         ui.close_menu();
-                        if let Some(p) = self.project_undoer.undo(&current_project).cloned() {
-                            self.apply_project(&p);
-                        }
+                        self.pending_undo_action = Some(UndoAction::UndoProject);
                     }
                     if ui.add_enabled(can_redo_proj, egui::Button::new("Redo Project")).clicked() {
                         ui.close_menu();
-                        if let Some(p) = self.project_undoer.redo(&current_project).cloned() {
-                            self.apply_project(&p);
-                        }
+                        self.pending_undo_action = Some(UndoAction::RedoProject);
                     }
                     ui.separator();
                     if ui.add_enabled(can_undo_setup, egui::Button::new("Undo Setup")).clicked() {
                         ui.close_menu();
-                        if let Some(s) = self.setup_undoer.undo(&current_setup).cloned() {
-                            self.apply_setup(&s);
-                        }
+                        self.pending_undo_action = Some(UndoAction::UndoSetup);
                     }
                     if ui.add_enabled(can_redo_setup, egui::Button::new("Redo Setup")).clicked() {
                         ui.close_menu();
-                        if let Some(s) = self.setup_undoer.redo(&current_setup).cloned() {
-                            self.apply_setup(&s);
-                        }
+                        self.pending_undo_action = Some(UndoAction::RedoSetup);
                     }
                 });
                 ui.menu_button("View", |ui| {
@@ -2091,12 +2196,47 @@ impl eframe::App for LightBeatApp {
                     };
                     ui.colored_label(egui::Color32::from_gray(100), status);
 
-                    // Right-aligned zoom indicator.
+                    // Right-aligned zoom indicator + performance readout.
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         ui.colored_label(
                             egui::Color32::from_gray(140),
                             format!("Zoom: {:.0}%", self.graph.zoom() * 100.0),
                         );
+                        ui.separator();
+
+                        let (tick_us, tick_max_us) = self.perf.engine_tick();
+                        let (snap_us, snap_max_us, snaps_per_sec) = self.perf.ui_snapshot();
+                        // The engine tick has a 1 ms budget; warn once the
+                        // average eats more than half of it.
+                        let tick_color = if tick_us > 800 {
+                            egui::Color32::from_rgb(200, 80, 80)
+                        } else if tick_us > 500 {
+                            egui::Color32::from_rgb(200, 160, 60)
+                        } else {
+                            egui::Color32::from_gray(110)
+                        };
+                        let perf_text = format!(
+                            "engine {}/{} us  ·  undo snap {:.1}/{:.1} ms @ {}/s",
+                            tick_us,
+                            tick_max_us,
+                            snap_us as f64 / 1000.0,
+                            snap_max_us as f64 / 1000.0,
+                            snaps_per_sec,
+                        );
+                        let resp = ui
+                            .add(
+                                egui::Label::new(
+                                    egui::RichText::new(perf_text).color(tick_color),
+                                )
+                                .sense(egui::Sense::click()),
+                            )
+                            .on_hover_text(
+                                "Engine tick average/peak (1000 us budget) and undo-snapshot \
+                                 average/peak with snapshots taken per second. Click to reset peaks.",
+                            );
+                        if resp.clicked() {
+                            self.perf.reset_peaks();
+                        }
                     });
                 });
             });
@@ -2181,22 +2321,21 @@ impl eframe::App for LightBeatApp {
         });
 
         if undo_pressed {
-            if setup_hovered {
-                if let Some(s) = self.setup_undoer.undo(&current_setup).cloned() {
-                    self.apply_setup(&s);
-                }
-            } else if let Some(p) = self.project_undoer.undo(&current_project).cloned() {
-                self.apply_project(&p);
-            }
+            self.run_undo_action(if setup_hovered {
+                UndoAction::UndoSetup
+            } else {
+                UndoAction::UndoProject
+            });
         }
         if redo_pressed {
-            if setup_hovered {
-                if let Some(s) = self.setup_undoer.redo(&current_setup).cloned() {
-                    self.apply_setup(&s);
-                }
-            } else if let Some(p) = self.project_undoer.redo(&current_project).cloned() {
-                self.apply_project(&p);
-            }
+            self.run_undo_action(if setup_hovered {
+                UndoAction::RedoSetup
+            } else {
+                UndoAction::RedoProject
+            });
+        }
+        if let Some(action) = self.pending_undo_action.take() {
+            self.run_undo_action(action);
         }
 
         // Intercept the OS window close button: if the project has unsaved
