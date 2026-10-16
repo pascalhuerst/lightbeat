@@ -26,7 +26,7 @@ A node has **two halves**:
   `show_inspector`, `ui_inputs`, `ui_outputs`, `on_ui_connect`,
   `on_ui_output_connect`.
 
-Multi-channel ports (`Color`=3, `Position`=2, `Palette`=12) are handled
+Multi-channel ports (`Color`=3, `Position`=2, `Palette`=12, `Gradient`=40) are handled
 by `port_base_index()` and `total_channels()` from `engine::types`.
 
 ---
@@ -47,13 +47,19 @@ src/
 │   │                             # NodeSharedState, port_base_index,
 │   │                             # total_channels.
 │   ├── nodes/                    # ProcessNode implementations grouped by
-│   │   ├── io/                   # category (matches the menu categories).
-│   │   ├── transport/            # clock, lfo, phase scaler, transition, etc.
-│   │   ├── math/                 # constants, oscillators, color/palette ops.
-│   │   ├── display/              # scope, value/color display.
-│   │   ├── meta/                 # subgraph (with InnerGraph + bridge nodes).
-│   │   ├── output/               # group output, effect_stack.
-│   │   └── ui/                   # button.
+│   │   ├── io/                   # category (matches the menu categories):
+│   │   │                         # clock, internal_clock, audio_input,
+│   │   │                         # input_controller, launchpad, push1, x1.
+│   │   ├── transport/            # lfo, envelope, phase scaler, transition,
+│   │   │                         # smoothing, latch, sample_hold, sequencer...
+│   │   ├── math/                 # constants, oscillators, logic, counters,
+│   │   │                         # color/palette/gradient ops, lookup, schmitt.
+│   │   ├── display/              # scope, value/color/LED display.
+│   │   ├── meta/                 # subgraph (InnerGraph + bridge nodes),
+│   │   │                         # portal (wireless connections).
+│   │   ├── output/               # group, group_preview, effect_stack.
+│   │   └── ui/                   # button(+group), fader(+group), xy_pad,
+│   │                             # peak_meter, gradient_stops.
 │   └── patterns/                 # NEW: pattern impls used by the Effect Stack.
 │       ├── mod.rs                # Pattern trait, factory, Pixel struct.
 │       ├── bar.rs / solid.rs     # First two patterns. Add new ones here.
@@ -65,6 +71,9 @@ src/
 │   ├── group_list.rs             # Groups + per-strip layout + member reorder.
 │   ├── color_palette_list.rs     # Palettes (a palette = 4 colors).
 │   ├── color_palette_group_list.rs
+│   ├── gradient_preset_list.rs   # Reusable gradient presets.
+│   ├── input_controller_list.rs  # Virtual MIDI/X1 controllers + learned inputs.
+│   ├── audio_input_list.rs       # Audio inputs + analyzer lists.
 │   ├── interface_list.rs         # ArtNet/sACN interface config.
 │   └── nodes/
 │       ├── graph.rs              # NodeGraph: levels, navigation, interactions,
@@ -94,6 +103,15 @@ src/
 │   ├── universe.rs               # DmxUniverse buffer.
 │   └── output.rs                 # OutputConfig (ArtNet/sACN serialization).
 ├── interfaces/                   # ArtNet/sACN sender impls.
+├── audio/                        # Audio input subsystem: AudioBackend trait
+│                                 # (cpal impl), per-input analyzer threads
+│                                 # (spectrum, beat, onset, key, peak, envelope).
+├── input_controller/             # Persistent virtual MIDI/X1 controller slots
+│                                 # with learned inputs; midir + reconnect worker.
+├── macros/                       # .lbm library of reusable subgraphs.
+├── theme.rs                      # ALL UI colors (neutrals, SEM_*, TYPE_*).
+├── perf.rs                       # Lock-free Gauge counters, NodeProfiler.
+├── link_controller.rs            # Link session snapshots/events for the UI.
 ├── beat_clock.rs                 # Ableton Link wrapper, BeatPattern subscriptions.
 ├── dmx_io.rs                     # DmxOutputManager (engine side), shared state,
 │                                 # per-channel Override mechanism, test_universes.
@@ -102,7 +120,9 @@ src/
 │                                 # state for SubgraphWidget / GroupWidget /
 │                                 # EffectStackWidget after engine load_data.
 ├── setup.rs                      # SetupFile (fixtures, objects, interfaces,
-│                                 # groups, palettes) — separate from project.
+│                                 # groups, palettes, gradient presets, input
+│                                 # controllers, audio inputs) — separate from
+│                                 # project.
 └── config.rs                     # AppConfig (autoload, snap_to_grid, etc.).
 ```
 
@@ -113,7 +133,10 @@ src/
 ### Port types (`engine::types::PortType`)
 - `Logic` (yellow), `Phase` (purple), `Untyped` (red), `Any` (gray, accepts
   anything), `Color` (cyan, 3 channels), `Position` (greenish, 2 channels),
-  `Palette` (warm white, 12 channels = 4×RGB).
+  `Palette` (warm white, 12 channels = 4×RGB), `Gradient` (turquoise, 40
+  channels = 8 stops × (r,g,b,a,position); stops with alpha < 0 are unused).
+- Colors for ports come from `theme::TYPE_*`; never put inline `Color32`s in
+  widgets, add a constant to `theme.rs` instead.
 - `Any` ports render as a **white ring** with no fill. `Any.compatible_with(*)`
   is always true. Use `Any` for "neutral / not yet decided" states.
 
@@ -134,6 +157,17 @@ src/
 - For non-strip Color fixtures in a group, the **Effect Stack** computes
   implicit positions from `i / (n-1)` based on order in `object_ids`. The
   group_list UI has Up/Dn buttons to reorder.
+
+### Gradient
+- `PortType::Gradient` carries `GRADIENT_STOP_COUNT` (8) stops. Convert with
+  `Gradient::from_channels` / `sample_with_alpha` in `color/gradient.rs`.
+- Sources: the Gradient Source node (can load a `GradientPreset` from
+  `SetupFile::gradient_presets`; presets are copied, not linked) and Palette
+  to Gradient.
+- **Group Output** takes `select / width / gradient` and samples the gradient
+  per LED. **Group Output Preview** (`output/group_preview.rs`) has the same
+  inputs but draws LED dots instead of sending DMX; `Group::preview_columns`
+  controls how strips are laid out in it.
 
 ### Effect Stack (`engine/nodes/output/effect_stack.rs`)
 - One node per output target group(s). Inspector holds an ordered list of
@@ -197,12 +231,58 @@ src/
   shared state, so the engine ensures it exists on that interface — this lets
   you Ctrl+drag overrides on a wire without first setting up fixtures/objects.
 
+### Portals (`engine/nodes/meta/portal.rs`)
+- Wireless connections, matched by name. Two independent families:
+  **Output Portal** (one TX with inputs, many RX with outputs: broadcast) and
+  **Input Portal** (one RX with outputs near consumers, one TX with inputs
+  far away). Registries are separate, so a name can be reused across families.
+
+### Macros (`macros/`)
+- A `.lbm` file is a subgraph's inner `ProjectFile` plus metadata, stored in
+  `~/.local/share/lightbeat/macros/<group>/.../<name>.lbm`. Instantiating one
+  creates a locked Subgraph with remapped `NodeId`s.
+
+### Hardware / IO
+- **Audio Input** nodes read analyzer outputs produced on separate threads by
+  `audio::manager`; configuration lives in `SetupFile::audio_inputs`.
+- **Input Controller** nodes read a persistent virtual controller
+  (`SetupFile::input_controllers`). Missing hardware just emits 0s and is
+  reconnected by a ~1 Hz worker. Binding modes (Value / TriggerOnPress /
+  TriggerOnRelease) are applied in the engine node.
+- Launchpad, Push 1 and X1 have dedicated nodes (`io/`); X1 code is in
+  `input_controller/x1/`.
+
 ### Subgraph save/load
 - `SavedNode` has an optional `inner_graph: Option<ProjectFile>` for recursive
   serialization. `load_graph` navigates into a subgraph, recursively loads its
   inner content, and navigates back. `send_load_data_recursive` walks the same
   path to dispatch `LoadData` commands as `SubgraphInnerCommand` for inner
   nodes.
+
+---
+
+## 3b. Engine tick and performance
+
+- `EngineGraph::tick` order: take pending params/config (one lock per node) ->
+  connected-input bitmap -> `process()` all nodes -> propagate connections ->
+  mirror state to UI **every 16th tick** (`UI_SYNC_EVERY_N_TICKS`) ->
+  DMX manager tick (runs on the send cadence internally).
+- `InnerGraph::tick` (subgraphs) must mirror `EngineGraph::tick`. It once
+  lagged behind and was 98.6% of the profile (1740 -> 181 us/tick on the
+  371-node reference project after fixing). Change both together.
+- Because UI state is only fresh every 16 ticks, never rely on `shared.*`
+  being current within a tick; engine logic must use the node's own fields.
+- Undo snapshots run only within 2 s of real user input, at most 10 Hz.
+- Inputs are written every tick via `write_input`, so a node never misses a
+  value; pulses/edges must be latched inside the node if `process()` could
+  be skipped.
+- Status bar shows engine tick, UI frame, graph canvas share, fps and undo
+  snapshot cost (click to reset peaks). `LIGHTBEAT_PROFILE_NODES=1` prints a
+  per-node-type `process()` table every 2000 ticks, with a second table for
+  nodes inside subgraphs (a subgraph's own time already includes them).
+- Measure with `--release` (debug is ~4.5x slower). Autoload uses
+  `config.recent_projects.first()` from `settings.json` in the **working
+  directory**, not `project.json`; check it before trusting a measurement.
 
 ---
 
@@ -232,8 +312,9 @@ src/
 - `cargo run` — launches the app. Default project is `project.json` in the
   working directory; setup is `setup.json`. Both auto-load if `autoload_on_open`
   is set in `~/.config/lightbeat/...` (managed by `config.rs`).
-- There are some unit tests in `objects/channel.rs`, `objects/fixture.rs`,
-  `objects/object.rs`, `color/blend.rs`, `color/gradient.rs`. `cargo test` runs them.
+- There are some unit tests in `objects/`, `color/` and elsewhere (~46);
+  `cargo test` runs them. The crate uses edition 2024, so it needs a recent
+  stable toolchain (`rustup update stable`).
 - We use **egui-phosphor** for icon glyphs (registered in `main.rs::new`).
   Use `egui_phosphor::regular::ARROW_UP`, `ARROW_DOWN`, `X`, `CARET_RIGHT`,
   `ARROW_SQUARE_OUT`, etc. for any icon-style buttons. The default egui font
@@ -244,6 +325,7 @@ src/
 ## 6. Conventions / gotchas
 
 - **No emojis in code or files** unless the user asks for them.
+- **No inline colors in widgets** — use `theme.rs` constants.
 - **Comments** describe *why*, not what. Don't narrate steps. Don't add
   comments that just restate the next line.
 - **No backward-compat aliases** unless asked — the user is in active
@@ -277,7 +359,8 @@ each 158 RGB or GRBWW LEDs, where LED 0 is at the centre — hence the
 universes. They iteratively grow the app: add nodes when needed, refine UX
 when something is awkward. Recent themes: stricter terminology (palette
 everywhere), auto-detection over explicit config, Effect Stack as the
-composition primitive.
+composition primitive, engine/UI performance (measured, with numbers in
+commit messages).
 
 When in doubt about a design choice, prefer **flexibility presented in an
 easy-to-understand way** — the user's stated guiding principle.
