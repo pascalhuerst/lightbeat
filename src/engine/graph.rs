@@ -7,7 +7,7 @@ use super::CommandConsumer;
 use super::nodes::meta::subgraph::SubgraphProcessNode;
 use super::types::*;
 use crate::dmx_io::{DmxOutputManager, SharedDmxState, SharedObjectStore};
-use crate::perf::{EngineTickTimer, SharedPerfStats};
+use crate::perf::{EngineTickTimer, NodeProfiler, SharedPerfStats};
 
 /// The engine-side signal graph. Runs on its own thread at ~1kHz.
 pub struct EngineGraph {
@@ -24,13 +24,14 @@ pub struct EngineGraph {
     disabled_mask: Vec<bool>,
     write_buf: Vec<(usize, usize, f32)>,
     sync_counter: u32,
+    node_profile: Option<NodeProfiler>,
 }
 
 /// How often the engine mirrors its state into shared state for the UI.
 /// The UI redraws at ~60 fps, so publishing at 1 kHz threw away 15 of every
 /// 16 updates while paying for `params()` allocation, `save_data()` JSON
 /// construction and display buffer clones on every one of them.
-const UI_SYNC_EVERY_N_TICKS: u32 = 16;
+pub(crate) const UI_SYNC_EVERY_N_TICKS: u32 = 16;
 
 impl EngineGraph {
     pub fn new(
@@ -49,6 +50,7 @@ impl EngineGraph {
             disabled_mask: Vec::new(),
             write_buf: Vec::new(),
             sync_counter: 0,
+            node_profile: NodeProfiler::from_env(),
         }
     }
 
@@ -221,9 +223,21 @@ impl EngineGraph {
         // 2. Process all nodes — skipping disabled ones. Disabled nodes
         // keep their previous tick's output values, so downstream signal
         // flow freezes instead of dropping to zero.
-        for (i, node) in self.nodes.iter_mut().enumerate() {
-            if !self.disabled_mask.get(i).copied().unwrap_or(false) {
+        if let Some(profile) = &mut self.node_profile {
+            for (i, node) in self.nodes.iter_mut().enumerate() {
+                if self.disabled_mask.get(i).copied().unwrap_or(false) {
+                    continue;
+                }
+                let started = std::time::Instant::now();
                 node.process();
+                profile.record(node.type_name(), started.elapsed().as_nanos() as u64);
+            }
+            profile.end_tick();
+        } else {
+            for (i, node) in self.nodes.iter_mut().enumerate() {
+                if !self.disabled_mask.get(i).copied().unwrap_or(false) {
+                    node.process();
+                }
             }
         }
 

@@ -194,7 +194,7 @@ struct LightBeatApp {
     graph: NodeGraph,
     engine: EngineHandle,
     perf: perf::SharedPerfStats,
-    snapshot_timer: perf::UiSnapshotTimer,
+    ui_timers: perf::UiTimers,
     /// Context time of the last input event that could have mutated the
     /// project or setup. Undo snapshots are gated on this — see the snapshot
     /// block in `update`.
@@ -319,7 +319,7 @@ impl LightBeatApp {
             graph: NodeGraph::new(),
             engine,
             perf,
-            snapshot_timer: perf::UiSnapshotTimer::default(),
+            ui_timers: perf::UiTimers::default(),
             last_interaction_time: 0.0,
             last_snapshot_time: 0.0,
             can_undo_proj: false,
@@ -1744,8 +1744,8 @@ impl LightBeatApp {
     }
 }
 
-impl eframe::App for LightBeatApp {
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+impl LightBeatApp {
+    fn update_frame(&mut self, ctx: &egui::Context) {
         ctx.request_repaint();
         ctx.send_viewport_cmd(egui::ViewportCommand::Title(self.window_title()));
 
@@ -1805,7 +1805,8 @@ impl eframe::App for LightBeatApp {
         if interacted {
             self.last_interaction_time = now;
         }
-        self.snapshot_timer.tick_second(&self.perf, now);
+        self.ui_timers
+            .tick_frame(&self.perf, now, ctx.input(|i| i.unstable_dt));
         // Within the window the Undoer only needs to see the state often
         // enough to judge stability against its 1 s threshold, so feeding it
         // at 10 Hz instead of every frame loses nothing.
@@ -1817,8 +1818,8 @@ impl eframe::App for LightBeatApp {
             let started = std::time::Instant::now();
             let current_project = project::save_graph(&self.graph);
             let current_setup = self.current_setup();
-            self.snapshot_timer
-                .record(&self.perf, started.elapsed().as_micros() as u64);
+            self.ui_timers
+                .record_snapshot(&self.perf, started.elapsed().as_micros() as u64);
 
             self.project_undoer.feed_state(now, &current_project);
             self.setup_undoer.feed_state(now, &current_setup);
@@ -2204,8 +2205,13 @@ impl eframe::App for LightBeatApp {
                         );
                         ui.separator();
 
-                        let (tick_us, tick_max_us) = self.perf.engine_tick();
-                        let (snap_us, snap_max_us, snaps_per_sec) = self.perf.ui_snapshot();
+                        let (tick_us, tick_max_us) = self.perf.engine_tick.read();
+                        let (snap_us, snap_max_us) = self.perf.ui_snapshot.read();
+                        let snaps_per_sec = self.perf.snapshots_per_sec();
+                        let (frame_us, frame_max_us) = self.perf.ui_frame.read();
+                        let (graph_us, _) = self.perf.ui_graph.read();
+                        let interval_us = self.perf.frame_interval_us();
+                        let fps = if interval_us > 0 { 1_000_000 / interval_us } else { 0 };
                         // The engine tick has a 1 ms budget; warn once the
                         // average eats more than half of it.
                         let tick_color = if tick_us > 800 {
@@ -2216,9 +2222,13 @@ impl eframe::App for LightBeatApp {
                             egui::Color32::from_gray(110)
                         };
                         let perf_text = format!(
-                            "engine {}/{} us  ·  undo snap {:.1}/{:.1} ms @ {}/s",
+                            "engine {}/{} us  ·  ui {:.1}/{:.1} ms (graph {:.1}) @ {} fps  ·  undo snap {:.1}/{:.1} ms @ {}/s",
                             tick_us,
                             tick_max_us,
+                            frame_us as f64 / 1000.0,
+                            frame_max_us as f64 / 1000.0,
+                            graph_us as f64 / 1000.0,
+                            fps,
                             snap_us as f64 / 1000.0,
                             snap_max_us as f64 / 1000.0,
                             snaps_per_sec,
@@ -2231,8 +2241,10 @@ impl eframe::App for LightBeatApp {
                                 .sense(egui::Sense::click()),
                             )
                             .on_hover_text(
-                                "Engine tick average/peak (1000 us budget) and undo-snapshot \
-                                 average/peak with snapshots taken per second. Click to reset peaks.",
+                                "Engine tick average/peak (1000 us budget); UI frame average/peak \
+                                 with the node graph canvas's share and the real frame rate; \
+                                 undo-snapshot average/peak with snapshots taken per second. \
+                                 Click to reset peaks.",
                             );
                         if resp.clicked() {
                             self.perf.reset_peaks();
@@ -2242,9 +2254,12 @@ impl eframe::App for LightBeatApp {
             });
 
         // Node graph.
+        let graph_started = std::time::Instant::now();
         egui::CentralPanel::default().show(ctx, |ui| {
             self.graph.show(ui, self.config.snap_to_grid);
         });
+        self.ui_timers
+            .record_graph(&self.perf, graph_started.elapsed().as_micros() as u64);
 
         // Accept drops from the Add Nodes panel onto the canvas. We only
         // consume the payload when the pointer is released inside the canvas
@@ -2433,6 +2448,15 @@ impl eframe::App for LightBeatApp {
                     let _ = std::fs::remove_file(&autosave);
                 }
         }
+    }
+}
+
+impl eframe::App for LightBeatApp {
+    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        let started = std::time::Instant::now();
+        self.update_frame(ctx);
+        self.ui_timers
+            .record_frame(&self.perf, started.elapsed().as_micros() as u64);
     }
 
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {

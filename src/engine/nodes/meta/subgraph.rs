@@ -1,7 +1,9 @@
 use crate::engine::nodes::display::led_display::LedDisplayProcessNode;
 use crate::engine::nodes::display::value_display::ValueDisplayProcessNode;
 use crate::engine::types::*;
+use crate::engine::graph::UI_SYNC_EVERY_N_TICKS;
 use std::any::Any;
+use std::collections::HashMap;
 
 /// Walk the inner graph (recursively descending into nested subgraphs) and
 /// collect every Value/LED Display node's current state. Order is depth-first,
@@ -107,6 +109,16 @@ pub struct InnerGraph {
     pub bridge_in: Vec<f32>,
     /// Values bridged OUT to the parent (corresponds to ext_outputs).
     pub bridge_out: Vec<f32>,
+    /// NodeId -> position in `nodes`. Rebuilt lazily after structural edits;
+    /// without it every connection cost a linear scan per channel per tick.
+    node_index: HashMap<NodeId, usize>,
+    index_stale: bool,
+    /// Scratch buffers reused across ticks so the hot loop does not allocate.
+    per_node_connected: Vec<Vec<bool>>,
+    disabled_mask: Vec<bool>,
+    write_buf: Vec<(usize, usize, f32)>,
+    bridge_write_buf: Vec<(usize, f32)>,
+    sync_counter: u32,
 }
 
 /// Reserved NodeIds for bridge endpoints.
@@ -121,127 +133,45 @@ impl InnerGraph {
             connections: Vec::new(),
             bridge_in: Vec::new(),
             bridge_out: Vec::new(),
+            node_index: HashMap::new(),
+            index_stale: false,
+            per_node_connected: Vec::new(),
+            disabled_mask: Vec::new(),
+            write_buf: Vec::new(),
+            bridge_write_buf: Vec::new(),
+            sync_counter: 0,
         }
     }
 
-    /// Run one tick of the inner graph.
+    fn rebuild_node_index(&mut self) {
+        self.node_index.clear();
+        for (i, node) in self.nodes.iter().enumerate() {
+            self.node_index.insert(node.node_id(), i);
+        }
+        self.index_stale = false;
+    }
+
+    /// Run one tick of the inner graph. Mirrors `EngineGraph::tick`; keep the
+    /// two in step when changing either.
     pub fn tick(&mut self, input_ports: &[PortDef], output_ports: &[PortDef]) {
-        // 0. Compute per-node connected-input bitmap and tell each node,
-        //    so the "input-overrides-param" pattern works inside subgraphs.
-        let mut per_node_connected: Vec<Vec<bool>> = self.nodes.iter()
-            .map(|n| vec![false; n.inputs().len()])
-            .collect();
-        for conn in &self.connections {
-            if conn.to.node == BRIDGE_OUT_NODE_ID { continue; }
-            if let Some(dst_idx) = self.nodes.iter().position(|n| n.node_id() == conn.to.node)
-                && let Some(slot) = per_node_connected[dst_idx].get_mut(conn.to.index) {
-                    *slot = true;
-                }
+        if self.index_stale {
+            self.rebuild_node_index();
         }
+
+        // 0. Take everything the UI pushed, in a single lock per node, before
+        // `process` so an edit lands on the tick it arrives and before the
+        // connection scan because `load_data` can rebuild a node's ports.
+        self.disabled_mask.clear();
         for (i, node) in self.nodes.iter_mut().enumerate() {
-            node.set_input_connections(&per_node_connected[i]);
-        }
-
-        // 1. Process all inner nodes — skipping disabled ones.
-        let disabled_mask: Vec<bool> = self.shared_states.iter()
-            .map(|s| s.lock().unwrap().disabled)
-            .collect();
-        for (i, node) in self.nodes.iter_mut().enumerate() {
-            if !disabled_mask.get(i).copied().unwrap_or(false) {
-                node.process();
-            }
-        }
-
-        // 2. Propagate connections (including bridge connections).
-        let mut writes: Vec<(usize, usize, f32)> = Vec::new(); // (dst_node_vec_idx, channel, value)
-        let mut bridge_out_writes: Vec<(usize, f32)> = Vec::new();
-
-        for conn in &self.connections {
-            // Determine source channel count.
-            let src_channels = if conn.from.node == BRIDGE_IN_NODE_ID {
-                input_ports
-                    .get(conn.from.index)
-                    .map(|p| p.port_type.channel_count())
-                    .unwrap_or(1)
-            } else if let Some(idx) = self
-                .nodes
-                .iter()
-                .position(|n| n.node_id() == conn.from.node)
-            {
-                self.nodes[idx]
-                    .outputs()
-                    .get(conn.from.index)
-                    .map(|p| p.port_type.channel_count())
-                    .unwrap_or(1)
-            } else {
-                continue;
-            };
-
-            // Determine dest channel count.
-            let dst_channels = if conn.to.node == BRIDGE_OUT_NODE_ID {
-                output_ports
-                    .get(conn.to.index)
-                    .map(|p| p.port_type.channel_count())
-                    .unwrap_or(1)
-            } else if let Some(idx) = self.nodes.iter().position(|n| n.node_id() == conn.to.node) {
-                self.nodes[idx]
-                    .inputs()
-                    .get(conn.to.index)
-                    .map(|p| p.port_type.channel_count())
-                    .unwrap_or(1)
-            } else {
-                continue;
-            };
-
-            let channels = src_channels.min(dst_channels);
-
-            for ch in 0..channels {
-                // Read source value.
-                let val = if conn.from.node == BRIDGE_IN_NODE_ID {
-                    let base = port_base_index(input_ports, conn.from.index);
-                    self.bridge_in.get(base + ch).copied().unwrap_or(0.0)
-                } else if let Some(idx) = self
-                    .nodes
-                    .iter()
-                    .position(|n| n.node_id() == conn.from.node)
-                {
-                    let base = port_base_index(self.nodes[idx].outputs(), conn.from.index);
-                    self.nodes[idx].read_output(base + ch)
-                } else {
-                    0.0
-                };
-
-                // Queue destination write.
-                if conn.to.node == BRIDGE_OUT_NODE_ID {
-                    let base = port_base_index(output_ports, conn.to.index);
-                    bridge_out_writes.push((base + ch, val));
-                } else if let Some(dst_idx) =
-                    self.nodes.iter().position(|n| n.node_id() == conn.to.node)
-                {
-                    let base = port_base_index(self.nodes[dst_idx].inputs(), conn.to.index);
-                    writes.push((dst_idx, base + ch, val));
-                }
-            }
-        }
-
-        // Apply writes.
-        for (dst_idx, ch, val) in writes {
-            self.nodes[dst_idx].write_input(ch, val);
-        }
-        for (ch, val) in bridge_out_writes {
-            if ch < self.bridge_out.len() {
-                self.bridge_out[ch] = val;
-            }
-        }
-
-        // 3. Drain pending param changes from UI (via shared state).
-        for (i, node) in self.nodes.iter_mut().enumerate() {
-            let (pending, config_update) = {
+            let (disabled, pending, config_update) = {
                 let mut shared = self.shared_states[i].lock().unwrap();
-                let pending = std::mem::take(&mut shared.pending_params);
-                let config = shared.pending_config.take();
-                (pending, config)
+                (
+                    shared.disabled,
+                    std::mem::take(&mut shared.pending_params),
+                    shared.pending_config.take(),
+                )
             };
+            self.disabled_mask.push(disabled);
             for (idx, val) in pending {
                 node.set_param(idx, val);
             }
@@ -250,13 +180,129 @@ impl InnerGraph {
             }
         }
 
-        // 4. Update shared state for UI. Disabled inner nodes skip the
-        // heavy display / save_data / buffer sync paths — same trick as
-        // the root graph's tick.
+        // 1. Per-node connected-input bitmap so the "input-overrides-param"
+        //    pattern works inside subgraphs.
+        self.per_node_connected.resize_with(self.nodes.len(), Vec::new);
+        self.per_node_connected.truncate(self.nodes.len());
+        for (i, node) in self.nodes.iter().enumerate() {
+            let buf = &mut self.per_node_connected[i];
+            buf.clear();
+            buf.resize(node.inputs().len(), false);
+        }
+        for conn in &self.connections {
+            if conn.to.node == BRIDGE_OUT_NODE_ID { continue; }
+            if let Some(&dst_idx) = self.node_index.get(&conn.to.node)
+                && let Some(slot) = self.per_node_connected[dst_idx].get_mut(conn.to.index) {
+                    *slot = true;
+                }
+        }
+        for (i, node) in self.nodes.iter_mut().enumerate() {
+            node.set_input_connections(&self.per_node_connected[i]);
+        }
+
+        // 2. Process inner nodes, skipping disabled ones.
+        if crate::perf::node_profiling_enabled() {
+            for (i, node) in self.nodes.iter_mut().enumerate() {
+                if self.disabled_mask[i] {
+                    continue;
+                }
+                let started = std::time::Instant::now();
+                node.process();
+                crate::perf::record_inner_node(
+                    node.type_name(),
+                    started.elapsed().as_nanos() as u64,
+                );
+            }
+        } else {
+            for (i, node) in self.nodes.iter_mut().enumerate() {
+                if !self.disabled_mask[i] {
+                    node.process();
+                }
+            }
+        }
+
+        // 3. Propagate connections (including bridge connections).
+        let mut writes = std::mem::take(&mut self.write_buf);
+        let mut bridge_out_writes = std::mem::take(&mut self.bridge_write_buf);
+        writes.clear();
+        bridge_out_writes.clear();
+
+        for conn in &self.connections {
+            let src_node = if conn.from.node == BRIDGE_IN_NODE_ID {
+                None
+            } else if let Some(&idx) = self.node_index.get(&conn.from.node) {
+                Some(idx)
+            } else {
+                continue;
+            };
+            let dst_node = if conn.to.node == BRIDGE_OUT_NODE_ID {
+                None
+            } else if let Some(&idx) = self.node_index.get(&conn.to.node) {
+                Some(idx)
+            } else {
+                continue;
+            };
+
+            let src_ports = match src_node {
+                Some(idx) => self.nodes[idx].outputs(),
+                None => input_ports,
+            };
+            let dst_ports = match dst_node {
+                Some(idx) => self.nodes[idx].inputs(),
+                None => output_ports,
+            };
+            let src_base = port_base_index(src_ports, conn.from.index);
+            let dst_base = port_base_index(dst_ports, conn.to.index);
+            let src_channels = src_ports
+                .get(conn.from.index)
+                .map(|p| p.port_type.channel_count())
+                .unwrap_or(1);
+            let dst_channels = dst_ports
+                .get(conn.to.index)
+                .map(|p| p.port_type.channel_count())
+                .unwrap_or(1);
+
+            for ch in 0..src_channels.min(dst_channels) {
+                let val = match src_node {
+                    Some(idx) => self.nodes[idx].read_output(src_base + ch),
+                    None => self.bridge_in.get(src_base + ch).copied().unwrap_or(0.0),
+                };
+                match dst_node {
+                    Some(idx) => writes.push((idx, dst_base + ch, val)),
+                    None => bridge_out_writes.push((dst_base + ch, val)),
+                }
+            }
+        }
+
+        for &(dst_idx, ch, val) in &writes {
+            self.nodes[dst_idx].write_input(ch, val);
+        }
+        for &(ch, val) in &bridge_out_writes {
+            if ch < self.bridge_out.len() {
+                self.bridge_out[ch] = val;
+            }
+        }
+        self.write_buf = writes;
+        self.bridge_write_buf = bridge_out_writes;
+
+        // 4. Mirror state for the UI at roughly frame rate. `params()`,
+        // `save_data()` and `update_display()` allocate, and the UI only sees
+        // one update in 16 anyway.
+        self.sync_counter += 1;
+        if self.sync_counter >= UI_SYNC_EVERY_N_TICKS {
+            self.sync_counter = 0;
+            self.sync_shared_state();
+        }
+    }
+
+    fn sync_shared_state(&mut self) {
         for (i, node) in self.nodes.iter().enumerate() {
             let mut shared = self.shared_states[i].lock().unwrap();
-            shared.inputs_connected = per_node_connected[i].clone();
-            if disabled_mask.get(i).copied().unwrap_or(false) {
+            shared.inputs_connected.clear();
+            shared
+                .inputs_connected
+                .extend_from_slice(&self.per_node_connected[i]);
+            if self.disabled_mask[i] {
                 continue;
             }
             let total_out = total_channels(node.outputs());
@@ -456,11 +502,13 @@ impl SubgraphProcessNode {
             SubgraphInnerCmd::AddNode { node, shared } => {
                 self.inner.shared_states.push(shared);
                 self.inner.nodes.push(node);
+                self.inner.index_stale = true;
             }
             SubgraphInnerCmd::RemoveNode(id) => {
                 if let Some(idx) = self.inner.nodes.iter().position(|n| n.node_id() == id) {
                     self.inner.nodes.remove(idx);
                     self.inner.shared_states.remove(idx);
+                    self.inner.index_stale = true;
                     self.inner
                         .connections
                         .retain(|c| c.from.node != id && c.to.node != id);
