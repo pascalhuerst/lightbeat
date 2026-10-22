@@ -223,6 +223,9 @@ struct LightBeatApp {
     last_autosave_time: f64,
     /// Whether the close-confirm modal is currently open.
     close_confirm_open: bool,
+    /// Set once the user chose Discard, so the close request that follows is
+    /// not intercepted again while the project is still dirty.
+    close_discarded: bool,
     /// Whether the startup autosave-recovery prompt is currently open. Carries
     /// the autosave path to load on "Recover".
     recover_prompt: Option<PathBuf>,
@@ -337,6 +340,7 @@ impl LightBeatApp {
             last_saved_project_json: None,
             last_autosave_time: 0.0,
             close_confirm_open: false,
+            close_discarded: false,
             recover_prompt: None,
             show_dmx_monitor: false,
             show_setup: false,
@@ -2355,7 +2359,10 @@ impl LightBeatApp {
 
         // Intercept the OS window close button: if the project has unsaved
         // changes, cancel the close and open the confirm modal instead.
-        if ctx.input(|i| i.viewport().close_requested()) && self.is_project_dirty() {
+        if !self.close_discarded
+            && ctx.input(|i| i.viewport().close_requested())
+            && self.is_project_dirty()
+        {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
             self.quit_requested = true;
         }
@@ -2396,6 +2403,7 @@ impl LightBeatApp {
             } else if do_discard {
                 self.delete_autosave_for(self.project_path.as_deref());
                 self.close_confirm_open = false;
+                self.close_discarded = true;
                 ctx.send_viewport_cmd(egui::ViewportCommand::Close);
             } else if do_cancel {
                 self.close_confirm_open = false;
