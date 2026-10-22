@@ -33,6 +33,12 @@ impl Drop for X1Session {
 }
 
 impl X1Session {
+    /// True once the worker has exited, i.e. the device was unplugged or
+    /// errored and the session can no longer deliver events.
+    pub fn is_finished(&self) -> bool {
+        self._join.as_ref().is_none_or(|h| h.is_finished())
+    }
+
     /// Open the USB connection and spawn the worker. Returns an error if the
     /// device isn't present — the manager will retry on the next reconcile.
     pub fn open(controller_id: u32, shared: SharedControllers) -> Result<Self, String> {

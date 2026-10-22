@@ -176,10 +176,7 @@ impl X1Controller {
 
         let handle = match handle {
             Some(h) => h,
-            None => {
-                eprintln!("No X1 controller found.");
-                return Err(Error::NoDevice);
-            }
+            None => return Err(Error::NoDevice),
         };
 
         handle.set_active_configuration(1)?;

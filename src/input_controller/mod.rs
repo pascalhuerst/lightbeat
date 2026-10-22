@@ -15,7 +15,8 @@
 //! Threading:
 //! - The midir backend callback runs on midir's internal thread. It writes
 //!   into `ControllerRuntime::values` under a short Mutex lock.
-//! - A reconnect worker polls port availability ~1Hz.
+//! - Absent hardware is looked for on setup load, when a controller is edited,
+//!   and when the user asks for a rescan; never on a timer.
 //! - The engine thread reads values; the UI thread reads values + consumes
 //!   the learn buffer.
 
@@ -995,11 +996,42 @@ impl InputControllerManager {
         midi::available_output_ports()
     }
 
-    /// Called periodically (from UI update loop) to try reconnecting any
-    /// controllers whose hw port just appeared, and drop sessions whose port
-    /// disappeared. Cheap no-op if nothing changed.
-    pub fn tick_reconnect(&mut self) {
+    /// Called every frame. Only notices sessions that died on their own
+    /// (an X1 whose worker exited after an unplug) and marks them `Waiting`;
+    /// it never probes for hardware. Retrying absent devices every frame
+    /// enumerated USB and MIDI ports at UI rate and spammed the log, so
+    /// looking for hardware is left to `rescan`.
+    pub fn reap_lost_sessions(&mut self) {
+        let before = self.sessions.len();
+        self.sessions.retain(|s| match s {
+            Session::X1(x) => !x.is_finished(),
+            Session::Midi(_) => true,
+        });
+        if self.sessions.len() == before {
+            return;
+        }
+        let mut state = self.shared.lock().unwrap();
+        for c in state.iter_mut() {
+            let active = self.sessions.iter().any(|s| s.controller_id() == c.id);
+            if !active && c.status == ConnectionStatus::Connected {
+                c.status = ConnectionStatus::Waiting;
+            }
+        }
+    }
+
+    /// Look for configured hardware again. Triggered by the user, not by a timer.
+    pub fn rescan(&mut self) {
         self.reconcile_sessions();
+    }
+
+    /// Names of configured controllers whose hardware is not currently found.
+    pub fn missing_controllers(&self) -> Vec<String> {
+        let state = self.shared.lock().unwrap();
+        state
+            .iter()
+            .filter(|c| c.status == ConnectionStatus::Waiting)
+            .map(|c| c.name.clone())
+            .collect()
     }
 
     /// Rebuild sessions to match `shared` state + port availability.
@@ -1044,7 +1076,7 @@ impl InputControllerManager {
                         && ports.contains(&ms.port_name)
                         && ms.output_port_name.as_ref().map(|p| ports.contains(p)).unwrap_or(true)
                 }
-                (Session::X1(_), Some((_, TargetKind::X1))) => true,
+                (Session::X1(x), Some((_, TargetKind::X1))) => !x.is_finished(),
                 _ => false,
             }
         });
