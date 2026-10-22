@@ -57,6 +57,27 @@ impl Object {
             && self.address.universe == universe
     }
 
+    /// True when this object's channel layout (names, kinds, offsets) equals the template's.
+    pub fn matches_fixture(&self, fixture: &Fixture) -> bool {
+        self.channels.len() == fixture.channels.len()
+            && self.channels.iter().zip(&fixture.channels).all(|(a, b)| {
+                a.name == b.name && a.kind == b.kind && a.offset == b.offset
+            })
+    }
+
+    /// Adopt the template's channel layout, keeping runtime values of channels
+    /// whose name and value count are unchanged. Address and interface stay.
+    pub fn sync_with_fixture(&mut self, fixture: &Fixture) {
+        let old = std::mem::take(&mut self.channels);
+        self.channels = fixture.channels.iter().map(|tpl| {
+            let mut ch = tpl.clone();
+            if let Some(prev) = old.iter().find(|c| c.name == tpl.name && c.values.len() == tpl.values.len()) {
+                ch.values = prev.values.clone();
+            }
+            ch
+        }).collect();
+    }
+
     /// Total DMX channels this object occupies.
     pub fn dmx_footprint(&self) -> usize {
         self.channels

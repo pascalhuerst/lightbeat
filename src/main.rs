@@ -1522,7 +1522,19 @@ impl LightBeatApp {
         egui::ScrollArea::both().auto_shrink([false, false]).show(ui, |ui| {
             match self.setup_active_tab {
                 SetupTab::Interfaces => self.interface_manager.show(ui),
-                SetupTab::FixtureTemplates => self.fixture_manager.show(ui),
+                SetupTab::FixtureTemplates => {
+                    self.fixture_manager.show(ui);
+                    // Objects own a copy of their template's channels, so template edits must be pushed down.
+                    let fixtures = &self.fixture_manager.fixtures;
+                    for obj in &mut self.object_manager.objects {
+                        if let Some(f) = fixtures.iter().find(|f| f.id == obj.fixture_id)
+                            && !obj.matches_fixture(f)
+                        {
+                            obj.sync_with_fixture(f);
+                            self.object_manager.needs_sync = true;
+                        }
+                    }
+                }
                 SetupTab::Objects => {
                     let interface_names: Vec<(u32, String)> = self.interface_manager.interfaces
                         .iter().map(|e| (e.id, e.name.clone())).collect();
