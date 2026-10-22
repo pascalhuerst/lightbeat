@@ -249,6 +249,10 @@ src/
   (`SetupFile::input_controllers`). Missing hardware just emits 0s and is
   reconnected by a ~1 Hz worker. Binding modes (Value / TriggerOnPress /
   TriggerOnRelease) are applied in the engine node.
+- Missing hardware is looked for on setup load, on edits and on the
+  status-bar **Rescan** button, never on a timer (USB/ALSA enumeration is
+  slow and prints to stderr every time). Missing controllers/inputs show as
+  `Waiting` and are listed in the status bar.
 - Launchpad, Push 1 and X1 have dedicated nodes (`io/`); X1 code is in
   `input_controller/x1/`.
 

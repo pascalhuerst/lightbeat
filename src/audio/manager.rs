@@ -4,7 +4,6 @@
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 
@@ -15,10 +14,6 @@ use crate::audio::backend::{
     AudioBackendKind, DEFAULT_SAMPLE_RATE, InputStream, StreamRequest, backend_for, mk_subscriber,
 };
 use crate::engine::types::{ParamDef, ParamValue};
-
-/// How often the manager re-enumerates audio devices in `tick_reconnect`.
-/// Enumerating ALSA can be slow and noisy (probes dsnoop/dmix), so we throttle.
-const DEVICE_RESCAN_INTERVAL: Duration = Duration::from_secs(3);
 
 // ---------- persistent config (SetupFile) ----------------------------------
 
@@ -171,7 +166,6 @@ pub struct AudioInputManager {
     /// Cached device names per backend so we don't re-enumerate on every UI
     /// frame (backend enumeration can be slow and stderr-noisy).
     cached_devices: HashMap<AudioBackendKind, Vec<String>>,
-    last_device_scan: Option<Instant>,
 }
 
 struct ActiveStream {
@@ -196,7 +190,6 @@ impl AudioInputManager {
             shared: Arc::new(Mutex::new(Vec::new())),
             streams: Vec::new(),
             cached_devices: HashMap::new(),
-            last_device_scan: None,
         }
     }
 
@@ -240,7 +233,6 @@ impl AudioInputManager {
 
     /// Force a fresh device enumeration across all backends (UI "Refresh" button).
     pub fn force_rescan(&mut self) {
-        self.last_device_scan = Some(Instant::now());
         self.rescan_devices();
         self.reconcile();
     }
@@ -398,40 +390,21 @@ impl AudioInputManager {
         self.reconcile();
     }
 
-    /// Periodic reconcile. Re-enumerates devices at most every
-    /// `DEVICE_RESCAN_INTERVAL`; between scans this is a no-op. Mutations
-    /// (add/remove/change device) explicitly call `reconcile()` themselves
-    /// so a fresh device list isn't required on every frame.
-    pub fn tick_reconnect(&mut self) {
-        let due = self
-            .last_device_scan
-            .map(|t| t.elapsed() >= DEVICE_RESCAN_INTERVAL)
-            .unwrap_or(true);
-        if !due {
-            return;
-        }
-        // Only enumerate when there's an input that actually wants a stream
-        // but doesn't have one yet (Waiting). Avoids periodic ALSA noise
-        // when nothing is configured or everything is already connected.
-        let has_pending = {
-            let state = self.shared.lock().unwrap();
-            state.iter().any(|c| {
-                c.enabled
-                    && !c.device_name.is_empty()
-                    && !self.streams.iter().any(|s| s.input_id == c.id)
-            })
-        };
-        if !has_pending {
-            return;
-        }
-        self.last_device_scan = Some(Instant::now());
-        self.rescan_devices();
-        self.reconcile_internal();
+    /// Names of enabled inputs that have a device configured but no open
+    /// stream. Device lists are only re-enumerated on setup changes and
+    /// `force_rescan`, never on a timer: enumerating ALSA probes every
+    /// device and prints to stderr each time.
+    pub fn missing_inputs(&self) -> Vec<String> {
+        let state = self.shared.lock().unwrap();
+        state
+            .iter()
+            .filter(|c| c.enabled && c.status == ConnectionStatus::Waiting)
+            .map(|c| c.name.clone())
+            .collect()
     }
 
     fn reconcile(&mut self) {
         self.rescan_devices();
-        self.last_device_scan = Some(Instant::now());
         self.reconcile_internal();
     }
 

@@ -1978,7 +1978,6 @@ impl LightBeatApp {
         }
 
         self.input_controllers.reap_lost_sessions();
-        self.audio_inputs.tick_reconnect();
 
         // "Add Nodes" side panel (left) — unified node-registry + macro library.
         if self.show_library {
@@ -2200,7 +2199,8 @@ impl LightBeatApp {
                     };
                     ui.colored_label(egui::Color32::from_gray(100), status);
 
-                    let missing = self.input_controllers.missing_controllers();
+                    let mut missing = self.input_controllers.missing_controllers();
+                    missing.extend(self.audio_inputs.missing_inputs());
                     if !missing.is_empty() {
                         ui.separator();
                         ui.colored_label(
@@ -2209,10 +2209,11 @@ impl LightBeatApp {
                         );
                         if ui
                             .small_button("Rescan")
-                            .on_hover_text("Look for the missing input controllers again")
+                            .on_hover_text("Look for the missing controllers and audio inputs again")
                             .clicked()
                         {
                             self.input_controllers.rescan();
+                            self.audio_inputs.force_rescan();
                         }
                     }
 
