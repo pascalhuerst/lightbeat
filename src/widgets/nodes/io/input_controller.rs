@@ -123,7 +123,7 @@ impl NodeWidget for InputControllerWidget {
         } else {
             ui.colored_label(
                 theme::TEXT_DIM,
-                format!("{} input(s)", self.outputs.len()),
+                format!("{} input(s)", self.outputs.len().saturating_sub(2)),
             );
         }
     }

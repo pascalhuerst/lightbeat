@@ -11,7 +11,10 @@
 
 use crate::engine::types::*;
 use crate::input_controller::midi::MidiSource;
-use crate::input_controller::{InputControllerKind, InputSource, SharedControllers};
+use crate::engine::nodes::io::status::{level, with_status_port};
+use crate::input_controller::{
+    ConnectionStatus, InputControllerKind, InputSource, SharedControllers,
+};
 
 pub struct LaunchpadDisplay {
     pub controller_id: u32,
@@ -63,7 +66,7 @@ impl LaunchpadProcessNode {
             controller_id: 0,
             controllers,
             inputs,
-            outputs,
+            outputs: with_status_port(outputs),
             out_values: vec![0.0; n_out],
             prev_control_values: Vec::new(),
             in_values: vec![0.0; n_in_channels],
@@ -107,7 +110,7 @@ impl ProcessNode for LaunchpadProcessNode {
             return;
         }
         self.controller_name = c.name.clone();
-        self.connected = true;
+        self.connected = c.status == ConnectionStatus::Connected;
 
         if self.cached_for != self.controller_id
             || self.out_to_runtime.len() != out_count()
@@ -159,7 +162,10 @@ impl ProcessNode for LaunchpadProcessNode {
     }
 
     fn read_output(&self, pi: usize) -> f32 {
-        self.out_values.get(pi).copied().unwrap_or(0.0)
+        match pi.checked_sub(1) {
+            None => level(self.connected),
+            Some(i) => self.out_values.get(i).copied().unwrap_or(0.0),
+        }
     }
     fn read_input(&self, pi: usize) -> f32 {
         self.in_values.get(pi).copied().unwrap_or(0.0)

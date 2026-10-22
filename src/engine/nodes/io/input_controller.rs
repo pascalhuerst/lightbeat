@@ -1,5 +1,6 @@
 use crate::engine::types::*;
-use crate::input_controller::{InputBindingMode, SharedControllers};
+use crate::engine::nodes::io::status::{level, with_status_port};
+use crate::input_controller::{ConnectionStatus, InputBindingMode, SharedControllers};
 
 /// Display state mirrored to the widget.
 pub struct InputControllerDisplay {
@@ -24,8 +25,8 @@ pub struct InputControllerProcessNode {
     id: NodeId,
     /// Bound controller id (0 = none selected).
     controller_id: u32,
-    /// Output port layout. Index 0 is always the "any change" trigger port,
-    /// followed by one port per learned input.
+    /// Output port layout: "connected" at 0, the "any change" trigger at 1,
+    /// then one port per learned input.
     outputs: Vec<PortDef>,
     /// Input port layout — only populated for feedback-capable controllers
     /// (BCF2000). Order matches the learned inputs; writes are forwarded to
@@ -46,6 +47,8 @@ pub struct InputControllerProcessNode {
     prev_output_values: Vec<f32>,
     /// True for one tick whenever any output value changed.
     any_changed: bool,
+    /// True while the bound controller has a live hardware session.
+    connected: bool,
     /// Cached previous values for trigger-edge detection.
     cache: Vec<InputCache>,
     /// Snapshot of current display info (for `update_display`).
@@ -65,13 +68,14 @@ impl InputControllerProcessNode {
         Self {
             id,
             controller_id: 0,
-            outputs: vec![PortDef::new("any change", PortType::Logic)],
+            outputs: base_outputs(),
             inputs: Vec::new(),
             input_values: Vec::new(),
             feedback_input_mapping_idx: Vec::new(),
             output_values: Vec::new(),
             prev_output_values: Vec::new(),
             any_changed: false,
+            connected: false,
             cache: Vec::new(),
             display_outputs: Vec::new(),
             display_feedback_inputs: Vec::new(),
@@ -100,12 +104,13 @@ impl ProcessNode for InputControllerProcessNode {
         let Some(c) = c else {
             for v in &mut self.output_values { *v = 0.0; }
             self.any_changed = false;
+            self.connected = false;
             self.prev_output_values.clear();
             self.display_outputs.clear();
             self.display_feedback_inputs.clear();
             self.display_name.clear();
-            if self.outputs.len() != 1 || self.outputs[0].name != "any change" {
-                self.outputs = vec![PortDef::new("any change", PortType::Logic)];
+            if self.outputs.len() != 2 || self.outputs[1].name != "any change" {
+                self.outputs = base_outputs();
             }
             self.inputs.clear();
             self.input_values.clear();
@@ -115,15 +120,17 @@ impl ProcessNode for InputControllerProcessNode {
         };
 
         self.has_feedback = c.kind.has_feedback();
+        self.connected = c.status == ConnectionStatus::Connected;
 
         // Rebuild output port layout if the input set changed.
         let n = c.inputs.len();
-        let expected_out_len = n + 1;
+        let expected_out_len = n + 2;
         let out_layout_changed = self.outputs.len() != expected_out_len
-            || self.outputs.iter().skip(1).zip(c.inputs.iter())
+            || self.outputs.iter().skip(2).zip(c.inputs.iter())
                 .any(|(p, i)| p.name != i.name || p.port_type != port_type_for(&i.source));
         if out_layout_changed {
-            self.outputs = std::iter::once(PortDef::new("any change", PortType::Logic))
+            self.outputs = base_outputs()
+                .into_iter()
                 .chain(c.inputs.iter().map(|i| {
                     PortDef::new(i.name.clone(), port_type_for(&i.source))
                 }))
@@ -198,11 +205,10 @@ impl ProcessNode for InputControllerProcessNode {
         self.prev_output_values.copy_from_slice(&self.output_values);
 
         self.display_name = c.name.clone();
-        self.display_outputs = std::iter::once((
-            "any change".to_string(),
-            PortType::Logic,
-            if self.any_changed { 1.0 } else { 0.0 },
-        )).chain(c.inputs.iter().enumerate().map(|(i, input)| {
+        self.display_outputs = [
+            ("connected".to_string(), PortType::Logic, level(self.connected)),
+            ("any change".to_string(), PortType::Logic, level(self.any_changed)),
+        ].into_iter().chain(c.inputs.iter().enumerate().map(|(i, input)| {
             (input.name.clone(), port_type_for(&input.source), self.output_values[i])
         })).collect();
         self.display_feedback_inputs = self.feedback_input_mapping_idx.iter().map(|&idx| {
@@ -212,10 +218,10 @@ impl ProcessNode for InputControllerProcessNode {
     }
 
     fn read_output(&self, pi: usize) -> f32 {
-        if pi == 0 {
-            if self.any_changed { 1.0 } else { 0.0 }
-        } else {
-            self.output_values.get(pi - 1).copied().unwrap_or(0.0)
+        match pi {
+            0 => level(self.connected),
+            1 => level(self.any_changed),
+            _ => self.output_values.get(pi - 2).copied().unwrap_or(0.0),
         }
     }
 
@@ -244,6 +250,11 @@ impl ProcessNode for InputControllerProcessNode {
             feedback_inputs: self.display_feedback_inputs.clone(),
         }));
     }
+}
+
+/// The ports every layout starts with, ahead of the learned inputs.
+fn base_outputs() -> Vec<PortDef> {
+    with_status_port(vec![PortDef::new("any change", PortType::Logic)])
 }
 
 fn port_type_for(source: &crate::input_controller::InputSource) -> PortType {

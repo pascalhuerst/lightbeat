@@ -249,6 +249,13 @@ src/
   (`SetupFile::input_controllers`). Missing hardware just emits 0s and is
   reconnected by a ~1 Hz worker. Binding modes (Value / TriggerOnPress /
   TriggerOnRelease) are applied in the engine node.
+- Every hardware node (Input Controller, Audio Input, Launchpad S, Push 1,
+  X1) has a leading **`connected`** Logic output (port 0): high while the
+  device has a live session. Build layouts with `io::status::with_status_port`.
+- `ProjectFile.version` records port-layout changes that would repoint saved
+  wires. When you insert or reorder ports on an existing node type, bump
+  `PROJECT_VERSION` and extend `connections_for_current_layout` in
+  `project.rs` (it runs per level, including inner subgraphs and macros).
 - Missing hardware is looked for on setup load, on edits and on the
   status-bar **Rescan** button, never on a timer (USB/ALSA enumeration is
   slow and prints to stderr every time). Missing controllers/inputs show as

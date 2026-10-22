@@ -1,3 +1,4 @@
+use crate::engine::nodes::io::status::status_port;
 use std::any::Any;
 
 use egui::{self, Color32, Ui};
@@ -90,7 +91,8 @@ impl NodeWidget for LaunchpadWidget {
     }
 
     fn ui_outputs(&self) -> Vec<UiPortDef> {
-        let mut v = Vec::with_capacity(1 + N_CONTROLS);
+        let mut v = Vec::with_capacity(2 + N_CONTROLS);
+        v.push(UiPortDef::from_def(&status_port()));
         v.push(UiPortDef::from_def(&PortDef::new("any change", PortType::Logic)));
         for row in 0..8u8 {
             for col in 0..8u8 {

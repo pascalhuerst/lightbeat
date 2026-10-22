@@ -31,8 +31,27 @@ use crate::widgets::nodes::{GraphLevel, NodeGraph};
 // Save format
 // ---------------------------------------------------------------------------
 
+/// Bumped when a node's port layout changes in a way that would repoint
+/// saved connections. Files without the field load as version 0.
+///
+/// 1: hardware nodes gained a leading "connected" output.
+///
+/// TEMPORARY: the migration exists only so the developers' test projects
+/// survive one load. Once they are re-saved, delete `STATUS_PORT_NODE_TYPES`,
+/// `connections_for_current_layout`, its tests and the `version` field.
+pub const PROJECT_VERSION: u32 = 1;
+
+/// Node types whose outputs shifted by one when the "connected" port was
+/// inserted at index 0 (version 1).
+const STATUS_PORT_NODE_TYPES: [&str; 5] =
+    ["Input Controller", "Audio Input", "Launchpad S", "Push 1", "X1"];
+
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct ProjectFile {
+    /// Written on every level, including inner subgraphs and macros, since
+    /// each is migrated on its own.
+    #[serde(default)]
+    pub version: u32,
     pub nodes: Vec<SavedNode>,
     pub connections: Vec<SavedConnection>,
     /// Decorative frames per level — purely visual, no engine side.
@@ -261,6 +280,7 @@ pub fn save_level(level: &GraphLevel, graph: &NodeGraph) -> ProjectFile {
     // View state is plumbed in by the caller (save_to_file) at the root
     // level only; nested subgraph saves leave it as None.
     ProjectFile {
+        version: PROJECT_VERSION,
         nodes,
         connections,
         frames,
@@ -279,9 +299,30 @@ pub fn save_graph(graph: &NodeGraph) -> ProjectFile {
 // Load
 // ---------------------------------------------------------------------------
 
+/// The project's connections rewritten for the port layout this build
+/// expects, so wires saved before a layout change keep their endpoints.
+fn connections_for_current_layout(project: &ProjectFile) -> Vec<SavedConnection> {
+    let mut connections = project.connections.clone();
+    if project.version < 1 {
+        for c in &mut connections {
+            let from_type = project
+                .nodes
+                .iter()
+                .find(|n| n.id == c.from_node)
+                .map(|n| n.type_name.as_str());
+            if from_type.is_some_and(|t| STATUS_PORT_NODE_TYPES.contains(&t)) {
+                c.from_port += 1;
+            }
+        }
+    }
+    connections
+}
+
 #[allow(dead_code)]
 pub fn load_graph(graph: &mut NodeGraph, project: &ProjectFile) -> Vec<usize> {
     let mut indices = Vec::new();
+
+    let project_connections = connections_for_current_layout(project);
 
     for saved in &project.nodes {
         let id = NodeId(saved.id);
@@ -723,7 +764,7 @@ pub fn load_graph(graph: &mut NodeGraph, project: &ProjectFile) -> Vec<usize> {
     };
 
     // Restore connections (only between nodes that were actually loaded).
-    for sc in &project.connections {
+    for sc in &project_connections {
         if !loaded_ids.contains(&sc.from_node) || !loaded_ids.contains(&sc.to_node) {
             continue;
         }
@@ -812,4 +853,52 @@ pub fn save_to_file(
 pub fn load_from_file(path: &PathBuf) -> Result<ProjectFile, String> {
     let json = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
     serde_json::from_str(&json).map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn node(id: u64, type_name: &str) -> SavedNode {
+        SavedNode {
+            type_name: type_name.to_string(),
+            id,
+            pos: [0.0, 0.0],
+            size: None,
+            params: Vec::new(),
+            data: None,
+            inner_graph: None,
+            disabled: false,
+        }
+    }
+
+    fn conn(from_node: u64, from_port: usize, to_node: u64) -> SavedConnection {
+        SavedConnection { from_node, from_port, to_node, to_port: 0 }
+    }
+
+    fn project(version: u32) -> ProjectFile {
+        ProjectFile {
+            version,
+            nodes: vec![node(1, "X1"), node(2, "LFO")],
+            connections: vec![conn(1, 3, 2), conn(2, 0, 1)],
+            frames: Vec::new(),
+            view: None,
+            bridge_in_pos: None,
+            bridge_out_pos: None,
+        }
+    }
+
+    #[test]
+    fn old_hardware_outputs_shift_past_the_status_port() {
+        let out = connections_for_current_layout(&project(0));
+        assert_eq!(out[0].from_port, 4);
+        // Only outputs of hardware nodes move; this one comes from an LFO.
+        assert_eq!(out[1].from_port, 0);
+    }
+
+    #[test]
+    fn current_projects_are_left_alone() {
+        let out = connections_for_current_layout(&project(PROJECT_VERSION));
+        assert_eq!(out[0].from_port, 3);
+    }
 }

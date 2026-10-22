@@ -1,5 +1,6 @@
 use crate::audio::analyzers::AnalyzerKind;
-use crate::audio::manager::SharedAudioInputs;
+use crate::audio::manager::{ConnectionStatus, SharedAudioInputs};
+use crate::engine::nodes::io::status::{level, with_status_port};
 use crate::engine::types::*;
 
 /// Decode a JSON number/bool into the right `ParamValue` variant given the
@@ -33,7 +34,8 @@ pub struct AudioInputProcessNode {
     id: NodeId,
     /// Bound audio input id (0 = none selected).
     input_id: u32,
-    /// Port layout — rebuilt when the bound input's analyzer set changes.
+    /// Port layout — "connected" at 0, then the analyzer ports. Rebuilt when
+    /// the bound input's analyzer set changes. Empty while no input is bound.
     outputs: Vec<PortDef>,
     output_values: Vec<f32>,
     /// Analyzer kinds currently reflected in the port layout.
@@ -101,7 +103,10 @@ impl ProcessNode for AudioInputProcessNode {
         // clears the live handles/frame) leaves the port list intact, so
         // wires in the graph survive a disable → enable toggle.
         let kinds: Vec<AnalyzerKind> = input.analyzer_kinds.clone();
-        if kinds != self.cached_kinds {
+        // True only while a stream is actually open; an input that is
+        // disabled or whose device is missing reports false.
+        let connected = input.status == ConnectionStatus::Connected;
+        if kinds != self.cached_kinds || self.outputs.is_empty() {
             let mut expected: Vec<PortDef> = Vec::new();
             for (i, k) in kinds.iter().enumerate() {
                 let prefix = format!("a{}.", i);
@@ -109,15 +114,17 @@ impl ProcessNode for AudioInputProcessNode {
                     expected.push(PortDef::new(format!("{}{}", prefix, p.name), p.port_type));
                 }
             }
-            self.outputs = expected;
+            self.outputs = with_status_port(expected);
             self.output_values = vec![0.0; self.outputs.len()];
             self.caches = vec![AnalyzerCache::default(); kinds.len()];
             self.cached_kinds = kinds.clone();
         }
 
+        self.output_values[0] = level(connected);
+
         // Read the latest phase-aligned analyzer frame.
         let Some(frame_arc) = input.analyzer_frame.clone() else {
-            for v in &mut self.output_values { *v = 0.0; }
+            for v in self.output_values.iter_mut().skip(1) { *v = 0.0; }
             // Reset onset caches so a future re-enable (worker restart with
             // onset_counter back at 0) doesn't edge-detect against our
             // pre-disable cache value and fire a spurious pulse.
@@ -138,7 +145,7 @@ impl ProcessNode for AudioInputProcessNode {
         // Slot analyzer values into the output buffer. For analyzers whose
         // first output is a trigger (Beat, AudioBeat), edge-detect from the
         // monotonic onset counter emitted by the worker.
-        let mut slot = 0;
+        let mut slot = 1;
         for (ai, k) in self.cached_kinds.iter().enumerate() {
             let n = k.outputs().len();
             let is_trigger = matches!(k, AnalyzerKind::Beat | AnalyzerKind::Onset);
@@ -174,7 +181,7 @@ impl ProcessNode for AudioInputProcessNode {
             .map(|(i, p)| (p.name.clone(), p.port_type, self.output_values[i]))
             .collect();
         self.display_analyzer_results.clear();
-        let mut o = 0;
+        let mut o = 1;
         for k in &self.cached_kinds {
             let n = k.outputs().len();
             let vals: Vec<f32> = (o..o + n)

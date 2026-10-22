@@ -4,4 +4,5 @@ pub mod input_controller;
 pub mod internal_clock;
 pub mod launchpad;
 pub mod push1;
+pub mod status;
 pub mod x1;

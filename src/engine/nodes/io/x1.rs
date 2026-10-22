@@ -12,7 +12,10 @@ use crate::input_controller::x1::{
     ALL_BUTTONS, ALL_ENCODERS, ALL_POTS, X1ButtonId, X1EncoderId, X1PotId, X1Source,
     button_led_index, button_name, encoder_name, pot_name,
 };
-use crate::input_controller::{InputControllerKind, InputSource, SharedControllers};
+use crate::engine::nodes::io::status::{level, with_status_port};
+use crate::input_controller::{
+    ConnectionStatus, InputControllerKind, InputSource, SharedControllers,
+};
 
 pub struct X1Display {
     pub controller_id: u32,
@@ -49,6 +52,8 @@ pub struct X1ProcessNode {
     /// against. `0` means "not yet built".
     cached_for: u32,
 
+    /// True while the bound controller has a live hardware session, not just
+    /// while a controller of the right kind is selected.
     connected: bool,
     controller_name: String,
 }
@@ -64,7 +69,7 @@ impl X1ProcessNode {
             controller_id: 0,
             controllers,
             inputs,
-            outputs,
+            outputs: with_status_port(outputs),
             out_values: vec![0.0; n_out],
             prev_control_values: Vec::new(),
             in_values: vec![0.0; n_in],
@@ -108,7 +113,7 @@ impl ProcessNode for X1ProcessNode {
             return;
         }
         self.controller_name = c.name.clone();
-        self.connected = true;
+        self.connected = c.status == ConnectionStatus::Connected;
 
         // Rebuild port-index → runtime-index maps if this is the first tick
         // with this controller, or if the runtime's input set changed.
@@ -154,7 +159,10 @@ impl ProcessNode for X1ProcessNode {
     }
 
     fn read_output(&self, pi: usize) -> f32 {
-        self.out_values.get(pi).copied().unwrap_or(0.0)
+        match pi.checked_sub(1) {
+            None => level(self.connected),
+            Some(i) => self.out_values.get(i).copied().unwrap_or(0.0),
+        }
     }
 
     fn read_input(&self, pi: usize) -> f32 {

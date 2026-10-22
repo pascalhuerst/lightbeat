@@ -1,3 +1,4 @@
+use crate::engine::nodes::io::status::status_port;
 use std::any::Any;
 
 use egui::{self, Color32, Ui};
@@ -94,8 +95,9 @@ impl NodeWidget for Push1Widget {
             ("enc val", PortType::Untyped),
             ("slider", PortType::Untyped),
         ];
-        let mut v: Vec<UiPortDef> = defs.iter()
-            .map(|(n, t)| UiPortDef::from_def(&PortDef::new((*n).to_string(), *t)))
+        let mut v: Vec<UiPortDef> = std::iter::once(UiPortDef::from_def(&status_port()))
+            .chain(defs.iter()
+                .map(|(n, t)| UiPortDef::from_def(&PortDef::new((*n).to_string(), *t))))
             .collect();
         for name in NAMED {
             v.push(UiPortDef::from_def(&PortDef::new((*name).to_string(), PortType::Logic)));

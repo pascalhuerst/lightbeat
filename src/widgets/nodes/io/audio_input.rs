@@ -1,3 +1,4 @@
+use crate::engine::nodes::io::status::status_port;
 use std::any::Any;
 
 use egui::{self, Color32, Pos2, Stroke, StrokeKind, Ui};
@@ -83,7 +84,7 @@ impl AudioInputWidget {
         if let Some(input) = state.iter().find(|c| c.id == self.input_id) {
             // Mirror the engine's port layout (matches
             // AudioInputProcessNode::process): per-analyzer prefixed ports.
-            let mut outs = Vec::new();
+            let mut outs = vec![("connected".to_string(), PortType::Logic, 0.0)];
             for (i, kind) in input.analyzer_kinds.iter().enumerate() {
                 for p in kind.outputs() {
                     outs.push((format!("a{}.{}", i, p.name), p.port_type, 0.0));

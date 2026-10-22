@@ -1,3 +1,4 @@
+use crate::engine::nodes::io::status::status_port;
 use std::any::Any;
 
 use egui::{self, Color32, Ui};
@@ -72,7 +73,8 @@ impl NodeWidget for X1Widget {
     }
 
     fn ui_outputs(&self) -> Vec<UiPortDef> {
-        let mut v = Vec::with_capacity(1 + ALL_BUTTONS.len() + ALL_ENCODERS.len() + ALL_POTS.len());
+        let mut v = Vec::with_capacity(2 + ALL_BUTTONS.len() + ALL_ENCODERS.len() + ALL_POTS.len());
+        v.push(UiPortDef::from_def(&status_port()));
         v.push(UiPortDef::from_def(&PortDef::new("any change", PortType::Logic)));
         for &b in ALL_BUTTONS {
             v.push(UiPortDef::from_def(&PortDef::new(button_name(b), PortType::Untyped)));

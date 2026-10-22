@@ -434,25 +434,25 @@ impl LightBeatApp {
         });
         let ic_shared_push = self.input_controllers.shared.clone();
         self.graph.register_node("IO", "Push 1", move |id| {
-            // 25 outputs, 21 inputs (see push1.rs). 32/32 gives headroom.
+            // 26 outputs (incl. "connected"), 21 inputs (see push1.rs). 32/32 gives headroom.
             Box::new(Push1Widget::new(id, new_shared_state(32, 32), ic_shared_push.clone()))
         });
         let ic_shared_x1 = self.input_controllers.shared.clone();
         self.graph.register_node("IO", "X1", move |id| {
-            // 34 button outputs + 4 encoder outputs + 8 pot outputs = 46 outputs.
-            // 34 LED feedback inputs. 48/48 covers both with a little headroom.
-            Box::new(X1Widget::new(id, new_shared_state(48, 48), ic_shared_x1.clone()))
+            // 34 button outputs + 4 encoder outputs + 8 pot outputs + "any change" +
+            // "connected" = 48 outputs. 34 LED feedback inputs. 56/56 leaves headroom.
+            Box::new(X1Widget::new(id, new_shared_state(56, 56), ic_shared_x1.clone()))
         });
         let ic_shared_lp = self.input_controllers.shared.clone();
         self.graph.register_node("IO", "Launchpad S", move |id| {
-            // 81 outputs = 64 pads + 8 side + 8 top + 1 "any change" trigger.
+            // 82 outputs = 64 pads + 8 side + 8 top + "any change" + "connected".
             // 80 LED feedback inputs, each `Color` (3 channels) = 240
             // channels. 256 gives a bit of headroom.
-            Box::new(LaunchpadWidget::new(id, new_shared_state(256, 81), ic_shared_lp.clone()))
+            Box::new(LaunchpadWidget::new(id, new_shared_state(256, 82), ic_shared_lp.clone()))
         });
         let ai_shared = self.audio_inputs.shared.clone();
         self.graph.register_node("IO", "Audio Input", move |id| {
-            Box::new(AudioInputWidget::new(id, new_shared_state(0, 16), ai_shared.clone()))
+            Box::new(AudioInputWidget::new(id, new_shared_state(0, 32), ai_shared.clone()))
         });
 
         // UI
@@ -1266,6 +1266,7 @@ impl LightBeatApp {
     /// the same hardware set-up across projects.
     fn new_project(&mut self) {
         let empty = project::ProjectFile {
+            version: project::PROJECT_VERSION,
             nodes: Vec::new(),
             connections: Vec::new(),
             frames: Vec::new(),
@@ -1717,6 +1718,7 @@ impl LightBeatApp {
         // Load this single node into the active level via the existing
         // project loader machinery (handles inner-graph descent + bridges).
         let pf = project::ProjectFile {
+            version: project::PROJECT_VERSION,
             nodes: vec![saved.clone()],
             connections: Vec::new(),
             frames: Vec::new(),

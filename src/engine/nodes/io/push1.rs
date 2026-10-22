@@ -25,7 +25,10 @@
 use std::collections::VecDeque;
 
 use crate::engine::types::*;
-use crate::input_controller::{InputControllerKind, InputSource, LearnedInput, SharedControllers};
+use crate::engine::nodes::io::status::{level, with_status_port};
+use crate::input_controller::{
+    ConnectionStatus, InputControllerKind, InputSource, LearnedInput, SharedControllers,
+};
 use crate::input_controller::midi::MidiSource;
 
 /// Display state for the widget.
@@ -164,7 +167,7 @@ impl Push1ProcessNode {
             controller_id: 0,
             controllers,
             inputs: build_inputs(),
-            outputs: build_outputs(),
+            outputs: with_status_port(build_outputs()),
             idx_map: IndexMap::default(),
             prev_values: Vec::new(),
             pad_events: VecDeque::new(),
@@ -348,7 +351,7 @@ impl ProcessNode for Push1ProcessNode {
                 return;
             }
             self.controller_name = c.name.clone();
-            self.connected = true;
+            self.connected = c.status == ConnectionStatus::Connected;
 
             // Lazy index rebuild.
             if self.idx_map.pads.is_empty() || self.idx_map.pads.len() != 64 {
@@ -449,6 +452,9 @@ impl ProcessNode for Push1ProcessNode {
     }
 
     fn read_output(&self, pi: usize) -> f32 {
+        let Some(pi) = pi.checked_sub(1) else {
+            return level(self.connected);
+        };
         match pi {
             i if i == out_idx::PAD_TRIG => self.pad_trig,
             i if i == out_idx::PAD_X => self.pad_x,
