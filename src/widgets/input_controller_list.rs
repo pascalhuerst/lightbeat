@@ -10,6 +10,20 @@ pub fn show(ui: &mut Ui, mgr: &mut InputControllerManager) {
     ui.heading("Input Controllers");
     ui.separator();
 
+    let missing = mgr.missing_controllers();
+    if !missing.is_empty() {
+        ui.horizontal(|ui| {
+            ui.colored_label(
+                crate::theme::SEM_WARNING,
+                format!("Hardware not found: {}", missing.join(", ")),
+            );
+            if ui.button("Rescan").clicked() {
+                mgr.rescan();
+            }
+        });
+        ui.separator();
+    }
+
     // Refresh available MIDI ports each frame (cheap on macOS/Linux/Windows;
     // midir just enumerates the system).
     let available_ports = InputControllerManager::available_midi_ports();

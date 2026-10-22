@@ -1977,8 +1977,7 @@ impl LightBeatApp {
                 && ir.response.contains_pointer() { setup_hovered = true; }
         }
 
-        // Periodic reconnect / port availability checks.
-        self.input_controllers.tick_reconnect();
+        self.input_controllers.reap_lost_sessions();
         self.audio_inputs.tick_reconnect();
 
         // "Add Nodes" side panel (left) — unified node-registry + macro library.
@@ -2200,6 +2199,22 @@ impl LightBeatApp {
                         "Live"
                     };
                     ui.colored_label(egui::Color32::from_gray(100), status);
+
+                    let missing = self.input_controllers.missing_controllers();
+                    if !missing.is_empty() {
+                        ui.separator();
+                        ui.colored_label(
+                            crate::theme::SEM_WARNING,
+                            format!("Not found: {}", missing.join(", ")),
+                        );
+                        if ui
+                            .small_button("Rescan")
+                            .on_hover_text("Look for the missing input controllers again")
+                            .clicked()
+                        {
+                            self.input_controllers.rescan();
+                        }
+                    }
 
                     // Right-aligned zoom indicator + performance readout.
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
