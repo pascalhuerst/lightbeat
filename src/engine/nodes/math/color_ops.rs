@@ -193,6 +193,10 @@ impl ProcessNode for ColorMergeProcessNode {
         }
     }
 
+    fn non_promotable_params(&self) -> &'static [&'static str] {
+        &["Mode"]
+    }
+
     fn params(&self) -> Vec<ParamDef> {
         vec![ParamDef::Choice {
             name: "Mode".into(),
@@ -316,6 +320,10 @@ impl ProcessNode for ColorSplitProcessNode {
             }
             _ => if pi < 4 { self.components_out[pi] } else { 0.0 },
         }
+    }
+
+    fn non_promotable_params(&self) -> &'static [&'static str] {
+        &["Mode"]
     }
 
     fn params(&self) -> Vec<ParamDef> {

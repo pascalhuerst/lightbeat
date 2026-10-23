@@ -80,6 +80,10 @@ impl ProcessNode for XyPadProcessNode {
         }
     }
 
+    fn non_promotable_params(&self) -> &'static [&'static str] {
+        &["X", "Y"]
+    }
+
     fn params(&self) -> Vec<ParamDef> {
         vec![
             ParamDef::Float {

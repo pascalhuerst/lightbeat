@@ -2,7 +2,7 @@ use egui::{self, Ui};
 
 use super::nodes::node::NodeWidget;
 use super::nodes::types::PortTypeUi;
-use crate::engine::types::{ParamDef, ParamValue, PortDef, PortType};
+use crate::engine::types::{ParamDef, ParamValue, PortDef, PortType, PromotedKind, PromotedParam};
 use crate::theme;
 
 /// Read params from a node's shared state.
@@ -103,6 +103,61 @@ fn show_port_value(ui: &mut Ui, def: &PortDef, values: &[f32], base: usize) {
     });
 }
 
+/// What the inspector needs to know to offer "expose as input" per param.
+struct PromoteCtx {
+    promoted: Vec<PromotedParam>,
+    non_promotable: &'static [&'static str],
+    connected: Vec<bool>,
+    native_inputs: usize,
+}
+
+impl PromoteCtx {
+    fn read(node: &dyn NodeWidget) -> Self {
+        // `ui_inputs` may lock the node's shared state itself, so it must not
+        // be called while the lock below is held.
+        let native_inputs = node.ui_inputs().len();
+        let shared = node.shared_state().lock().unwrap();
+        Self {
+            promoted: shared.promoted.clone(),
+            non_promotable: shared.non_promotable,
+            connected: shared.inputs_connected.clone(),
+            native_inputs,
+        }
+    }
+
+    fn slot(&self, name: &str) -> Option<usize> {
+        self.promoted.iter().position(|p| p.name == name)
+    }
+
+    /// True while a wire is feeding this param's input.
+    fn driven(&self, name: &str) -> bool {
+        self.slot(name)
+            .is_some_and(|s| self.connected.get(self.native_inputs + s).copied().unwrap_or(false))
+    }
+}
+
+/// Checkbox that turns a param into an input port and back.
+fn promote_checkbox(ui: &mut Ui, node: &dyn NodeWidget, promo: &PromoteCtx, param: &ParamDef) {
+    let name = param.name();
+    if promo.non_promotable.contains(&name) {
+        return;
+    }
+    let mut on = promo.slot(name).is_some();
+    let hint = "Expose this setting as an input port. While a wire is connected it controls the value.";
+    if ui.checkbox(&mut on, "in").on_hover_text(hint).changed() {
+        let mut shared = node.shared_state().lock().unwrap();
+        if on {
+            shared.promoted.push(PromotedParam {
+                name: name.to_string(),
+                kind: PromotedKind::of(param),
+            });
+        } else {
+            shared.promoted.retain(|p| p.name != name);
+        }
+        shared.pending_promoted = Some(shared.promoted.clone());
+    }
+}
+
 /// Draw the inspector panel for a single selected node.
 pub fn show_inspector(ui: &mut Ui, node: &mut dyn NodeWidget) {
     let title = node.title();
@@ -169,8 +224,12 @@ pub fn show_inspector(ui: &mut Ui, node: &mut dyn NodeWidget) {
         ui.label(egui::RichText::new("Parameters").strong().size(11.0));
         ui.add_space(4.0);
 
+        let promo = PromoteCtx::read(node);
         for (i, param) in params.iter().enumerate() {
             if hidden.contains(&i) { continue; }
+            // A wired promoted param is driven by its signal; editing it by
+            // hand would only be overwritten on the next tick.
+            let locked = promo.driven(param.name());
             match param {
                 ParamDef::Float {
                     name,
@@ -182,13 +241,16 @@ pub fn show_inspector(ui: &mut Ui, node: &mut dyn NodeWidget) {
                 } => {
                     let mut v = *value;
                     ui.horizontal(|ui| {
-                        ui.label(name);
-                        let slider = egui::Slider::new(&mut v, *min..=*max)
-                            .step_by(*step as f64)
-                            .suffix(*unit);
-                        if ui.add(slider).changed() {
-                            push_param(node, i, ParamValue::Float(v));
-                        }
+                        ui.add_enabled_ui(!locked, |ui| {
+                            ui.label(name);
+                            let slider = egui::Slider::new(&mut v, *min..=*max)
+                                .step_by(*step as f64)
+                                .suffix(*unit);
+                            if ui.add(slider).changed() {
+                                push_param(node, i, ParamValue::Float(v));
+                            }
+                        });
+                        promote_checkbox(ui, node, &promo, param);
                     });
                 }
                 ParamDef::Int {
@@ -199,18 +261,26 @@ pub fn show_inspector(ui: &mut Ui, node: &mut dyn NodeWidget) {
                 } => {
                     let mut v = *value;
                     ui.horizontal(|ui| {
-                        ui.label(name);
-                        let slider = egui::Slider::new(&mut v, *min..=*max);
-                        if ui.add(slider).changed() {
-                            push_param(node, i, ParamValue::Int(v));
-                        }
+                        ui.add_enabled_ui(!locked, |ui| {
+                            ui.label(name);
+                            let slider = egui::Slider::new(&mut v, *min..=*max);
+                            if ui.add(slider).changed() {
+                                push_param(node, i, ParamValue::Int(v));
+                            }
+                        });
+                        promote_checkbox(ui, node, &promo, param);
                     });
                 }
                 ParamDef::Bool { name, value } => {
                     let mut v = *value;
-                    if ui.checkbox(&mut v, name).changed() {
-                        push_param(node, i, ParamValue::Bool(v));
-                    }
+                    ui.horizontal(|ui| {
+                        ui.add_enabled_ui(!locked, |ui| {
+                            if ui.checkbox(&mut v, name).changed() {
+                                push_param(node, i, ParamValue::Bool(v));
+                            }
+                        });
+                        promote_checkbox(ui, node, &promo, param);
+                    });
                 }
                 ParamDef::Choice {
                     name,
@@ -219,16 +289,19 @@ pub fn show_inspector(ui: &mut Ui, node: &mut dyn NodeWidget) {
                 } => {
                     let mut v = *value;
                     ui.horizontal(|ui| {
-                        ui.label(name);
-                        egui::ComboBox::from_id_salt(format!("param_{}", i))
-                            .selected_text(&options[v])
-                            .show_ui(ui, |ui| {
-                                for (oi, opt) in options.iter().enumerate() {
-                                    if ui.selectable_value(&mut v, oi, opt).changed() {
-                                        push_param(node, i, ParamValue::Choice(v));
+                        ui.add_enabled_ui(!locked, |ui| {
+                            ui.label(name);
+                            egui::ComboBox::from_id_salt(format!("param_{}", i))
+                                .selected_text(&options[v])
+                                .show_ui(ui, |ui| {
+                                    for (oi, opt) in options.iter().enumerate() {
+                                        if ui.selectable_value(&mut v, oi, opt).changed() {
+                                            push_param(node, i, ParamValue::Choice(v));
+                                        }
                                     }
-                                }
-                            });
+                                });
+                        });
+                        promote_checkbox(ui, node, &promo, param);
                     });
                 }
             }

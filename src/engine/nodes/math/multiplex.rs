@@ -170,6 +170,10 @@ impl ProcessNode for MultiplexerProcessNode {
         self.output_values.get(channel).copied().unwrap_or(0.0)
     }
 
+    fn non_promotable_params(&self) -> &'static [&'static str] {
+        &["Type", "Slots", "Select Mode"]
+    }
+
     fn params(&self) -> Vec<ParamDef> {
         vec![
             ParamDef::Choice {
@@ -311,6 +315,10 @@ impl ProcessNode for DemultiplexerProcessNode {
 
     fn read_output(&self, channel: usize) -> f32 {
         self.output_values.get(channel).copied().unwrap_or(0.0)
+    }
+
+    fn non_promotable_params(&self) -> &'static [&'static str] {
+        &["Type", "Slots", "Select Mode"]
     }
 
     fn params(&self) -> Vec<ParamDef> {

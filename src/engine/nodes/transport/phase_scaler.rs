@@ -133,6 +133,10 @@ impl ProcessNode for PhaseScalerProcessNode {
         match port_index { 0 => self.phase_out, _ => 0.0 }
     }
 
+    fn non_promotable_params(&self) -> &'static [&'static str] {
+        &["Exponent", "Offset"]
+    }
+
     fn params(&self) -> Vec<ParamDef> {
         vec![
             ParamDef::Int { name: "Exponent".into(), value: self.exponent as i64, min: -6, max: 6 },

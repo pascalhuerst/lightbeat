@@ -297,6 +297,28 @@ src/
 
 ---
 
+## 3c. Promoted params (params as inputs)
+
+- Any param can be exposed as an input port from the inspector (checkbox
+  `in` next to the control). The node knows nothing about it: the graph adds
+  the ports after the node's own inputs and turns each incoming value into a
+  `set_param` (`engine/promoted.rs`, used by both `EngineGraph::tick` and
+  `InnerGraph::tick`). Float/Int take the raw value clamped to the param's
+  range, Bool switches at 0.5, Choice spreads a 0..1 signal over its options.
+- The list lives in `NodeSharedState::promoted` (UI-owned, saved as
+  `SavedNode.promoted`); changes reach the engine via `pending_promoted`.
+  `NodeWidget::ui_inputs_full()` is `ui_inputs()` plus those ports; the graph
+  must call it, never `ui_inputs()`, when dealing with ports.
+- Toggling remaps wires on the later promoted ports
+  (`remap_promoted_connections`). Connect/disconnect hooks are not called for
+  promoted ports, since nodes only know their own inputs.
+- A node opts params out with `ProcessNode::non_promotable_params()`: ones
+  that reshape its ports or buffers (modes, types, slot counts) and ones
+  already served by a native input port. New nodes with such params must list
+  them.
+
+---
+
 ## 4. Adding a new node — checklist
 
 1. **Engine file**: `src/engine/nodes/<category>/<snake_name>.rs` —

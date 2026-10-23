@@ -5,6 +5,7 @@ use ringbuf::traits::Consumer;
 
 use super::CommandConsumer;
 use super::nodes::meta::subgraph::SubgraphProcessNode;
+use super::promoted::PromotedInputs;
 use super::types::*;
 use crate::dmx_io::{DmxOutputManager, SharedDmxState, SharedObjectStore};
 use crate::perf::{EngineTickTimer, NodeProfiler, SharedPerfStats};
@@ -19,6 +20,9 @@ pub struct EngineGraph {
     /// NodeId to index in `nodes`. Rebuilt only when nodes are added or
     /// removed; without it every connection cost a linear scan per tick.
     node_index: HashMap<NodeId, usize>,
+    /// Params the user turned into input ports, parallel to `nodes`.
+    promoted: Vec<PromotedInputs>,
+    promoted_writes: Vec<(usize, usize, f32)>,
     /// Scratch buffers reused across ticks so the hot loop does not allocate.
     per_node_connected: Vec<Vec<bool>>,
     disabled_mask: Vec<bool>,
@@ -46,6 +50,8 @@ impl EngineGraph {
             dmx: Some(DmxOutputManager::new(dmx_shared, object_store)),
             perf,
             node_index: HashMap::new(),
+            promoted: Vec::new(),
+            promoted_writes: Vec::new(),
             per_node_connected: Vec::new(),
             disabled_mask: Vec::new(),
             write_buf: Vec::new(),
@@ -63,6 +69,7 @@ impl EngineGraph {
 
     fn add_node(&mut self, node: Box<dyn ProcessNode>, shared: SharedState) {
         self.shared_states.push(shared);
+        self.promoted.push(PromotedInputs::default());
         self.node_index.insert(node.node_id(), self.nodes.len());
         self.nodes.push(node);
     }
@@ -71,6 +78,7 @@ impl EngineGraph {
         if let Some(idx) = self.nodes.iter().position(|n| n.node_id() == id) {
             self.nodes.remove(idx);
             self.shared_states.remove(idx);
+            self.promoted.remove(idx);
             self.connections
                 .retain(|c| c.from.node != id && c.to.node != id);
             // Every index after the removed one shifted down.
@@ -136,6 +144,7 @@ impl EngineGraph {
             EngineCommand::RemoveAllNodes => {
                 self.nodes.clear();
                 self.shared_states.clear();
+                self.promoted.clear();
                 self.connections.clear();
                 self.node_index.clear();
             }
@@ -182,15 +191,19 @@ impl EngineGraph {
         // node's ports.
         self.disabled_mask.clear();
         for (i, node) in self.nodes.iter_mut().enumerate() {
-            let (disabled, pending, config_update) = {
+            let (disabled, pending, config_update, promoted_update) = {
                 let mut shared = self.shared_states[i].lock().unwrap();
                 (
                     shared.disabled,
                     std::mem::take(&mut shared.pending_params),
                     shared.pending_config.take(),
+                    shared.pending_promoted.take(),
                 )
             };
             self.disabled_mask.push(disabled);
+            if let Some(list) = promoted_update {
+                self.promoted[i].adopt(&list, node.as_ref());
+            }
             for (idx, val) in pending {
                 node.set_param(idx, val);
             }
@@ -205,7 +218,7 @@ impl EngineGraph {
         self.per_node_connected.resize_with(self.nodes.len(), Vec::new);
         self.per_node_connected.truncate(self.nodes.len());
         for (i, node) in self.nodes.iter().enumerate() {
-            let slots = node.inputs().len();
+            let slots = node.inputs().len() + self.promoted[i].len();
             let buf = &mut self.per_node_connected[i];
             buf.clear();
             buf.resize(slots, false);
@@ -217,7 +230,11 @@ impl EngineGraph {
                 }
         }
         for (i, node) in self.nodes.iter_mut().enumerate() {
-            node.set_input_connections(&self.per_node_connected[i]);
+            let native = node.inputs().len();
+            node.set_input_connections(&self.per_node_connected[i][..native]);
+            if self.promoted[i].len() > 0 {
+                self.promoted[i].note_wiring(&self.per_node_connected[i][native..]);
+            }
         }
 
         // 2. Process all nodes — skipping disabled ones. Disabled nodes
@@ -245,6 +262,8 @@ impl EngineGraph {
         // Multi-channel ports (Color=3, Position=2) expand to multiple float copies.
         let mut writes = std::mem::take(&mut self.write_buf);
         writes.clear();
+        let mut promoted_writes = std::mem::take(&mut self.promoted_writes);
+        promoted_writes.clear();
 
         for conn in &self.connections {
             let (Some(&src_node_idx), Some(&dst_node_idx)) = (
@@ -258,6 +277,15 @@ impl EngineGraph {
             let dst_ports = self.nodes[dst_node_idx].inputs();
 
             let src_base = port_base_index(src_ports, conn.from.index);
+
+            // Past the node's own inputs sit the promoted params; they take a
+            // single value and never go through `write_input`.
+            if conn.to.index >= dst_ports.len() {
+                let val = self.nodes[src_node_idx].read_output(src_base);
+                promoted_writes.push((dst_node_idx, conn.to.index - dst_ports.len(), val));
+                continue;
+            }
+
             let dst_base = port_base_index(dst_ports, conn.to.index);
 
             let src_channels = src_ports.get(conn.from.index).map(|p| p.port_type.channel_count()).unwrap_or(1);
@@ -274,6 +302,10 @@ impl EngineGraph {
             self.nodes[dst_idx].write_input(channel, val);
         }
         self.write_buf = writes;
+        for &(dst_idx, slot, val) in &promoted_writes {
+            self.promoted[dst_idx].apply(self.nodes[dst_idx].as_mut(), slot, val);
+        }
+        self.promoted_writes = promoted_writes;
 
         // 4. Update shared state for UI, at UI frame rate rather than tick
         // rate. `params()` allocates a fresh Vec of ParamDefs with owned
@@ -305,6 +337,7 @@ impl EngineGraph {
             shared
                 .inputs_connected
                 .extend_from_slice(&self.per_node_connected[i]);
+            shared.non_promotable = node.non_promotable_params();
             if self.disabled_mask.get(i).copied().unwrap_or(false) {
                 continue;
             }
@@ -319,6 +352,9 @@ impl EngineGraph {
             shared.current_params = node.params();
             shared.save_data = node.save_data();
             node.update_display(&mut shared);
+        }
+        for (i, node) in self.nodes.iter().enumerate() {
+            self.promoted[i].refresh(node.as_ref());
         }
     }
 

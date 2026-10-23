@@ -1,3 +1,4 @@
+pub use super::promoted::{PromotedKind, PromotedParam};
 use std::any::Any;
 use std::sync::{Arc, Mutex};
 
@@ -250,6 +251,15 @@ pub struct NodeSharedState {
     /// Config pushed by widget for the engine to apply via load_data.
     /// Separate from save_data to avoid the engine overwriting its own config.
     pub pending_config: Option<serde_json::Value>,
+    /// Params the user exposed as input ports, in port order. The UI owns
+    /// this list; the engine receives changes through `pending_promoted`.
+    pub promoted: Vec<PromotedParam>,
+    /// What `promoted` looked like when the graph last rewired connections,
+    /// so a change can be turned into a port remap.
+    pub promoted_applied: Vec<PromotedParam>,
+    pub pending_promoted: Option<Vec<PromotedParam>>,
+    /// Param names the node refuses to have promoted (written by the engine).
+    pub non_promotable: &'static [&'static str],
 }
 
 impl NodeSharedState {
@@ -264,6 +274,10 @@ impl NodeSharedState {
             pending_params: Vec::new(),
             save_data: None,
             pending_config: None,
+            promoted: Vec::new(),
+            promoted_applied: Vec::new(),
+            pending_promoted: None,
+            non_promotable: &[],
         }
     }
 }
@@ -373,6 +387,11 @@ pub trait ProcessNode: Send {
 
     fn params(&self) -> Vec<ParamDef> { vec![] }
     fn set_param(&mut self, _index: usize, _value: ParamValue) {}
+
+    /// Params, by name, that must not be turned into inputs: ones whose value
+    /// reshapes the node's ports or buffers, and ones already served by a
+    /// native input port.
+    fn non_promotable_params(&self) -> &'static [&'static str] { &[] }
 
     fn save_data(&self) -> Option<serde_json::Value> { None }
     fn load_data(&mut self, _data: &serde_json::Value) {}

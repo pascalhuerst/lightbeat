@@ -127,6 +127,10 @@ impl ProcessNode for ScopeProcessNode {
         }
     }
 
+    fn non_promotable_params(&self) -> &'static [&'static str] {
+        &["Time/Div", "Width", "Range Min", "Range Max"]
+    }
+
     fn params(&self) -> Vec<ParamDef> {
         vec![
             ParamDef::Float { name: "Time/Div".into(), value: self.time_scale, min: 0.125, max: 4.0, step: 0.125, unit: "x" },

@@ -215,6 +215,10 @@ impl ProcessNode for StepSequencerProcessNode {
         }
     }
 
+    fn non_promotable_params(&self) -> &'static [&'static str] {
+        &["Steps", "Mode"]
+    }
+
     fn params(&self) -> Vec<ParamDef> {
         vec![
             ParamDef::Int {

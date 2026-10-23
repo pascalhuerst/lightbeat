@@ -175,6 +175,10 @@ impl ProcessNode for CounterProcessNode {
         }
     }
 
+    fn non_promotable_params(&self) -> &'static [&'static str] {
+        &["Max", "Select Mode"]
+    }
+
     fn params(&self) -> Vec<ParamDef> {
         vec![
             ParamDef::Int { name: "Max".into(), value: self.max_value, min: 1, max: 256 },

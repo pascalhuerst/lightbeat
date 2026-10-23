@@ -95,6 +95,10 @@ impl ProcessNode for BipolarProcessNode {
         if pi == 0 { self.out_value } else { 0.0 }
     }
 
+    fn non_promotable_params(&self) -> &'static [&'static str] {
+        &["Range", "Center"]
+    }
+
     fn params(&self) -> Vec<ParamDef> {
         vec![
             ParamDef::Float {

@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 
 use crate::engine::nodes::meta::subgraph::{BRIDGE_IN_NODE_ID, BRIDGE_OUT_NODE_ID, SubgraphPortDef};
-use crate::engine::types::{NodeId, ParamDef, ParamValue, PortDir, PortId};
+use crate::engine::types::{NodeId, ParamDef, ParamValue, PortDir, PortId, PromotedParam};
 use crate::widgets::nodes::display::led_display::LedDisplayWidget;
 use crate::widgets::nodes::display::value_display::ValueDisplayWidget;
 use crate::widgets::nodes::io::audio_input::AudioInputWidget;
@@ -116,6 +116,10 @@ pub struct SavedNode {
     /// nodes from writing the field.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub disabled: bool,
+    /// Params the user exposed as input ports, in port order. Wires in
+    /// `connections` refer to these ports by index after the node's own.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub promoted: Vec<PromotedParam>,
 }
 
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
@@ -218,6 +222,7 @@ pub fn save_level(level: &GraphLevel, graph: &NodeGraph) -> ProjectFile {
 
         let data = shared.save_data.clone();
         let disabled = shared.disabled;
+        let promoted = shared.promoted.clone();
         drop(shared);
 
         // For Subgraph nodes, recursively save the inner level.
@@ -238,6 +243,7 @@ pub fn save_level(level: &GraphLevel, graph: &NodeGraph) -> ProjectFile {
             data,
             inner_graph,
             disabled,
+            promoted,
         });
     }
 
@@ -376,6 +382,12 @@ pub fn load_graph(graph: &mut NodeGraph, project: &ProjectFile) -> Vec<usize> {
                     shared.pending_params.push((sp.index, val));
                 }
                 shared.disabled = saved.disabled;
+                // Set before connections are restored so the extra ports exist.
+                shared.promoted = saved.promoted.clone();
+                shared.promoted_applied = saved.promoted.clone();
+                if !saved.promoted.is_empty() {
+                    shared.pending_promoted = Some(saved.promoted.clone());
+                }
             }
 
             // For Subgraph nodes, restore port definitions on the widget
@@ -869,6 +881,7 @@ mod tests {
             data: None,
             inner_graph: None,
             disabled: false,
+            promoted: Vec::new(),
         }
     }
 

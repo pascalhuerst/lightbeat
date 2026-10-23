@@ -90,6 +90,10 @@ impl ProcessNode for ToggleBankProcessNode {
         }
     }
 
+    fn non_promotable_params(&self) -> &'static [&'static str] {
+        &["Channels"]
+    }
+
     fn params(&self) -> Vec<ParamDef> {
         vec![ParamDef::Int {
             name: "Channels".into(),
