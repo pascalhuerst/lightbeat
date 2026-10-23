@@ -187,6 +187,10 @@ impl ProcessNode for TransitionProcessNode {
         self.output.get(channel).copied().unwrap_or(0.0)
     }
 
+    fn non_promotable_params(&self) -> &'static [&'static str] {
+        &["Mode"]
+    }
+
     fn params(&self) -> Vec<ParamDef> {
         let curve_options: Vec<String> = EasingCurve::all().iter().map(|c| c.label().into()).collect();
         vec![

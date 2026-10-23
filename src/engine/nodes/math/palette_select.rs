@@ -129,6 +129,10 @@ impl ProcessNode for PaletteSelectProcessNode {
         }
     }
 
+    fn non_promotable_params(&self) -> &'static [&'static str] {
+        &["Select Mode"]
+    }
+
     fn params(&self) -> Vec<ParamDef> {
         vec![ParamDef::Choice {
             name: "Select Mode".into(),

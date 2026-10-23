@@ -2,6 +2,7 @@ use crate::engine::nodes::display::led_display::LedDisplayProcessNode;
 use crate::engine::nodes::display::value_display::ValueDisplayProcessNode;
 use crate::engine::types::*;
 use crate::engine::graph::UI_SYNC_EVERY_N_TICKS;
+use crate::engine::promoted::PromotedInputs;
 use std::any::Any;
 use std::collections::HashMap;
 
@@ -113,6 +114,9 @@ pub struct InnerGraph {
     /// without it every connection cost a linear scan per channel per tick.
     node_index: HashMap<NodeId, usize>,
     index_stale: bool,
+    /// Params the user turned into input ports, parallel to `nodes`.
+    promoted: Vec<PromotedInputs>,
+    promoted_writes: Vec<(usize, usize, f32)>,
     /// Scratch buffers reused across ticks so the hot loop does not allocate.
     per_node_connected: Vec<Vec<bool>>,
     disabled_mask: Vec<bool>,
@@ -135,6 +139,8 @@ impl InnerGraph {
             bridge_out: Vec::new(),
             node_index: HashMap::new(),
             index_stale: false,
+            promoted: Vec::new(),
+            promoted_writes: Vec::new(),
             per_node_connected: Vec::new(),
             disabled_mask: Vec::new(),
             write_buf: Vec::new(),
@@ -163,15 +169,19 @@ impl InnerGraph {
         // connection scan because `load_data` can rebuild a node's ports.
         self.disabled_mask.clear();
         for (i, node) in self.nodes.iter_mut().enumerate() {
-            let (disabled, pending, config_update) = {
+            let (disabled, pending, config_update, promoted_update) = {
                 let mut shared = self.shared_states[i].lock().unwrap();
                 (
                     shared.disabled,
                     std::mem::take(&mut shared.pending_params),
                     shared.pending_config.take(),
+                    shared.pending_promoted.take(),
                 )
             };
             self.disabled_mask.push(disabled);
+            if let Some(list) = promoted_update {
+                self.promoted[i].adopt(&list, node.as_ref());
+            }
             for (idx, val) in pending {
                 node.set_param(idx, val);
             }
@@ -187,7 +197,7 @@ impl InnerGraph {
         for (i, node) in self.nodes.iter().enumerate() {
             let buf = &mut self.per_node_connected[i];
             buf.clear();
-            buf.resize(node.inputs().len(), false);
+            buf.resize(node.inputs().len() + self.promoted[i].len(), false);
         }
         for conn in &self.connections {
             if conn.to.node == BRIDGE_OUT_NODE_ID { continue; }
@@ -197,7 +207,11 @@ impl InnerGraph {
                 }
         }
         for (i, node) in self.nodes.iter_mut().enumerate() {
-            node.set_input_connections(&self.per_node_connected[i]);
+            let native = node.inputs().len();
+            node.set_input_connections(&self.per_node_connected[i][..native]);
+            if self.promoted[i].len() > 0 {
+                self.promoted[i].note_wiring(&self.per_node_connected[i][native..]);
+            }
         }
 
         // 2. Process inner nodes, skipping disabled ones.
@@ -226,6 +240,8 @@ impl InnerGraph {
         let mut bridge_out_writes = std::mem::take(&mut self.bridge_write_buf);
         writes.clear();
         bridge_out_writes.clear();
+        let mut promoted_writes = std::mem::take(&mut self.promoted_writes);
+        promoted_writes.clear();
 
         for conn in &self.connections {
             let src_node = if conn.from.node == BRIDGE_IN_NODE_ID {
@@ -252,6 +268,20 @@ impl InnerGraph {
                 None => output_ports,
             };
             let src_base = port_base_index(src_ports, conn.from.index);
+
+            // Past a node's own inputs sit its promoted params, which take a
+            // single value and never go through `write_input`.
+            if let Some(idx) = dst_node
+                && conn.to.index >= dst_ports.len()
+            {
+                let val = match src_node {
+                    Some(s) => self.nodes[s].read_output(src_base),
+                    None => self.bridge_in.get(src_base).copied().unwrap_or(0.0),
+                };
+                promoted_writes.push((idx, conn.to.index - dst_ports.len(), val));
+                continue;
+            }
+
             let dst_base = port_base_index(dst_ports, conn.to.index);
             let src_channels = src_ports
                 .get(conn.from.index)
@@ -284,6 +314,10 @@ impl InnerGraph {
         }
         self.write_buf = writes;
         self.bridge_write_buf = bridge_out_writes;
+        for &(dst_idx, slot, val) in &promoted_writes {
+            self.promoted[dst_idx].apply(self.nodes[dst_idx].as_mut(), slot, val);
+        }
+        self.promoted_writes = promoted_writes;
 
         // 4. Mirror state for the UI at roughly frame rate. `params()`,
         // `save_data()` and `update_display()` allocate, and the UI only sees
@@ -302,6 +336,7 @@ impl InnerGraph {
             shared
                 .inputs_connected
                 .extend_from_slice(&self.per_node_connected[i]);
+            shared.non_promotable = node.non_promotable_params();
             if self.disabled_mask[i] {
                 continue;
             }
@@ -316,6 +351,9 @@ impl InnerGraph {
             shared.current_params = node.params();
             shared.save_data = node.save_data();
             node.update_display(&mut shared);
+        }
+        for (i, node) in self.nodes.iter().enumerate() {
+            self.promoted[i].refresh(node.as_ref());
         }
     }
 }
@@ -502,12 +540,14 @@ impl SubgraphProcessNode {
             SubgraphInnerCmd::AddNode { node, shared } => {
                 self.inner.shared_states.push(shared);
                 self.inner.nodes.push(node);
+                self.inner.promoted.push(PromotedInputs::default());
                 self.inner.index_stale = true;
             }
             SubgraphInnerCmd::RemoveNode(id) => {
                 if let Some(idx) = self.inner.nodes.iter().position(|n| n.node_id() == id) {
                     self.inner.nodes.remove(idx);
                     self.inner.shared_states.remove(idx);
+                    self.inner.promoted.remove(idx);
                     self.inner.index_stale = true;
                     self.inner
                         .connections
@@ -545,5 +585,78 @@ impl SubgraphProcessNode {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod promoted_tests {
+    use super::*;
+    use crate::engine::nodes::math::constant::ConstantProcessNode;
+    use crate::engine::nodes::transport::lfo::LfoProcessNode;
+    use crate::engine::promoted::{PromotedKind, PromotedParam};
+
+    fn port(node: u64, index: usize, dir: PortDir) -> PortId {
+        PortId { node: NodeId(node), index, dir }
+    }
+
+    /// A Constant wired into the LFO's promoted "Rate" port, which sits right
+    /// after the LFO's own inputs.
+    fn graph_with_promoted_rate() -> (InnerGraph, usize) {
+        let mut g = InnerGraph::new();
+        let lfo = LfoProcessNode::new(NodeId(2));
+        let native = lfo.inputs().len();
+        g.nodes.push(Box::new(ConstantProcessNode::new(NodeId(1), PortType::Untyped, 0.0)));
+        g.nodes.push(Box::new(lfo));
+        for _ in 0..2 {
+            g.shared_states.push(new_shared_state(8, 8));
+            g.promoted.push(PromotedInputs::default());
+        }
+        g.index_stale = true;
+        g.shared_states[1].lock().unwrap().pending_promoted = Some(vec![PromotedParam {
+            name: "Rate".to_string(),
+            kind: PromotedKind::Float,
+        }]);
+        g.connections.push(Connection {
+            from: port(1, 0, PortDir::Output),
+            to: port(2, native, PortDir::Input),
+        });
+        (g, native)
+    }
+
+    fn lfo_rate(g: &InnerGraph) -> f32 {
+        match &g.nodes[1].params()[0] {
+            ParamDef::Float { value, .. } => *value,
+            _ => panic!("Rate is not the first param"),
+        }
+    }
+
+    #[test]
+    fn wire_into_promoted_port_sets_the_param() {
+        let (mut g, _) = graph_with_promoted_rate();
+        g.nodes[0].set_param(0, ParamValue::Float(3.0));
+        g.tick(&[], &[]);
+        assert_eq!(lfo_rate(&g), 3.0);
+
+        g.nodes[0].set_param(0, ParamValue::Float(500.0));
+        g.tick(&[], &[]);
+        // Clamped to the param's own range rather than passed through.
+        assert_eq!(lfo_rate(&g), 20.0);
+    }
+
+    #[test]
+    fn promoted_port_counts_as_connected() {
+        let (mut g, native) = graph_with_promoted_rate();
+        g.tick(&[], &[]);
+        assert_eq!(g.per_node_connected[1].len(), native + 1);
+        assert!(g.per_node_connected[1][native]);
+    }
+
+    #[test]
+    fn unwired_promoted_param_keeps_its_value() {
+        let (mut g, _) = graph_with_promoted_rate();
+        g.connections.clear();
+        g.nodes[1].set_param(0, ParamValue::Float(7.0));
+        g.tick(&[], &[]);
+        assert_eq!(lfo_rate(&g), 7.0);
     }
 }

@@ -949,6 +949,15 @@ impl LightBeatApp {
             };
 
             if let Some(engine_node) = engine_node {
+                // A node that arrives with promoted params (paste, move into
+                // or out of a subgraph) has a fresh engine half that has not
+                // been told about them yet.
+                {
+                    let mut s = shared.lock().unwrap();
+                    if !s.promoted.is_empty() {
+                        s.pending_promoted = Some(s.promoted.clone());
+                    }
+                }
                 if subgraph_path.is_empty() {
                     // Root level — send directly.
                     self.engine.send(EngineCommand::AddNode {
@@ -1725,6 +1734,7 @@ impl LightBeatApp {
             data: Some(data),
             inner_graph: Some(inner),
             disabled: false,
+            promoted: Vec::new(),
         };
 
         // Load this single node into the active level via the existing

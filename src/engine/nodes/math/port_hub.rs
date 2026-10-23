@@ -82,6 +82,10 @@ impl ProcessNode for PortHubProcessNode {
         self.values.get(channel).copied().unwrap_or(0.0)
     }
 
+    fn non_promotable_params(&self) -> &'static [&'static str] {
+        &["Type", "Slots"]
+    }
+
     fn params(&self) -> Vec<ParamDef> {
         vec![
             ParamDef::Choice {

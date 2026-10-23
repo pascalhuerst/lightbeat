@@ -104,6 +104,10 @@ impl ProcessNode for PaletteToGradientProcessNode {
         self.channels.get(channel).copied().unwrap_or(0.0)
     }
 
+    fn non_promotable_params(&self) -> &'static [&'static str] {
+        &["Pos 1", "Pos 2", "Pos 3", "Pos 4"]
+    }
+
     fn params(&self) -> Vec<ParamDef> {
         (0..N).map(|i| ParamDef::Float {
             name: format!("Pos {}", i + 1),

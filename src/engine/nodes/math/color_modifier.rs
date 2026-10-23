@@ -166,6 +166,10 @@ impl ProcessNode for ColorModifierProcessNode {
         self.output_values.get(channel).copied().unwrap_or(0.0)
     }
 
+    fn non_promotable_params(&self) -> &'static [&'static str] {
+        &["Type"]
+    }
+
     fn params(&self) -> Vec<ParamDef> {
         vec![
             ParamDef::Choice {

@@ -1,5 +1,6 @@
 pub mod graph;
 pub mod nodes;
+pub mod promoted;
 pub mod patterns;
 pub mod types;
 

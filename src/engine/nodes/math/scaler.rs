@@ -90,6 +90,10 @@ impl ProcessNode for ScalerProcessNode {
         if pi == 0 { self.value_out } else { 0.0 }
     }
 
+    fn non_promotable_params(&self) -> &'static [&'static str] {
+        &["In Min", "In Max"]
+    }
+
     fn params(&self) -> Vec<ParamDef> {
         vec![
             ParamDef::Float { name: "In Min".into(), value: self.in_min, min: -100.0, max: 100.0, step: 0.1, unit: "" },

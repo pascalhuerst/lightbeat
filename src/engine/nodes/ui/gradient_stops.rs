@@ -82,6 +82,10 @@ impl ProcessNode for GradientStopsProcessNode {
         }
     }
 
+    fn non_promotable_params(&self) -> &'static [&'static str] {
+        &["pos1", "pos2", "pos3", "pos4"]
+    }
+
     fn params(&self) -> Vec<ParamDef> {
         vec![
             ParamDef::Float { name: "pos1".into(), value: self.positions[0], min: 0.0, max: 1.0, step: 0.01, unit: "" },

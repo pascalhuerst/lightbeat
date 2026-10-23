@@ -2,7 +2,7 @@ use std::any::Any;
 
 use egui::{Pos2, Ui};
 
-use crate::engine::types::{NodeId, ParamDef, ParamValue, PortDir, SharedState};
+use crate::engine::types::{NodeId, ParamDef, ParamValue, PortDef, PortDir, SharedState};
 
 use super::types::UiPortDef;
 
@@ -128,6 +128,17 @@ impl dyn NodeWidget {
 
     pub fn params(&self) -> Vec<ParamDef> {
         self.shared_state().lock().unwrap().current_params.clone()
+    }
+
+    /// The widget's own inputs followed by one port per promoted param. The
+    /// graph must use this, not `ui_inputs`, wherever it deals with ports.
+    pub fn ui_inputs_full(&self) -> Vec<UiPortDef> {
+        let mut ports = self.ui_inputs();
+        let shared = self.shared_state().lock().unwrap();
+        ports.extend(shared.promoted.iter().map(|p| {
+            UiPortDef::from_def(&PortDef::new(p.name.clone(), p.kind.port_type()))
+        }));
+        ports
     }
 
     pub fn set_param(&self, index: usize, value: ParamValue) {

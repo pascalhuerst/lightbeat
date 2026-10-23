@@ -150,6 +150,7 @@ struct ClipboardNode {
     type_name: String,
     size: Option<Vec2>,
     params: Vec<(usize, ParamValue)>,
+    promoted: Vec<PromotedParam>,
     data: Option<serde_json::Value>,
     /// Offset from the first copied node's position.
     offset: Vec2,
@@ -369,7 +370,7 @@ impl NodeGraph {
         for (i, node) in level.nodes.iter().enumerate() {
             let pos = level.states[i].pos;
             let min_w = node.min_width();
-            let inputs = node.ui_inputs();
+            let inputs = node.ui_inputs_full();
             let outputs = node.ui_outputs();
             let in_types: Vec<PortType> = inputs.iter().map(|p| p.def.port_type).collect();
             let out_types: Vec<PortType> = outputs.iter().map(|p| p.def.port_type).collect();
@@ -730,7 +731,7 @@ impl NodeGraph {
                 let rect = node_rects[i];
                 let node_id = level.states[i].id;
 
-                let inputs = level.nodes[i].ui_inputs();
+                let inputs = level.nodes[i].ui_inputs_full();
                 let in_types: Vec<PortType> = inputs.iter().map(|p| p.def.port_type).collect();
                 let mut base = 0usize;
                 for (pi, up) in inputs.iter().enumerate() {
@@ -896,7 +897,7 @@ impl NodeGraph {
                     return;
                 }
             }
-            let ins = level.nodes[i].ui_inputs();
+            let ins = level.nodes[i].ui_inputs_full();
             let in_types: Vec<PortType> = ins.iter().map(|p| p.def.port_type).collect();
             for (pi, _) in ins.iter().enumerate() {
                 let pos = port_pos_z(rect.min, rect.width(), PortDir::Input, &in_types, pi, z);
@@ -998,7 +999,7 @@ impl NodeGraph {
             Some(i) => i, None => return,
         };
         let src_outs = level.nodes[src_node_idx].ui_outputs();
-        let dst_ins = level.nodes[dst_node_idx].ui_inputs();
+        let dst_ins = level.nodes[dst_node_idx].ui_inputs_full();
 
         let mut pairs: Vec<(usize, usize)> = Vec::with_capacity(bundle_size);
         for k in 0..bundle_size {
@@ -1036,22 +1037,30 @@ impl NodeGraph {
                     .map(|p| p.def.port_type)
                     .unwrap_or(PortType::Untyped);
                 let dst_type = level.nodes[dst_idx]
-                    .ui_inputs()
+                    .ui_inputs_full()
                     .get(to.index)
                     .map(|p| p.def.port_type)
                     .unwrap_or(PortType::Untyped);
 
+                // Promoted-param ports lie past the node's own inputs, which
+                // its connect hooks know nothing about.
+                let promoted_dst = to.index >= level.nodes[dst_idx].ui_inputs().len();
+
                 // Notify destination widget (input got connected).
-                level.nodes[dst_idx].on_ui_connect(to.index, src_type);
+                if !promoted_dst {
+                    level.nodes[dst_idx].on_ui_connect(to.index, src_type);
+                }
                 // Notify source widget (output got connected).
                 level.nodes[src_idx].on_ui_output_connect(from.index, dst_type);
 
                 // Notify engine for on_connect callback.
-                self.push_engine_cmd(EngineCommand::NotifyConnect {
-                    node_id: to.node,
-                    input_port: to.index,
-                    source_type: src_type,
-                });
+                if !promoted_dst {
+                    self.push_engine_cmd(EngineCommand::NotifyConnect {
+                        node_id: to.node,
+                        input_port: to.index,
+                        source_type: src_type,
+                    });
+                }
             }
 
             self.push_engine_cmd(EngineCommand::AddConnection(conn));
@@ -1065,9 +1074,13 @@ impl NodeGraph {
         // notify the source widget that one of its outputs lost a connection.
         let removed_from = level.connections.iter().find(|c| c.to == to).map(|c| c.from);
         level.connections.retain(|c| c.to != to);
+        let mut promoted_dst = false;
         if had {
             if let Some(dst_idx) = level.states.iter().position(|s| s.id == to.node) {
-                level.nodes[dst_idx].on_ui_disconnect(to.index);
+                promoted_dst = to.index >= level.nodes[dst_idx].ui_inputs().len();
+                if !promoted_dst {
+                    level.nodes[dst_idx].on_ui_disconnect(to.index);
+                }
             }
             // Notify the source widget if its output is now unused (no other
             // connections from the same output port).
@@ -1081,10 +1094,12 @@ impl NodeGraph {
 
             // Notify engine.
             self.push_engine_cmd(EngineCommand::RemoveConnectionTo(to));
-            self.push_engine_cmd(EngineCommand::NotifyDisconnect {
-                node_id: to.node,
-                input_port: to.index,
-            });
+            if !promoted_dst {
+                self.push_engine_cmd(EngineCommand::NotifyDisconnect {
+                    node_id: to.node,
+                    input_port: to.index,
+                });
+            }
         }
     }
 
@@ -1095,6 +1110,45 @@ impl NodeGraph {
     /// Remove connections whose endpoints no longer exist (index out of range)
     /// or whose port types have become incompatible (e.g. a node's mode changed
     /// and a previously-matching wire is now of the wrong type).
+    /// When the user promotes or demotes a param, the extra ports after the
+    /// node's own inputs change. Move every wire that points at one of them to
+    /// its port's new position, and drop the wires of demoted params.
+    fn remap_promoted_connections(&mut self) {
+        let level = self.active_mut();
+        // (node, native input count, old list, new list) for nodes that changed.
+        let mut changed = Vec::new();
+        for (node, state) in level.nodes.iter().zip(level.states.iter()) {
+            // Before locking: most widgets lock their own shared state inside
+            // `ui_inputs`, and the mutex is not reentrant.
+            let native = node.ui_inputs().len();
+            let mut shared = node.shared_state().lock().unwrap();
+            if shared.promoted != shared.promoted_applied {
+                let new = shared.promoted.clone();
+                let old = std::mem::replace(&mut shared.promoted_applied, new.clone());
+                changed.push((state.id, native, old, new));
+            }
+        }
+        for (node_id, native, old, new) in changed {
+            let moved: Vec<(PortId, PortId)> = self
+                .active()
+                .connections
+                .iter()
+                .filter(|c| c.to.node == node_id && c.to.index >= native)
+                .map(|c| (c.from, c.to))
+                .collect();
+            for (_, to) in &moved {
+                self.remove_connection_to(*to);
+            }
+            for (from, to) in moved {
+                let name = old.get(to.index - native).map(|p| &p.name);
+                let new_slot = name.and_then(|n| new.iter().position(|p| &p.name == n));
+                if let Some(slot) = new_slot {
+                    self.add_connection(from, PortId { index: native + slot, ..to });
+                }
+            }
+        }
+    }
+
     fn cleanup_stale_connections(&mut self) {
         let level = self.active();
         let stale: Vec<PortId> = level.connections.iter().filter(|conn| {
@@ -1105,7 +1159,7 @@ impl NodeGraph {
             let dst = level.nodes.iter()
                 .zip(level.states.iter())
                 .find(|(_, s)| s.id == conn.to.node)
-                .and_then(|(n, _)| n.ui_inputs().get(conn.to.index).map(|p| p.def.port_type));
+                .and_then(|(n, _)| n.ui_inputs_full().get(conn.to.index).map(|p| p.def.port_type));
             match (src, dst) {
                 (Some(s), Some(d)) => !s.compatible_with(&d),
                 _ => true, // missing endpoint = stale
@@ -1156,6 +1210,7 @@ impl NodeGraph {
             ui.separator();
         }
 
+        self.remap_promoted_connections();
         // Clean up stale connections (ports removed by dynamic nodes like Group Output).
         self.cleanup_stale_connections();
 
@@ -1344,7 +1399,7 @@ impl NodeGraph {
             .map(|i| {
                 let n = &level.nodes[i];
                 let min_w = n.min_width();
-                let inputs = n.ui_inputs();
+                let inputs = n.ui_inputs_full();
                 let outputs = n.ui_outputs();
                 let in_types: Vec<PortType> = inputs.iter().map(|p| p.def.port_type).collect();
                 let out_types: Vec<PortType> = outputs.iter().map(|p| p.def.port_type).collect();
@@ -1381,7 +1436,7 @@ impl NodeGraph {
                     .map(|k| highlighted_portal_keys.contains(&k))
                     .unwrap_or(false);
             if portal_peer { any_peer_pulsing = true; }
-            let inputs = level.nodes[i].ui_inputs();
+            let inputs = level.nodes[i].ui_inputs_full();
             let outputs = level.nodes[i].ui_outputs();
             let out_highlights: Vec<f32> = (0..outputs.len())
                 .map(|pi| level.nodes[i].output_highlight(pi, now))
@@ -1675,6 +1730,7 @@ impl NodeGraph {
                 .collect();
 
             let data = shared.save_data.clone();
+            let promoted = shared.promoted.clone();
             drop(shared);
 
             // For Subgraph nodes, snapshot the inner level so duplicate
@@ -1691,6 +1747,7 @@ impl NodeGraph {
                 type_name: node.type_name().to_string(),
                 size: state.size_override,
                 params,
+                promoted,
                 data,
                 offset: state.pos - origin,
                 original_id: state.id,
@@ -1764,6 +1821,8 @@ impl NodeGraph {
                     for (pi, val) in &cn.params {
                         state.pending_params.push((*pi, val.clone()));
                     }
+                    state.promoted = cn.promoted.clone();
+                    state.promoted_applied = cn.promoted.clone();
                 }
 
                 if let Some(size) = cn.size {
@@ -1980,7 +2039,7 @@ impl NodeGraph {
         let src_id = level.states[src_idx].id;
         let dst_id = level.states[dst_idx].id;
         let outs = level.nodes[src_idx].ui_outputs();
-        let ins = level.nodes[dst_idx].ui_inputs();
+        let ins = level.nodes[dst_idx].ui_inputs_full();
 
         let mut pairs: Vec<(usize, usize)> = Vec::new();
         let mut o = 0usize;
@@ -2011,7 +2070,7 @@ impl NodeGraph {
             if i >= level.nodes.len() { continue; }
             let n = &level.nodes[i];
             let min_w = n.min_width();
-            let inputs = n.ui_inputs();
+            let inputs = n.ui_inputs_full();
             let outputs = n.ui_outputs();
             let in_types: Vec<PortType> = inputs.iter().map(|p| p.def.port_type).collect();
             let out_types: Vec<PortType> = outputs.iter().map(|p| p.def.port_type).collect();
@@ -2213,7 +2272,7 @@ impl NodeGraph {
 
             for i in 0..level.nodes.len() {
                 let (ports, target_dir) = if dc_from_dir == PortDir::Output {
-                    (level.nodes[i].ui_inputs(), PortDir::Input)
+                    (level.nodes[i].ui_inputs_full(), PortDir::Input)
                 } else {
                     (level.nodes[i].ui_outputs(), PortDir::Output)
                 };
@@ -2360,7 +2419,7 @@ impl NodeGraph {
                         return;
                     }
                 }
-                let in_list = level.nodes[i].ui_inputs();
+                let in_list = level.nodes[i].ui_inputs_full();
                 let in_types: Vec<PortType> = in_list.iter().map(|p| p.def.port_type).collect();
                 let input_ports: Vec<(usize, Pos2, PortType)> = in_list
                     .iter()
@@ -2457,7 +2516,7 @@ impl NodeGraph {
                 let level = self.active();
                 let n = &level.nodes[idx];
                 let min_w = n.min_width();
-                let inputs = n.ui_inputs();
+                let inputs = n.ui_inputs_full();
                 let outputs = n.ui_outputs();
                 let in_types: Vec<PortType> = inputs.iter().map(|p| p.def.port_type).collect();
                 let out_types: Vec<PortType> = outputs.iter().map(|p| p.def.port_type).collect();
@@ -2703,7 +2762,7 @@ impl NodeGraph {
                     });
                 }
             }
-            let ins = level.nodes[i].ui_inputs();
+            let ins = level.nodes[i].ui_inputs_full();
             let in_types: Vec<PortType> = ins.iter().map(|p| p.def.port_type).collect();
             for (pi, ui_port) in ins.iter().enumerate() {
                 let pos = port_pos_z(rect.min, rect.width(), PortDir::Input, &in_types, pi, z);
@@ -2743,7 +2802,7 @@ impl NodeGraph {
         // Get port defs by reading the SubgraphWidget's display from shared state.
         // The widget's ports are also reflected in its ui_inputs/ui_outputs.
         let (input_defs, output_defs) = {
-            let inputs = level.nodes[subgraph_node_index].ui_inputs();
+            let inputs = level.nodes[subgraph_node_index].ui_inputs_full();
             let outputs = level.nodes[subgraph_node_index].ui_outputs();
             let in_defs: Vec<SubgraphPortDef> = inputs.iter()
                 .map(|p| SubgraphPortDef {
@@ -3376,7 +3435,7 @@ fn port_screen_pos_from_rects(
     let idx = states.iter().position(|s| s.id == port_id.node)?;
     let rect = node_rects[idx];
     let ports = match port_id.dir {
-        PortDir::Input => nodes[idx].ui_inputs(),
+        PortDir::Input => nodes[idx].ui_inputs_full(),
         PortDir::Output => nodes[idx].ui_outputs(),
     };
     let port_types: Vec<PortType> = ports.iter().map(|p| p.def.port_type).collect();
@@ -3932,7 +3991,7 @@ fn port_screen_pos(
         .map(|s| s.x)
         .unwrap_or(nodes[idx].min_width()) * zoom;
     let ports = match port_id.dir {
-        PortDir::Input => nodes[idx].ui_inputs(),
+        PortDir::Input => nodes[idx].ui_inputs_full(),
         PortDir::Output => nodes[idx].ui_outputs(),
     };
     let port_types: Vec<PortType> = ports.iter().map(|p| p.def.port_type).collect();
@@ -3946,7 +4005,7 @@ fn port_type_for(
 ) -> Option<PortType> {
     let idx = states.iter().position(|s| s.id == port_id.node)?;
     let ports = match port_id.dir {
-        PortDir::Input => nodes[idx].ui_inputs(),
+        PortDir::Input => nodes[idx].ui_inputs_full(),
         PortDir::Output => nodes[idx].ui_outputs(),
     };
     ports.get(port_id.index).map(|p| p.def.port_type)
