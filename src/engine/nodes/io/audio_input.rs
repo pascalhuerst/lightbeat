@@ -148,7 +148,7 @@ impl ProcessNode for AudioInputProcessNode {
         let mut slot = 1;
         for (ai, k) in self.cached_kinds.iter().enumerate() {
             let n = k.outputs().len();
-            let is_trigger = matches!(k, AnalyzerKind::Beat | AnalyzerKind::Onset);
+            let is_trigger = matches!(k, AnalyzerKind::Beat | AnalyzerKind::BeatClock | AnalyzerKind::Onset);
             let onset_pulse = if is_trigger {
                 let cur = frame.onset_counts.get(ai).copied().unwrap_or(0);
                 let prev = self.caches[ai].last_onset_count;

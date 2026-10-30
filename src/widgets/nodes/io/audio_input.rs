@@ -201,6 +201,22 @@ impl NodeWidget for AudioInputWidget {
                         }
                     });
                 }
+                AnalyzerKind::BeatClock => {
+                    let step = vals.get(4).copied().unwrap_or(0.0) as usize;
+                    let bpm = vals.get(5).copied().unwrap_or(0.0);
+                    let confidence = vals.get(6).copied().unwrap_or(0.0);
+                    ui.horizontal(|ui| {
+                        ui.colored_label(theme::TEXT_DIM, format!("a{}", i));
+                        if bpm > 0.0 {
+                            ui.colored_label(
+                                theme::TEXT,
+                                format!("{:.1} BPM  {}.{}  {:.0}%", bpm, step / 4 + 1, step % 4 + 1, confidence * 100.0),
+                            );
+                        } else {
+                            ui.colored_label(theme::TEXT_DIM, "listening...");
+                        }
+                    });
+                }
                 AnalyzerKind::Onset => {
                     // The Onset analyzer's index-1 output is the raw ODF
                     // value (unnormalised flux) — useful for a scope, not

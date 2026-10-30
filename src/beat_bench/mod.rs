@@ -13,6 +13,7 @@ mod truth;
 use std::path::{Path, PathBuf};
 
 use crate::audio::analyzers::{AnalyzerProc, beat};
+use crate::audio::tracker::BeatTracker;
 
 use metrics::TrackerRun;
 use truth::Truth;
@@ -98,7 +99,83 @@ fn run_current_analyzer(audio: &[f32], sr: u32) -> TrackerRun {
     run
 }
 
+/// The beat tracker under development.
+fn run_tracker(audio: &[f32], sr: u32, range: Option<(f64, f64)>) -> TrackerRun {
+    const CHUNK: usize = 256;
+    let mut tracker = match range {
+        Some((lo, hi)) => BeatTracker::with_range(sr, lo, hi),
+        None => BeatTracker::new(sr),
+    };
+    let mut run = TrackerRun::default();
+    for (i, chunk) in audio.chunks(CHUNK).enumerate() {
+        tracker.push(chunk);
+        let t = ((i + 1) * CHUNK).min(audio.len()) as f64 / sr as f64;
+        let state = tracker.state();
+        run.tempo.push((t, state.tempo_bpm));
+        run.phase.push((t, state.beat_phase));
+        run.bar.push((t, state.bar_position));
+    }
+    if std::env::var("BENCH_BAR_DEBUG").is_ok() {
+        let (scores, chosen) = tracker.bar_scores();
+        let fmt: Vec<String> = scores.iter().map(|s| format!("{s:.2}")).collect();
+        eprintln!("  final scores [{}] chosen {chosen} lock phase {:.2}", fmt.join(" "), tracker.lock_phase());
+    }
+    run
+}
+
+fn score_tracker(dir: &Path, filter: Option<&str>) {
+    println!("Beat tracker, {}", dir.display());
+    println!(
+        "{:<26} {:>7} {:>6} {:>5} {:>6} {:>6} {:>8} {:>7} {:>8} {:>6} {:>6}",
+        "scenario", "true", "tempo", "ratio", "lock s", "beatF1", "clock<50", "offset", "jitter95", "lock s", "bar<50"
+    );
+    println!(
+        "{:<26} {:>7} {:>6} {:>5} {:>6} {:>6} {:>8} {:>7} {:>8} {:>6} {:>6}",
+        "", "bpm", "acc1", "", "tempo", "", "ms", "ms", "ms", "clock", ""
+    );
+    for name in scenario_names(filter) {
+        let Some((truth, audio)) = load(dir, &name) else {
+            println!("{name:<26} (missing; run `bench generate` first)");
+            continue;
+        };
+        let run = run_tracker(&audio, truth.sample_rate, truth.tempo_range);
+        let t = metrics::score_tempo(&truth, &run);
+        let p = metrics::score_phase(&truth, &run);
+        let bar = metrics::score_bar(&truth, &run);
+        if std::env::var("BENCH_BAR_DEBUG").is_ok() {
+            let w: Vec<String> = metrics::bar_by_window(&truth, &run).iter().map(|(t, f)| format!("{t:.0}s:{:.0}%", f * 100.0)).collect();
+            eprintln!("{name}: bar ok per 10 s: {}", w.join(" "));
+            eprintln!("{name}: bar error histogram (beats, quarter-beat bins): {:?}", metrics::bar_error_histogram(&truth, &run));
+        }
+        let secs = |v: Option<f64>| v.map(|s| format!("{s:.1}")).unwrap_or_else(|| "never".into());
+        println!(
+            "{:<26} {:>7.1} {:>5.0}% {:>5.2} {:>6} {:>6.2} {:>7.0}% {:>+7.0} {:>8.0} {:>6} {:>5.0}%",
+            name,
+            truth.bpm_at(truth.duration_s * 0.5),
+            t.acc1 * 100.0,
+            t.median_ratio,
+            secs(t.lock_s),
+            p.f1,
+            p.hit50 * 100.0,
+            p.offset_ms,
+            p.jitter_p95_ms,
+            secs(p.lock_s),
+            bar * 100.0,
+        );
+    }
+}
+
+fn scenario_names(filter: Option<&str>) -> Vec<String> {
+    let mut names: Vec<String> = scenarios::all().iter().map(|s| s.name.to_string()).collect();
+    names.retain(|n| matches(n, filter));
+    names
+}
+
 fn score(dir: &Path, filter: Option<&str>) {
+    if std::env::args().nth(5).as_deref() != Some("baseline") {
+        score_tracker(dir, filter);
+        return;
+    }
     println!("Current Beat analyzer (SuperFlux onsets + autocorrelation BPM), {}", dir.display());
     println!(
         "{:<26} {:>7} {:>7} {:>6} {:>6} {:>7} {:>7} {:>8} {:>8}",
@@ -176,7 +253,7 @@ mod tests {
         let g = (scenarios::all().into_iter().find(|s| s.name == "house_124").unwrap().build)();
         let run = TrackerRun {
             tempo: (0..800).map(|i| (i as f64 * 0.1, 124.0)).collect(),
-            onsets: Vec::new(),
+            ..Default::default()
         };
         let s = metrics::score_tempo(&g.truth, &run);
         assert_eq!(s.acc1, 1.0);
@@ -189,10 +266,59 @@ mod tests {
         let g = (scenarios::all().into_iter().find(|s| s.name == "house_124").unwrap().build)();
         let run = TrackerRun {
             tempo: (0..800).map(|i| (i as f64 * 0.1, 62.0)).collect(),
-            onsets: Vec::new(),
+            ..Default::default()
         };
         let s = metrics::score_tempo(&g.truth, &run);
         assert_eq!(s.acc1, 0.0);
         assert_eq!(s.acc2, 1.0);
+    }
+
+    fn scenario(name: &str) -> scenarios::Generated {
+        (scenarios::all().into_iter().find(|s| s.name == name).unwrap().build)()
+    }
+
+    #[test]
+    fn tracker_locks_tempo_and_beat_on_a_house_track() {
+        let g = scenario("house_124");
+        let run = run_tracker(&g.audio, g.truth.sample_rate, None);
+        let tempo = metrics::score_tempo(&g.truth, &run);
+        assert!(tempo.acc1 > 0.95, "tempo accuracy {}", tempo.acc1);
+        let phase = metrics::score_phase(&g.truth, &run);
+        assert!(phase.hit50 > 0.9, "beat clock within 50 ms {}", phase.hit50);
+        assert!(phase.jitter_p95_ms < 30.0, "jitter {}", phase.jitter_p95_ms);
+    }
+
+    #[test]
+    fn tracker_resyncs_after_a_late_mix() {
+        let g = scenario("mix_sloppy");
+        let run = run_tracker(&g.audio, g.truth.sample_rate, None);
+        let phase = metrics::score_phase(&g.truth, &run);
+        assert!(phase.hit50 > 0.9, "beat clock within 50 ms {}", phase.hit50);
+    }
+
+    #[test]
+    fn tempo_range_settles_the_octave_of_drum_and_bass() {
+        let g = scenario("dnb_174");
+        let wide = run_tracker(&g.audio, g.truth.sample_rate, None);
+        let narrow = run_tracker(&g.audio, g.truth.sample_rate, g.truth.tempo_range);
+        assert!(metrics::score_tempo(&g.truth, &narrow).acc1 > 0.9);
+        assert!(metrics::score_tempo(&g.truth, &wide).acc1 < 0.5, "the default range reads 87 BPM");
+    }
+
+    #[test]
+    fn beat_clock_analyzer_counts_beats_and_reports_tempo() {
+        use crate::audio::analyzers::AnalyzerProc;
+        let g = scenario("house_124");
+        let (_handle, mut proc) = crate::audio::analyzers::beat_clock::create(g.truth.sample_rate);
+        for chunk in g.audio.chunks(512) {
+            proc.step(chunk);
+        }
+        let out = proc.outputs();
+        assert_eq!(out.len(), 7);
+        assert!((out[5] - 124.0).abs() < 2.0, "bpm {}", out[5]);
+        // About 124 beats a minute for 80 s, minus the time to lock.
+        let beats = proc.onset_count();
+        assert!((120..=170).contains(&beats), "{beats} beats");
+        assert!(out[1] >= 0.0 && out[1] < 1.0 && out[2] >= 0.0 && out[2] < 1.0);
     }
 }

@@ -20,6 +20,10 @@ pub struct Truth {
     pub skip: Vec<(f64, f64, String)>,
     /// Stretches without any kick drum, for reading results by.
     pub no_kick: Vec<(f64, f64)>,
+    /// Tempo range a person would set for this material, where the default
+    /// cannot tell an octave apart (drum and bass at 174 vs 87).
+    #[serde(default)]
+    pub tempo_range: Option<(f64, f64)>,
 }
 
 impl Truth {

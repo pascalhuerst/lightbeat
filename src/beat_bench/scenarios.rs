@@ -303,6 +303,7 @@ fn single(name: &str, description: &str, tr: Track, seconds: f64) -> Generated {
             downbeats,
             skip: Vec::new(),
             no_kick,
+            tempo_range: None,
         },
         audio,
     }
@@ -327,7 +328,9 @@ fn breaks_130() -> Generated {
 
 fn dnb_174() -> Generated {
     let t = track(dnb(), Curve::constant(174.0), SINGLE_SECONDS, 4, standard);
-    single("dnb_174", "Two-step drum and bass. Tempo octave risk: 87 vs 174.", t, SINGLE_SECONDS)
+    let mut g = single("dnb_174", "Two-step drum and bass. Tempo octave risk: 87 vs 174; scored with a 150-190 range.", t, SINGLE_SECONDS);
+    g.truth.tempo_range = Some((150.0, 190.0));
+    g
 }
 
 fn halftime_140() -> Generated {
@@ -514,6 +517,7 @@ fn mix(spec: MixSpec) -> Generated {
             downbeats,
             skip,
             no_kick: Vec::new(),
+            tempo_range: None,
         },
         audio: out,
     }
