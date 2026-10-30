@@ -54,6 +54,12 @@ impl NodeWidget for MathWidget {
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { self.op.label() }
     fn title(&self) -> &str { self.op.label() }
+    fn neutral_input_value(&self, _port: usize) -> f32 {
+        match self.op {
+            MathOp::Mul | MathOp::Div => 1.0,
+            _ => 0.0,
+        }
+    }
     fn description(&self) -> &'static str {
         "Arithmetic operation folded across all inputs. Drag to the green + port to add another input."
     }

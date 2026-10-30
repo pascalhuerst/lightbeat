@@ -1,6 +1,6 @@
 use std::any::Any;
 
-use egui::Ui;
+use egui::{self, Ui};
 
 use crate::engine::nodes::math::constant::ConstantProcessNode;
 use crate::engine::types::*;
@@ -12,6 +12,12 @@ pub struct ConstantWidget {
     port_type: PortType,
     shared: SharedState,
     outputs: Vec<PortDef>,
+    /// The value being edited; the engine's copy is only mirrored every few
+    /// ticks, so it would fight a drag.
+    value: f32,
+    last_edit: f64,
+    /// A value was set before the first frame; hold it until the engine has it.
+    fresh: bool,
 }
 
 impl ConstantWidget {
@@ -21,13 +27,25 @@ impl ConstantWidget {
             port_type,
             shared,
             outputs: vec![PortDef::new("out", port_type)],
+            value: 0.0,
+            last_edit: f64::NEG_INFINITY,
+            fresh: false,
         }
+    }
+
+    fn push_value(&self) {
+        self.shared.lock().unwrap().pending_params.push((0, ParamValue::Float(self.value)));
     }
 }
 
 impl NodeWidget for ConstantWidget {
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { ConstantProcessNode::type_name_for(self.port_type) }
+    fn set_initial_value(&mut self, value: f32) {
+        self.value = value;
+        self.fresh = true;
+        self.push_value();
+    }
     fn description(&self) -> &'static str { "Constant value source for any port type, edited via the inspector." }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> { vec![] }
@@ -41,19 +59,37 @@ impl NodeWidget for ConstantWidget {
     fn shared_state(&self) -> &SharedState { &self.shared }
 
     fn show_content(&mut self, ui: &mut Ui, _zoom: f32) {
-        let shared = self.shared.lock().unwrap();
-        let val = shared.outputs.first().copied().unwrap_or(0.0);
-        drop(shared);
+        let now = ui.input(|i| i.time);
+        // Take the engine's value unless the user has just set one.
+        if std::mem::take(&mut self.fresh) {
+            self.last_edit = now;
+        }
+        if now - self.last_edit > 0.5 {
+            let engine = self.shared.lock().unwrap().outputs.first().copied();
+            if let Some(v) = engine {
+                self.value = v;
+            }
+        }
 
-        let label = match self.port_type {
-            PortType::Logic => if val >= 0.5 { "HIGH" } else { "LOW" },
-            _ => "",
+        let changed = match self.port_type {
+            PortType::Logic => {
+                let label = if self.value >= 0.5 { "HIGH" } else { "LOW" };
+                let clicked = ui.button(label).clicked();
+                if clicked {
+                    self.value = if self.value >= 0.5 { 0.0 } else { 1.0 };
+                }
+                clicked
+            }
+            PortType::Phase => ui
+                .add(egui::DragValue::new(&mut self.value).range(0.0..=1.0).speed(0.005).fixed_decimals(3))
+                .changed(),
+            _ => ui
+                .add(egui::DragValue::new(&mut self.value).range(-10.0..=10.0).speed(0.01).fixed_decimals(3))
+                .changed(),
         };
-
-        if label.is_empty() {
-            ui.label(format!("{:.3}", val));
-        } else {
-            ui.label(label);
+        if changed {
+            self.last_edit = now;
+            self.push_value();
         }
     }
 

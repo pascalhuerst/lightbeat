@@ -2167,8 +2167,9 @@ impl NodeGraph {
     fn port_menu_choices(&self, menu: &PortMenu) -> Vec<&'static str> {
         let wanted: &[&str] = match (menu.port.dir, menu.port_type) {
             (PortDir::Input, PortType::Logic) => &["Button"],
-            (PortDir::Input, PortType::Untyped | PortType::Phase) => &["Fader"],
-            (PortDir::Input, PortType::Any) => &["Button", "Fader"],
+            (PortDir::Input, PortType::Untyped) => &["Const Value", "Fader"],
+            (PortDir::Input, PortType::Phase) => &["Const Phase", "Fader"],
+            (PortDir::Input, PortType::Any) => &["Const Value", "Button", "Fader"],
             (PortDir::Input, PortType::Gradient) => &["Gradient Stops"],
             (PortDir::Input, PortType::Color) => &["Color Mixer"],
             (PortDir::Output, PortType::Logic) => &["LED Display", "Scope"],
@@ -2240,6 +2241,9 @@ impl NodeGraph {
         }
         let level = self.active();
         let Some(target) = level.states.iter().position(|s| s.id == port.node) else { return };
+        if port.dir == PortDir::Input {
+            node.set_initial_value(level.nodes[target].neutral_input_value(port.index));
+        }
         let target_pos = level.states[target].pos;
         let target_size = node_size(level.nodes[target].as_ref(), level.states[target].size_override);
         let ports_of = |n: &dyn NodeWidget, dir| -> Vec<PortType> {
@@ -4223,11 +4227,15 @@ mod port_menu_tests {
     use super::*;
     use crate::engine::types::new_shared_state;
     use crate::widgets::nodes::display::led_display::LedDisplayWidget;
+    use crate::widgets::nodes::math::constant::ConstantWidget;
     use crate::widgets::nodes::ui::button::ButtonWidget;
 
     fn graph() -> NodeGraph {
         let mut g = NodeGraph::new();
         g.register_node("UI", "Button", |id| Box::new(ButtonWidget::new(id, new_shared_state(1, 1))));
+        g.register_node("Math", "Const Value", |id| {
+            Box::new(ConstantWidget::new(id, PortType::Untyped, new_shared_state(0, 1)))
+        });
         g.register_node("Display", "LED Display", |id| {
             Box::new(LedDisplayWidget::new(id, new_shared_state(1, 0)))
         });
@@ -4243,6 +4251,7 @@ mod port_menu_tests {
         let g = graph();
         let id = PortId { node: NodeId(1), index: 0, dir: PortDir::Input };
         assert_eq!(g.port_menu_choices(&menu(id, PortType::Logic)), vec!["Button"]);
+        assert_eq!(g.port_menu_choices(&menu(id, PortType::Untyped)), vec!["Const Value"]);
         assert!(g.port_menu_choices(&menu(id, PortType::Color)).is_empty());
         let out = PortId { dir: PortDir::Output, ..id };
         assert_eq!(g.port_menu_choices(&menu(out, PortType::Logic)), vec!["LED Display"]);

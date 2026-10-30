@@ -81,6 +81,14 @@ pub trait NodeWidget: Any {
     /// that port's name, so a control can be labelled after what it drives.
     fn set_name(&mut self, _name: &str) {}
 
+    /// What a constant feeding this node's input `port` should start at, so
+    /// it changes nothing until the user edits it: 1 for a multiplier, 0
+    /// for most others.
+    fn neutral_input_value(&self, _port: usize) -> f32 { 0.0 }
+
+    /// Called on a constant created from a port's right-click menu.
+    fn set_initial_value(&mut self, _value: f32) {}
+
     /// "Loop" or "Burst" for an effect, shown in its stack's list.
     fn effect_kind(&self) -> &'static str { "" }
 
