@@ -14,6 +14,7 @@ use crate::engine::effects::bar::Bar;
 use crate::engine::effects::fill::Fill;
 use crate::engine::effects::node::{EffectDisplay, EffectKind};
 use crate::engine::effects::ripple::Ripple;
+use crate::engine::effects::spark::SparkBurst;
 use crate::engine::effects::wave::Wave;
 use crate::engine::types::*;
 use crate::theme;
@@ -63,6 +64,13 @@ pub const RIPPLE_BURST: EffectSpec = EffectSpec {
     kind: "Burst",
     description: "A ring of light that spreads from a point each time it is triggered.",
     inputs: || Ripple::default().inputs(),
+};
+
+pub const SPARK_BURST: EffectSpec = EffectSpec {
+    type_name: "Spark Burst",
+    kind: "Burst",
+    description: "Sparks thrown from a point each time it is triggered. They fly off at random speeds, slow down, flicker and burn out; the gradient runs from their birth to their death.",
+    inputs: || SparkBurst::default().inputs(),
 };
 
 pub struct EffectWidget {

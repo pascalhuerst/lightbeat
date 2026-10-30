@@ -175,7 +175,7 @@ src/
   picture.
 
 ### Effects and stacks (`engine/effects/`, `widgets/nodes/output/effect*.rs`)
-- An **effect** is a small node (Fill, Bar Loop, Wave Loop, Ripple Burst, ...) with control
+- An **effect** is a small node (Fill, Bar Loop, Wave Loop, Ripple Burst, Spark Burst, ...) with control
   inputs and no outputs. It picks an **Effect Stack** by name in its inspector,
   renders its own pixel layer about 60 times a second and hands it to the
   `EffectHub`. The stack blends its linked effects' layers in the order of its

@@ -17,6 +17,7 @@ pub mod geometry;
 pub mod hub;
 pub mod node;
 pub mod ripple;
+pub mod spark;
 pub mod stack;
 pub mod wave;
 
@@ -190,6 +191,29 @@ mod tests {
         run(&mut [&mut stack, &mut ripple], &hub, &store, 8);
         let lit: f32 = (0..101).map(|i| pixel(&store, 1, i).r).sum();
         assert!(lit < 0.01, "gone once its decay time has passed, but {lit} is left");
+    }
+
+    #[test]
+    fn a_trigger_throws_sparks_that_light_the_strip_and_burn_out() {
+        let (hub, store) = (EffectHub::new(), store_with_strips(&[101]));
+        let mut stack = EffectStackProcessNode::new(NodeId(1), hub.clone(), store.clone());
+        stack.load_data(&stack_config("shelf", &[2], &[(1, 0.0, 1.0)]));
+        let mut sparks = EffectNode::new(NodeId(2), super::spark::SparkBurst::default(), hub.clone());
+        sparks.load_data(&serde_json::json!({ "stack": "shelf" }));
+        // Short lived, so a short test sees them burn out.
+        sparks.set_param(5, crate::engine::types::ParamValue::Float(0.2));
+        run(&mut [&mut stack, &mut sparks], &hub, &store, 2);
+        assert!((0..101).all(|i| pixel(&store, 1, i).r < 0.01), "dark before the trigger");
+
+        sparks.write_input(0, 1.0);
+        sparks.write_input(0, 0.0);
+        run(&mut [&mut stack, &mut sparks], &hub, &store, 3);
+        let lit = (0..101).filter(|&i| pixel(&store, 1, i).r > 0.05).count();
+        assert!(lit > 0, "something is burning");
+
+        run(&mut [&mut stack, &mut sparks], &hub, &store, 15);
+        let left: f32 = (0..101).map(|i| pixel(&store, 1, i).r).sum();
+        assert!(left < 0.01, "all burnt out, but {left} is left");
     }
 
     #[test]

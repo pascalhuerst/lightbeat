@@ -78,6 +78,7 @@ use engine::effects::bar::Bar;
 use engine::effects::fill::Fill;
 use engine::effects::node::EffectNode;
 use engine::effects::ripple::Ripple;
+use engine::effects::spark::SparkBurst;
 use engine::effects::stack::EffectStackProcessNode;
 use engine::effects::wave::Wave;
 use engine::nodes::transport::clock_divider::ClockDividerProcessNode;
@@ -770,6 +771,7 @@ impl LightBeatApp {
             widgets::nodes::output::effect::BAR_LOOP,
             widgets::nodes::output::effect::WAVE_LOOP,
             widgets::nodes::output::effect::RIPPLE_BURST,
+            widgets::nodes::output::effect::SPARK_BURST,
         ] {
             let names = self.stack_names.clone();
             self.graph.register_node("Effects", spec.type_name, move |id| {
@@ -979,6 +981,7 @@ impl LightBeatApp {
                 "Bar Loop" => Some(Box::new(EffectNode::new(id, Bar::default(), self.effect_hub.clone()))),
                 "Wave Loop" => Some(Box::new(EffectNode::new(id, Wave::default(), self.effect_hub.clone()))),
                 "Ripple Burst" => Some(Box::new(EffectNode::new(id, Ripple::default(), self.effect_hub.clone()))),
+                "Spark Burst" => Some(Box::new(EffectNode::new(id, SparkBurst::default(), self.effect_hub.clone()))),
                 _ => {
                     eprintln!("Unknown node type for engine: {}", type_name);
                     None
