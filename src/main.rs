@@ -57,7 +57,8 @@ use engine::nodes::math::port_hub::PortHubProcessNode;
 use engine::nodes::math::trigger_bank::TriggerBankProcessNode;
 use engine::nodes::math::flipflop::{FlipFlopProcessNode, JkFlipFlopProcessNode};
 use engine::nodes::math::color_modifier::ColorModifierProcessNode;
-use engine::nodes::math::color_ops::{ColorMergeProcessNode, ColorSplitProcessNode};
+use engine::nodes::math::color_components::{ColorToComponentsProcessNode, ComponentsToColorProcessNode};
+use engine::nodes::math::color_reshape::{ColorReshapeProcessNode, ReshapeKind};
 use engine::nodes::math::compare::{CompareOp, CompareProcessNode};
 use engine::nodes::math::constant::ConstantProcessNode;
 use engine::nodes::math::counter::CounterProcessNode;
@@ -118,7 +119,8 @@ use widgets::nodes::math::port_hub::PortHubWidget;
 use widgets::nodes::math::trigger_bank::TriggerBankWidget;
 use widgets::nodes::math::flipflop::{FlipFlopKind, FlipFlopWidget};
 use widgets::nodes::math::color_modifier::ColorModifierWidget;
-use widgets::nodes::math::color_ops::{ColorMergeWidget, ColorSplitWidget};
+use widgets::nodes::math::color_components::{ColorToComponentsWidget, ComponentsToColorWidget};
+use widgets::nodes::math::color_reshape::ColorReshapeWidget;
 use widgets::nodes::math::compare::CompareWidget;
 use widgets::nodes::math::constant::ConstantWidget;
 use widgets::nodes::math::counter::CounterWidget;
@@ -556,12 +558,18 @@ impl LightBeatApp {
         self.graph.register_node("Math", "Cos", |id| {
             Box::new(OscillatorWidget::new(id, OscFunc::Cos, new_shared_state(2, 1)))
         });
-        self.graph.register_node("Color", "Color Merge", |id| {
-            Box::new(ColorMergeWidget::new(id, new_shared_state(12, 12))) // Palette mode: 4×Color in, Palette out
+        self.graph.register_node("Color", "Components to Color", |id| {
+            Box::new(ComponentsToColorWidget::new(id, new_shared_state(4, 4)))
         });
-        self.graph.register_node("Color", "Color Split", |id| {
-            Box::new(ColorSplitWidget::new(id, new_shared_state(12, 12))) // Palette mode: Palette in, 4×Color out
+        self.graph.register_node("Color", "Color to Components", |id| {
+            Box::new(ColorToComponentsWidget::new(id, new_shared_state(4, 4)))
         });
+        for kind in ReshapeKind::ALL {
+            self.graph.register_node("Color", kind.type_name(), move |id| {
+                // Room for a full gradient (40 channels) on either side.
+                Box::new(ColorReshapeWidget::new(id, new_shared_state(48, 48), kind))
+            });
+        }
         let gradient_library = self.gradient_library.clone();
         self.graph.register_node("Math", "Lookup", move |id| {
             // Outputs: 1 (rows) + worst case 8 columns × Gradient (40 ch) = 321.
@@ -917,8 +925,12 @@ impl LightBeatApp {
                 }
                 "Flip-Flop" => Some(Box::new(FlipFlopProcessNode::new(id))),
                 "JK Flip-Flop" => Some(Box::new(JkFlipFlopProcessNode::new(id))),
-                "Color Merge" => Some(Box::new(ColorMergeProcessNode::new(id))),
-                "Color Split" => Some(Box::new(ColorSplitProcessNode::new(id))),
+                "Components to Color" => Some(Box::new(ComponentsToColorProcessNode::new(id))),
+                "Color to Components" => Some(Box::new(ColorToComponentsProcessNode::new(id))),
+                name if ReshapeKind::ALL.iter().any(|k| k.type_name() == name) => {
+                    let kind = *ReshapeKind::ALL.iter().find(|k| k.type_name() == name).unwrap();
+                    Some(Box::new(ColorReshapeProcessNode::new(id, kind)))
+                }
                 "Position Merge" => Some(Box::new(PositionMergeProcessNode::new(id))),
                 "Position Split" => Some(Box::new(PositionSplitProcessNode::new(id))),
                 "Lookup" => Some(Box::new(LookupProcessNode::new(id))),

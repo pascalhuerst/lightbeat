@@ -13,11 +13,10 @@ pub enum ColorMode {
     Hsv,
     Rgbw,
     Cmy,
-    Palette,
 }
 
 /// Names visible in the inspector dropdown.
-pub const COLOR_MODE_NAMES: &[&str] = &["Auto", "RGB", "HSV", "RGBW", "CMY", "Palette"];
+pub const COLOR_MODE_NAMES: &[&str] = &["Auto", "RGB", "HSV", "RGBW", "CMY"];
 
 impl ColorMode {
     pub fn channel_names(&self) -> &[&'static str] {
@@ -27,7 +26,6 @@ impl ColorMode {
             ColorMode::Hsv => &["H", "S", "V"],
             ColorMode::Rgbw => &["R", "G", "B", "W"],
             ColorMode::Cmy => &["C", "M", "Y"],
-            ColorMode::Palette => &["primary", "secondary", "third", "fourth"],
         }
     }
 
@@ -38,7 +36,6 @@ impl ColorMode {
             2 => ColorMode::Hsv,
             3 => ColorMode::Rgbw,
             4 => ColorMode::Cmy,
-            5 => ColorMode::Palette,
             _ => ColorMode::Neutral,
         }
     }
@@ -50,12 +47,8 @@ impl ColorMode {
             ColorMode::Hsv => 2,
             ColorMode::Rgbw => 3,
             ColorMode::Cmy => 4,
-            ColorMode::Palette => 5,
         }
     }
-
-    /// Whether this mode uses Color ports (vs Untyped component ports).
-    pub fn is_palette(&self) -> bool { *self == ColorMode::Palette }
 }
 
 /// Display state.
@@ -65,25 +58,25 @@ pub struct ColorOpsDisplay {
 }
 
 // ---------------------------------------------------------------------------
-// Color Merge: component inputs → Color (RGB) output
+// Components to Color: component inputs → Color (RGB) output
 // ---------------------------------------------------------------------------
 
-pub struct ColorMergeProcessNode {
+pub struct ComponentsToColorProcessNode {
     id: NodeId,
     mode: ColorMode,
-    channels: [f32; 12], // up to 12 input channels (Palette mode: 4×RGB)
+    channels: [f32; 4],
     rgb_out: [f32; 3],
     inputs: Vec<PortDef>,
     outputs: Vec<PortDef>,
 }
 
-impl ColorMergeProcessNode {
+impl ComponentsToColorProcessNode {
     pub fn new(id: NodeId) -> Self {
         let mode = ColorMode::Neutral;
         Self {
             id,
             mode,
-            channels: [0.0; 12],
+            channels: [0.0; 4],
             rgb_out: [0.0; 3],
             inputs: Self::make_inputs(mode),
             outputs: Self::make_outputs(mode),
@@ -93,7 +86,6 @@ impl ColorMergeProcessNode {
     fn make_inputs(mode: ColorMode) -> Vec<PortDef> {
         match mode {
             ColorMode::Neutral => vec![PortDef::new("?", PortType::Any)],
-            ColorMode::Palette => mode.channel_names().iter().map(|n| PortDef::new(*n, PortType::Color)).collect(),
             _ => mode.channel_names().iter().map(|n| PortDef::new(*n, PortType::Untyped)).collect(),
         }
     }
@@ -101,7 +93,6 @@ impl ColorMergeProcessNode {
     fn make_outputs(mode: ColorMode) -> Vec<PortDef> {
         match mode {
             ColorMode::Neutral => vec![PortDef::new("?", PortType::Any)],
-            ColorMode::Palette => vec![PortDef::new("palette", PortType::Palette)],
             _ => vec![PortDef::new("color", PortType::Color)],
         }
     }
@@ -121,28 +112,27 @@ impl ColorMergeProcessNode {
                 let rgb = cmy_to_rgb(c[0], c[1], c[2]);
                 [rgb.r, rgb.g, rgb.b]
             }
-            ColorMode::Palette => [0.0; 3], // Not used in palette mode.
             ColorMode::Neutral => [0.0; 3],
         }
     }
 }
 
-impl ProcessNode for ColorMergeProcessNode {
+impl ProcessNode for ComponentsToColorProcessNode {
     fn node_id(&self) -> NodeId { self.id }
-    fn type_name(&self) -> &'static str { "Color Merge" }
+    fn type_name(&self) -> &'static str { "Components to Color" }
     fn inputs(&self) -> &[PortDef] { &self.inputs }
     fn outputs(&self) -> &[PortDef] { &self.outputs }
 
     fn write_input(&mut self, pi: usize, v: f32) {
-        if pi < 12 { self.channels[pi] = v; }
+        if pi < 4 { self.channels[pi] = v; }
     }
     fn read_input(&self, pi: usize) -> f32 {
-        if pi < 12 { self.channels[pi] } else { 0.0 }
+        if pi < 4 { self.channels[pi] } else { 0.0 }
     }
 
     fn process(&mut self) {
         match self.mode {
-            ColorMode::Neutral | ColorMode::Palette => {} // pass-through / no-op
+            ColorMode::Neutral => {} // nothing connected yet
             _ => { self.rgb_out = self.convert_to_rgb(); }
         }
     }
@@ -150,10 +140,6 @@ impl ProcessNode for ColorMergeProcessNode {
     fn read_output(&self, channel: usize) -> f32 {
         match self.mode {
             ColorMode::Neutral => 0.0,
-            ColorMode::Palette => {
-                // Pass through: 4 Color inputs (12 channels) → 1 Palette output (12 channels).
-                if channel < 12 { self.channels[channel] } else { 0.0 }
-            }
             _ => match channel {
                 0 => self.rgb_out[0], 1 => self.rgb_out[1], 2 => self.rgb_out[2], _ => 0.0
             },
@@ -186,35 +172,31 @@ impl ProcessNode for ColorMergeProcessNode {
     fn update_display(&self, shared: &mut NodeSharedState) {
         shared.display = Some(Box::new(ColorOpsDisplay {
             mode: self.mode,
-            rgb: if self.mode.is_palette() {
-                [self.channels[0], self.channels[1], self.channels[2]]
-            } else {
-                self.rgb_out
-            },
+            rgb: self.rgb_out,
         }));
     }
 }
 
 // ---------------------------------------------------------------------------
-// Color Split: Color (RGB) input → component outputs
+// Color to Components: Color (RGB) input → component outputs
 // ---------------------------------------------------------------------------
 
-pub struct ColorSplitProcessNode {
+pub struct ColorToComponentsProcessNode {
     id: NodeId,
     mode: ColorMode,
-    channels: [f32; 12], // up to 12 input channels (Palette mode: 4×RGB)
+    channels: [f32; 4],
     components_out: [f32; 4],
     inputs: Vec<PortDef>,
     outputs: Vec<PortDef>,
 }
 
-impl ColorSplitProcessNode {
+impl ColorToComponentsProcessNode {
     pub fn new(id: NodeId) -> Self {
         let mode = ColorMode::Neutral;
         Self {
             id,
             mode,
-            channels: [0.0; 12],
+            channels: [0.0; 4],
             components_out: [0.0; 4],
             inputs: Self::make_inputs(mode),
             outputs: Self::make_outputs(mode),
@@ -224,7 +206,6 @@ impl ColorSplitProcessNode {
     fn make_inputs(mode: ColorMode) -> Vec<PortDef> {
         match mode {
             ColorMode::Neutral => vec![PortDef::new("?", PortType::Any)],
-            ColorMode::Palette => vec![PortDef::new("palette", PortType::Palette)],
             _ => vec![PortDef::new("color", PortType::Color)],
         }
     }
@@ -232,7 +213,6 @@ impl ColorSplitProcessNode {
     fn make_outputs(mode: ColorMode) -> Vec<PortDef> {
         match mode {
             ColorMode::Neutral => vec![PortDef::new("?", PortType::Any)],
-            ColorMode::Palette => mode.channel_names().iter().map(|n| PortDef::new(*n, PortType::Color)).collect(),
             _ => mode.channel_names().iter().map(|n| PortDef::new(*n, PortType::Untyped)).collect(),
         }
     }
@@ -253,27 +233,27 @@ impl ColorSplitProcessNode {
                 let (c, m, y) = rgb_to_cmy(rgb);
                 [c, m, y, 0.0]
             }
-            ColorMode::Palette | ColorMode::Neutral => [0.0; 4],
+            ColorMode::Neutral => [0.0; 4],
         }
     }
 }
 
-impl ProcessNode for ColorSplitProcessNode {
+impl ProcessNode for ColorToComponentsProcessNode {
     fn node_id(&self) -> NodeId { self.id }
-    fn type_name(&self) -> &'static str { "Color Split" }
+    fn type_name(&self) -> &'static str { "Color to Components" }
     fn inputs(&self) -> &[PortDef] { &self.inputs }
     fn outputs(&self) -> &[PortDef] { &self.outputs }
 
     fn write_input(&mut self, channel: usize, v: f32) {
-        if channel < 12 { self.channels[channel] = v; }
+        if channel < 4 { self.channels[channel] = v; }
     }
     fn read_input(&self, channel: usize) -> f32 {
-        if channel < 12 { self.channels[channel] } else { 0.0 }
+        if channel < 4 { self.channels[channel] } else { 0.0 }
     }
 
     fn process(&mut self) {
         match self.mode {
-            ColorMode::Neutral | ColorMode::Palette => {} // pass-through / no-op
+            ColorMode::Neutral => {} // nothing connected yet
             _ => { self.components_out = self.convert_from_rgb(); }
         }
     }
@@ -281,10 +261,6 @@ impl ProcessNode for ColorSplitProcessNode {
     fn read_output(&self, pi: usize) -> f32 {
         match self.mode {
             ColorMode::Neutral => 0.0,
-            ColorMode::Palette => {
-                // Pass through: 1 Palette input (12 channels) → 4 Color outputs (12 channels).
-                if pi < 12 { self.channels[pi] } else { 0.0 }
-            }
             _ => if pi < 4 { self.components_out[pi] } else { 0.0 },
         }
     }

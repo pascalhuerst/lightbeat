@@ -163,6 +163,12 @@ src/
 - Sources: the Gradient Source node (can load a `GradientPreset` from
   `SetupFile::gradient_presets`; presets are copied, not linked) and Palette
   to Gradient.
+- Palettes and gradients are bundles of floats and can be taken apart and
+  rebuilt with Palette to Colors, Colors to Palette, Gradient to Colors and
+  Colors to Gradient (`math/color_reshape.rs`; the gradient pair exposes 2-8
+  stops of color, position and alpha, and unwired positions spread evenly).
+  Color to Components / Components to Color deal with a single color (RGB, HSV,
+  RGBW, CMY). Node names follow "X to Y" so that they read as data flow.
 - Effects take a gradient as their colour input (`Effect` nodes below). The
   former Group Output and Group Output Preview nodes are gone; a Bar Loop with
   Position and Width promoted to inputs does the same, and a stack shows the
@@ -210,7 +216,7 @@ src/
   preserves params via `pending_params`/`pending_config`.
 
 ### Mode auto-detection pattern (NEW)
-- Nodes that worked across multiple types (Color Split/Merge, Color Display,
+- Nodes that worked across multiple types (Color to Components, Components to Color, Color Display,
   Transition, Scope) used to have a "mode" dropdown forcing the user to pick.
 - New convention: default `Mode = Neutral`, ports are `Any` (white ring),
   process is no-op. On the **first wire** attached to either side, the widget
@@ -223,7 +229,7 @@ src/
   also checks **type compatibility**, not just port-index range) drops any
   wires whose types no longer match — so a manual Auto reset disconnects
   everything cleanly.
-- See Color Split/Merge as the canonical example. Scope was the original
+- See Color to Components / Components to Color as the canonical example. Scope was the original
   inspiration but only auto-detects on the input side.
 
 ### LED strips

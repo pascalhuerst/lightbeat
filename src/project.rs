@@ -607,6 +607,17 @@ pub fn load_graph(graph: &mut NodeGraph, project: &ProjectFile) -> Vec<usize> {
                     }
                 }
 
+            // Gradient to/from Colors: the stop count decides how many ports
+            // there are, so it has to be known before saved wires are attached.
+            if saved.type_name == "Gradient to Colors" || saved.type_name == "Colors to Gradient" {
+                if let Some(stops) = saved.params.iter().find(|p| p.index == 0).map(|p| p.value.as_f64() as usize)
+                    && let Some(w) = graph.node_mut(idx).as_any_mut()
+                        .downcast_mut::<crate::widgets::nodes::math::color_reshape::ColorReshapeWidget>()
+                {
+                    w.set_state_from_load(stops);
+                }
+            }
+
             // Mux/Demux need their port type + slot count synced before the
             // first frame's stale-connection sweep, or wires on slots >= 8 or
             // on non-default types get dropped.
@@ -970,5 +981,33 @@ mod tests {
         assert_eq!(shared.promoted.len(), 2);
         assert_eq!(shared.pending_promoted.as_ref().map(Vec::len), Some(2));
         assert!(shared.pending_params.iter().any(|(i, _)| *i == 2), "the anchor was restored");
+    }
+
+    #[test]
+    fn gradient_nodes_get_their_stop_count_before_saved_wires_are_attached() {
+        use crate::engine::nodes::math::color_reshape::ReshapeKind;
+        use crate::widgets::nodes::math::color_reshape::ColorReshapeWidget;
+        use crate::widgets::nodes::NodeGraph;
+
+        let mut g = NodeGraph::new();
+        for kind in [ReshapeKind::GradientToColors, ReshapeKind::ColorsToGradient] {
+            g.register_node("Color", kind.type_name(), move |id| {
+                Box::new(ColorReshapeWidget::new(id, crate::engine::types::new_shared_state(48, 48), kind))
+            });
+        }
+        // Colour 3 of the splitter into colour 3 of the builder: only ports
+        // that exist with six stops can carry it.
+        let project: ProjectFile = serde_json::from_str(r#"{
+            "nodes": [
+                {"type_name": "Gradient to Colors", "id": 1, "pos": [0.0, 0.0], "params": [{"index": 0, "value": 6}]},
+                {"type_name": "Colors to Gradient", "id": 2, "pos": [200.0, 0.0], "params": [{"index": 0, "value": 6}]}
+            ],
+            "connections": [{"from_node": 1, "from_port": 15, "to_node": 2, "to_port": 15}]
+        }"#).unwrap();
+        load_graph(&mut g, &project);
+
+        assert_eq!(g.node_and_state(0).0.ui_outputs().len(), 18);
+        assert_eq!(g.node_and_state(1).0.ui_inputs().len(), 18);
+        assert_eq!(g.root_level().connections.len(), 1);
     }
 }
