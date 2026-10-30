@@ -11,7 +11,7 @@ use egui::{self, Color32, Sense, Ui, Vec2};
 
 use crate::color::BlendMode;
 use crate::engine::effects::TargetSpec;
-use crate::engine::effects::stack::{LayerConfig, StackConfig, StackDisplay};
+use crate::engine::effects::stack::{LayerConfig, PreviewStrip, StackConfig, StackDisplay};
 use crate::engine::types::*;
 use crate::objects::channel::ChannelKind;
 use crate::theme;
@@ -147,35 +147,41 @@ impl EffectStackWidget {
         self.members.iter().find(|m| m.node_id.0 == node_id).map(|m| m.kind).unwrap_or("")
     }
 
-    /// The stack's picture: one thin row of colour per strip.
-    fn draw_preview(ui: &mut Ui, preview: &[Vec<[u8; 3]>]) {
-        let rows = preview.iter().filter(|r| !r.is_empty()).count().max(1);
-        let row_h = 5.0;
-        let size = Vec2::new(ui.available_width().max(60.0), rows as f32 * (row_h + 1.0) + 2.0);
+    /// The stack's picture, laid out like the group: one line per row, each
+    /// strip placed on the group's axis so a strip that starts at the centre
+    /// grows outwards from there.
+    fn draw_preview(ui: &mut Ui, preview: &[PreviewStrip], rows: usize) {
+        let row_h = 6.0;
+        let gap = 2.0;
+        let size = Vec2::new(ui.available_width().max(60.0), rows as f32 * (row_h + gap) + gap);
         let (resp, painter) = ui.allocate_painter(size, Sense::hover());
         painter.rect_filled(resp.rect, 2.0, theme::BG_DEEP);
-        let mut y = resp.rect.min.y + 1.0;
-        for strip in preview.iter().filter(|r| !r.is_empty()) {
-            let w = (resp.rect.width() - 2.0) / strip.len() as f32;
-            for (i, c) in strip.iter().enumerate() {
-                let x = resp.rect.min.x + 1.0 + i as f32 * w;
+        let inner = resp.rect.shrink2(Vec2::new(gap, 0.0));
+        for strip in preview {
+            let y = resp.rect.min.y + gap + strip.row as f32 * (row_h + gap);
+            let n = strip.colors.len() as f32;
+            let at = |f: f32| inner.min.x + (strip.start + (strip.end - strip.start) * f) * inner.width();
+            for (i, c) in strip.colors.iter().enumerate() {
+                let (x0, x1) = (at(i as f32 / n), at((i as f32 + 1.0) / n));
+                let (lo, hi) = (x0.min(x1), x0.max(x1));
+                // A fixture is a single cell with no span; keep it visible.
+                let hi = hi.max(lo + 4.0);
                 painter.rect_filled(
-                    egui::Rect::from_min_size(egui::pos2(x, y), Vec2::new(w + 0.5, row_h)),
+                    egui::Rect::from_min_max(egui::pos2(lo, y), egui::pos2(hi + 0.5, y + row_h)),
                     0.0,
                     Color32::from_rgb(c[0], c[1], c[2]),
                 );
             }
-            y += row_h + 1.0;
         }
     }
 
-    fn display(&self) -> Option<(usize, Vec<Vec<[u8; 3]>>, Vec<(u64, f32)>)> {
+    fn display(&self) -> Option<(usize, Vec<PreviewStrip>, usize, Vec<(u64, f32)>)> {
         let shared = self.shared.lock().unwrap();
         shared
             .display
             .as_ref()
             .and_then(|d| d.downcast_ref::<StackDisplay>())
-            .map(|d| (d.pixels, d.preview.clone(), d.levels.clone()))
+            .map(|d| (d.pixels, d.preview.clone(), d.rows, d.levels.clone()))
     }
 }
 
@@ -230,7 +236,7 @@ impl NodeWidget for EffectStackWidget {
     }
 
     fn show_content(&mut self, ui: &mut Ui, _zoom: f32) {
-        let (pixels, preview, levels) = self.display().unwrap_or((0, Vec::new(), Vec::new()));
+        let (pixels, preview, rows, levels) = self.display().unwrap_or((0, Vec::new(), 1, Vec::new()));
         let mut changed = false;
 
         ui.horizontal(|ui| {
@@ -247,7 +253,7 @@ impl NodeWidget for EffectStackWidget {
         });
 
         if !preview.is_empty() {
-            Self::draw_preview(ui, &preview);
+            Self::draw_preview(ui, &preview, rows);
         }
 
         if self.config.folded {

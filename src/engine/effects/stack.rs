@@ -63,11 +63,24 @@ pub struct StackConfig {
     pub folded: bool,
 }
 
+/// One target in the preview: where it sits and what it shows.
+#[derive(Clone)]
+pub struct PreviewStrip {
+    pub row: usize,
+    /// Where the first and last pixel are on the group's 0..1 axis; the
+    /// first is the larger for a reversed strip.
+    pub start: f32,
+    pub end: f32,
+    pub colors: Vec<[u8; 3]>,
+}
+
 /// What the widget shows.
 pub struct StackDisplay {
     pub pixels: usize,
     /// The composed image, at most 64 columns per target.
-    pub preview: Vec<Vec<[u8; 3]>>,
+    pub preview: Vec<PreviewStrip>,
+    /// Rows of the group's layout.
+    pub rows: usize,
     /// Activity of each layer by effect node id.
     pub levels: Vec<(u64, f32)>,
 }
@@ -229,26 +242,38 @@ impl ProcessNode for EffectStackProcessNode {
     fn update_display(&self, shared: &mut NodeSharedState) {
         // Shrink long strips to a thumbnail the widget can draw cheaply.
         const COLUMNS: usize = 64;
+        let geometry = self.geometry.as_deref();
         let preview = self
             .composed
             .iter()
-            .map(|strip| {
-                if strip.is_empty() {
-                    return Vec::new();
-                }
+            .enumerate()
+            .filter(|(_, strip)| !strip.is_empty())
+            .map(|(t, strip)| {
                 let n = strip.len().min(COLUMNS);
-                (0..n)
+                let colors = (0..n)
                     .map(|c| {
                         let p = strip[c * strip.len() / n];
                         let (r, g, b) = p.color.scaled(p.alpha.clamp(0.0, 1.0)).clamped().to_u8();
                         [r, g, b]
                     })
-                    .collect()
+                    .collect();
+                let (row, start, end) = match geometry.and_then(|g| g.targets.get(t).map(|x| (g, x))) {
+                    Some((g, target)) => {
+                        let (start, end) = match &target.spec {
+                            TargetSpec::Strip { logical_start, logical_end, .. } => (*logical_start, *logical_end),
+                            TargetSpec::Fixture { position, .. } => (*position, *position),
+                        };
+                        (g.rows.get(t).copied().unwrap_or(0), start, end)
+                    }
+                    None => (t, 0.0, 1.0),
+                };
+                PreviewStrip { row, start, end, colors }
             })
             .collect();
         shared.display = Some(Box::new(StackDisplay {
             pixels: self.composed.iter().map(Vec::len).sum(),
             preview,
+            rows: geometry.map_or(1, |g| g.row_count()),
             levels: self.levels.clone(),
         }));
     }
