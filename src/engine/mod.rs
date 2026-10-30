@@ -1,9 +1,9 @@
+pub mod effects;
 pub mod graph;
 pub mod nodes;
 pub mod promoted;
 pub mod routing;
 pub mod sync_hint;
-pub mod patterns;
 pub mod types;
 
 use std::thread;
@@ -47,13 +47,14 @@ impl EngineHandle {
     pub fn start(
         dmx_shared: SharedDmxState,
         object_store: SharedObjectStore,
+        effect_hub: effects::EffectHub,
         perf: SharedPerfStats,
     ) -> Self {
         let rb = HeapRb::new(COMMAND_BUFFER_SIZE);
         let (command_tx, command_rx) = rb.split();
 
         let handle = thread::spawn(move || {
-            let graph = EngineGraph::new(dmx_shared, object_store, perf);
+            let graph = EngineGraph::new(dmx_shared, object_store, effect_hub, perf);
             graph.run(command_rx);
         });
 

@@ -72,7 +72,11 @@ use engine::nodes::meta::subgraph::SubgraphProcessNode;
 use engine::nodes::math::scaler::ScalerProcessNode;
 use engine::nodes::math::oscillator::{OscFunc, OscillatorProcessNode};
 use engine::nodes::math::position_ops::{PositionMergeProcessNode, PositionSplitProcessNode};
-use engine::nodes::output::effect_stack::EffectStackProcessNode;
+use engine::effects::fill::Fill;
+use engine::effects::node::EffectNode;
+use engine::effects::ripple::Ripple;
+use engine::effects::stack::EffectStackProcessNode;
+use engine::effects::wave::Wave;
 use engine::nodes::output::group::GroupProcessNode;
 use engine::nodes::output::group_preview::GroupPreviewProcessNode;
 use engine::nodes::transport::clock_divider::ClockDividerProcessNode;
@@ -237,6 +241,8 @@ struct LightBeatApp {
     dmx_monitor: widgets::dmx_monitor::DmxMonitor,
     dmx_shared: dmx_io::SharedDmxState,
     object_store: dmx_io::SharedObjectStore,
+    effect_hub: engine::effects::EffectHub,
+    stack_names: widgets::nodes::output::effect::SharedStackNames,
     group_ctx: widgets::nodes::output::group::SharedGroupContext,
     fixture_manager: widgets::fixture_list::FixtureManager,
     object_manager: widgets::object_list::ObjectManager,
@@ -321,10 +327,16 @@ impl LightBeatApp {
         let object_store = dmx_io::new_shared_object_store();
         let group_ctx = widgets::nodes::output::group::new_shared_group_context();
         let perf = perf::new_shared_perf_stats();
-        let engine = EngineHandle::start(dmx_shared.clone(), object_store.clone(), perf.clone());
+        let effect_hub = engine::effects::EffectHub::new();
+        let stack_names = widgets::nodes::output::effect::new_shared_stack_names();
+        let engine = EngineHandle::start(dmx_shared.clone(), object_store.clone(), effect_hub.clone(), perf.clone());
 
+        let mut graph = NodeGraph::new();
+        graph.set_stack_names(stack_names.clone());
         let mut app = Self {
-            graph: NodeGraph::new(),
+            graph,
+            effect_hub,
+            stack_names,
             engine,
             perf,
             ui_timers: perf::UiTimers::default(),
@@ -745,10 +757,20 @@ impl LightBeatApp {
             Box::new(GroupWidget::new(id, new_shared_state(42, 0), gctx.clone()))
         });
         let gctx2 = self.group_ctx.clone();
-        self.graph.register_node("Output", "Effect Stack", move |id| {
-            // Generous initial channel buffer; engine resizes as layers change.
-            Box::new(EffectStackWidget::new(id, new_shared_state(64, 0), gctx2.clone()))
+        self.graph.register_node("Effects", "Effect Stack", move |id| {
+            Box::new(EffectStackWidget::new(id, new_shared_state(1, 0), gctx2.clone()))
         });
+        for spec in [
+            widgets::nodes::output::effect::FILL,
+            widgets::nodes::output::effect::WAVE_LOOP,
+            widgets::nodes::output::effect::RIPPLE_BURST,
+        ] {
+            let names = self.stack_names.clone();
+            self.graph.register_node("Effects", spec.type_name, move |id| {
+                // Room for a trigger or phase plus the 40 gradient channels.
+                Box::new(widgets::nodes::output::effect::EffectWidget::new(id, new_shared_state(48, 0), spec, names.clone()))
+            });
+        }
         let gctx3 = self.group_ctx.clone();
         self.graph.register_node("Display", "Group Output Preview", move |id| {
             Box::new(GroupPreviewWidget::new(id, new_shared_state(42, 0), gctx3.clone()))
@@ -947,7 +969,10 @@ impl LightBeatApp {
                 )),
                 "Group Output" => Some(Box::new(GroupProcessNode::new(id, self.object_store.clone()))),
                 "Group Output Preview" => Some(Box::new(GroupPreviewProcessNode::new(id, self.object_store.clone()))),
-                "Effect Stack" => Some(Box::new(EffectStackProcessNode::new(id, self.object_store.clone()))),
+                "Effect Stack" => Some(Box::new(EffectStackProcessNode::new(id, self.effect_hub.clone(), self.object_store.clone()))),
+                "Fill" => Some(Box::new(EffectNode::new(id, Fill::default(), self.effect_hub.clone()))),
+                "Wave Loop" => Some(Box::new(EffectNode::new(id, Wave::default(), self.effect_hub.clone()))),
+                "Ripple Burst" => Some(Box::new(EffectNode::new(id, Ripple::default(), self.effect_hub.clone()))),
                 _ => {
                     eprintln!("Unknown node type for engine: {}", type_name);
                     None

@@ -116,3 +116,18 @@ pub const SHADOW: Color32 = Color32::from_rgba_premultiplied(0, 0, 0, 60);
 pub const DISABLED_WASH: Color32 = Color32::from_rgba_premultiplied(25, 25, 26, 225);
 /// Darker band drawn over peak-meter bars to indicate RMS level.
 pub const RMS_WASH: Color32 = Color32::from_rgba_premultiplied(20, 20, 20, 128);
+
+// ---------------------------------------------------------------------------
+// Linked sets
+// ---------------------------------------------------------------------------
+
+/// A colour for a named link (the stack an effect belongs to), the same every
+/// time for the same name, with hues spread so neighbouring names differ.
+pub fn link_color(name: &str) -> Color32 {
+    let mut h: u32 = 2_166_136_261;
+    for b in name.bytes() {
+        h = (h ^ b as u32).wrapping_mul(16_777_619);
+    }
+    let hue = (h % 360) as f32 / 360.0;
+    egui::ecolor::Hsva::new(hue, 0.55, 0.85, 1.0).into()
+}

@@ -180,6 +180,8 @@ struct ClipboardConn {
 
 pub struct NodeGraph {
     levels: Vec<GraphLevel>,
+    /// Names of all effect stacks, for the pickers in the effects' inspectors.
+    stack_names: Option<crate::widgets::nodes::output::effect::SharedStackNames>,
     active_level: usize,
     drag: DragState,
     next_id: u64,
@@ -244,6 +246,7 @@ enum FrameHit {
 impl NodeGraph {
     pub fn new() -> Self {
         Self {
+            stack_names: None,
             levels: vec![GraphLevel {
                 nodes: Vec::new(),
                 states: Vec::new(),
@@ -1113,6 +1116,72 @@ impl NodeGraph {
     /// Remove connections whose endpoints no longer exist (index out of range)
     /// or whose port types have become incompatible (e.g. a node's mode changed
     /// and a previously-matching wire is now of the wrong type).
+    pub fn set_stack_names(&mut self, names: crate::widgets::nodes::output::effect::SharedStackNames) {
+        self.stack_names = Some(names);
+    }
+
+    /// Effects belong to a stack by name, and the stack lists them. Every
+    /// frame: move effects along when a stack is renamed, tell each stack
+    /// which effects point at it (in any level), and publish the names.
+    fn reconcile_effect_stacks(&mut self) {
+        use crate::widgets::nodes::node::StackMember;
+
+        let mut renames = Vec::new();
+        for level in self.levels.iter_mut() {
+            for node in level.nodes.iter_mut() {
+                if let Some(rename) = node.take_stack_rename() {
+                    renames.push(rename);
+                }
+            }
+        }
+        for (from, to) in &renames {
+            for level in self.levels.iter_mut() {
+                for node in level.nodes.iter_mut() {
+                    node.rename_linked_stack(from, to);
+                }
+            }
+        }
+
+        let mut stacks: Vec<String> = Vec::new();
+        let mut effects: Vec<(String, StackMember)> = Vec::new();
+        for level in &self.levels {
+            for node in &level.nodes {
+                if let Some(name) = node.stack_name() {
+                    stacks.push(name);
+                }
+                if let Some(link) = node.linked_stack() {
+                    effects.push((
+                        link,
+                        StackMember {
+                            node_id: node.node_id(),
+                            label: node.display_title().to_string(),
+                            kind: node.effect_kind(),
+                        },
+                    ));
+                }
+            }
+        }
+        if stacks.is_empty() && effects.is_empty() {
+            if let Some(reg) = &self.stack_names {
+                reg.lock().unwrap().clear();
+            }
+            return;
+        }
+        for level in self.levels.iter_mut() {
+            for node in level.nodes.iter_mut() {
+                if let Some(name) = node.stack_name() {
+                    let members = effects.iter().filter(|(l, _)| *l == name).map(|(_, m)| m.clone()).collect();
+                    node.set_stack_members(members);
+                }
+            }
+        }
+        stacks.sort();
+        stacks.dedup();
+        if let Some(reg) = &self.stack_names {
+            *reg.lock().unwrap() = stacks;
+        }
+    }
+
     /// When the user promotes or demotes a param, the extra ports after the
     /// node's own inputs change. Move every wire that points at one of them to
     /// its port's new position, and drop the wires of demoted params.
@@ -1213,6 +1282,7 @@ impl NodeGraph {
             ui.separator();
         }
 
+        self.reconcile_effect_stacks();
         self.remap_promoted_connections();
         // Clean up stale connections (ports removed by dynamic nodes like Group Output).
         self.cleanup_stale_connections();
@@ -1423,10 +1493,10 @@ impl NodeGraph {
 
         // Figure out which portal keys are currently selected so we can
         // outline their peers — the "wireless cable" hint.
-        let highlighted_portal_keys: std::collections::HashSet<String> = self
+        let highlighted_link_keys: std::collections::HashSet<String> = self
             .selected_nodes
             .iter()
-            .filter_map(|&i| level.nodes.get(i).and_then(|n| n.portal_key()))
+            .filter_map(|&i| level.nodes.get(i).and_then(|n| n.link_key()))
             .collect();
 
         // -- Draw node chrome (painter-based, immutable) --
@@ -1435,8 +1505,8 @@ impl NodeGraph {
         for i in 0..level.nodes.len() {
             let selected = self.selected_nodes.contains(&i);
             let portal_peer = !selected
-                && level.nodes[i].portal_key()
-                    .map(|k| highlighted_portal_keys.contains(&k))
+                && level.nodes[i].link_key()
+                    .map(|k| highlighted_link_keys.contains(&k))
                     .unwrap_or(false);
             if portal_peer { any_peer_pulsing = true; }
             let inputs = level.nodes[i].ui_inputs_full();

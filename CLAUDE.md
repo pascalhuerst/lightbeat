@@ -60,9 +60,7 @@ src/
 │   │   ├── output/               # group, group_preview, effect_stack.
 │   │   └── ui/                   # button(+group), fader(+group), xy_pad,
 │   │                             # peak_meter, gradient_stops.
-│   └── patterns/                 # NEW: pattern impls used by the Effect Stack.
-│       ├── mod.rs                # Pattern trait, factory, Pixel struct.
-│       ├── bar.rs / solid.rs     # First two patterns. Add new ones here.
+│   └── effects/                  # Effect Stack + effects, EffectHub, geometry.
 ├── widgets/
 │   ├── inspector.rs              # show_inspector(node) — generic params/ports view.
 │   ├── dmx_monitor.rs            # Per-universe channel grid w/ test universes.
@@ -170,19 +168,32 @@ src/
   inputs but draws LED dots instead of sending DMX; `Group::preview_columns`
   controls how strips are laid out in it.
 
-### Effect Stack (`engine/nodes/output/effect_stack.rs`)
-- One node per output target group(s). Inspector holds an ordered list of
-  layers (`Vec<EffectLayerConfig { pattern_type, blend, opacity }>`). Each
-  layer renders into a per-strip `[Pixel { color: Rgb, alpha: f32 }]`
-  buffer; the stack composites bottom-to-top using
-  `BlendMode::blend(base, effect, opacity * alpha)` from `color::blend`.
-- Layer inputs are exposed as **prefixed ports** on the Effect Stack node:
-  `L1.position`, `L1.width`, `L1.color`, `L2.color`, … New layers grow new
-  ports. The widget rebuilds its `ui_inputs` from the layer list each call.
-- Patterns implement the `Pattern` trait in `engine::patterns`. To add a new
-  pattern: drop a file in `engine/patterns/`, register it in
-  `create_pattern()` and `all_pattern_types()`. Each pattern declares its
-  `input_ports()` and a `render(inputs, frames)` function.
+### Effects and stacks (`engine/effects/`, `widgets/nodes/output/effect*.rs`)
+- An **effect** is a small node (Fill, Wave Loop, Ripple Burst, ...) with control
+  inputs and no outputs. It picks an **Effect Stack** by name in its inspector,
+  renders its own pixel layer about 60 times a second and hands it to the
+  `EffectHub`. The stack blends its linked effects' layers in the order of its
+  list (top first) and publishes one image; once per frame the hub flattens all
+  stacks, by priority, into the objects' pixels. Effects never write to the
+  objects, so they cannot fight over them. A group may have several stacks;
+  a stack has `priority`, `blend` and an `amount` input, so stacks work as scenes.
+- Names: a **Burst** is spawned by a trigger and lives for a while (ripple,
+  comet); a **Loop** is a function of a phase (wave, chase, fill). Not "voices".
+- To add an effect: implement `EffectKind` (ports, params, `update` for state,
+  `render`) in `engine/effects/`, give it an `EffectSpec` in
+  `widgets/nodes/output/effect.rs`, register widget + engine arm in `main.rs`.
+  Parameters are `ParamDef`s, so any of them can be promoted to an input.
+  Triggers are edge-counted in `write_input` at the full tick rate (a 1 ms pulse
+  is not lost); rendering is gated to `RENDER_HZ`.
+- Link by **name**, like portals, so copy/paste and macros keep working. The
+  graph (`reconcile_effect_stacks`) hands each stack the effects that point at
+  it every frame, follows renames and publishes the names for the pickers. The
+  stack stores order, blend, opacity, mute and solo per effect; linked nodes
+  share an accent colour (`theme::link_color`) and are highlighted together via
+  `NodeWidget::link_key`.
+- Positions: `Geometry::position` gives (x, row). There is only one row until
+  groups get a real layout (see things.txt), but effects already measure
+  distances in two dimensions.
 
 ### Subgraph (`engine/nodes/meta/subgraph.rs`)
 - Acts like a "module" with its own inner graph and configurable input/output

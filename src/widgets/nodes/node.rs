@@ -6,6 +6,14 @@ use crate::engine::types::{NodeId, ParamDef, ParamValue, PortDef, PortDir, Share
 
 use super::types::UiPortDef;
 
+/// An effect as its stack lists it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct StackMember {
+    pub node_id: NodeId,
+    pub label: String,
+    pub kind: &'static str,
+}
+
 // ---------------------------------------------------------------------------
 // NodeWidget trait (UI-only)
 // ---------------------------------------------------------------------------
@@ -55,12 +63,32 @@ pub trait NodeWidget: Any {
     /// distinguishes them at a glance from generic nodes.
     fn accent_icon(&self) -> Option<&'static str> { None }
 
-    /// Nodes that belong to a "linked set" (currently just portals) return
-    /// the key that identifies the set. When the user selects a node with a
-    /// portal key, the graph renderer draws a matching outline around every
-    /// other node sharing the same key, so you can see the "wireless" peers
-    /// at a glance. Default: not part of any linked set.
-    fn portal_key(&self) -> Option<String> { None }
+    /// Nodes that belong to a "linked set" (portals with the same name,
+    /// effects and the stack they belong to) return the key that identifies
+    /// the set. When the user selects a node with a link key, the graph
+    /// renderer draws a matching outline around every other node sharing the
+    /// same key, so you can see the "wireless" peers at a glance. Default:
+    /// not part of any linked set.
+    fn link_key(&self) -> Option<String> { None }
+
+    /// An Effect Stack returns the name its effects link to.
+    fn stack_name(&self) -> Option<String> { None }
+
+    /// An effect returns the name of the stack it is linked to, if any.
+    fn linked_stack(&self) -> Option<String> { None }
+
+    /// "Loop" or "Burst" for an effect, shown in its stack's list.
+    fn effect_kind(&self) -> &'static str { "" }
+
+    /// A stack that was renamed since the last call returns (old, new), so
+    /// the graph can move its effects over to the new name.
+    fn take_stack_rename(&mut self) -> Option<(String, String)> { None }
+
+    /// An effect linked to `from` follows the stack to its new name.
+    fn rename_linked_stack(&mut self, _from: &str, _to: &str) {}
+
+    /// Called every frame on a stack with the effects currently linked to it.
+    fn set_stack_members(&mut self, _members: Vec<StackMember>) {}
 
     /// Short human-readable description of what this node does.
     /// Shown in the inspector and as a tooltip in the context menu.

@@ -73,7 +73,7 @@ impl NodeWidget for OutputPortalTxWidget {
     fn min_width(&self) -> f32 { 160.0 }
     fn min_content_height(&self) -> f32 { 18.0 }
     fn accent_color(&self) -> Option<Color32> { Some(theme::SEM_WARNING) }
-    fn portal_key(&self) -> Option<String> {
+    fn link_key(&self) -> Option<String> {
         if self.name.is_empty() { None } else { Some(format!("{}{}", OUTPUT_KEY, self.name)) }
     }
     fn shared_state(&self) -> &SharedState { &self.shared }
@@ -189,7 +189,7 @@ impl NodeWidget for OutputPortalRxWidget {
     fn min_width(&self) -> f32 { 160.0 }
     fn min_content_height(&self) -> f32 { 18.0 }
     fn accent_color(&self) -> Option<Color32> { Some(theme::SEM_WARNING) }
-    fn portal_key(&self) -> Option<String> {
+    fn link_key(&self) -> Option<String> {
         if self.bound_name.is_empty() { None } else { Some(format!("{}{}", OUTPUT_KEY, self.bound_name)) }
     }
     fn shared_state(&self) -> &SharedState { &self.shared }
@@ -308,7 +308,7 @@ impl NodeWidget for InputPortalRxWidget {
     fn min_width(&self) -> f32 { 160.0 }
     fn min_content_height(&self) -> f32 { 18.0 }
     fn accent_color(&self) -> Option<Color32> { Some(theme::SEM_WARNING) }
-    fn portal_key(&self) -> Option<String> {
+    fn link_key(&self) -> Option<String> {
         if self.name.is_empty() { None } else { Some(format!("{}{}", INPUT_KEY, self.name)) }
     }
     fn shared_state(&self) -> &SharedState { &self.shared }
@@ -424,7 +424,7 @@ impl NodeWidget for InputPortalTxWidget {
     fn min_width(&self) -> f32 { 160.0 }
     fn min_content_height(&self) -> f32 { 18.0 }
     fn accent_color(&self) -> Option<Color32> { Some(theme::SEM_WARNING) }
-    fn portal_key(&self) -> Option<String> {
+    fn link_key(&self) -> Option<String> {
         if self.bound_name.is_empty() { None } else { Some(format!("{}{}", INPUT_KEY, self.bound_name)) }
     }
     fn shared_state(&self) -> &SharedState { &self.shared }

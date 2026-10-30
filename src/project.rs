@@ -18,6 +18,7 @@ use crate::widgets::nodes::meta::portal::{
     InputPortalRxWidget, InputPortalTxWidget, OutputPortalRxWidget, OutputPortalTxWidget,
 };
 use crate::widgets::nodes::meta::subgraph::SubgraphWidget;
+use crate::widgets::nodes::output::effect::EffectWidget;
 use crate::widgets::nodes::output::effect_stack::EffectStackWidget;
 use crate::widgets::nodes::output::group::GroupWidget;
 use crate::widgets::nodes::math::toggle_bank::ToggleBankWidget;
@@ -736,24 +737,20 @@ pub fn load_graph(graph: &mut NodeGraph, project: &ProjectFile) -> Vec<usize> {
                 }
             }
 
-            // Restore Effect Stack widget state from save_data.
+            // Restore Effect Stack and effect widget state from save_data.
             if saved.type_name == "Effect Stack"
-                && let Some(data) = &saved.data {
-                    let n = graph.node_mut(idx);
-                    if let Some(stack) = n.as_any_mut().downcast_mut::<EffectStackWidget>() {
-                        if let Some(ids) = data.get("group_ids").and_then(|v| v.as_array()) {
-                            stack.selected_group_ids = ids
-                                .iter()
-                                .filter_map(|v| v.as_u64().map(|n| n as u32))
-                                .collect();
-                        }
-                        if let Some(layers) = data.get("layers")
-                            && let Ok(parsed) = serde_json::from_value(layers.clone()) {
-                                stack.layers = parsed;
-                            }
-                        stack.push_config_to_engine();
-                    }
-                }
+                && let Some(data) = &saved.data
+                && let Ok(config) = serde_json::from_value::<crate::engine::effects::stack::StackConfig>(data.clone())
+                && let Some(stack) = graph.node_mut(idx).as_any_mut().downcast_mut::<EffectStackWidget>()
+            {
+                stack.set_config(config);
+            }
+            if let Some(data) = &saved.data
+                && let Some(name) = data.get("stack").and_then(|v| v.as_str())
+                && let Some(effect) = graph.node_mut(idx).as_any_mut().downcast_mut::<EffectWidget>()
+            {
+                effect.set_stack(name);
+            }
 
             indices.push(idx);
         }
@@ -913,5 +910,67 @@ mod tests {
     fn current_projects_are_left_alone() {
         let out = connections_for_current_layout(&project(PROJECT_VERSION));
         assert_eq!(out[0].from_port, 3);
+    }
+
+    #[test]
+    fn effect_stack_and_effects_survive_a_save_and_load() {
+        use crate::engine::effects::stack::LayerConfig;
+        use crate::widgets::nodes::output::effect::{
+            EffectWidget, RIPPLE_BURST, new_shared_stack_names,
+        };
+        use crate::widgets::nodes::output::effect_stack::EffectStackWidget;
+        use crate::widgets::nodes::output::group::new_shared_group_context;
+        use crate::widgets::nodes::NodeGraph;
+
+        fn graph() -> NodeGraph {
+            let mut g = NodeGraph::new();
+            let names = new_shared_stack_names();
+            let ctx = new_shared_group_context();
+            g.register_node("Effects", "Effect Stack", move |id| {
+                Box::new(EffectStackWidget::new(id, crate::engine::types::new_shared_state(1, 0), ctx.clone()))
+            });
+            g.register_node("Effects", "Ripple Burst", move |id| {
+                Box::new(EffectWidget::new(id, crate::engine::types::new_shared_state(48, 0), RIPPLE_BURST, names.clone()))
+            });
+            g
+        }
+
+        let mut a = graph();
+        let stack = a.create_from_registry("Effect Stack", NodeId(1)).unwrap();
+        let effect = a.create_from_registry("Ripple Burst", NodeId(2)).unwrap();
+        let si = a.add_node(stack, egui::pos2(0.0, 0.0));
+        let ei = a.add_node(effect, egui::pos2(300.0, 0.0));
+        {
+            let w = a.node_mut(si).as_any_mut().downcast_mut::<EffectStackWidget>().unwrap();
+            let mut config = w.config().clone();
+            config.name = "Shelf".into();
+            config.priority = 3;
+            config.folded = true;
+            let mut layer = LayerConfig::new(2);
+            layer.opacity = 0.4;
+            layer.muted = true;
+            config.layers = vec![layer];
+            w.set_config(config);
+        }
+        a.node_mut(ei).as_any_mut().downcast_mut::<EffectWidget>().unwrap().set_stack("Shelf");
+
+        // What the engine would hand back for saving: the config it was sent.
+        let sent = |g: &mut NodeGraph, i: usize| g.node_mut(i).shared_state().lock().unwrap().pending_config.clone();
+        let (stack_data, effect_data) = (sent(&mut a, si), sent(&mut a, ei));
+        for (i, d) in [(si, stack_data), (ei, effect_data)] {
+            a.node_mut(i).shared_state().lock().unwrap().save_data = d;
+        }
+        let saved = save_graph(&a);
+
+        let mut b = graph();
+        load_graph(&mut b, &saved);
+        let w = b.node_mut(0).as_any_mut().downcast_mut::<EffectStackWidget>().unwrap();
+        assert_eq!(w.config().name, "Shelf");
+        assert_eq!(w.config().priority, 3);
+        assert!(w.config().folded);
+        assert_eq!(w.config().layers.len(), 1);
+        assert_eq!((w.config().layers[0].opacity, w.config().layers[0].muted), (0.4, true));
+        let e = b.node_mut(1).as_any_mut().downcast_mut::<EffectWidget>().unwrap();
+        assert_eq!(e.stack(), "Shelf");
     }
 }
