@@ -1,5 +1,6 @@
 pub mod button;
 pub mod button_group;
+pub mod color_mixer;
 pub mod common;
 pub mod fader;
 pub mod fader_group;

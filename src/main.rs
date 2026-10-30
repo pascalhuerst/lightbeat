@@ -45,6 +45,7 @@ use engine::nodes::ui::button_group::ButtonGroupProcessNode;
 use engine::nodes::ui::fader::FaderProcessNode;
 use engine::nodes::ui::fader_group::FaderGroupProcessNode;
 use engine::nodes::ui::peak_meter::PeakMeterProcessNode;
+use engine::nodes::ui::color_mixer::ColorMixerProcessNode;
 use engine::nodes::ui::xy_pad::XyPadProcessNode;
 use engine::nodes::ui::gradient_stops::GradientStopsProcessNode;
 use engine::nodes::math::bipolar::BipolarProcessNode;
@@ -107,6 +108,7 @@ use widgets::nodes::ui::button_group::ButtonGroupWidget;
 use widgets::nodes::ui::fader::FaderWidget;
 use widgets::nodes::ui::fader_group::FaderGroupWidget;
 use widgets::nodes::ui::peak_meter::PeakMeterWidget;
+use widgets::nodes::ui::color_mixer::ColorMixerWidget;
 use widgets::nodes::ui::xy_pad::XyPadWidget;
 use widgets::nodes::ui::gradient_stops::GradientStopsWidget;
 use widgets::nodes::math::bipolar::BipolarWidget;
@@ -491,6 +493,9 @@ impl LightBeatApp {
             // No inputs; outputs x and y (0..1).
             Box::new(XyPadWidget::new(id, new_shared_state(0, 2)))
         });
+        self.graph.register_node("UI", "Color Mixer", |id| {
+            Box::new(ColorMixerWidget::new(id, new_shared_state(0, 3)))
+        });
         self.graph.register_node("UI", "Gradient Stops", |id| {
             // 1 Palette input (12 channels) for the live preview, 4 position
             // outputs to feed Palette → Gradient's pos1..pos4.
@@ -873,6 +878,7 @@ impl LightBeatApp {
                 "Button Group" => Some(Box::new(ButtonGroupProcessNode::new(id))),
                 "Fader Group" => Some(Box::new(FaderGroupProcessNode::new(id))),
                 "Peak Level Meter" => Some(Box::new(PeakMeterProcessNode::new(id))),
+                "Color Mixer" => Some(Box::new(ColorMixerProcessNode::new(id))),
                 "XY Pad" => Some(Box::new(XyPadProcessNode::new(id))),
                 "Gradient Stops" => Some(Box::new(GradientStopsProcessNode::new(id))),
                 "Phase Scaler" => Some(Box::new(PhaseScalerProcessNode::new(id))),

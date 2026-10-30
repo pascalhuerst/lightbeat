@@ -2160,6 +2160,7 @@ impl NodeGraph {
             (PortDir::Input, PortType::Untyped | PortType::Phase) => &["Fader"],
             (PortDir::Input, PortType::Any) => &["Button", "Fader"],
             (PortDir::Input, PortType::Gradient) => &["Gradient Stops"],
+            (PortDir::Input, PortType::Color) => &["Color Mixer"],
             (PortDir::Output, PortType::Logic) => &["LED Display", "Scope"],
             (PortDir::Output, PortType::Untyped | PortType::Phase | PortType::Any) => {
                 &["Value Display", "Scope"]
