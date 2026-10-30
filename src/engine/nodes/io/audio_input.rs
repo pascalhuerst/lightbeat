@@ -143,12 +143,12 @@ impl ProcessNode for AudioInputProcessNode {
         let frame = frame_arc.lock().clone();
 
         // Slot analyzer values into the output buffer. For analyzers whose
-        // first output is a trigger (Beat, AudioBeat), edge-detect from the
+        // first output is a trigger (BeatClock), edge-detect from the
         // monotonic onset counter emitted by the worker.
         let mut slot = 1;
         for (ai, k) in self.cached_kinds.iter().enumerate() {
             let n = k.outputs().len();
-            let is_trigger = matches!(k, AnalyzerKind::Beat | AnalyzerKind::BeatClock | AnalyzerKind::Onset);
+            let is_trigger = matches!(k, AnalyzerKind::BeatClock);
             let onset_pulse = if is_trigger {
                 let cur = frame.onset_counts.get(ai).copied().unwrap_or(0);
                 let prev = self.caches[ai].last_onset_count;

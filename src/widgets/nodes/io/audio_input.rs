@@ -1,4 +1,3 @@
-use crate::engine::nodes::io::status::status_port;
 use std::any::Any;
 
 use egui::{self, Color32, Pos2, Stroke, StrokeKind, Ui};
@@ -190,17 +189,6 @@ impl NodeWidget for AudioInputWidget {
         let _style = FaderStyle::default();
         for (i, (kind, vals)) in self.analyzer_results.iter().enumerate() {
             match kind {
-                AnalyzerKind::Beat => {
-                    let bpm = vals.get(1).copied().unwrap_or(0.0);
-                    ui.horizontal(|ui| {
-                        ui.colored_label(Color32::from_gray(120), format!("a{}", i));
-                        if bpm > 0.0 {
-                            ui.colored_label(Color32::from_gray(200), format!("{:.1} BPM", bpm));
-                        } else {
-                            ui.colored_label(Color32::from_gray(120), "BPM —");
-                        }
-                    });
-                }
                 AnalyzerKind::BeatClock => {
                     let step = vals.get(4).copied().unwrap_or(0.0) as usize;
                     let bpm = vals.get(5).copied().unwrap_or(0.0);
@@ -215,16 +203,6 @@ impl NodeWidget for AudioInputWidget {
                         } else {
                             ui.colored_label(theme::TEXT_DIM, "listening...");
                         }
-                    });
-                }
-                AnalyzerKind::Onset => {
-                    // The Onset analyzer's index-1 output is the raw ODF
-                    // value (unnormalised flux) — useful for a scope, not
-                    // for an in-node label. Just show the analyzer tag.
-                    let odf = vals.get(1).copied().unwrap_or(0.0);
-                    ui.horizontal(|ui| {
-                        ui.colored_label(Color32::from_gray(120), format!("a{}", i));
-                        ui.colored_label(Color32::from_gray(150), format!("ODF {:.1}", odf));
                     });
                 }
                 AnalyzerKind::PeakLevel => {
