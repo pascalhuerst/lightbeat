@@ -10,9 +10,6 @@ use crate::objects::universe::DmxUniverse;
 pub trait DmxOutput: Send {
     /// Send a full universe frame.
     fn send_universe(&mut self, universe: &DmxUniverse) -> Result<(), String>;
-
-    /// Human-readable name for this output.
-    fn name(&self) -> &str;
 }
 
 /// Configuration for creating a DMX output.
@@ -43,26 +40,6 @@ impl DmxOutputConfig {
                 Some(DmxOutputConfig::Sacn { source_name: source_name.clone() })
             }
             crate::objects::output::OutputConfig::None => None,
-        }
-    }
-
-    pub fn artnet_broadcast() -> Self {
-        DmxOutputConfig::ArtNet {
-            host: "255.255.255.255".to_string(),
-            port: 6454,
-        }
-    }
-
-    pub fn artnet_unicast(host: impl Into<String>) -> Self {
-        DmxOutputConfig::ArtNet {
-            host: host.into(),
-            port: 6454,
-        }
-    }
-
-    pub fn sacn(source_name: impl Into<String>) -> Self {
-        DmxOutputConfig::Sacn {
-            source_name: source_name.into(),
         }
     }
 

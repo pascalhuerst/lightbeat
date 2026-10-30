@@ -116,7 +116,7 @@ impl NodeWidget for EnvelopeWidget {
                 | EnvelopeKind::SlopeUp | EnvelopeKind::SlopeDown,
         ) && env_val.abs() > 0.001;
         let border_color = if active { theme::SEM_SUCCESS } else { theme::STROKE };
-        painter.rect_stroke(rect, 3.0, Stroke::new(1.0, border_color), StrokeKind::Inside);
+        painter.rect_stroke(rect, 3.0, Stroke::new(1.0_f32, border_color), StrokeKind::Inside);
 
         match kind {
             EnvelopeKind::Adsr =>
@@ -205,10 +205,10 @@ impl EnvelopeWidget {
             vec![p0, p1, p2, p3, p4, Pos2::new(x4, y_bot), Pos2::new(x0, y_bot)],
             fill, Stroke::NONE));
 
-        let stroke = Stroke::new(2.0, theme::SEM_SUCCESS);
+        let stroke = Stroke::new(2.0_f32, theme::SEM_SUCCESS);
         painter.line_segment([p0, p1], stroke);
         painter.line_segment([p1, p2], stroke);
-        painter.line_segment([p2, p3], Stroke::new(2.0, theme::SEM_SUCCESS.linear_multiply(0.6)));
+        painter.line_segment([p2, p3], Stroke::new(2.0_f32, theme::SEM_SUCCESS.linear_multiply(0.6)));
         painter.line_segment([p3, p4], stroke);
 
         if stage > 0 {
@@ -261,7 +261,7 @@ impl EnvelopeWidget {
         let fill = theme::SEM_SUCCESS.linear_multiply(0.15);
         painter.add(egui::Shape::convex_polygon(
             vec![p0, p1, p2], fill, Stroke::NONE));
-        let stroke = Stroke::new(2.0, theme::SEM_SUCCESS);
+        let stroke = Stroke::new(2.0_f32, theme::SEM_SUCCESS);
         painter.line_segment([p0, p1], stroke);
         painter.line_segment([p1, p2], stroke);
 
@@ -317,9 +317,9 @@ impl EnvelopeWidget {
         let fill = theme::SEM_SUCCESS.linear_multiply(0.15);
         painter.add(egui::Shape::convex_polygon(
             vec![p0, p1, p2, p3], fill, Stroke::NONE));
-        let stroke = Stroke::new(2.0, theme::SEM_SUCCESS);
+        let stroke = Stroke::new(2.0_f32, theme::SEM_SUCCESS);
         painter.line_segment([p0, p1], stroke);
-        painter.line_segment([p1, p2], Stroke::new(2.0, theme::SEM_SUCCESS.linear_multiply(0.6)));
+        painter.line_segment([p1, p2], Stroke::new(2.0_f32, theme::SEM_SUCCESS.linear_multiply(0.6)));
         painter.line_segment([p2, p3], stroke);
 
         if stage > 0 {
@@ -360,7 +360,7 @@ impl EnvelopeWidget {
             let mid_y = bar_rect.center().y;
             painter.line_segment(
                 [Pos2::new(bar_rect.min.x, mid_y), Pos2::new(bar_rect.max.x, mid_y)],
-                Stroke::new(1.0, theme::STROKE),
+                Stroke::new(1.0_f32, theme::STROKE),
             );
             let half_h = (bar_rect.height() * 0.5) * env_val.clamp(-1.0, 1.0);
             let (y0, y1) = if half_h >= 0.0 { (mid_y - half_h, mid_y) } else { (mid_y, mid_y - half_h) };

@@ -110,7 +110,7 @@ impl NodeWidget for TransitionWidget {
             let y = rect.max.y - v.clamp(0.0, 1.0) * rect.height();
             let pos = Pos2::new(x, y);
             if let Some(p) = prev {
-                painter.line_segment([p, pos], Stroke::new(1.5, curve_color));
+                painter.line_segment([p, pos], Stroke::new(1.5_f32, curve_color));
             }
             prev = Some(pos);
         }

@@ -20,26 +20,6 @@ pub enum ColorMode {
 pub const COLOR_MODE_NAMES: &[&str] = &["Auto", "RGB", "HSV", "RGBW", "CMY", "Palette"];
 
 impl ColorMode {
-    pub fn label(&self) -> &'static str {
-        match self {
-            ColorMode::Neutral => "Auto",
-            ColorMode::Rgb => "RGB",
-            ColorMode::Hsv => "HSV",
-            ColorMode::Rgbw => "RGBW",
-            ColorMode::Cmy => "CMY",
-            ColorMode::Palette => "Palette",
-        }
-    }
-
-    pub fn channel_count(&self) -> usize {
-        match self {
-            ColorMode::Neutral => 1,
-            ColorMode::Rgb | ColorMode::Hsv | ColorMode::Cmy => 3,
-            ColorMode::Rgbw => 4,
-            ColorMode::Palette => 4, // 4 Color ports (one per palette slot)
-        }
-    }
-
     pub fn channel_names(&self) -> &[&'static str] {
         match self {
             ColorMode::Neutral => &["?"],
@@ -71,19 +51,6 @@ impl ColorMode {
             ColorMode::Rgbw => 3,
             ColorMode::Cmy => 4,
             ColorMode::Palette => 5,
-        }
-    }
-
-    /// Parse from the lowercase label name.
-    pub fn from_str(s: &str) -> Option<Self> {
-        match s.to_ascii_lowercase().as_str() {
-            "auto" | "neutral" => Some(ColorMode::Neutral),
-            "rgb" => Some(ColorMode::Rgb),
-            "hsv" => Some(ColorMode::Hsv),
-            "rgbw" => Some(ColorMode::Rgbw),
-            "cmy" => Some(ColorMode::Cmy),
-            "palette" => Some(ColorMode::Palette),
-            _ => None,
         }
     }
 

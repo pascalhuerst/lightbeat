@@ -19,13 +19,12 @@ use jack::{
 };
 
 use super::backend::{
-    AudioBackend, AudioBackendKind, AudioChunk, InputStream, StreamRequest,
+    AudioBackend, AudioChunk, InputStream, StreamRequest,
 };
 
 pub struct JackBackend;
 
 impl AudioBackend for JackBackend {
-    fn kind(&self) -> AudioBackendKind { AudioBackendKind::Jack }
 
     fn list_input_names(&self) -> Vec<String> {
         // Spin up a disposable client just to walk the port graph. No server

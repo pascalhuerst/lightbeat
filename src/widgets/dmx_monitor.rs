@@ -247,7 +247,7 @@ impl DmxMonitor {
             }
 
             let border_color = if is_override { OVERRIDE_COLOR.linear_multiply(0.5) } else { CELL_BORDER };
-            painter.rect_stroke(cell_rect, 1.0, Stroke::new(0.5, border_color), StrokeKind::Inside);
+            painter.rect_stroke(cell_rect, 1.0, Stroke::new(0.5_f32, border_color), StrokeKind::Inside);
 
             if cell_w >= 16.0 && cell_h >= 20.0 {
                 let font_size = if cell_h > 30.0 { 9.0 } else { 7.0 };

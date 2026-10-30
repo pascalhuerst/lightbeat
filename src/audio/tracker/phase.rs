@@ -47,7 +47,6 @@ pub struct PhaseTracker {
     since_update: usize,
     acquired: bool,
     away_updates: u32,
-    last_error: f64,
     sharpness: f64,
     bar: BarTracker,
     novelty: NoveltyTracker,
@@ -72,7 +71,6 @@ impl PhaseTracker {
             since_update: 0,
             acquired: false,
             away_updates: 0,
-            last_error: 0.0,
             sharpness: 0.0,
             bar: BarTracker::new(),
             novelty: NoveltyTracker::new(),
@@ -97,10 +95,6 @@ impl PhaseTracker {
         (self.bar.scores(), self.bar_step)
     }
 
-    pub fn bar_confidence(&self) -> f64 {
-        self.bar.confidence()
-    }
-
     pub fn tempo(&self) -> f64 {
         self.base_tempo * (1.0 + self.trim)
     }
@@ -108,11 +102,6 @@ impl PhaseTracker {
     /// How peaked the onset histogram is: 1 is flat, large is a clear beat.
     pub fn sharpness(&self) -> f64 {
         self.sharpness
-    }
-
-    /// Recent size of the correction, in beats.
-    pub fn last_error(&self) -> f64 {
-        self.last_error
     }
 
     pub fn step(&mut self, frame: &Frame, tempo_hint: f64) {
@@ -207,7 +196,6 @@ impl PhaseTracker {
         } else {
             self.trim = (self.trim - TRIM_GAIN * error).clamp(-MAX_TRIM, MAX_TRIM);
         }
-        self.last_error += (error.abs() - self.last_error) * 0.2;
     }
 
     /// The tallest bin of `smoothed`, optionally only within `radius` beats of

@@ -2,11 +2,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::color::{GradientStop, Rgb};
 
-/// Maximum stops per preset; matches `engine::types::GRADIENT_STOP_COUNT`.
-/// We don't import that constant here to keep `objects` independent of the
-/// engine module — the assertion in main.rs verifies they stay in sync.
-pub const GRADIENT_PRESET_MAX_STOPS: usize = 8;
-
 /// A named, reusable gradient preset stored in the setup library.
 /// Mirrors how `ColorPalette` works: a flat library entry that can be
 /// referenced from the Gradient Source widget to populate its stops.

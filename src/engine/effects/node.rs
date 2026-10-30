@@ -46,7 +46,6 @@ pub trait EffectKind: Send + 'static {
 
 /// What the widget shows.
 pub struct EffectDisplay {
-    pub stack: String,
     /// True once the stack named by `stack` exists and the layer is drawing.
     pub linked: bool,
     pub level: f32,
@@ -216,7 +215,6 @@ impl<E: EffectKind> ProcessNode for EffectNode<E> {
 
     fn update_display(&self, shared: &mut NodeSharedState) {
         shared.display = Some(Box::new(EffectDisplay {
-            stack: self.stack.clone(),
             linked: self.linked,
             level: self.level,
         }));

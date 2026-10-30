@@ -110,8 +110,6 @@ pub const SEM_WARNING_FILL: Color32 = Color32::from_rgba_premultiplied(220, 150,
 pub const SEM_WARNING_HALO: Color32 = Color32::from_rgba_premultiplied(35, 24, 6, 40);
 /// White halo behind selected wires — premultiplied form of white at α180.
 pub const WIRE_HALO: Color32 = Color32::from_rgba_premultiplied(180, 180, 180, 180);
-/// Node drop shadow.
-pub const SHADOW: Color32 = Color32::from_rgba_premultiplied(0, 0, 0, 60);
 /// Wash drawn on top of disabled nodes to flatten them.
 pub const DISABLED_WASH: Color32 = Color32::from_rgba_premultiplied(25, 25, 26, 225);
 /// Darker band drawn over peak-meter bars to indicate RMS level.

@@ -106,7 +106,6 @@ impl PixelFormat {
     pub fn new(channels: Vec<PixelChannel>) -> Self { Self { channels } }
 
     pub fn bytes_per_pixel(&self) -> usize { self.channels.len() }
-    pub fn floats_per_pixel(&self) -> usize { 3 } // always stored as RGB internally
 
     /// Display label like "GRBWW" (white channels show as W regardless of temp).
     pub fn label(&self) -> String {
@@ -185,6 +184,10 @@ pub struct Channel {
     pub values: Vec<f32>,
 }
 
+// The accessors for dimmer, pan/tilt, raw and pixel channels are the fixture
+// API that moving heads and the space concept will use; several are not
+// called yet.
+#[allow(dead_code)]
 impl Channel {
     pub fn dimmer(name: impl Into<String>) -> Self {
         Self {

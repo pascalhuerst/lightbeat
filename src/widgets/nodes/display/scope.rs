@@ -136,7 +136,7 @@ fn draw_scope(
     let grid_color = theme::BG;
 
     painter.rect_filled(rect, 2.0, bg);
-    painter.rect_stroke(rect, 2.0, Stroke::new(1.0, Color32::from_gray(50)), StrokeKind::Inside);
+    painter.rect_stroke(rect, 2.0, Stroke::new(1.0_f32, Color32::from_gray(50)), StrokeKind::Inside);
 
     let range = range_max - range_min;
     if range.abs() < 1e-6 { return; }
@@ -145,7 +145,7 @@ fn draw_scope(
         let zero_y = rect.max.y - ((-range_min) / range) * rect.height();
         painter.line_segment(
             [Pos2::new(rect.min.x, zero_y), Pos2::new(rect.max.x, zero_y)],
-            Stroke::new(1.0, grid_color),
+            Stroke::new(1.0_f32, grid_color),
         );
     }
 
@@ -167,7 +167,7 @@ fn draw_scope(
             let y = (rect.max.y - t * rect.height()).clamp(rect.min.y, rect.max.y);
             let pos = Pos2::new(x, y);
             if let Some(p) = prev {
-                painter.line_segment([p, pos], Stroke::new(1.5, color));
+                painter.line_segment([p, pos], Stroke::new(1.5_f32, color));
             }
             prev = Some(pos);
         }

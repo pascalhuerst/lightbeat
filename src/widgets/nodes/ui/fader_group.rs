@@ -263,7 +263,7 @@ impl NodeWidget for FaderGroupWidget {
                     fader::draw_bipolar_center_line(&painter, cell_rect, Orientation::Vertical, CENTER_LINE_COLOR);
                     if let Some(b) = style.border {
                         painter.rect_stroke(cell_rect, style.corner_radius,
-                            egui::Stroke::new(1.0, b), egui::StrokeKind::Inside);
+                            egui::Stroke::new(1.0_f32, b), egui::StrokeKind::Inside);
                     }
                 } else {
                     fader::draw_fader(&painter, cell_rect, main_value, Orientation::Vertical, &style, false);

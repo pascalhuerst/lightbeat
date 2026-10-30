@@ -79,13 +79,13 @@ impl NodeWidget for LfoWidget {
         let cy = rect.center().y;
         painter.line_segment(
             [egui::pos2(rect.min.x, cy), egui::pos2(rect.max.x, cy)],
-            Stroke::new(0.5, Color32::from_gray(60)),
+            Stroke::new(0.5_f32, Color32::from_gray(60)),
         );
         // Phase position (vertical bar)
         let px = rect.min.x + rect.width() * phase;
         painter.line_segment(
             [egui::pos2(px, rect.min.y), egui::pos2(px, rect.max.y)],
-            Stroke::new(1.0, theme::SEM_PRIMARY),
+            Stroke::new(1.0_f32, theme::SEM_PRIMARY),
         );
         // Value indicator (dot at intersection)
         let value_norm = value.clamp(-1.5, 1.5);

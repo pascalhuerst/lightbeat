@@ -322,7 +322,7 @@ const ENV_LINE: Color32 = Color32::from_rgb(80, 200, 160);
 /// (or earlier when the buffer hasn't filled yet).
 fn draw_envelope_plot(painter: &egui::Painter, rect: egui::Rect, history: &[f32]) {
     painter.rect_filled(rect, 2.0, ENV_BG);
-    painter.rect_stroke(rect, 2.0, Stroke::new(1.0, ENV_BORDER), StrokeKind::Inside);
+    painter.rect_stroke(rect, 2.0, Stroke::new(1.0_f32, ENV_BORDER), StrokeKind::Inside);
 
     if history.len() < 2 {
         return;
@@ -339,7 +339,7 @@ fn draw_envelope_plot(painter: &egui::Painter, rect: egui::Rect, history: &[f32]
         let y = bottom - v.clamp(0.0, 1.0) * h;
         let pos = Pos2::new(x, y);
         if let Some(p) = prev {
-            painter.line_segment([p, pos], Stroke::new(1.5, ENV_LINE));
+            painter.line_segment([p, pos], Stroke::new(1.5_f32, ENV_LINE));
         }
         prev = Some(pos);
     }

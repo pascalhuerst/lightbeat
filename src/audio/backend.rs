@@ -110,7 +110,6 @@ impl InputStream {
 /// out mono f32 `AudioChunk`s; all sample-format conversion and channel
 /// mono-mixing happens inside the backend's own callback.
 pub trait AudioBackend: Send + Sync {
-    fn kind(&self) -> AudioBackendKind;
 
     /// Human-readable names of available input devices.
     fn list_input_names(&self) -> Vec<String>;

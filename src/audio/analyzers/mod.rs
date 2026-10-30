@@ -67,17 +67,6 @@ impl AnalyzerKind {
             AnalyzerKind::Envelope => vec![PortDef::new("envelope", PortType::Untyped)],
         }
     }
-
-    /// Default `ParamDef` list for this analyzer kind. Used by the UI when
-    /// the kind is first added; once the analyzer is live, `AnalyzerHandle`
-    /// reflects the actual (possibly-edited) param values.
-    pub fn default_params(&self) -> Vec<ParamDef> {
-        match self {
-            AnalyzerKind::BeatClock => beat_clock::clock_params(),
-            AnalyzerKind::PeakLevel => peak_level::peak_params(),
-            AnalyzerKind::Envelope => envelope::envelope_params(),
-        }
-    }
 }
 
 /// Persistent per-analyzer config (currently just kind; per-kind params are
@@ -96,13 +85,7 @@ impl AnalyzerConfig {
 /// Worker-side trait: only called from the analyzer worker thread. Each
 /// analyzer implementation owns its DSP state here.
 pub trait AnalyzerProc: Send {
-    fn kind(&self) -> AnalyzerKind;
     fn num_outputs(&self) -> usize;
-    /// When true, index 0 of this analyzer's outputs is a trigger (edge-
-    /// detected downstream via `onset_count`).
-    fn first_output_is_trigger(&self) -> bool {
-        false
-    }
     /// How many audio samples *behind* the latest chunk's end does the
     /// current output represent? Fast analyzers (envelope, peak meter)
     /// return 0; onset detectors return their picker lookback.
@@ -128,19 +111,16 @@ pub trait AnalyzerProc: Send {
 /// source of truth for params.
 #[derive(Clone)]
 pub struct AnalyzerHandle {
-    pub kind: AnalyzerKind,
     get_params: Arc<dyn Fn() -> Vec<ParamDef> + Send + Sync>,
     set_param: Arc<dyn Fn(usize, ParamValue) + Send + Sync>,
 }
 
 impl AnalyzerHandle {
     pub fn new(
-        kind: AnalyzerKind,
         get_params: Arc<dyn Fn() -> Vec<ParamDef> + Send + Sync>,
         set_param: Arc<dyn Fn(usize, ParamValue) + Send + Sync>,
     ) -> Self {
         Self {
-            kind,
             get_params,
             set_param,
         }
@@ -180,7 +160,7 @@ mod tests {
             names,
             ["beat", "beat phase", "bar phase", "16th phase", "step", "bpm", "confidence"]
         );
-        assert_eq!(beat_clock::clock_params().len(), 4);
+        assert_eq!(create_analyzer(AnalyzerKind::BeatClock, 44_100).0.current_params().len(), 4);
     }
 
     #[test]

@@ -52,7 +52,4 @@ impl DmxOutput for ArtNetOutput {
         Ok(())
     }
 
-    fn name(&self) -> &str {
-        "Art-Net"
-    }
 }

@@ -19,26 +19,6 @@ fn push_param(node: &dyn NodeWidget, index: usize, value: ParamValue) {
         .push((index, value));
 }
 
-fn read_input_value(node: &dyn NodeWidget, port_index: usize) -> f32 {
-    node.shared_state()
-        .lock()
-        .unwrap()
-        .inputs
-        .get(port_index)
-        .copied()
-        .unwrap_or(0.0)
-}
-
-fn read_output_value(node: &dyn NodeWidget, port_index: usize) -> f32 {
-    node.shared_state()
-        .lock()
-        .unwrap()
-        .outputs
-        .get(port_index)
-        .copied()
-        .unwrap_or(0.0)
-}
-
 /// Render a port value with type-specific preview.
 fn show_port_value(ui: &mut Ui, def: &PortDef, values: &[f32], base: usize) {
     ui.horizontal(|ui| {

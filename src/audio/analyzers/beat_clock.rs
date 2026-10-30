@@ -9,7 +9,7 @@ use std::sync::Arc;
 
 use parking_lot::RwLock;
 
-use crate::audio::analyzers::{AnalyzerHandle, AnalyzerKind, AnalyzerProc};
+use crate::audio::analyzers::{AnalyzerHandle, AnalyzerProc};
 use crate::audio::tracker::{BeatTracker, tempo};
 use crate::engine::types::{ParamDef, ParamValue};
 
@@ -34,10 +34,6 @@ impl Default for ClockParams {
             lead_ms: 0.0,
         }
     }
-}
-
-pub fn clock_params() -> Vec<ParamDef> {
-    params_for(&ClockParams::default())
 }
 
 fn params_for(p: &ClockParams) -> Vec<ParamDef> {
@@ -83,9 +79,7 @@ impl BeatClockProc {
 }
 
 impl AnalyzerProc for BeatClockProc {
-    fn kind(&self) -> AnalyzerKind { AnalyzerKind::BeatClock }
     fn num_outputs(&self) -> usize { 7 }
-    fn first_output_is_trigger(&self) -> bool { true }
 
     fn step(&mut self, samples: &[f32]) {
         let p = *self.params.read();
@@ -150,5 +144,5 @@ pub fn create(sample_rate: u32) -> (AnalyzerHandle, Box<dyn AnalyzerProc>) {
         last_beat: None,
         out: [0.0; 7],
     });
-    (AnalyzerHandle::new(AnalyzerKind::BeatClock, get_params, set_param), proc)
+    (AnalyzerHandle::new(get_params, set_param), proc)
 }

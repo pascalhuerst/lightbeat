@@ -56,9 +56,6 @@ pub struct UniverseKey {
 }
 
 impl UniverseKey {
-    pub fn label(&self) -> String {
-        format!("{}.{}.{}", self.net, self.subnet, self.universe)
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -129,9 +126,6 @@ impl ObjectStore {
         Self { objects: Vec::new() }
     }
 
-    pub fn object_mut(&mut self, id: u32) -> Option<&mut Object> {
-        self.objects.iter_mut().find(|o| o.id == id)
-    }
 }
 
 pub type SharedObjectStore = Arc<Mutex<ObjectStore>>;

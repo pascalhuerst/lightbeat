@@ -97,7 +97,7 @@ impl NodeWidget for PaletteToGradientWidget {
         } else {
             painter.rect_filled(rect, 2.0, theme::BG);
         }
-        painter.rect_stroke(rect, 2.0, Stroke::new(1.0, theme::STROKE), StrokeKind::Inside);
+        painter.rect_stroke(rect, 2.0, Stroke::new(1.0_f32, theme::STROKE), StrokeKind::Inside);
     }
 
     fn as_any_mut(&mut self) -> &mut dyn Any { self }

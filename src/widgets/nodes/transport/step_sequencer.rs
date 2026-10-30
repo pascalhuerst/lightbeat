@@ -125,7 +125,7 @@ impl NodeWidget for StepSequencerWidget {
             );
         }
 
-        painter.rect_stroke(rect, 2.0, egui::Stroke::new(1.0, line_color), StrokeKind::Inside);
+        painter.rect_stroke(rect, 2.0, egui::Stroke::new(1.0_f32, line_color), StrokeKind::Inside);
 
         if active {
             let i = current_step;
@@ -133,7 +133,7 @@ impl NodeWidget for StepSequencerWidget {
                 egui::pos2(x_at(i), rect.min.y),
                 egui::pos2(x_at(i + 1), rect.max.y),
             );
-            painter.rect_stroke(step_rect, 0.0, egui::Stroke::new(2.0, active_fill), StrokeKind::Inside);
+            painter.rect_stroke(step_rect, 0.0, egui::Stroke::new(2.0_f32, active_fill), StrokeKind::Inside);
         }
 
         // Handle fader interaction — send value edits to engine via shared state.

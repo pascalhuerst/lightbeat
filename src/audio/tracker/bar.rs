@@ -231,8 +231,4 @@ impl BarTracker {
         self.score
     }
 
-    /// 0..1: how clearly the best step beats the next one.
-    pub fn confidence(&self) -> f64 {
-        self.confidence
-    }
 }

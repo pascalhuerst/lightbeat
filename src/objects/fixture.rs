@@ -40,13 +40,6 @@ impl Fixture {
             .unwrap_or(0)
     }
 
-    pub fn channel(&self, name: &str) -> Option<&Channel> {
-        self.channels.iter().find(|c| c.name == name)
-    }
-
-    pub fn channel_mut(&mut self, name: &str) -> Option<&mut Channel> {
-        self.channels.iter_mut().find(|c| c.name == name)
-    }
 }
 
 /// DMX address for an object instance.
@@ -90,8 +83,8 @@ mod tests {
         let mut f = Fixture::new(1, "Par");
         f.add_channel(Channel::dimmer("Dimmer"));
         f.add_channel(Channel::color("Color", ColorMode::Rgb));
-        assert!(f.channel("Dimmer").is_some());
-        assert!(f.channel("Color").is_some());
-        assert!(f.channel("Nonexistent").is_none());
+        assert!(f.channels.iter().any(|c| c.name == "Dimmer"));
+        assert!(f.channels.iter().any(|c| c.name == "Color"));
+        assert!(!f.channels.iter().any(|c| c.name == "Nonexistent"));
     }
 }

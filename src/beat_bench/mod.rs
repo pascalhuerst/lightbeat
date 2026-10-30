@@ -104,12 +104,12 @@ fn run_tracker(audio: &[f32], sr: u32, range: Option<(f64, f64)>) -> TrackerRun 
 fn score_tracker(dir: &Path, filter: Option<&str>) {
     println!("Beat tracker, {}", dir.display());
     println!(
-        "{:<26} {:>7} {:>6} {:>5} {:>6} {:>6} {:>8} {:>7} {:>8} {:>6} {:>6}",
-        "scenario", "true", "tempo", "ratio", "lock s", "beatF1", "clock<50", "offset", "jitter95", "lock s", "bar<50"
+        "{:<26} {:>7} {:>6} {:>6} {:>5} {:>6} {:>6} {:>8} {:>7} {:>8} {:>6} {:>6}",
+        "scenario", "true", "tempo", "tempo", "ratio", "lock s", "beatF1", "clock<50", "offset", "jitter95", "lock s", "bar<50"
     );
     println!(
-        "{:<26} {:>7} {:>6} {:>5} {:>6} {:>6} {:>8} {:>7} {:>8} {:>6} {:>6}",
-        "", "bpm", "acc1", "", "tempo", "", "ms", "ms", "ms", "clock", ""
+        "{:<26} {:>7} {:>6} {:>6} {:>5} {:>6} {:>6} {:>8} {:>7} {:>8} {:>6} {:>6}",
+        "", "bpm", "acc1", "acc2", "", "tempo", "", "ms", "ms", "ms", "clock", ""
     );
     for name in scenario_names(filter) {
         let Some((truth, audio)) = load(dir, &name) else {
@@ -127,10 +127,11 @@ fn score_tracker(dir: &Path, filter: Option<&str>) {
         }
         let secs = |v: Option<f64>| v.map(|s| format!("{s:.1}")).unwrap_or_else(|| "never".into());
         println!(
-            "{:<26} {:>7.1} {:>5.0}% {:>5.2} {:>6} {:>6.2} {:>7.0}% {:>+7.0} {:>8.0} {:>6} {:>5.0}%",
+            "{:<26} {:>7.1} {:>5.0}% {:>5.0}% {:>5.2} {:>6} {:>6.2} {:>7.0}% {:>+7.0} {:>8.0} {:>6} {:>5.0}%",
             name,
             truth.bpm_at(truth.duration_s * 0.5),
             t.acc1 * 100.0,
+            t.acc2 * 100.0,
             t.median_ratio,
             secs(t.lock_s),
             p.f1,

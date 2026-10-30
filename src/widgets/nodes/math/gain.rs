@@ -1,6 +1,6 @@
 use std::any::Any;
 
-use egui::{self, Pos2, Sense, Stroke, Ui, Vec2};
+use egui::{self, Pos2, Sense, Stroke, Ui};
 
 use crate::engine::nodes::math::gain::GainDisplay;
 use crate::engine::types::*;
@@ -107,7 +107,7 @@ impl NodeWidget for GainWidget {
         // Centre cap.
         painter.circle_filled(center, (r * 0.15).max(1.5 * zoom), theme::BG_HIGH);
         painter.circle_stroke(center, (r * 0.15).max(1.5 * zoom),
-            Stroke::new(1.0, theme::STROKE));
+            Stroke::new(1.0_f32, theme::STROKE));
 
         // Value text below the knob.
         painter.text(

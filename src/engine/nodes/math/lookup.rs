@@ -67,10 +67,6 @@ impl LookupProcessNode {
         self.columns.iter().map(|c| c.port_type.channel_count()).sum()
     }
 
-    fn column_channel_offset(&self, col_idx: usize) -> usize {
-        self.columns.iter().take(col_idx).map(|c| c.port_type.channel_count()).sum()
-    }
-
     fn rebuild_ports(&mut self) {
         // Outputs[0] = "rows" (the table's row count, Untyped). Keeping
         // it first means adding/removing columns never shifts its index,

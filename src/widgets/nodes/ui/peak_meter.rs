@@ -315,11 +315,11 @@ fn draw_vertical(
         let y = bottom_y - hold_pos * h;
         painter.line_segment(
             [Pos2::new(bar_rect.min.x, y), Pos2::new(bar_rect.max.x, y)],
-            Stroke::new(1.5, HOLD_COLOR),
+            Stroke::new(1.5_f32, HOLD_COLOR),
         );
     }
 
-    painter.rect_stroke(bar_rect, 1.0, Stroke::new(1.0, BORDER_COLOR), StrokeKind::Inside);
+    painter.rect_stroke(bar_rect, 1.0, Stroke::new(1.0_f32, BORDER_COLOR), StrokeKind::Inside);
 
     // dB scale labels + ticks (only if there's room).
     if scale_w > 0.0 {
@@ -328,7 +328,7 @@ fn draw_vertical(
             let y = bottom_y - pos * h;
             painter.line_segment(
                 [Pos2::new(bar_rect.min.x - 3.0, y), Pos2::new(bar_rect.min.x, y)],
-                Stroke::new(1.0, SCALE_TICK_COLOR),
+                Stroke::new(1.0_f32, SCALE_TICK_COLOR),
             );
             painter.text(
                 Pos2::new(bar_rect.min.x - 4.0, y),
@@ -420,11 +420,11 @@ pub fn draw_horizontal(
         let x = left_x + hold_pos * w;
         painter.line_segment(
             [Pos2::new(x, bar_rect.min.y), Pos2::new(x, bar_rect.max.y)],
-            Stroke::new(1.5, HOLD_COLOR),
+            Stroke::new(1.5_f32, HOLD_COLOR),
         );
     }
 
-    painter.rect_stroke(bar_rect, 1.0, Stroke::new(1.0, BORDER_COLOR), StrokeKind::Inside);
+    painter.rect_stroke(bar_rect, 1.0, Stroke::new(1.0_f32, BORDER_COLOR), StrokeKind::Inside);
 }
 
 fn fill_band_h(

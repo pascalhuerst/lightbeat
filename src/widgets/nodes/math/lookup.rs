@@ -278,7 +278,7 @@ impl NodeWidget for LookupWidget {
             if r == self.current_row {
                 painter.rect_stroke(
                     row_rect, 1.0,
-                    Stroke::new(2.0, theme::TEXT_BRIGHT),
+                    Stroke::new(2.0_f32, theme::TEXT_BRIGHT),
                     StrokeKind::Inside,
                 );
             }
@@ -550,9 +550,9 @@ fn edit_cell(
                     }
                 }
                 let stroke = if resp.hovered() {
-                    Stroke::new(1.5, theme::TEXT_BRIGHT)
+                    Stroke::new(1.5_f32, theme::TEXT_BRIGHT)
                 } else {
-                    Stroke::new(1.0, theme::STROKE)
+                    Stroke::new(1.0_f32, theme::STROKE)
                 };
                 painter.rect_stroke(rect, 2.0, stroke, StrokeKind::Inside);
 

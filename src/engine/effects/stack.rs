@@ -65,7 +65,6 @@ pub struct StackConfig {
 
 /// What the widget shows.
 pub struct StackDisplay {
-    pub targets: usize,
     pub pixels: usize,
     /// The composed image, at most 64 columns per target.
     pub preview: Vec<Vec<[u8; 3]>>,
@@ -248,7 +247,6 @@ impl ProcessNode for EffectStackProcessNode {
             })
             .collect();
         shared.display = Some(Box::new(StackDisplay {
-            targets: self.composed.len(),
             pixels: self.composed.iter().map(Vec::len).sum(),
             preview,
             levels: self.levels.clone(),
