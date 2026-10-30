@@ -7,7 +7,6 @@ use super::DmxOutput;
 /// ANSI E1.31 Streaming ACN protocol.
 pub struct SacnOutput {
     source: DmxSource,
-    source_name: String,
 }
 
 impl SacnOutput {
@@ -20,7 +19,6 @@ impl SacnOutput {
 
         Ok(Self {
             source,
-            source_name: source_name.to_string(),
         })
     }
 }
@@ -41,9 +39,6 @@ impl DmxOutput for SacnOutput {
         Ok(())
     }
 
-    fn name(&self) -> &str {
-        &self.source_name
-    }
 }
 
 impl Drop for SacnOutput {

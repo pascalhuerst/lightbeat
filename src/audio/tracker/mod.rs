@@ -25,8 +25,6 @@ pub struct TrackerState {
     pub beat_phase: f64,
     /// Position in the bar, in beats from the bar start (0..4).
     pub bar_position: f64,
-    /// How clearly the bar start stands out from the alternatives, 0..1.
-    pub bar_confidence: f64,
     /// How sure the tempo estimate is, 0..1.
     pub tempo_confidence: f64,
     /// How clear the beat is in the recent past: 1 is nothing, higher is a clear beat.
@@ -92,7 +90,6 @@ impl BeatTracker {
             tempo_bpm: tempo,
             beat_phase: self.phase.phase() + ahead,
             bar_position: (self.phase.phase() + ahead).rem_euclid(4.0),
-            bar_confidence: self.phase.bar_confidence(),
             tempo_confidence: self.tempo.confidence(),
             beat_sharpness: self.phase.sharpness(),
         }

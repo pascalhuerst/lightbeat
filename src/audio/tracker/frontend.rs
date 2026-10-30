@@ -32,7 +32,6 @@ const LEVEL_FLOOR: f32 = 0.05;
 
 #[derive(Clone, Copy, Default)]
 pub struct Frame {
-    pub index: u64,
     /// Normalised onset strength per band.
     pub bands: [f32; BANDS],
     /// Weighted sum of `bands`.
@@ -57,7 +56,6 @@ pub struct Frontend {
     ranges: [(usize, usize); BANDS],
     level: [f32; BANDS],
     level_alpha: f32,
-    next_index: u64,
     bin_hz: f32,
 }
 
@@ -88,7 +86,6 @@ impl Frontend {
             ranges,
             level: [LEVEL_FLOOR; BANDS],
             level_alpha: HOP as f32 / sample_rate as f32 / LEVEL_TAU_S,
-            next_index: 0,
             bin_hz,
         }
     }
@@ -124,8 +121,7 @@ impl Frontend {
     }
 
     fn analyse(&mut self, log: Vec<f32>) -> Frame {
-        let mut frame = Frame { index: self.next_index, ..Default::default() };
-        self.next_index += 1;
+        let mut frame = Frame::default();
 
         if self.history.len() >= FLUX_LAG {
             let reference = &self.history[self.history.len() - FLUX_LAG];

@@ -90,11 +90,11 @@ impl NodeWidget for XyPadWidget {
 
         // Crosshairs at the midpoint for visual reference.
         let mid = rect.center();
-        let grid_stroke = Stroke::new(1.0, Color32::from_gray(70));
+        let grid_stroke = Stroke::new(1.0_f32, Color32::from_gray(70));
         painter.line_segment([Pos2::new(rect.min.x, mid.y), Pos2::new(rect.max.x, mid.y)], grid_stroke);
         painter.line_segment([Pos2::new(mid.x, rect.min.y), Pos2::new(mid.x, rect.max.y)], grid_stroke);
 
-        painter.rect_stroke(rect, 4.0, Stroke::new(1.0, Color32::from_gray(90)), StrokeKind::Inside);
+        painter.rect_stroke(rect, 4.0, Stroke::new(1.0_f32, Color32::from_gray(90)), StrokeKind::Inside);
 
         let knob = Pos2::new(
             rect.min.x + self.x.clamp(0.0, 1.0) * rect.width(),
@@ -103,13 +103,13 @@ impl NodeWidget for XyPadWidget {
 
         // Guide lines from the knob to the axes so the current (x, y) reads
         // at a glance.
-        let guide = Stroke::new(1.0, Color32::from_rgba_unmultiplied(80, 200, 240, 80));
+        let guide = Stroke::new(1.0_f32, Color32::from_rgba_unmultiplied(80, 200, 240, 80));
         painter.line_segment([Pos2::new(rect.min.x, knob.y), Pos2::new(rect.max.x, knob.y)], guide);
         painter.line_segment([Pos2::new(knob.x, rect.min.y), Pos2::new(knob.x, rect.max.y)], guide);
 
         let knob_r = 6.0;
         painter.circle_filled(knob, knob_r, theme::SEM_PRIMARY);
-        painter.circle_stroke(knob, knob_r, Stroke::new(1.5, Color32::from_gray(20)));
+        painter.circle_stroke(knob, knob_r, Stroke::new(1.5_f32, Color32::from_gray(20)));
 
         let moved = resp.dragged() || resp.clicked() || resp.drag_started();
         if moved

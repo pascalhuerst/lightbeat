@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use parking_lot::RwLock;
 
-use crate::audio::analyzers::{AnalyzerHandle, AnalyzerKind, AnalyzerProc};
+use crate::audio::analyzers::{AnalyzerHandle, AnalyzerProc};
 use crate::engine::types::{ParamDef, ParamValue};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -18,11 +18,6 @@ pub struct PeakLevelParams {
 
 impl Default for PeakLevelParams {
     fn default() -> Self { Self { release_ms: 200.0 } }
-}
-
-pub fn peak_params() -> Vec<ParamDef> {
-    let d = PeakLevelParams::default();
-    params_for(&d)
 }
 
 fn params_for(p: &PeakLevelParams) -> Vec<ParamDef> {
@@ -48,7 +43,6 @@ pub struct PeakLevelProc {
 }
 
 impl AnalyzerProc for PeakLevelProc {
-    fn kind(&self) -> AnalyzerKind { AnalyzerKind::PeakLevel }
     fn num_outputs(&self) -> usize { 2 }
     fn output_latency_samples(&self) -> u32 { 0 }
 
@@ -88,5 +82,5 @@ pub fn create(sample_rate: u32) -> (AnalyzerHandle, Box<dyn AnalyzerProc>) {
         as Arc<dyn Fn(usize, ParamValue) + Send + Sync>;
 
     let proc = Box::new(PeakLevelProc { params, sample_rate, peak: 0.0, rms: 0.0 });
-    (AnalyzerHandle::new(AnalyzerKind::PeakLevel, get_params, set_param), proc)
+    (AnalyzerHandle::new(get_params, set_param), proc)
 }

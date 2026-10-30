@@ -111,7 +111,7 @@ impl NodeWidget for TriggerBankWidget {
             };
             let center = egui::pos2(rect.center().x - row_h * 0.9, y);
             painter.circle_filled(center, dot_r, fill);
-            painter.circle_stroke(center, dot_r, egui::Stroke::new(1.0, Color32::from_gray(120)));
+            painter.circle_stroke(center, dot_r, egui::Stroke::new(1.0_f32, Color32::from_gray(120)));
 
             let label = format!("{}", i + 1);
             painter.text(

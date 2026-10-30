@@ -60,9 +60,7 @@ src/
 │   │   ├── output/               # group, group_preview, effect_stack.
 │   │   └── ui/                   # button(+group), fader(+group), xy_pad,
 │   │                             # peak_meter, gradient_stops.
-│   └── patterns/                 # NEW: pattern impls used by the Effect Stack.
-│       ├── mod.rs                # Pattern trait, factory, Pixel struct.
-│       ├── bar.rs / solid.rs     # First two patterns. Add new ones here.
+│   └── effects/                  # Effect Stack + effects, EffectHub, geometry.
 ├── widgets/
 │   ├── inspector.rs              # show_inspector(node) — generic params/ports view.
 │   ├── dmx_monitor.rs            # Per-universe channel grid w/ test universes.
@@ -85,7 +83,7 @@ src/
 │       └── <category>/<name>.rs  # widget per node, mirrors engine/nodes structure.
 ├── color/                        # Reusable color types/utilities — USE THESE for
 │   │                             # any new color/blend/palette code.
-│   ├── types.rs                  # Rgb, Rgba, Hsv with lerp/clamp/from_egui/etc.
+│   ├── types.rs                  # Rgb, Hsv with lerp/clamp etc.
 │   ├── blend.rs                  # BlendMode (Override/Add/Max/Min/Multiply) —
 │   │                             # used by Effect Stack compositing.
 │   ├── gradient.rs               # Gradient with stops + sample().
@@ -165,24 +163,43 @@ src/
 - Sources: the Gradient Source node (can load a `GradientPreset` from
   `SetupFile::gradient_presets`; presets are copied, not linked) and Palette
   to Gradient.
-- **Group Output** takes `select / width / gradient` and samples the gradient
-  per LED. **Group Output Preview** (`output/group_preview.rs`) has the same
-  inputs but draws LED dots instead of sending DMX; `Group::preview_columns`
-  controls how strips are laid out in it.
+- Palettes and gradients are bundles of floats and can be taken apart and
+  rebuilt with Palette to Colors, Colors to Palette, Gradient to Colors and
+  Colors to Gradient (`math/color_reshape.rs`; the gradient pair exposes 2-8
+  stops of color, position and alpha, and unwired positions spread evenly).
+  Color to Components / Components to Color deal with a single color (RGB, HSV,
+  RGBW, CMY). Node names follow "X to Y" so that they read as data flow.
+- Effects take a gradient as their colour input (`Effect` nodes below). The
+  former Group Output and Group Output Preview nodes are gone; a Bar Loop with
+  Position and Width promoted to inputs does the same, and a stack shows the
+  picture.
 
-### Effect Stack (`engine/nodes/output/effect_stack.rs`)
-- One node per output target group(s). Inspector holds an ordered list of
-  layers (`Vec<EffectLayerConfig { pattern_type, blend, opacity }>`). Each
-  layer renders into a per-strip `[Pixel { color: Rgb, alpha: f32 }]`
-  buffer; the stack composites bottom-to-top using
-  `BlendMode::blend(base, effect, opacity * alpha)` from `color::blend`.
-- Layer inputs are exposed as **prefixed ports** on the Effect Stack node:
-  `L1.position`, `L1.width`, `L1.color`, `L2.color`, … New layers grow new
-  ports. The widget rebuilds its `ui_inputs` from the layer list each call.
-- Patterns implement the `Pattern` trait in `engine::patterns`. To add a new
-  pattern: drop a file in `engine/patterns/`, register it in
-  `create_pattern()` and `all_pattern_types()`. Each pattern declares its
-  `input_ports()` and a `render(inputs, frames)` function.
+### Effects and stacks (`engine/effects/`, `widgets/nodes/output/effect*.rs`)
+- An **effect** is a small node (Fill, Bar Loop, Wave Loop, Ripple Burst, ...) with control
+  inputs and no outputs. It picks an **Effect Stack** by name in its inspector,
+  renders its own pixel layer about 60 times a second and hands it to the
+  `EffectHub`. The stack blends its linked effects' layers in the order of its
+  list (top first) and publishes one image; once per frame the hub flattens all
+  stacks, by priority, into the objects' pixels. Effects never write to the
+  objects, so they cannot fight over them. A group may have several stacks;
+  a stack has `priority`, `blend` and an `amount` input, so stacks work as scenes.
+- Names: a **Burst** is spawned by a trigger and lives for a while (ripple,
+  comet); a **Loop** is a function of a phase (wave, chase, fill). Not "voices".
+- To add an effect: implement `EffectKind` (ports, params, `update` for state,
+  `render`) in `engine/effects/`, give it an `EffectSpec` in
+  `widgets/nodes/output/effect.rs`, register widget + engine arm in `main.rs`.
+  Parameters are `ParamDef`s, so any of them can be promoted to an input.
+  Triggers are edge-counted in `write_input` at the full tick rate (a 1 ms pulse
+  is not lost); rendering is gated to `RENDER_HZ`.
+- Link by **name**, like portals, so copy/paste and macros keep working. The
+  graph (`reconcile_effect_stacks`) hands each stack the effects that point at
+  it every frame, follows renames and publishes the names for the pickers. The
+  stack stores order, blend, opacity, mute and solo per effect; linked nodes
+  share an accent colour (`theme::link_color`) and are highlighted together via
+  `NodeWidget::link_key`.
+- Positions: `Geometry::position` gives (x, row). There is only one row until
+  groups get a real layout (see things.txt), but effects already measure
+  distances in two dimensions.
 
 ### Subgraph (`engine/nodes/meta/subgraph.rs`)
 - Acts like a "module" with its own inner graph and configurable input/output
@@ -199,7 +216,7 @@ src/
   preserves params via `pending_params`/`pending_config`.
 
 ### Mode auto-detection pattern (NEW)
-- Nodes that worked across multiple types (Color Split/Merge, Color Display,
+- Nodes that worked across multiple types (Color to Components, Components to Color, Color Display,
   Transition, Scope) used to have a "mode" dropdown forcing the user to pick.
 - New convention: default `Mode = Neutral`, ports are `Any` (white ring),
   process is no-op. On the **first wire** attached to either side, the widget
@@ -212,7 +229,7 @@ src/
   also checks **type compatibility**, not just port-index range) drops any
   wires whose types no longer match — so a manual Auto reset disconnects
   everything cleanly.
-- See Color Split/Merge as the canonical example. Scope was the original
+- See Color to Components / Components to Color as the canonical example. Scope was the original
   inspiration but only auto-detects on the input side.
 
 ### LED strips

@@ -153,12 +153,12 @@ impl NodeWidget for ColorDisplayWidget {
                             (s.color.b.clamp(0.0, 1.0) * 255.0) as u8,
                         );
                         painter.add(egui::Shape::convex_polygon(
-                            tri.to_vec(), marker_col, Stroke::new(0.5, Color32::BLACK),
+                            tri.to_vec(), marker_col, Stroke::new(0.5_f32, Color32::BLACK),
                         ));
                     }
                 }
 
-                painter.rect_stroke(rect, 2.0, Stroke::new(1.0, theme::STROKE), StrokeKind::Inside);
+                painter.rect_stroke(rect, 2.0, Stroke::new(1.0_f32, theme::STROKE), StrokeKind::Inside);
             }
             _ => {
                 // Single color mode.

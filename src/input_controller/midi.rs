@@ -35,16 +35,6 @@ impl MidiSource {
         matches!(self, MidiSource::Note { .. })
     }
 
-    pub fn channel(&self) -> u8 {
-        match self {
-            MidiSource::Cc { channel, .. }
-            | MidiSource::CcRelative { channel, .. }
-            | MidiSource::Note { channel, .. }
-            | MidiSource::NoteVelocity { channel, .. }
-            | MidiSource::PitchBend { channel } => *channel,
-        }
-    }
-
     pub fn label(&self) -> String {
         match self {
             MidiSource::Cc { channel, controller } => format!("CC ch{} #{}", channel, controller),

@@ -12,14 +12,6 @@ pub enum TransitionMode {
 }
 
 impl TransitionMode {
-    pub fn label(&self) -> &'static str {
-        match self {
-            Self::Neutral => "Auto",
-            Self::Float => "Float",
-            Self::Color => "Color",
-            Self::Palette => "Palette",
-        }
-    }
     pub fn value_type(&self) -> PortType {
         match self {
             Self::Neutral => PortType::Any,

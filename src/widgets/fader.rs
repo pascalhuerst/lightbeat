@@ -70,7 +70,7 @@ pub fn draw_fader(
         painter.rect_stroke(
             rect,
             style.corner_radius,
-            egui::Stroke::new(1.0, b),
+            egui::Stroke::new(1.0_f32, b),
             StrokeKind::Inside,
         );
     }
@@ -157,14 +157,14 @@ pub fn draw_bipolar_center_line(
             let y = rect.min.y + 0.5 * rect.height();
             painter.line_segment(
                 [egui::pos2(rect.min.x, y), egui::pos2(rect.max.x, y)],
-                egui::Stroke::new(1.0, color),
+                egui::Stroke::new(1.0_f32, color),
             );
         }
         Orientation::Horizontal => {
             let x = rect.min.x + 0.5 * rect.width();
             painter.line_segment(
                 [egui::pos2(x, rect.min.y), egui::pos2(x, rect.max.y)],
-                egui::Stroke::new(1.0, color),
+                egui::Stroke::new(1.0_f32, color),
             );
         }
     }

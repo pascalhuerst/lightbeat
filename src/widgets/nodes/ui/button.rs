@@ -163,7 +163,7 @@ impl NodeWidget for ButtonWidget {
         } else {
             Color32::from_gray(90)
         };
-        let border_width = if self.override_active { 2.0 } else { 1.0 };
+        let border_width = if self.override_active { 2.0 } else { 1.0_f32 };
         painter.rect_stroke(
             rect, 3.0,
             egui::Stroke::new(border_width, border),
@@ -188,7 +188,7 @@ impl NodeWidget for ButtonWidget {
             };
             painter.circle_filled(dot_pos, dot_r, in_color);
             painter.circle_stroke(dot_pos, dot_r,
-                egui::Stroke::new(1.0, theme::SEM_WARNING));
+                egui::Stroke::new(1.0_f32, theme::SEM_WARNING));
         }
 
         if interactive {

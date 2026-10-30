@@ -12,14 +12,13 @@ use cpal::{BufferSize, Device, Host, SampleFormat, StreamConfig, SupportedStream
 use crossbeam_channel::Sender;
 
 use super::backend::{
-    AudioBackend, AudioBackendKind, AudioChunk, DEFAULT_SAMPLE_RATE, InputStream, StreamRequest,
+    AudioBackend, AudioChunk, DEFAULT_SAMPLE_RATE, InputStream, StreamRequest,
     dispatch_samples,
 };
 
 pub struct CpalBackend;
 
 impl AudioBackend for CpalBackend {
-    fn kind(&self) -> AudioBackendKind { AudioBackendKind::Cpal }
 
     fn list_input_names(&self) -> Vec<String> {
         let Ok(devices) = host().input_devices() else { return Vec::new(); };

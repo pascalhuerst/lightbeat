@@ -125,10 +125,10 @@ impl NodeWidget for GradientStopsWidget {
             let x = strip_rect.min.x + t * strip_rect.width();
             painter.line_segment(
                 [Pos2::new(x, strip_rect.min.y), Pos2::new(x, strip_rect.max.y)],
-                Stroke::new(1.0, col),
+                Stroke::new(1.0_f32, col),
             );
         }
-        painter.rect_stroke(strip_rect, 2.0, Stroke::new(1.0, theme::STROKE), StrokeKind::Inside);
+        painter.rect_stroke(strip_rect, 2.0, Stroke::new(1.0_f32, theme::STROKE), StrokeKind::Inside);
 
         // --- handles: vertical line + dot, in the palette colour.
         let ptr = resp.interact_pointer_pos();
@@ -167,7 +167,7 @@ impl NodeWidget for GradientStopsWidget {
         let rail_y = handle_rect.center().y;
         painter.line_segment(
             [Pos2::new(rect.min.x + 4.0, rail_y), Pos2::new(rect.max.x - 4.0, rail_y)],
-            Stroke::new(1.0, Color32::from_gray(60)),
+            Stroke::new(1.0_f32, Color32::from_gray(60)),
         );
 
         for i in 0..4 {
@@ -176,7 +176,7 @@ impl NodeWidget for GradientStopsWidget {
             // Vertical line from handle track through the gradient strip.
             painter.line_segment(
                 [Pos2::new(hx, handle_rect.min.y), Pos2::new(hx, strip_rect.max.y)],
-                Stroke::new(1.0, Color32::from_gray(120)),
+                Stroke::new(1.0_f32, Color32::from_gray(120)),
             );
             // Dot in the palette colour, with a dark outline so it reads on
             // any background.
@@ -184,7 +184,7 @@ impl NodeWidget for GradientStopsWidget {
             painter.circle_filled(centre, HANDLE_RADIUS, col);
             painter.circle_stroke(
                 centre, HANDLE_RADIUS,
-                Stroke::new(1.5, Color32::from_gray(20)),
+                Stroke::new(1.5_f32, Color32::from_gray(20)),
             );
             // Number inside the handle (1..4) for quick identification.
             painter.text(

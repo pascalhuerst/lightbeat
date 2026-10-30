@@ -5,6 +5,7 @@ use ringbuf::traits::Consumer;
 
 use super::CommandConsumer;
 use super::nodes::meta::subgraph::SubgraphProcessNode;
+use super::effects::{EffectHub, RenderGate};
 use super::promoted::PromotedInputs;
 use super::routing::RoutePlan;
 use super::sync_hint::SaveDataGate;
@@ -18,6 +19,10 @@ pub struct EngineGraph {
     shared_states: Vec<SharedState>,
     connections: Vec<Connection>,
     dmx: Option<DmxOutputManager>,
+    /// Where effect layers meet; flattened into the objects once per frame.
+    effect_hub: EffectHub,
+    flatten_gate: RenderGate,
+    object_store: SharedObjectStore,
     perf: SharedPerfStats,
     /// NodeId to index in `nodes`. Rebuilt only when nodes are added or
     /// removed; without it every connection cost a linear scan per tick.
@@ -45,9 +50,13 @@ impl EngineGraph {
     pub fn new(
         dmx_shared: SharedDmxState,
         object_store: SharedObjectStore,
+        effect_hub: EffectHub,
         perf: SharedPerfStats,
     ) -> Self {
         Self {
+            effect_hub,
+            flatten_gate: RenderGate::new(),
+            object_store: object_store.clone(),
             nodes: Vec::new(),
             shared_states: Vec::new(),
             connections: Vec::new(),
@@ -300,7 +309,11 @@ impl EngineGraph {
 
         clock.lap("[root] 4 ui sync");
 
-        // 5. Tick the DMX output manager (merge overrides, send to interfaces).
+        // 5. Blend the effect stacks into the LEDs, then tick the DMX output
+        // manager (merge overrides, send to interfaces).
+        if self.flatten_gate.due() {
+            self.effect_hub.flatten(&self.object_store);
+        }
         if let Some(dmx) = &mut self.dmx {
             dmx.tick();
         }

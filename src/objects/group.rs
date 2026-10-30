@@ -15,20 +15,6 @@ pub struct StripLayout {
 }
 
 impl StripLayout {
-    /// Convert a logical position (0..1) into a fractional LED index for this strip.
-    /// Returns `None` if the position is outside the strip's logical range.
-    pub fn logical_to_led(&self, logical: f32, pixel_count: usize) -> Option<f32> {
-        if pixel_count == 0 { return None; }
-        let lo = self.logical_start.min(self.logical_end);
-        let hi = self.logical_start.max(self.logical_end);
-        if logical < lo || logical > hi { return None; }
-
-        // Normalize within the strip's range.
-        let span = self.logical_end - self.logical_start;
-        if span.abs() < 1e-6 { return None; }
-        let t = (logical - self.logical_start) / span; // 0..1, accounts for reversal
-        Some(t * (pixel_count as f32 - 1.0))
-    }
 }
 
 /// What capabilities a group exposes as inputs.
@@ -49,8 +35,6 @@ impl GroupCapability {
     }
 }
 
-fn default_preview_columns() -> usize { 1 }
-
 /// A group of objects that can be controlled together.
 /// Capabilities are the UNION of all member objects' channel types.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -63,11 +47,6 @@ pub struct Group {
     /// Strips not listed here are still in the group but have no layout role.
     #[serde(default)]
     pub strip_layout: Vec<StripLayout>,
-    /// How many strips the preview node lays out per row. Purely a
-    /// visual hint — doesn't affect DMX output. Defaults to 1 (all
-    /// strips stacked vertically). A 2×3 shelf sets this to 2.
-    #[serde(default = "default_preview_columns")]
-    pub preview_columns: usize,
 }
 
 impl Group {
@@ -77,7 +56,6 @@ impl Group {
             name: name.into(),
             object_ids: Vec::new(),
             strip_layout: Vec::new(),
-            preview_columns: 1,
         }
     }
 

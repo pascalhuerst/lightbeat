@@ -196,7 +196,7 @@ impl NodeWidget for FaderWidget {
             fader::draw_bipolar_center_line(&painter, rect, orient, CENTER_LINE_COLOR);
             if let Some(b) = style.border {
                 painter.rect_stroke(rect, style.corner_radius,
-                    egui::Stroke::new(1.0, b), egui::StrokeKind::Inside);
+                    egui::Stroke::new(1.0_f32, b), egui::StrokeKind::Inside);
             }
         } else {
             fader::draw_fader(&painter, rect, main_value, orient, &style, false);

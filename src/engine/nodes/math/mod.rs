@@ -1,7 +1,8 @@
 pub mod bipolar;
 pub mod change_detect;
 pub mod color_modifier;
-pub mod color_ops;
+pub mod color_components;
+pub mod color_reshape;
 pub mod counter;
 pub mod compare;
 pub mod constant;

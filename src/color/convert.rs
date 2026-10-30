@@ -90,11 +90,6 @@ pub fn rgb_to_rgbw_naive(c: Rgb) -> (f32, f32, f32, f32) {
     (c.r - w, c.g - w, c.b - w, w)
 }
 
-/// Convert DMX-style 0–255 byte values to 0.0–1.0 float.
-pub fn dmx_to_float(v: u8) -> f32 {
-    v as f32 / 255.0
-}
-
 /// Convert 0.0–1.0 float to DMX-style 0–255 byte.
 pub fn float_to_dmx(v: f32) -> u8 {
     (v.clamp(0.0, 1.0) * 255.0).round() as u8

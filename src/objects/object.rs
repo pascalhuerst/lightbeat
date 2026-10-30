@@ -50,13 +50,6 @@ impl Object {
         }
     }
 
-    /// Check if this object's address matches a given universe.
-    pub fn matches_universe(&self, net: u8, subnet: u8, universe: u8) -> bool {
-        self.address.net == net
-            && self.address.subnet == subnet
-            && self.address.universe == universe
-    }
-
     /// True when this object's channel layout (names, kinds, offsets) equals the template's.
     pub fn matches_fixture(&self, fixture: &Fixture) -> bool {
         self.channels.len() == fixture.channels.len()

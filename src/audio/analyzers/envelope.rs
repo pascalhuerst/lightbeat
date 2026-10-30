@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use parking_lot::RwLock;
 
-use crate::audio::analyzers::{AnalyzerHandle, AnalyzerKind, AnalyzerProc};
+use crate::audio::analyzers::{AnalyzerHandle, AnalyzerProc};
 use crate::engine::types::{ParamDef, ParamValue};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -19,11 +19,6 @@ pub struct EnvelopeParams {
 
 impl Default for EnvelopeParams {
     fn default() -> Self { Self { attack_ms: 5.0, release_ms: 100.0 } }
-}
-
-pub fn envelope_params() -> Vec<ParamDef> {
-    let d = EnvelopeParams::default();
-    params_for(&d)
 }
 
 fn params_for(p: &EnvelopeParams) -> Vec<ParamDef> {
@@ -58,7 +53,6 @@ pub struct EnvelopeProc {
 }
 
 impl AnalyzerProc for EnvelopeProc {
-    fn kind(&self) -> AnalyzerKind { AnalyzerKind::Envelope }
     fn num_outputs(&self) -> usize { 1 }
     fn output_latency_samples(&self) -> u32 { 0 }
 
@@ -98,5 +92,5 @@ pub fn create(sample_rate: u32) -> (AnalyzerHandle, Box<dyn AnalyzerProc>) {
         env: 0.0,
         out: 0.0,
     });
-    (AnalyzerHandle::new(AnalyzerKind::Envelope, get_params, set_param), proc)
+    (AnalyzerHandle::new(get_params, set_param), proc)
 }

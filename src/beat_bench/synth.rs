@@ -108,6 +108,7 @@ impl TempoMap {
         (self.beats.len() - 1) as f64 * self.step
     }
 
+    #[cfg(test)]
     pub fn beat_at(&self, t: f64) -> f64 {
         let x = (t / self.step).clamp(0.0, (self.beats.len() - 1) as f64);
         let i = (x as usize).min(self.beats.len() - 2);
@@ -335,7 +336,6 @@ pub mod layer {
     pub const ARP: u32 = 256;
     /// Snare roll that tightens towards the end of the section.
     pub const ROLL: u32 = 512;
-    pub const GROOVE: u32 = KICK | CLAP | HATS | OHAT | PERC | BASS;
 }
 
 #[derive(Clone)]

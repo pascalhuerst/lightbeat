@@ -185,6 +185,8 @@ struct ClipboardConn {
 
 pub struct NodeGraph {
     levels: Vec<GraphLevel>,
+    /// Names of all effect stacks, for the pickers in the effects' inspectors.
+    stack_names: Option<crate::widgets::nodes::output::effect::SharedStackNames>,
     active_level: usize,
     drag: DragState,
     next_id: u64,
@@ -249,6 +251,7 @@ enum FrameHit {
 impl NodeGraph {
     pub fn new() -> Self {
         Self {
+            stack_names: None,
             levels: vec![GraphLevel {
                 nodes: Vec::new(),
                 states: Vec::new(),
@@ -298,14 +301,11 @@ impl NodeGraph {
         id
     }
 
-    /// Read-only access to current level frames (for the inspector).
-    pub fn frames(&self) -> &[GraphFrame] { &self.active().frames }
     /// Mutable access for the inspector to edit titles/colors/notes.
     pub fn frames_mut(&mut self) -> &mut Vec<GraphFrame> { &mut self.active_mut().frames }
     pub fn selected_frame_ids(&self) -> impl Iterator<Item = u64> + '_ {
         self.selected_frames.iter().copied()
     }
-    pub fn deselect_all_frames(&mut self) { self.selected_frames.clear(); }
 
     /// Indices of nodes whose screen-rect centre currently falls inside the
     /// frame with id `frame_id`. Captured once at frame-drag start so those
@@ -489,11 +489,6 @@ impl NodeGraph {
         });
     }
 
-    /// Remove all registered nodes in a given category.
-    pub fn clear_category(&mut self, category: &str) {
-        self.registry.retain(|e| e.category != category);
-    }
-
     /// Immutable view of the registered node types — used by the external
     /// "Add Nodes" panel to render the list without touching internals.
     pub fn registry_entries(&self) -> &[NodeEntry] {
@@ -574,27 +569,9 @@ impl NodeGraph {
         result
     }
 
-    /// Get all nodes for iteration (e.g. to call show_editor on each).
-    pub fn nodes_mut(&mut self) -> &mut [Box<dyn NodeWidget>] {
-        &mut self.active_mut().nodes
-    }
-
-    /// Get all nodes as shared references.
-    pub fn all_nodes(&self) -> &[Box<dyn NodeWidget>] {
-        &self.active().nodes
-    }
-
-    pub fn node_count(&self) -> usize {
-        self.active().nodes.len()
-    }
-
     pub fn node_and_state(&self, index: usize) -> (&dyn NodeWidget, &NodeState) {
         let level = self.active();
         (level.nodes[index].as_ref(), &level.states[index])
-    }
-
-    pub fn connections(&self) -> &[Connection] {
-        &self.active().connections
     }
 
     #[allow(dead_code)]
@@ -616,14 +593,8 @@ impl NodeGraph {
     /// Access root level directly (for save/load which always operates on root).
     pub fn root_level(&self) -> &GraphLevel { &self.levels[0] }
 
-    /// Whether we're currently inside a subgraph.
-    pub fn is_in_subgraph(&self) -> bool { self.active_level > 0 }
-
     /// Get the active level index.
     pub fn active_level_index(&self) -> usize { self.active_level }
-
-    /// Get root level mutably (for load_graph which needs to operate on root).
-    pub fn root_level_mut(&mut self) -> &mut GraphLevel { &mut self.levels[0] }
 
     /// Current zoom level of the active graph.
     pub fn zoom(&self) -> f32 { self.active().zoom }
@@ -1104,6 +1075,72 @@ impl NodeGraph {
     /// Remove connections whose endpoints no longer exist (index out of range)
     /// or whose port types have become incompatible (e.g. a node's mode changed
     /// and a previously-matching wire is now of the wrong type).
+    pub fn set_stack_names(&mut self, names: crate::widgets::nodes::output::effect::SharedStackNames) {
+        self.stack_names = Some(names);
+    }
+
+    /// Effects belong to a stack by name, and the stack lists them. Every
+    /// frame: move effects along when a stack is renamed, tell each stack
+    /// which effects point at it (in any level), and publish the names.
+    fn reconcile_effect_stacks(&mut self) {
+        use crate::widgets::nodes::node::StackMember;
+
+        let mut renames = Vec::new();
+        for level in self.levels.iter_mut() {
+            for node in level.nodes.iter_mut() {
+                if let Some(rename) = node.take_stack_rename() {
+                    renames.push(rename);
+                }
+            }
+        }
+        for (from, to) in &renames {
+            for level in self.levels.iter_mut() {
+                for node in level.nodes.iter_mut() {
+                    node.rename_linked_stack(from, to);
+                }
+            }
+        }
+
+        let mut stacks: Vec<String> = Vec::new();
+        let mut effects: Vec<(String, StackMember)> = Vec::new();
+        for level in &self.levels {
+            for node in &level.nodes {
+                if let Some(name) = node.stack_name() {
+                    stacks.push(name);
+                }
+                if let Some(link) = node.linked_stack() {
+                    effects.push((
+                        link,
+                        StackMember {
+                            node_id: node.node_id(),
+                            label: node.display_title().to_string(),
+                            kind: node.effect_kind(),
+                        },
+                    ));
+                }
+            }
+        }
+        if stacks.is_empty() && effects.is_empty() {
+            if let Some(reg) = &self.stack_names {
+                reg.lock().unwrap().clear();
+            }
+            return;
+        }
+        for level in self.levels.iter_mut() {
+            for node in level.nodes.iter_mut() {
+                if let Some(name) = node.stack_name() {
+                    let members = effects.iter().filter(|(l, _)| *l == name).map(|(_, m)| m.clone()).collect();
+                    node.set_stack_members(members);
+                }
+            }
+        }
+        stacks.sort();
+        stacks.dedup();
+        if let Some(reg) = &self.stack_names {
+            *reg.lock().unwrap() = stacks;
+        }
+    }
+
     /// When the user promotes or demotes a param, the extra ports after the
     /// node's own inputs change. Move every wire that points at one of them to
     /// its port's new position, and drop the wires of demoted params.
@@ -1204,6 +1241,7 @@ impl NodeGraph {
             ui.separator();
         }
 
+        self.reconcile_effect_stacks();
         self.remap_promoted_connections();
         // Clean up stale connections (ports removed by dynamic nodes like Group Output).
         self.cleanup_stale_connections();
@@ -1374,7 +1412,7 @@ impl NodeGraph {
                 painter.rect_filled(bg_rect, 4.0, Color32::from_rgba_unmultiplied(0, 0, 0, 200));
                 painter.rect_stroke(
                     bg_rect, 4.0,
-                    egui::Stroke::new(1.0, dc.from_type.color()),
+                    egui::Stroke::new(1.0_f32, dc.from_type.color()),
                     egui::StrokeKind::Inside,
                 );
                 painter.text(
@@ -1402,10 +1440,10 @@ impl NodeGraph {
 
         // Figure out which portal keys are currently selected so we can
         // outline their peers — the "wireless cable" hint.
-        let highlighted_portal_keys: std::collections::HashSet<String> = self
+        let highlighted_link_keys: std::collections::HashSet<String> = self
             .selected_nodes
             .iter()
-            .filter_map(|&i| level.nodes.get(i).and_then(|n| n.portal_key()))
+            .filter_map(|&i| level.nodes.get(i).and_then(|n| n.link_key()))
             .collect();
 
         // -- Draw node chrome (painter-based, immutable) --
@@ -1414,8 +1452,8 @@ impl NodeGraph {
         for i in 0..level.nodes.len() {
             let selected = self.selected_nodes.contains(&i);
             let portal_peer = !selected
-                && level.nodes[i].portal_key()
-                    .map(|k| highlighted_portal_keys.contains(&k))
+                && level.nodes[i].link_key()
+                    .map(|k| highlighted_link_keys.contains(&k))
                     .unwrap_or(false);
             if portal_peer { any_peer_pulsing = true; }
             let inputs = level.nodes[i].ui_inputs_full();
@@ -1522,7 +1560,7 @@ impl NodeGraph {
                 if crossing {
                     draw_dashed_rect(&painter, sel_rect, theme::SEM_PRIMARY);
                 } else {
-                    painter.rect_stroke(sel_rect, 0.0, Stroke::new(1.0, theme::SEM_PRIMARY), StrokeKind::Inside);
+                    painter.rect_stroke(sel_rect, 0.0, Stroke::new(1.0_f32, theme::SEM_PRIMARY), StrokeKind::Inside);
                 }
             }
 
@@ -3548,18 +3586,18 @@ fn draw_node_chrome(
     // Disabled nodes render with neutral gray chrome — only "selected"
     // wins over it since selection must always be visible.
     let border = if selected {
-        Stroke::new(2.0, theme::SEM_PRIMARY)
+        Stroke::new(2.0_f32, theme::SEM_PRIMARY)
     } else if disabled {
-        Stroke::new(1.0, theme::STROKE)
+        Stroke::new(1.0_f32, theme::STROKE)
     } else if portal_peer {
-        Stroke::new(2.0, theme::SEM_WARNING)
+        Stroke::new(2.0_f32, theme::SEM_WARNING)
     } else if let Some(a) = accent {
-        Stroke::new(1.5, a)
+        Stroke::new(1.5_f32, a)
     } else if layout.bare {
         // No frame unless something marks the node: the widget is the node.
         Stroke::NONE
     } else {
-        Stroke::new(1.0, theme::STROKE)
+        Stroke::new(1.0_f32, theme::STROKE)
     };
     painter.rect_stroke(rect, NODE_CORNER_RADIUS, border, StrokeKind::Inside);
 
@@ -3600,11 +3638,11 @@ fn draw_node_chrome(
         let handle_color = Color32::from_gray(80);
         painter.line_segment(
             [Pos2::new(br.x - s, br.y), Pos2::new(br.x, br.y - s)],
-            Stroke::new(1.0, handle_color),
+            Stroke::new(1.0_f32, handle_color),
         );
         painter.line_segment(
             [Pos2::new(br.x - s * 0.5, br.y), Pos2::new(br.x, br.y - s * 0.5)],
-            Stroke::new(1.0, handle_color),
+            Stroke::new(1.0_f32, handle_color),
         );
     }
 }
@@ -3621,7 +3659,7 @@ fn draw_color_preview(ui: &mut Ui, values: &[f32]) {
     let b = values.get(2).copied().unwrap_or(0.0).clamp(0.0, 1.0);
     painter.rect_filled(rect, 3.0,
         Color32::from_rgb((r * 255.0) as u8, (g * 255.0) as u8, (b * 255.0) as u8));
-    painter.rect_stroke(rect, 3.0, Stroke::new(1.0, theme::STROKE), StrokeKind::Inside);
+    painter.rect_stroke(rect, 3.0, Stroke::new(1.0_f32, theme::STROKE), StrokeKind::Inside);
 }
 
 /// Four-swatch row for Palette ports. Channels are laid out as 4 × RGB.
@@ -3642,7 +3680,7 @@ fn draw_palette_preview(ui: &mut Ui, values: &[f32]) {
         painter.rect_filled(slot_rect, 0.0,
             Color32::from_rgb((r * 255.0) as u8, (g * 255.0) as u8, (b * 255.0) as u8));
     }
-    painter.rect_stroke(rect, 3.0, Stroke::new(1.0, theme::STROKE), StrokeKind::Inside);
+    painter.rect_stroke(rect, 3.0, Stroke::new(1.0_f32, theme::STROKE), StrokeKind::Inside);
 }
 
 /// Sampled gradient preview (same renderer as Gradient Source etc., just
@@ -3688,7 +3726,7 @@ fn draw_gradient_preview(ui: &mut Ui, values: &[f32]) {
             );
         }
     }
-    painter.rect_stroke(rect, 3.0, Stroke::new(1.0, theme::STROKE), StrokeKind::Inside);
+    painter.rect_stroke(rect, 3.0, Stroke::new(1.0_f32, theme::STROKE), StrokeKind::Inside);
 }
 
 /// Small pan/tilt crosshair preview. Pan 0..1 is x-axis, tilt 0..1 is y-axis.
@@ -3697,9 +3735,9 @@ fn draw_position_preview(ui: &mut Ui, pan: f32, tilt: f32) {
     let (resp, painter) = ui.allocate_painter(size, Sense::hover());
     let rect = resp.rect;
     painter.rect_filled(rect, 3.0, theme::BG_DEEP);
-    painter.rect_stroke(rect, 3.0, Stroke::new(1.0, theme::STROKE), StrokeKind::Inside);
+    painter.rect_stroke(rect, 3.0, Stroke::new(1.0_f32, theme::STROKE), StrokeKind::Inside);
     let mid = rect.center();
-    let guide = Stroke::new(0.5, theme::BG_HIGH);
+    let guide = Stroke::new(0.5_f32, theme::BG_HIGH);
     painter.line_segment([Pos2::new(rect.min.x, mid.y), Pos2::new(rect.max.x, mid.y)], guide);
     painter.line_segment([Pos2::new(mid.x, rect.min.y), Pos2::new(mid.x, rect.max.y)], guide);
     let dot = Pos2::new(
@@ -3707,7 +3745,7 @@ fn draw_position_preview(ui: &mut Ui, pan: f32, tilt: f32) {
         rect.min.y + tilt.clamp(0.0, 1.0) * rect.height(),
     );
     painter.circle_filled(dot, 4.0, theme::SEM_SUCCESS);
-    painter.circle_stroke(dot, 4.0, Stroke::new(1.0, Color32::from_gray(20)));
+    painter.circle_stroke(dot, 4.0, Stroke::new(1.0_f32, Color32::from_gray(20)));
 }
 
 /// Mini scope for the port-hover tooltip. Plots the samples on a dark
@@ -3719,7 +3757,7 @@ fn draw_scope(ui: &mut Ui, samples: &[f32], line_color: Color32) {
     let (resp, painter) = ui.allocate_painter(size, Sense::hover());
     let rect = resp.rect;
     painter.rect_filled(rect, 3.0, theme::BG_DEEP);
-    painter.rect_stroke(rect, 3.0, Stroke::new(1.0, theme::STROKE), StrokeKind::Inside);
+    painter.rect_stroke(rect, 3.0, Stroke::new(1.0_f32, theme::STROKE), StrokeKind::Inside);
     if samples.is_empty() { return; }
     let mut min_v = f32::INFINITY;
     let mut max_v = f32::NEG_INFINITY;
@@ -3740,7 +3778,7 @@ fn draw_scope(ui: &mut Ui, samples: &[f32], line_color: Color32) {
     if zero_y >= rect.min.y && zero_y <= rect.max.y {
         painter.line_segment(
             [Pos2::new(rect.min.x, zero_y), Pos2::new(rect.max.x, zero_y)],
-            Stroke::new(0.5, theme::BG_HIGH),
+            Stroke::new(0.5_f32, theme::BG_HIGH),
         );
     }
 
@@ -3752,7 +3790,7 @@ fn draw_scope(ui: &mut Ui, samples: &[f32], line_color: Color32) {
     }).collect();
     if pts.len() >= 2 {
         for w in pts.windows(2) {
-            painter.line_segment([w[0], w[1]], Stroke::new(1.5, line_color));
+            painter.line_segment([w[0], w[1]], Stroke::new(1.5_f32, line_color));
         }
     }
 }
@@ -3767,20 +3805,20 @@ fn draw_port(
 ) {
     let type_color = ui_port.def.port_type.color();
     let fill = ui_port.fill_color.unwrap_or(type_color);
-    let stroke_width = if ui_port.fill_color.is_some() { 3.0 } else { 1.5 };
+    let stroke_width = if ui_port.fill_color.is_some() { 3.0 } else { 1.5_f32 };
     let r = PORT_RADIUS * zoom;
     // Outer glow when port is transiently highlighted.
     if highlight > 0.0 && !ui_port.disabled && !node_disabled {
         let alpha = (highlight.clamp(0.0, 1.0) * 255.0) as u8;
         let glow = Color32::from_rgba_unmultiplied(255, 255, 255, alpha);
         painter.circle_filled(pos, r + 4.0 * zoom, glow.linear_multiply(0.25));
-        painter.circle_stroke(pos, r + 3.0 * zoom, Stroke::new(2.0, glow));
+        painter.circle_stroke(pos, r + 3.0 * zoom, Stroke::new(2.0_f32, glow));
     }
     if ui_port.disabled || node_disabled {
         // Hollow grayed-out port. Node-disabled ports read the same as
         // individually-disabled ones so the whole node looks uniformly off.
         painter.circle_filled(pos, r, theme::BG);
-        painter.circle_stroke(pos, r, Stroke::new(1.0, theme::STROKE));
+        painter.circle_stroke(pos, r, Stroke::new(1.0_f32, theme::STROKE));
     } else {
         painter.circle_filled(pos, r, fill);
         painter.circle_stroke(pos, r, Stroke::new(stroke_width, type_color));
@@ -3854,7 +3892,7 @@ fn draw_grid(painter: &Painter, rect: Rect, pan: Vec2, zoom: f32) {
     while x < rect.max.x {
         painter.line_segment(
             [Pos2::new(x, rect.min.y), Pos2::new(x, rect.max.y)],
-            Stroke::new(1.0, theme::BG_GRID),
+            Stroke::new(1.0_f32, theme::BG_GRID),
         );
         x += spacing;
     }
@@ -3862,7 +3900,7 @@ fn draw_grid(painter: &Painter, rect: Rect, pan: Vec2, zoom: f32) {
     while y < rect.max.y {
         painter.line_segment(
             [Pos2::new(rect.min.x, y), Pos2::new(rect.max.x, y)],
-            Stroke::new(1.0, theme::BG_GRID),
+            Stroke::new(1.0_f32, theme::BG_GRID),
         );
         y += spacing;
     }
@@ -3870,7 +3908,7 @@ fn draw_grid(painter: &Painter, rect: Rect, pan: Vec2, zoom: f32) {
 
 /// Dashed rectangle outline used to flag crossing-mode selection lassos.
 fn draw_dashed_rect(painter: &Painter, rect: Rect, color: Color32) {
-    let stroke = Stroke::new(1.0, color);
+    let stroke = Stroke::new(1.0_f32, color);
     let dash = 6.0;
     let gap = 4.0;
     let seg = dash + gap;
