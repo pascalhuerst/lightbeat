@@ -85,6 +85,12 @@ impl PortType {
         }
         self == other
     }
+
+    /// Whether a wire from a `self` output to a `dst` input is allowed. A
+    /// plain color also feeds a gradient, as a gradient of that one color.
+    pub fn can_feed(&self, dst: &PortType) -> bool {
+        self.compatible_with(dst) || (*self == PortType::Color && *dst == PortType::Gradient)
+    }
 }
 
 /// Port definition — engine side (no color info).

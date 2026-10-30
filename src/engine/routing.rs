@@ -30,6 +30,9 @@ struct Route {
     dst_base: usize,
     channels: usize,
     promoted: bool,
+    /// A color feeding a gradient input: read three channels, write a
+    /// solid gradient.
+    solid_gradient: bool,
 }
 
 #[derive(Default)]
@@ -46,6 +49,20 @@ pub struct RoutePlan {
     promoted_writes: Vec<(usize, usize, f32)>,
     bridge_writes: Vec<(usize, f32)>,
     built: bool,
+}
+
+/// Channel `ch` of a gradient made of one color: opaque stops at both ends,
+/// the rest unused (alpha below zero).
+fn solid_gradient_channel(color: [f32; 3], ch: usize) -> f32 {
+    let (stop, field) = (ch / GRADIENT_STOP_FLOATS, ch % GRADIENT_STOP_FLOATS);
+    match (stop, field) {
+        (0 | 1, 0..=2) => color[field],
+        (0 | 1, 3) => 1.0,
+        (0, 4) => 0.0,
+        (1, 4) => 1.0,
+        (_, 3) => -1.0,
+        _ => 0.0,
+    }
 }
 
 impl RoutePlan {
@@ -133,6 +150,7 @@ impl RoutePlan {
                     dst_base: conn.to.index - dst_ports.len(),
                     channels: 1,
                     promoted: true,
+                    solid_gradient: false,
                 });
                 continue;
             }
@@ -145,13 +163,17 @@ impl RoutePlan {
                 .get(conn.to.index)
                 .map(|p| p.port_type.channel_count())
                 .unwrap_or(1);
+            let src_type = src_ports.get(conn.from.index).map(|p| p.port_type);
+            let dst_type = dst_ports.get(conn.to.index).map(|p| p.port_type);
+            let solid_gradient = src_type == Some(PortType::Color) && dst_type == Some(PortType::Gradient);
             plan.routes.push(Route {
                 src,
                 src_base,
                 dst,
                 dst_base: port_base_index(dst_ports, conn.to.index),
-                channels: src_channels.min(dst_channels),
+                channels: if solid_gradient { dst_channels } else { src_channels.min(dst_channels) },
                 promoted: false,
+                solid_gradient,
             });
         }
         plan
@@ -171,10 +193,23 @@ impl RoutePlan {
         self.bridge_writes.clear();
 
         for r in &self.routes {
-            for ch in 0..r.channels {
-                let val = match r.src {
+            let color = if r.solid_gradient {
+                let read = |ch: usize| match r.src {
                     End::Node(i) => nodes[i].read_output(r.src_base + ch),
                     End::Bridge => bridge_in.get(r.src_base + ch).copied().unwrap_or(0.0),
+                };
+                [read(0), read(1), read(2)]
+            } else {
+                [0.0; 3]
+            };
+            for ch in 0..r.channels {
+                let val = if r.solid_gradient {
+                    solid_gradient_channel(color, ch)
+                } else {
+                    match r.src {
+                        End::Node(i) => nodes[i].read_output(r.src_base + ch),
+                        End::Bridge => bridge_in.get(r.src_base + ch).copied().unwrap_or(0.0),
+                    }
                 };
                 match (r.dst, r.promoted) {
                     (End::Node(i), true) => self.promoted_writes.push((i, r.dst_base, val)),
@@ -203,5 +238,21 @@ impl RoutePlan {
 
     pub fn promoted_connected(&self, node: usize, native_inputs: usize) -> &[bool] {
         &self.connected[node][native_inputs..]
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_color_becomes_a_gradient_of_that_one_color() {
+        let c = [0.1, 0.2, 0.3];
+        let g: Vec<f32> = (0..GRADIENT_STOP_COUNT * GRADIENT_STOP_FLOATS).map(|i| solid_gradient_channel(c, i)).collect();
+        let gradient = crate::color::Gradient::from_channels(&g);
+        for pos in [0.0, 0.5, 1.0] {
+            let s = gradient.sample(pos);
+            assert!((s.r - 0.1).abs() < 1e-4 && (s.g - 0.2).abs() < 1e-4 && (s.b - 0.3).abs() < 1e-4);
+        }
     }
 }

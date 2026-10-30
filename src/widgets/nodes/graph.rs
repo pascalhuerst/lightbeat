@@ -997,7 +997,7 @@ impl NodeGraph {
                 continue;
             };
             if src_port.disabled || dst_port.disabled { continue; }
-            if !src_port.def.port_type.compatible_with(&dst_port.def.port_type) { continue; }
+            if !src_port.def.port_type.can_feed(&dst_port.def.port_type) { continue; }
             pairs.push((si, di));
         }
 
@@ -1215,7 +1215,7 @@ impl NodeGraph {
                 .find(|(_, s)| s.id == conn.to.node)
                 .and_then(|(n, _)| n.ui_inputs_full().get(conn.to.index).map(|p| p.def.port_type));
             match (src, dst) {
-                (Some(s), Some(d)) => !s.compatible_with(&d),
+                (Some(s), Some(d)) => !s.can_feed(&d),
                 _ => true, // missing endpoint = stale
             }
         }).map(|c| c.to).collect();
@@ -2100,7 +2100,7 @@ impl NodeGraph {
         while o < outs.len() && i < ins.len() {
             if outs[o].disabled { o += 1; continue; }
             if ins[i].disabled { i += 1; continue; }
-            if !outs[o].def.port_type.compatible_with(&ins[i].def.port_type) {
+            if !outs[o].def.port_type.can_feed(&ins[i].def.port_type) {
                 // Advance source first; if next source matches, we'll pair
                 // with the same input. Otherwise input also gets skipped.
                 o += 1;
@@ -2188,7 +2188,10 @@ impl NodeGraph {
                     PortDir::Input => sample.ui_outputs(),
                     PortDir::Output => sample.ui_inputs_full(),
                 };
-                facing.first().is_some_and(|p| p.def.port_type.compatible_with(&menu.port_type))
+                facing.first().is_some_and(|p| match menu.port.dir {
+                    PortDir::Input => p.def.port_type.can_feed(&menu.port_type),
+                    PortDir::Output => menu.port_type.can_feed(&p.def.port_type),
+                })
             })
             .collect()
     }
@@ -2486,7 +2489,12 @@ impl NodeGraph {
                     if ui_port.disabled {
                         continue;
                     }
-                    if !dc_from_type.compatible_with(&ui_port.def.port_type) {
+                    let fits = if dc_from_dir == PortDir::Output {
+                        dc_from_type.can_feed(&ui_port.def.port_type)
+                    } else {
+                        ui_port.def.port_type.can_feed(&dc_from_type)
+                    };
+                    if !fits {
                         continue;
                     }
                     if level.states[i].id == dc_from_node {
