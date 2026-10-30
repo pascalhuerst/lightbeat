@@ -15,6 +15,7 @@
 //!   levels, and peak meters phase-coherent in the graph.
 
 pub mod beat;
+pub mod beat_clock;
 pub mod envelope;
 pub mod onset;
 pub mod peak_level;
@@ -32,17 +33,20 @@ pub use worker::{AnalyzerWorker, SharedAnalyzerFrame};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum AnalyzerKind {
     Beat,
+    /// Tempo, beat and bar position as phases; see `beat_clock`.
+    BeatClock,
     Onset,
     PeakLevel,
     Envelope,
 }
 
 impl AnalyzerKind {
-    pub const ALL: [Self; 4] = [Self::Beat, Self::Onset, Self::PeakLevel, Self::Envelope];
+    pub const ALL: [Self; 5] = [Self::Beat, Self::BeatClock, Self::Onset, Self::PeakLevel, Self::Envelope];
 
     pub fn label(&self) -> &'static str {
         match self {
             AnalyzerKind::Beat => "Beat (onset + BPM)",
+            AnalyzerKind::BeatClock => "Beat clock (tempo, beat, bar)",
             AnalyzerKind::Onset => "Onset (LP)",
             AnalyzerKind::PeakLevel => "Peak Level",
             AnalyzerKind::Envelope => "Envelope",
@@ -56,6 +60,15 @@ impl AnalyzerKind {
             AnalyzerKind::Beat => vec![
                 PortDef::new("onset", PortType::Logic),
                 PortDef::new("bpm", PortType::Untyped),
+            ],
+            AnalyzerKind::BeatClock => vec![
+                PortDef::new("beat", PortType::Logic),
+                PortDef::new("beat phase", PortType::Phase),
+                PortDef::new("bar phase", PortType::Phase),
+                PortDef::new("16th phase", PortType::Phase),
+                PortDef::new("step", PortType::Untyped),
+                PortDef::new("bpm", PortType::Untyped),
+                PortDef::new("confidence", PortType::Untyped),
             ],
             AnalyzerKind::Onset => vec![
                 PortDef::new("onset", PortType::Logic),
@@ -75,6 +88,7 @@ impl AnalyzerKind {
     pub fn default_params(&self) -> Vec<ParamDef> {
         match self {
             AnalyzerKind::Beat => beat::beat_params(),
+            AnalyzerKind::BeatClock => beat_clock::clock_params(),
             AnalyzerKind::Onset => onset::onset_params(),
             AnalyzerKind::PeakLevel => peak_level::peak_params(),
             AnalyzerKind::Envelope => envelope::envelope_params(),
@@ -164,6 +178,7 @@ pub fn create_analyzer(
 ) -> (AnalyzerHandle, Box<dyn AnalyzerProc>) {
     match kind {
         AnalyzerKind::Beat => beat::create(sample_rate),
+        AnalyzerKind::BeatClock => beat_clock::create(sample_rate),
         AnalyzerKind::Onset => onset::create(sample_rate),
         AnalyzerKind::PeakLevel => peak_level::create(sample_rate),
         AnalyzerKind::Envelope => envelope::create(sample_rate),

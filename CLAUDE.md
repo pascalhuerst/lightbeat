@@ -349,6 +349,36 @@ src/
 
 ---
 
+## 3d. Beat tracking (`audio/tracker/`, `beat_bench/`)
+
+- `BeatTracker` turns audio into tempo, a free-running beat clock and a bar
+  position. Stages: `frontend` (4-band + clap/snare onset strength, 2048-pt FFT,
+  hop 256), `tempo` (autocorrelation scored per candidate tempo, followed by a
+  forward filter, so it moves smoothly like a record's pitch), `phase` (a
+  clock nudged by a histogram of onsets over the last ~6 beats), `bar` (which
+  of 16 sixteenth steps is the bar start, from kick/bass/clap/hat templates, the
+  strongest kick, and `novelty`: where the spectrum changes). The clock runs
+  through breakdowns; the bar choice is sticky once clearly ahead.
+- The `BeatClock` analyzer exposes it: ports `beat` (trigger), `beat phase`,
+  `bar phase`, `16th phase`, `step` (0..15), `bpm`, `confidence`. Params
+  `min_bpm`/`max_bpm` (a range under one octave is what decides 87 vs 174
+  BPM), `bar_shift` (sixteenths, to fix the bar start by ear) and `lead_ms`.
+  The older `Beat` analyzer fires on every onset and is not a beat clock.
+- Outputs update once per audio chunk (~10-20 ms), like every analyzer.
+- **Test bench**: `lightbeat bench generate [dir] [name]` writes synthetic
+  dance music with an exact beat/bar grid (`beat_bench_data/`, gitignored);
+  `lightbeat bench score [dir] [name] [baseline]` scores the tracker (or the
+  old analyzer) with no window. `BENCH_BAR_DEBUG=1` prints diagnostics. Run it
+  after any change to `audio/tracker/` and read the per-scenario table; the
+  `cargo test` cases only guard the basics. Synthetic audio is easier than
+  records, so real clips should be added as `name.wav` + `name.json`.
+- Known limits (see the scores): the bar start of a pure kick+hat loop is
+  undecidable until something else happens; half-time, heavy swing and
+  syncopated patterns lock a sub-beat off; drum and bass needs a 150-190 BPM
+  range.
+
+---
+
 ## 4. Adding a new node — checklist
 
 1. **Engine file**: `src/engine/nodes/<category>/<snake_name>.rs` —

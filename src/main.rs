@@ -1,3 +1,4 @@
+mod beat_bench;
 mod audio;
 mod beat_clock;
 mod color;
@@ -2646,6 +2647,9 @@ fn remap_project_ids<F: FnMut() -> NodeId>(pf: &mut project::ProjectFile, mut al
 }
 
 fn main() -> eframe::Result {
+    if beat_bench::run_if_requested() {
+        return Ok(());
+    }
     let saved = AppConfig::load();
     let mut viewport = egui::ViewportBuilder::default()
         .with_inner_size(saved.window_size.unwrap_or((1280.0, 768.0)));
