@@ -47,6 +47,16 @@ struct DragState {
     last_canvas_click: Option<(std::time::Instant, Pos2)>,
 }
 
+struct PortMenu {
+    port: PortId,
+    name: String,
+    port_type: PortType,
+    pos: Pos2,
+}
+
+/// Gap between a node and a control added from one of its ports.
+const ATTACH_GAP: f32 = 30.0;
+
 struct DrawingConnection {
     from: PortId,
     from_pos: Pos2,
@@ -194,6 +204,8 @@ pub struct NodeGraph {
     new_nodes: Vec<NewNode>,
     pending_engine_cmds: Vec<EngineCommand>,
     context_menu_pos: Option<Pos2>,
+    /// Right-click menu on a port, offering a control or display to attach.
+    port_menu: Option<PortMenu>,
     /// Pending macro action emitted by the right-click menu, consumed by the
     /// app each frame.
     pending_macro_request: Option<MacroRequest>,
@@ -270,6 +282,7 @@ impl NodeGraph {
             new_nodes: Vec::new(),
             pending_engine_cmds: Vec::new(),
             context_menu_pos: None,
+            port_menu: None,
             pending_macro_request: None,
             selected_nodes: Vec::new(),
             selected_frames: std::collections::HashSet::new(),
@@ -1652,7 +1665,16 @@ impl NodeGraph {
         // very frame the menu opens (otherwise the right-click that triggered
         // it would also count as an outside click).
         let just_opened = response.secondary_clicked();
+        if just_opened
+            && let Some(p) = ui.input(|i| i.pointer.hover_pos())
+        {
+            self.port_menu = self.port_menu_at(p, &node_rects);
+            if self.port_menu.is_some() {
+                self.context_menu_pos = None;
+            }
+        }
         self.show_context_menu(ui, canvas_rect, just_opened);
+        self.show_port_menu(ui, just_opened);
     }
 
     fn delete_selected(&mut self) {
@@ -2097,6 +2119,145 @@ impl NodeGraph {
             }
         }
         false
+    }
+
+    /// The port under `pointer`, if any, with the menu to open for it.
+    fn port_menu_at(&self, pointer: Pos2, node_rects: &[Rect]) -> Option<PortMenu> {
+        let level = self.active();
+        let z = level.zoom;
+        let radius = (PORT_RADIUS + 4.0) * z;
+        for i in (0..level.nodes.len()).rev() {
+            if i >= node_rects.len() { break; }
+            let layout = level.nodes[i].layout();
+            let id = level.states[i].id;
+            for dir in [PortDir::Input, PortDir::Output] {
+                let ports = match dir {
+                    PortDir::Input => level.nodes[i].ui_inputs_full(),
+                    PortDir::Output => level.nodes[i].ui_outputs(),
+                };
+                let types: Vec<PortType> = ports.iter().map(|p| p.def.port_type).collect();
+                for (pi, port) in ports.iter().enumerate() {
+                    let pos = port_pos_in(node_rects[i], &layout, dir, &types, pi, z);
+                    if pos.distance(pointer) < radius {
+                        return Some(PortMenu {
+                            port: make_port_id(id, dir, pi),
+                            name: port.def.name.clone(),
+                            port_type: port.def.port_type,
+                            pos: pointer,
+                        });
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    /// Node types worth attaching to a port: controls feed an input,
+    /// displays read an output. Only those whose port fits are offered.
+    fn port_menu_choices(&self, menu: &PortMenu) -> Vec<&'static str> {
+        let wanted: &[&str] = match (menu.port.dir, menu.port_type) {
+            (PortDir::Input, PortType::Logic) => &["Button"],
+            (PortDir::Input, PortType::Untyped | PortType::Phase) => &["Fader"],
+            (PortDir::Input, PortType::Any) => &["Button", "Fader"],
+            (PortDir::Input, PortType::Gradient) => &["Gradient Stops"],
+            (PortDir::Output, PortType::Logic) => &["LED Display", "Scope"],
+            (PortDir::Output, PortType::Untyped | PortType::Phase | PortType::Any) => {
+                &["Value Display", "Scope"]
+            }
+            (PortDir::Output, PortType::Color) => &["Color Display"],
+            _ => &[],
+        };
+        wanted
+            .iter()
+            .copied()
+            .filter(|name| {
+                let Some(sample) = self.create_from_registry(name, NodeId(0)) else { return false };
+                let facing = match menu.port.dir {
+                    PortDir::Input => sample.ui_outputs(),
+                    PortDir::Output => sample.ui_inputs_full(),
+                };
+                facing.first().is_some_and(|p| p.def.port_type.compatible_with(&menu.port_type))
+            })
+            .collect()
+    }
+
+    fn show_port_menu(&mut self, ui: &mut Ui, just_opened: bool) {
+        let Some(menu) = self.port_menu.as_ref() else { return };
+        let choices = self.port_menu_choices(menu);
+        if choices.is_empty() {
+            self.port_menu = None;
+            return;
+        }
+        let (pos, port, name) = (menu.pos, menu.port, menu.name.clone());
+        let mut chosen = None;
+        let area = egui::Area::new(egui::Id::new("port_ctx_menu"))
+            .order(egui::Order::Foreground)
+            .fixed_pos(pos)
+            .show(ui.ctx(), |ui| {
+                egui::Frame::popup(ui.style()).show(ui, |ui| {
+                    ui.set_min_width(140.0);
+                    if !name.is_empty() {
+                        ui.label(egui::RichText::new(&name).weak());
+                    }
+                    for c in &choices {
+                        if ui.button(format!("Add {c}")).clicked() {
+                            chosen = Some(*c);
+                        }
+                    }
+                });
+            });
+        if let Some(type_name) = chosen {
+            self.attach_to_port(port, &name, type_name);
+            self.port_menu = None;
+            return;
+        }
+        if !just_opened
+            && ui.input(|i| i.pointer.any_pressed())
+            && let Some(p) = ui.input(|i| i.pointer.interact_pos())
+            && !area.response.rect.contains(p)
+        {
+            self.port_menu = None;
+        }
+    }
+
+    /// Put a new node next to `port`'s node, wire it up and name it after the port.
+    fn attach_to_port(&mut self, port: PortId, port_name: &str, type_name: &str) {
+        let id = self.alloc_id();
+        let Some(mut node) = self.create_from_registry(type_name, id) else { return };
+        if !port_name.is_empty() {
+            node.set_name(port_name);
+        }
+        let level = self.active();
+        let Some(target) = level.states.iter().position(|s| s.id == port.node) else { return };
+        let target_pos = level.states[target].pos;
+        let target_size = node_size(level.nodes[target].as_ref(), level.states[target].size_override);
+        let ports_of = |n: &dyn NodeWidget, dir| -> Vec<PortType> {
+            match dir {
+                PortDir::Input => n.ui_inputs_full(),
+                PortDir::Output => n.ui_outputs(),
+            }
+            .iter()
+            .map(|p| p.def.port_type)
+            .collect()
+        };
+        let port_y = |n: &dyn NodeWidget, size: Vec2, dir, index| -> f32 {
+            let rect = Rect::from_min_size(Pos2::ZERO, size);
+            port_pos_in(rect, &n.layout(), dir, &ports_of(n, dir), index, 1.0).y
+        };
+        let new_size = node_size(node.as_ref(), None);
+        let (new_dir, x) = match port.dir {
+            PortDir::Input => (PortDir::Output, target_pos.x - ATTACH_GAP - new_size.x),
+            PortDir::Output => (PortDir::Input, target_pos.x + target_size.x + ATTACH_GAP),
+        };
+        let y = target_pos.y + port_y(level.nodes[target].as_ref(), target_size, port.dir, port.index)
+            - port_y(node.as_ref(), new_size, new_dir, 0);
+        let new_id = node.node_id();
+        self.add_node(node, Pos2::new(x, y));
+        let new_port = make_port_id(new_id, new_dir, 0);
+        match port.dir {
+            PortDir::Input => self.add_connection(new_port, port),
+            PortDir::Output => self.add_connection(port, new_port),
+        }
     }
 
     fn show_context_menu(&mut self, ui: &mut Ui, _canvas_rect: Rect, just_opened: bool) {
@@ -4044,4 +4205,52 @@ fn port_type_for(
         PortDir::Output => nodes[idx].ui_outputs(),
     };
     ports.get(port_id.index).map(|p| p.def.port_type)
+}
+
+#[cfg(test)]
+mod port_menu_tests {
+    use super::*;
+    use crate::engine::types::new_shared_state;
+    use crate::widgets::nodes::display::led_display::LedDisplayWidget;
+    use crate::widgets::nodes::ui::button::ButtonWidget;
+
+    fn graph() -> NodeGraph {
+        let mut g = NodeGraph::new();
+        g.register_node("UI", "Button", |id| Box::new(ButtonWidget::new(id, new_shared_state(1, 1))));
+        g.register_node("Display", "LED Display", |id| {
+            Box::new(LedDisplayWidget::new(id, new_shared_state(1, 0)))
+        });
+        g
+    }
+
+    fn menu(port: PortId, ty: PortType) -> PortMenu {
+        PortMenu { port, name: "go".into(), port_type: ty, pos: Pos2::ZERO }
+    }
+
+    #[test]
+    fn a_trigger_input_offers_a_button_and_an_output_an_led() {
+        let g = graph();
+        let id = PortId { node: NodeId(1), index: 0, dir: PortDir::Input };
+        assert_eq!(g.port_menu_choices(&menu(id, PortType::Logic)), vec!["Button"]);
+        assert!(g.port_menu_choices(&menu(id, PortType::Color)).is_empty());
+        let out = PortId { dir: PortDir::Output, ..id };
+        assert_eq!(g.port_menu_choices(&menu(out, PortType::Logic)), vec!["LED Display"]);
+    }
+
+    #[test]
+    fn attaching_a_button_wires_it_to_the_left_and_names_it_after_the_port() {
+        let mut g = graph();
+        let target = g.alloc_id();
+        let led = g.create_from_registry("LED Display", target).unwrap();
+        g.add_node(led, Pos2::new(400.0, 100.0));
+        let port = PortId { node: target, index: 0, dir: PortDir::Input };
+        g.attach_to_port(port, "go", "Button");
+        let level = g.active();
+        assert_eq!(level.nodes.len(), 2);
+        assert_eq!(level.nodes[1].title(), "go");
+        assert!(level.states[1].pos.x < 400.0);
+        assert_eq!(level.connections.len(), 1);
+        assert_eq!(level.connections[0].to, port);
+        assert_eq!(level.connections[0].from.node, level.states[1].id);
+    }
 }

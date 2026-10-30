@@ -117,6 +117,10 @@ impl NodeWidget for FaderWidget {
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { "Fader" }
     fn title(&self) -> &str { &self.name }
+    fn set_name(&mut self, name: &str) {
+        self.name = name.to_string();
+        self.push_config(None, None);
+    }
     fn description(&self) -> &'static str {
         "Draggable fader. Optional signal input with override; double-click resets."
     }

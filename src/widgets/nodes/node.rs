@@ -77,6 +77,10 @@ pub trait NodeWidget: Any {
     /// An effect returns the name of the stack it is linked to, if any.
     fn linked_stack(&self) -> Option<String> { None }
 
+    /// Called when the node is created from a port's right-click menu, with
+    /// that port's name, so a control can be labelled after what it drives.
+    fn set_name(&mut self, _name: &str) {}
+
     /// "Loop" or "Burst" for an effect, shown in its stack's list.
     fn effect_kind(&self) -> &'static str { "" }
 

@@ -105,6 +105,10 @@ impl NodeWidget for ButtonWidget {
     // The button is the node: no header, it is moved by dragging it, and its
     // label is on the button.
     fn layout(&self) -> NodeLayout { NodeLayout::compact().headerless() }
+    fn set_name(&mut self, name: &str) {
+        self.label = name.to_string();
+        self.push_settings();
+    }
     fn min_width(&self) -> f32 { 90.0 }
     fn min_content_height(&self) -> f32 { 26.0 }
     fn resizable(&self) -> bool { true }
