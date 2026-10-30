@@ -333,8 +333,7 @@ impl LightBeatApp {
         let stack_names = widgets::nodes::output::effect::new_shared_stack_names();
         let engine = EngineHandle::start(dmx_shared.clone(), object_store.clone(), effect_hub.clone(), perf.clone());
 
-        let mut graph = NodeGraph::new();
-        graph.set_stack_names(stack_names.clone());
+        let graph = NodeGraph::new();
         let mut app = Self {
             graph,
             effect_hub,
@@ -436,6 +435,9 @@ impl LightBeatApp {
     }
 
     fn register_node_factories(&mut self) {
+        // The graph is rebuilt on load and undo; the effects' stack picker
+        // reads names through this link, so it has to be remade each time.
+        self.graph.set_stack_names(self.stack_names.clone());
         // IO
         self.graph.register_node("IO", "Clock", |id| {
             Box::new(ClockWidget::new(id, new_shared_state(0, 3)))
