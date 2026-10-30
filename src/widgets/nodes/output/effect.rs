@@ -10,6 +10,7 @@ use std::sync::{Arc, Mutex};
 
 use egui::{self, Color32, Sense, Ui, Vec2};
 
+use crate::engine::effects::bar::Bar;
 use crate::engine::effects::fill::Fill;
 use crate::engine::effects::node::{EffectDisplay, EffectKind};
 use crate::engine::effects::ripple::Ripple;
@@ -43,6 +44,13 @@ pub const FILL: EffectSpec = EffectSpec {
     inputs: || Fill::default().inputs(),
 };
 
+pub const BAR_LOOP: EffectSpec = EffectSpec {
+    type_name: "Bar Loop",
+    kind: "Loop",
+    description: "A bar of light at a position on the group. Position, width and softness can be promoted to inputs, for example to follow an LFO or a fader.",
+    inputs: || Bar::default().inputs(),
+};
+
 pub const WAVE_LOOP: EffectSpec = EffectSpec {
     type_name: "Wave Loop",
     kind: "Loop",
@@ -70,6 +78,7 @@ impl EffectWidget {
         Self { id, shared, spec, names, stack: String::new() }
     }
 
+    #[cfg(test)]
     pub fn stack(&self) -> &str {
         &self.stack
     }
@@ -212,6 +221,7 @@ mod tests {
         use crate::engine::effects::node::EffectKind;
         assert_eq!(FILL.type_name, Fill::default().type_name());
         assert_eq!(WAVE_LOOP.type_name, Wave::default().type_name());
+        assert_eq!(BAR_LOOP.type_name, Bar::default().type_name());
         assert_eq!(RIPPLE_BURST.type_name, Ripple::default().type_name());
     }
 }

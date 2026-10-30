@@ -3,6 +3,7 @@ pub mod color_palette_group_list;
 pub mod color_palette_list;
 pub mod dmx_monitor;
 pub mod fader;
+pub mod group_context;
 pub mod fixture_list;
 pub mod gradient_preset_list;
 pub mod group_list;

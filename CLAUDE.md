@@ -83,7 +83,7 @@ src/
 │       └── <category>/<name>.rs  # widget per node, mirrors engine/nodes structure.
 ├── color/                        # Reusable color types/utilities — USE THESE for
 │   │                             # any new color/blend/palette code.
-│   ├── types.rs                  # Rgb, Rgba, Hsv with lerp/clamp/from_egui/etc.
+│   ├── types.rs                  # Rgb, Hsv with lerp/clamp etc.
 │   ├── blend.rs                  # BlendMode (Override/Add/Max/Min/Multiply) —
 │   │                             # used by Effect Stack compositing.
 │   ├── gradient.rs               # Gradient with stops + sample().
@@ -163,13 +163,13 @@ src/
 - Sources: the Gradient Source node (can load a `GradientPreset` from
   `SetupFile::gradient_presets`; presets are copied, not linked) and Palette
   to Gradient.
-- **Group Output** takes `select / width / gradient` and samples the gradient
-  per LED. **Group Output Preview** (`output/group_preview.rs`) has the same
-  inputs but draws LED dots instead of sending DMX; `Group::preview_columns`
-  controls how strips are laid out in it.
+- Effects take a gradient as their colour input (`Effect` nodes below). The
+  former Group Output and Group Output Preview nodes are gone; a Bar Loop with
+  Position and Width promoted to inputs does the same, and a stack shows the
+  picture.
 
 ### Effects and stacks (`engine/effects/`, `widgets/nodes/output/effect*.rs`)
-- An **effect** is a small node (Fill, Wave Loop, Ripple Burst, ...) with control
+- An **effect** is a small node (Fill, Bar Loop, Wave Loop, Ripple Burst, ...) with control
   inputs and no outputs. It picks an **Effect Stack** by name in its inspector,
   renders its own pixel layer about 60 times a second and hands it to the
   `EffectHub`. The stack blends its linked effects' layers in the order of its

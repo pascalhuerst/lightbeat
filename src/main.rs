@@ -72,13 +72,12 @@ use engine::nodes::meta::subgraph::SubgraphProcessNode;
 use engine::nodes::math::scaler::ScalerProcessNode;
 use engine::nodes::math::oscillator::{OscFunc, OscillatorProcessNode};
 use engine::nodes::math::position_ops::{PositionMergeProcessNode, PositionSplitProcessNode};
+use engine::effects::bar::Bar;
 use engine::effects::fill::Fill;
 use engine::effects::node::EffectNode;
 use engine::effects::ripple::Ripple;
 use engine::effects::stack::EffectStackProcessNode;
 use engine::effects::wave::Wave;
-use engine::nodes::output::group::GroupProcessNode;
-use engine::nodes::output::group_preview::GroupPreviewProcessNode;
 use engine::nodes::transport::clock_divider::ClockDividerProcessNode;
 use engine::nodes::transport::clock_gen::ClockGenProcessNode;
 use engine::nodes::transport::delay::TriggerDelayProcessNode;
@@ -135,8 +134,6 @@ use widgets::nodes::math::scaler::ScalerWidget;
 use widgets::nodes::math::oscillator::OscillatorWidget;
 use widgets::nodes::math::position_ops::{PositionMergeWidget, PositionSplitWidget};
 use widgets::nodes::output::effect_stack::EffectStackWidget;
-use widgets::nodes::output::group::GroupWidget;
-use widgets::nodes::output::group_preview::GroupPreviewWidget;
 use widgets::nodes::transport::clock_divider::ClockDividerWidget;
 use widgets::nodes::transport::clock_gen::ClockGenWidget;
 use widgets::nodes::transport::delay::TriggerDelayWidget;
@@ -243,7 +240,7 @@ struct LightBeatApp {
     object_store: dmx_io::SharedObjectStore,
     effect_hub: engine::effects::EffectHub,
     stack_names: widgets::nodes::output::effect::SharedStackNames,
-    group_ctx: widgets::nodes::output::group::SharedGroupContext,
+    group_ctx: widgets::group_context::SharedGroupContext,
     fixture_manager: widgets::fixture_list::FixtureManager,
     object_manager: widgets::object_list::ObjectManager,
     interface_manager: widgets::interface_list::InterfaceManager,
@@ -325,7 +322,7 @@ impl LightBeatApp {
             dmx_shared.lock().unwrap().bypass = true;
         }
         let object_store = dmx_io::new_shared_object_store();
-        let group_ctx = widgets::nodes::output::group::new_shared_group_context();
+        let group_ctx = widgets::group_context::new_shared_group_context();
         let perf = perf::new_shared_perf_stats();
         let effect_hub = engine::effects::EffectHub::new();
         let stack_names = widgets::nodes::output::effect::new_shared_stack_names();
@@ -751,17 +748,13 @@ impl LightBeatApp {
         });
 
         // Output
-        let gctx = self.group_ctx.clone();
-        self.graph.register_node("Output", "Group Output", move |id| {
-            // Sized for the largest mode: Triggered (trigger + select + width + gradient) = 43 channels.
-            Box::new(GroupWidget::new(id, new_shared_state(42, 0), gctx.clone()))
-        });
         let gctx2 = self.group_ctx.clone();
         self.graph.register_node("Effects", "Effect Stack", move |id| {
             Box::new(EffectStackWidget::new(id, new_shared_state(1, 0), gctx2.clone()))
         });
         for spec in [
             widgets::nodes::output::effect::FILL,
+            widgets::nodes::output::effect::BAR_LOOP,
             widgets::nodes::output::effect::WAVE_LOOP,
             widgets::nodes::output::effect::RIPPLE_BURST,
         ] {
@@ -771,13 +764,9 @@ impl LightBeatApp {
                 Box::new(widgets::nodes::output::effect::EffectWidget::new(id, new_shared_state(48, 0), spec, names.clone()))
             });
         }
-        let gctx3 = self.group_ctx.clone();
-        self.graph.register_node("Display", "Group Output Preview", move |id| {
-            Box::new(GroupPreviewWidget::new(id, new_shared_state(42, 0), gctx3.clone()))
-        });
     }
 
-    /// Sync group and object data to the shared context for Group Output widgets.
+    /// Sync group and object data to the shared context the effect stacks read.
     fn sync_group_context(&self) {
         let mut ctx = self.group_ctx.lock().unwrap();
         ctx.groups = self.group_manager.groups.clone();
@@ -967,10 +956,9 @@ impl LightBeatApp {
                         id, self.input_portals.clone(),
                     ),
                 )),
-                "Group Output" => Some(Box::new(GroupProcessNode::new(id, self.object_store.clone()))),
-                "Group Output Preview" => Some(Box::new(GroupPreviewProcessNode::new(id, self.object_store.clone()))),
                 "Effect Stack" => Some(Box::new(EffectStackProcessNode::new(id, self.effect_hub.clone(), self.object_store.clone()))),
                 "Fill" => Some(Box::new(EffectNode::new(id, Fill::default(), self.effect_hub.clone()))),
+                "Bar Loop" => Some(Box::new(EffectNode::new(id, Bar::default(), self.effect_hub.clone()))),
                 "Wave Loop" => Some(Box::new(EffectNode::new(id, Wave::default(), self.effect_hub.clone()))),
                 "Ripple Burst" => Some(Box::new(EffectNode::new(id, Ripple::default(), self.effect_hub.clone()))),
                 _ => {

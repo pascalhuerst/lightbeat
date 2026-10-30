@@ -16,7 +16,7 @@ use crate::engine::types::*;
 use crate::objects::channel::ChannelKind;
 use crate::theme;
 use crate::widgets::nodes::node::{NodeWidget, StackMember};
-use crate::widgets::nodes::output::group::SharedGroupContext;
+use crate::widgets::group_context::SharedGroupContext;
 use crate::widgets::nodes::types::UiPortDef;
 
 const BLEND_MODES: &[(&str, BlendMode)] = &[
@@ -70,6 +70,7 @@ impl EffectStackWidget {
         }
     }
 
+    #[cfg(test)]
     pub fn config(&self) -> &StackConfig {
         &self.config
     }
@@ -424,7 +425,7 @@ impl NodeWidget for EffectStackWidget {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::widgets::nodes::output::group::new_shared_group_context;
+    use crate::widgets::group_context::new_shared_group_context;
 
     fn member(id: u64, label: &str) -> StackMember {
         StackMember { node_id: NodeId(id), label: label.into(), kind: "Burst" }

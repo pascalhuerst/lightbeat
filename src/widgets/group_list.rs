@@ -172,20 +172,6 @@ impl GroupManager {
                             if layout_changed {
                                 self.needs_refresh = true;
                             }
-
-                            // Preview-grid columns — a visual-only hint
-                            // consumed by the Group Output Preview node.
-                            // For the record-shelf 2x3 arrangement: 2.
-                            ui.horizontal(|ui| {
-                                ui.label("Preview columns:");
-                                let mut cols = group.preview_columns.max(1) as i32;
-                                if ui.add(
-                                    egui::DragValue::new(&mut cols).range(1..=16).speed(0.1),
-                                ).changed() {
-                                    group.preview_columns = cols.max(1) as usize;
-                                    self.needs_refresh = true;
-                                }
-                            });
                         }
 
                         ui.add_space(4.0);

@@ -20,7 +20,6 @@ use crate::widgets::nodes::meta::portal::{
 use crate::widgets::nodes::meta::subgraph::SubgraphWidget;
 use crate::widgets::nodes::output::effect::EffectWidget;
 use crate::widgets::nodes::output::effect_stack::EffectStackWidget;
-use crate::widgets::nodes::output::group::GroupWidget;
 use crate::widgets::nodes::math::toggle_bank::ToggleBankWidget;
 use crate::widgets::nodes::math::trigger_bank::TriggerBankWidget;
 use crate::widgets::nodes::ui::button::ButtonWidget;
@@ -454,39 +453,6 @@ pub fn load_graph(graph: &mut NodeGraph, project: &ProjectFile) -> Vec<usize> {
                 }
             }
 
-            // Restore Group Output widget state from save_data.
-            if saved.type_name == "Group Output"
-                && let Some(data) = &saved.data {
-                    let n = graph.node_mut(idx);
-                    if let Some(grp) = n.as_any_mut().downcast_mut::<GroupWidget>() {
-                        if let Some(ids) = data.get("group_ids").and_then(|v| v.as_array()) {
-                            grp.selected_group_ids = ids
-                                .iter()
-                                .filter_map(|v| v.as_u64().map(|n| n as u32))
-                                .collect();
-                        }
-                        grp.push_config_to_engine();
-                    }
-                }
-
-            // Restore Group Output Preview widget state — same payload
-            // shape as Group Output.
-            if saved.type_name == "Group Output Preview"
-                && let Some(data) = &saved.data {
-                    let n = graph.node_mut(idx);
-                    if let Some(prev) = n.as_any_mut()
-                        .downcast_mut::<crate::widgets::nodes::output::group_preview::GroupPreviewWidget>()
-                    {
-                        if let Some(ids) = data.get("group_ids").and_then(|v| v.as_array()) {
-                            prev.selected_group_ids = ids
-                                .iter()
-                                .filter_map(|v| v.as_u64().map(|n| n as u32))
-                                .collect();
-                        }
-                        prev.push_config_to_engine();
-                    }
-                }
-
             // Restore Fader widget input-port state so wires don't get
             // dropped by `cleanup_stale_connections` on the first frame.
             if saved.type_name == "Fader"
@@ -919,7 +885,7 @@ mod tests {
             EffectWidget, RIPPLE_BURST, new_shared_stack_names,
         };
         use crate::widgets::nodes::output::effect_stack::EffectStackWidget;
-        use crate::widgets::nodes::output::group::new_shared_group_context;
+        use crate::widgets::group_context::new_shared_group_context;
         use crate::widgets::nodes::NodeGraph;
 
         fn graph() -> NodeGraph {
@@ -972,5 +938,37 @@ mod tests {
         assert_eq!((w.config().layers[0].opacity, w.config().layers[0].muted), (0.4, true));
         let e = b.node_mut(1).as_any_mut().downcast_mut::<EffectWidget>().unwrap();
         assert_eq!(e.stack(), "Shelf");
+    }
+
+    #[test]
+    fn a_bar_loop_with_promoted_inputs_loads_from_its_saved_form() {
+        use crate::widgets::nodes::output::effect::{BAR_LOOP, EffectWidget, new_shared_stack_names};
+        use crate::widgets::nodes::NodeGraph;
+
+        let mut g = NodeGraph::new();
+        let names = new_shared_stack_names();
+        g.register_node("Effects", "Bar Loop", move |id| {
+            Box::new(EffectWidget::new(id, crate::engine::types::new_shared_state(48, 0), BAR_LOOP, names.clone()))
+        });
+        // Exactly what the Group Output conversion writes.
+        let project: ProjectFile = serde_json::from_str(r#"{
+            "nodes": [{
+                "type_name": "Bar Loop", "id": 704, "pos": [10.0, 20.0],
+                "params": [{"index": 2, "value": 0}],
+                "data": {"stack": "Record Shelf"},
+                "promoted": [{"name": "Position", "kind": "Float"}, {"name": "Width", "kind": "Float"}]
+            }],
+            "connections": []
+        }"#).unwrap();
+        load_graph(&mut g, &project);
+
+        let ports: Vec<String> = g.node_and_state(0).0.ui_inputs_full().into_iter().map(|p| p.def.name).collect();
+        assert_eq!(ports, ["color", "Position", "Width"]);
+        let n = g.node_mut(0);
+        assert_eq!(n.as_any_mut().downcast_mut::<EffectWidget>().unwrap().stack(), "Record Shelf");
+        let shared = n.shared_state().lock().unwrap();
+        assert_eq!(shared.promoted.len(), 2);
+        assert_eq!(shared.pending_promoted.as_ref().map(Vec::len), Some(2));
+        assert!(shared.pending_params.iter().any(|(i, _)| *i == 2), "the anchor was restored");
     }
 }

@@ -11,6 +11,7 @@
 //! travels once per bar), a **Burst** is spawned by a trigger and lives for
 //! a while (a ripple from the kick).
 
+pub mod bar;
 pub mod fill;
 pub mod geometry;
 pub mod hub;
@@ -23,7 +24,7 @@ use std::time::{Duration, Instant};
 
 use crate::color::Rgb;
 
-pub use geometry::{Geometry, Target, TargetSpec};
+pub use geometry::{Geometry, TargetSpec};
 pub use hub::EffectHub;
 
 /// One pixel of a layer: colour plus how much of the pixel the layer covers.
