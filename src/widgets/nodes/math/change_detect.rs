@@ -23,8 +23,8 @@ impl NodeWidget for ChangeDetectWidget {
 
     fn ui_inputs(&self) -> Vec<UiPortDef> {
         vec![
-            UiPortDef::from_def(&PortDef::new("trigger", PortType::Logic)),
             UiPortDef::from_def(&PortDef::new("value", PortType::Any)),
+            UiPortDef::from_def(&PortDef::new("sample on", PortType::Logic)),
         ]
     }
     fn ui_outputs(&self) -> Vec<UiPortDef> {

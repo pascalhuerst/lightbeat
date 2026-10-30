@@ -39,7 +39,7 @@ use crate::widgets::nodes::{GraphLevel, NodeGraph};
 /// TEMPORARY: the migration exists only so the developers' test projects
 /// survive one load. Once they are re-saved, delete `STATUS_PORT_NODE_TYPES`,
 /// `connections_for_current_layout`, its tests and the `version` field.
-pub const PROJECT_VERSION: u32 = 1;
+pub const PROJECT_VERSION: u32 = 2;
 
 /// Node types whose outputs shifted by one when the "connected" port was
 /// inserted at index 0 (version 1).
@@ -318,6 +318,15 @@ fn connections_for_current_layout(project: &ProjectFile) -> Vec<SavedConnection>
                 .map(|n| n.type_name.as_str());
             if from_type.is_some_and(|t| STATUS_PORT_NODE_TYPES.contains(&t)) {
                 c.from_port += 1;
+            }
+        }
+    }
+    if project.version < 2 {
+        // Change Detect had its trigger first; the value is now port 0.
+        for c in &mut connections {
+            let to_type = project.nodes.iter().find(|n| n.id == c.to_node).map(|n| n.type_name.as_str());
+            if to_type == Some("Change Detect") && c.to_port < 2 {
+                c.to_port = 1 - c.to_port;
             }
         }
     }
@@ -881,6 +890,21 @@ mod tests {
         assert_eq!(out[0].from_port, 4);
         // Only outputs of hardware nodes move; this one comes from an LFO.
         assert_eq!(out[1].from_port, 0);
+    }
+
+    #[test]
+    fn change_detect_wires_follow_its_swapped_inputs() {
+        let mut p = project(1);
+        p.nodes.push(node(3, "Change Detect"));
+        p.connections = vec![conn(2, 0, 3), conn(2, 1, 3)];
+        // Wired into (trigger, value) before; now (value, sample on).
+        p.connections[0].to_port = 0;
+        p.connections[1].to_port = 1;
+        let out = connections_for_current_layout(&p);
+        assert_eq!((out[0].to_port, out[1].to_port), (1, 0));
+        p.version = PROJECT_VERSION;
+        let out = connections_for_current_layout(&p);
+        assert_eq!((out[0].to_port, out[1].to_port), (0, 1));
     }
 
     #[test]
