@@ -636,7 +636,7 @@ impl LightBeatApp {
 
         // Display
         self.graph.register_node("Display", "Scope", |id| {
-            Box::new(ScopeWidget::new(id, new_shared_state(2, 0)))
+            Box::new(ScopeWidget::new(id, new_shared_state(8, 0)))
         });
         self.graph.register_node("Color", "Color Display", |id| {
             // Sized for the largest mode (Gradient = 40 channels).

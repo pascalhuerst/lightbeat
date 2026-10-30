@@ -2,16 +2,11 @@ use std::any::Any;
 
 use egui::{self, Color32, Pos2, Sense, Stroke, StrokeKind, Ui, Vec2};
 
-use crate::engine::nodes::display::scope::ScopeDisplay;
+use crate::engine::nodes::display::scope::{SCOPE_INPUTS, ScopeDisplay};
 use crate::engine::types::*;
 use crate::theme;
 use crate::widgets::nodes::node::NodeWidget;
 use crate::widgets::nodes::types::UiPortDef;
-
-const WAVE_COLORS: [Color32; 2] = [
-    Color32::from_rgb(80, 240, 120),
-    Color32::from_rgb(240, 140, 80),
-];
 
 pub struct ScopeWidget {
     id: NodeId,
@@ -24,10 +19,7 @@ impl ScopeWidget {
         Self {
             id,
             shared,
-            ui_inputs: vec![
-                UiPortDef::from_def(&PortDef::new("in 1", PortType::Any)),
-                UiPortDef::from_def(&PortDef::new("in 2", PortType::Any)),
-            ],
+            ui_inputs: (0..SCOPE_INPUTS).map(unconnected_port).collect(),
         }
     }
 }
@@ -35,7 +27,7 @@ impl ScopeWidget {
 impl NodeWidget for ScopeWidget {
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { "Scope" }
-    fn description(&self) -> &'static str { "Visualizes up to two input signals as waveforms over time." }
+    fn description(&self) -> &'static str { "Visualizes up to eight input signals as waveforms over time." }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> { self.ui_inputs.clone() }
     fn ui_outputs(&self) -> Vec<UiPortDef> { vec![] }
@@ -47,18 +39,16 @@ impl NodeWidget for ScopeWidget {
     fn shared_state(&self) -> &SharedState { &self.shared }
 
     fn on_ui_connect(&mut self, input_port: usize, source_type: PortType) {
-        if input_port < 2 {
+        if input_port < SCOPE_INPUTS {
             self.ui_inputs[input_port] = UiPortDef::from_def(
                 &PortDef::new(format!("in {}", input_port + 1), source_type),
-            ).with_fill(WAVE_COLORS[input_port]);
+            ).with_fill(theme::SCOPE_TRACES[input_port]);
         }
     }
 
     fn on_ui_disconnect(&mut self, input_port: usize) {
-        if input_port < 2 {
-            self.ui_inputs[input_port] = UiPortDef::from_def(
-                &PortDef::new(format!("in {}", input_port + 1), PortType::Any),
-            );
+        if input_port < SCOPE_INPUTS {
+            self.ui_inputs[input_port] = unconnected_port(input_port);
         }
     }
 
@@ -70,7 +60,7 @@ impl NodeWidget for ScopeWidget {
         let (buffers, connected) = if let Some(d) = display {
             (d.buffers.clone(), d.connected_types)
         } else {
-            ([vec![], vec![]], [None, None])
+            (std::array::from_fn(|_| Vec::new()), [None; SCOPE_INPUTS])
         };
 
         let params = &shared.current_params;
@@ -100,7 +90,7 @@ impl NodeWidget for ScopeWidget {
         let (buffers, connected) = if let Some(d) = display {
             (d.buffers.clone(), d.connected_types)
         } else {
-            ([vec![], vec![]], [None, None])
+            (std::array::from_fn(|_| Vec::new()), [None; SCOPE_INPUTS])
         };
 
         let params = &shared.current_params;
@@ -126,10 +116,14 @@ impl NodeWidget for ScopeWidget {
     fn as_any_mut(&mut self) -> &mut dyn Any { self }
 }
 
+fn unconnected_port(index: usize) -> UiPortDef {
+    UiPortDef::from_def(&PortDef::new(format!("in {}", index + 1), PortType::Any))
+}
+
 fn draw_scope(
     ui: &mut Ui,
-    buffers: &[Vec<f32>; 2],
-    connected: &[Option<PortType>; 2],
+    buffers: &[Vec<f32>; SCOPE_INPUTS],
+    connected: &[Option<PortType>; SCOPE_INPUTS],
     width_samples: usize,
     range_min: f32,
     range_max: f32,
@@ -155,7 +149,7 @@ fn draw_scope(
         );
     }
 
-    for ch in 0..2 {
+    for ch in 0..SCOPE_INPUTS {
         if connected[ch].is_none() { continue; }
         let buffer = &buffers[ch];
         let num_visible = width_samples.min(buffer.len());
@@ -163,7 +157,7 @@ fn draw_scope(
 
         let start = buffer.len().saturating_sub(num_visible);
         let dx = rect.width() / (num_visible - 1) as f32;
-        let color = WAVE_COLORS[ch];
+        let color = theme::SCOPE_TRACES[ch];
 
         let mut prev: Option<Pos2> = None;
         for i in 0..num_visible {

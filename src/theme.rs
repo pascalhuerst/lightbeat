@@ -56,6 +56,25 @@ pub const TYPE_UNTYPED: Color32 = SEM_DANGER;
 pub const TYPE_ANY: Color32 = TEXT_DIM;
 
 // ---------------------------------------------------------------------------
+// Scope traces
+// ---------------------------------------------------------------------------
+
+/// One colour per Scope input. Hues are spread around the wheel and the
+/// lightness is varied so neighbouring traces stay apart for colour-blind
+/// viewers too, all bright enough for the dark scope background. Order
+/// matters: the first colours are the most commonly used inputs.
+pub const SCOPE_TRACES: [Color32; 8] = [
+    Color32::from_rgb(80, 230, 110),
+    Color32::from_rgb(255, 150, 60),
+    Color32::from_rgb(90, 175, 255),
+    Color32::from_rgb(250, 230, 70),
+    Color32::from_rgb(235, 90, 190),
+    Color32::from_rgb(190, 160, 255),
+    Color32::from_rgb(255, 85, 85),
+    Color32::from_rgb(235, 235, 235),
+];
+
+// ---------------------------------------------------------------------------
 // Special accent (neither state nor type)
 // ---------------------------------------------------------------------------
 
