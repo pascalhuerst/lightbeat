@@ -11,6 +11,9 @@ use crate::widgets::nodes::meta::subgraph::{SubgraphWidget, GraphInputWidget, Gr
 
 const MAGNETIC_RADIUS: f32 = 20.0;
 const BEZIER_SEGMENTS: usize = 40;
+const MIN_BEZIER_SEGMENTS: usize = 8;
+/// Straight-line distance covered by one bezier segment before it is subdivided.
+const WIRE_SEGMENT_PX: f32 = 10.0;
 const CONNECTION_THICKNESS: f32 = 2.5;
 const NODE_CORNER_RADIUS: f32 = 6.0;
 
@@ -3949,10 +3952,28 @@ fn bezier_sample(from: Pos2, to: Pos2, segments: usize) -> Vec<Pos2> {
 }
 
 fn draw_bezier(painter: &Painter, from: Pos2, to: Pos2, color: Color32, thickness: f32) {
-    let points = bezier_sample(from, to, BEZIER_SEGMENTS);
-    for w in points.windows(2) {
-        painter.line_segment([w[0], w[1]], Stroke::new(thickness, color));
+    // A bezier stays inside the hull of its control points, so a wire whose
+    // hull is off screen cannot be seen. Most wires are off screen once the
+    // user zooms in.
+    let dx = (to.x - from.x).abs() * 0.5;
+    let hull = Rect::from_points(&[
+        from,
+        to,
+        Pos2::new(from.x + dx, from.y),
+        Pos2::new(to.x - dx, to.y),
+    ])
+    .expand(thickness);
+    if !painter.clip_rect().intersects(hull) {
+        return;
     }
+
+    // One path rather than a shape per segment: every shape is tessellated on
+    // its own, and 40 per wire across a few hundred wires dominated the
+    // frame's CPU time. Short wires need far fewer segments to look smooth.
+    let length = (to - from).length().max(1.0);
+    let segments = ((length / WIRE_SEGMENT_PX).ceil() as usize).clamp(MIN_BEZIER_SEGMENTS, BEZIER_SEGMENTS);
+    let points = bezier_sample(from, to, segments);
+    painter.add(egui::Shape::line(points, Stroke::new(thickness, color)));
 }
 
 /// Shortest distance from `p` to the polyline `pts`. Used to hit-test

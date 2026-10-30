@@ -57,6 +57,9 @@ pub struct PerfStats {
     pub ui_frame: Gauge,
     /// The node graph canvas alone, as a share of `ui_frame`.
     pub ui_graph: Gauge,
+    /// eframe's own account of the previous frame's CPU time: `update`
+    /// plus tessellation and painting.
+    pub ui_eframe: Gauge,
     /// Building and comparing the undo snapshot.
     pub ui_snapshot: Gauge,
     /// Undo snapshots taken in the last whole second.
@@ -112,9 +115,12 @@ impl EngineTickTimer {
 pub struct UiTimers {
     frame_ema: f64,
     graph_ema: f64,
+    eframe_ema: f64,
     snapshot_ema: f64,
     snapshots_this_sec: u64,
+    frames_this_sec: u64,
     sec_started: Option<f64>,
+    cpu: CpuMeter,
 }
 
 impl UiTimers {
@@ -122,6 +128,11 @@ impl UiTimers {
     /// so callers can borrow other fields of the app while doing the work.
     pub fn record_frame(&mut self, stats: &PerfStats, elapsed_us: u64) {
         stats.ui_frame.publish(&mut self.frame_ema, elapsed_us);
+        self.frames_this_sec += 1;
+    }
+
+    pub fn record_eframe(&mut self, stats: &PerfStats, elapsed_us: u64) {
+        stats.ui_eframe.publish(&mut self.eframe_ema, elapsed_us);
     }
 
     pub fn record_graph(&mut self, stats: &PerfStats, elapsed_us: u64) {
@@ -141,6 +152,18 @@ impl UiTimers {
             .store((dt_secs as f64 * 1_000_000.0) as u64, Ordering::Relaxed);
         let started = *self.sec_started.get_or_insert(now);
         if now - started >= 1.0 {
+            if log_enabled() {
+                let (tick, tick_max) = stats.engine_tick.read();
+                let (frame, frame_max) = stats.ui_frame.read();
+                let (graph, _) = stats.ui_graph.read();
+                let (eframe, _) = stats.ui_eframe.read();
+                let (ui_cpu, proc_cpu) = self.cpu.sample(now - started);
+                eprintln!(
+                    "[perf] engine {}/{} us | ui frame {}/{} us (graph {}, eframe total {}) | {} fps | cpu: ui thread {:.0}%, process {:.0}%",
+                    tick, tick_max, frame, frame_max, graph, eframe, self.frames_this_sec, ui_cpu, proc_cpu,
+                );
+            }
+            self.frames_this_sec = 0;
             stats
                 .snapshots_per_sec
                 .store(self.snapshots_this_sec, Ordering::Relaxed);
@@ -255,8 +278,69 @@ pub fn node_profiling_enabled() -> bool {
     *ENABLED.get_or_init(|| std::env::var("LIGHTBEAT_PROFILE_NODES").is_ok())
 }
 
+/// Times consecutive phases of a tick, only when node profiling is on, so the
+/// time spent in graph bookkeeping shows up next to the per-node numbers.
+pub struct PhaseClock(Option<Instant>);
+
+impl PhaseClock {
+    pub fn start() -> Self {
+        Self(node_profiling_enabled().then(Instant::now))
+    }
+
+    /// Attribute the time since the previous lap to `name`.
+    pub fn lap(&mut self, name: &'static str) {
+        if let Some(last) = self.0 {
+            let now = Instant::now();
+            record_inner_node(name, now.duration_since(last).as_nanos() as u64);
+            self.0 = Some(now);
+        }
+    }
+}
+
 /// Called by subgraphs for each inner node; the engine's profiler collects
 /// the samples at the end of the tick. Both run on the engine thread.
 pub fn record_inner_node(type_name: &'static str, nanos: u64) {
     INNER_SAMPLES.with(|s| s.borrow_mut().push((type_name, nanos)));
+}
+
+/// Whether `LIGHTBEAT_PERF_LOG` is set: print the status-bar gauges to stderr
+/// once a second, for measuring without reading the UI.
+fn log_enabled() -> bool {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ENABLED.get_or_init(|| std::env::var("LIGHTBEAT_PERF_LOG").is_ok())
+}
+
+/// CPU time of the calling thread and of the whole process, read from /proc.
+/// Only used by the perf log.
+#[derive(Default)]
+struct CpuMeter {
+    last_thread: u64,
+    last_process: u64,
+}
+
+impl CpuMeter {
+    /// CPU time in clock ticks (utime + stime) from a /proc stat file.
+    fn ticks(path: &str) -> u64 {
+        let Ok(text) = std::fs::read_to_string(path) else { return 0 };
+        // The command name may contain spaces; fields start after its ')'.
+        let Some(rest) = text.rsplit(')').next() else { return 0 };
+        let f: Vec<&str> = rest.split_whitespace().collect();
+        let get = |i: usize| f.get(i).and_then(|v| v.parse::<u64>().ok()).unwrap_or(0);
+        get(11) + get(12)
+    }
+
+    /// Returns (ui thread %, process %) of one core since the last call.
+    fn sample(&mut self, elapsed_secs: f64) -> (f64, f64) {
+        let thread = Self::ticks("/proc/thread-self/stat");
+        let process = Self::ticks("/proc/self/stat");
+        let hz = 100.0;
+        let secs = elapsed_secs.max(0.001);
+        let out = (
+            (thread - self.last_thread) as f64 / hz / secs * 100.0,
+            (process - self.last_process) as f64 / hz / secs * 100.0,
+        );
+        self.last_thread = thread;
+        self.last_process = process;
+        out
+    }
 }

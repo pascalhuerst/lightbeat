@@ -48,6 +48,23 @@ pub struct AppConfig {
     /// and deduped by `push_recent_project`.
     #[serde(default)]
     pub recent_projects: Vec<PathBuf>,
+    /// Frame rate while nothing is being interacted with. The UI is
+    /// repainted at the display rate for a couple of seconds after any input
+    /// and at this rate otherwise; 0 means always at the display rate. The
+    /// canvas costs several milliseconds of CPU per frame, so halving the idle
+    /// rate roughly halves the UI's share of a show running unattended.
+    #[serde(default = "default_idle_repaint_hz")]
+    pub idle_repaint_hz: f32,
+    /// MSAA sample count for the window. 0 keeps egui's own edge smoothing
+    /// ("feathering"), which doubles the triangles it tessellates; a value
+    /// such as 4 turns that off and lets the GPU smooth edges instead, which
+    /// cut the UI thread's CPU by about a third on the reference project.
+    #[serde(default)]
+    pub msaa_samples: u16,
+}
+
+fn default_idle_repaint_hz() -> f32 {
+    30.0
 }
 
 impl Default for AppConfig {
@@ -61,6 +78,8 @@ impl Default for AppConfig {
             window_size: None,
             window_maximized: false,
             recent_projects: Vec::new(),
+            idle_repaint_hz: default_idle_repaint_hz(),
+            msaa_samples: 0,
         }
     }
 }

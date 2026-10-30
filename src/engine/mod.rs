@@ -1,6 +1,8 @@
 pub mod graph;
 pub mod nodes;
 pub mod promoted;
+pub mod routing;
+pub mod sync_hint;
 pub mod patterns;
 pub mod types;
 

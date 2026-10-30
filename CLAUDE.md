@@ -275,9 +275,23 @@ src/
 ## 3b. Engine tick and performance
 
 - `EngineGraph::tick` order: take pending params/config (one lock per node) ->
-  connected-input bitmap -> `process()` all nodes -> propagate connections ->
-  mirror state to UI **every 16th tick** (`UI_SYNC_EVERY_N_TICKS`) ->
-  DMX manager tick (runs on the send cadence internally).
+  rebuild the routing plan if dirty -> `process()` all nodes -> run the plan
+  (propagate connections) -> mirror state to UI **every 16th tick**
+  (`UI_SYNC_EVERY_N_TICKS`) -> DMX manager tick (runs on the send cadence).
+- **Routing is cached** (`engine/routing.rs`, `RoutePlan`): connection
+  endpoints, port offsets and the connected-input bitmap are resolved once and
+  reused. The plan is rebuilt when marked dirty (any engine command, any
+  applied pending param/config/promoted list) or when a node's input/output
+  *count* or the subgraph bridge's channel total no longer matches. A node
+  that changes its ports on its own inside `process()` is only caught if the
+  port count changes; if you add one that changes types at constant count and
+  channel width, mark the plan dirty some other way. Resolving every wire
+  every tick was ~165 of ~215 us/tick on the reference project.
+- `save_data` is rebuilt every 16th tick only while the user is interacting
+  (`engine::sync_hint::set_interacting`, driven by the undo window in
+  `main.rs`) and every ~128 ticks otherwise. It is only read by save, copy,
+  move-between-levels, macros and undo snapshots, so don't read it for live
+  display; use `update_display`.
 - `InnerGraph::tick` (subgraphs) must mirror `EngineGraph::tick`. It once
   lagged behind and was 98.6% of the profile (1740 -> 181 us/tick on the
   371-node reference project after fixing). Change both together.
@@ -291,6 +305,22 @@ src/
   snapshot cost (click to reset peaks). `LIGHTBEAT_PROFILE_NODES=1` prints a
   per-node-type `process()` table every 2000 ticks, with a second table for
   nodes inside subgraphs (a subgraph's own time already includes them).
+- `LIGHTBEAT_PERF_LOG=1` prints the status-bar gauges once a second to
+  stderr, plus eframe's total CPU per frame, the real fps and the CPU share of
+  the UI thread and the process (read from /proc). Use it instead of reading
+  the UI. `perf::PhaseClock` adds per-phase rows to the node profile.
+- **UI cost** is dominated by egui tessellating and painting the node canvas
+  (~3.5 ms of ~4.5 ms per frame on the reference project), not by our
+  `update()` (~1.2 ms). Levers: `AppConfig::idle_repaint_hz` (default 30; full
+  rate for 2 s after any input), `AppConfig::msaa_samples` (>0 turns egui's
+  feathering off and lets the GPU smooth edges; ~a third less UI CPU), fewer
+  shapes (wires are one `Shape::line` each and culled when off screen).
+  `request_repaint_after` subtracts egui's predicted frame time, so add it
+  back or the request collapses to the next vsync.
+- When measuring the UI thread, make sure the window is actually being drawn:
+  an occluded Wayland window gets no frame callbacks and reads ~0% CPU.
+  Compare old and new builds alternately; CPU % also moves with frequency
+  scaling.
 - Measure with `--release` (debug is ~4.5x slower). Autoload uses
   `config.recent_projects.first()` from `settings.json` in the **working
   directory**, not `project.json`; check it before trusting a measurement.
