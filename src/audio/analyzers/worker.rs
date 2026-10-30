@@ -23,9 +23,9 @@ pub struct AnalyzerFrame {
     /// Concatenated continuous outputs of all analyzers, in analyzer order
     /// followed by port order within an analyzer.
     pub values: Vec<f32>,
-    /// Per-analyzer onset counter (already delay-aligned). Length = number
-    /// of analyzers. Analyzers without trigger outputs report 0.
-    pub onset_counts: Vec<u64>,
+    /// Per-analyzer trigger counters (already delay-aligned), one per
+    /// trigger output. Analyzers without trigger outputs have an empty list.
+    pub onset_counts: Vec<Vec<u64>>,
     /// Virtual sample index this frame corresponds to (samples processed
     /// so far, minus `max_output_latency_samples`). Monotonic while the
     /// stream is open.
@@ -60,7 +60,7 @@ impl AnalyzerWorker {
         let total_outputs: usize = procs.iter().map(|p| p.num_outputs()).sum();
         let frame = Arc::new(Mutex::new(AnalyzerFrame {
             values: vec![0.0; total_outputs],
-            onset_counts: vec![0; procs.len()],
+            onset_counts: vec![Vec::new(); procs.len()],
             sample_index: 0,
         }));
 
@@ -81,11 +81,11 @@ struct Slot {
     /// Ring buffer of (sample-index-at-push, outputs, onset_count). The
     /// sample-index is the total samples processed at the end of the chunk
     /// whose step produced this entry.
-    history: VecDeque<(u64, Vec<f32>, u64)>,
+    history: VecDeque<(u64, Vec<f32>, Vec<u64>)>,
     /// Most recently emitted (delayed) values + counter, carried forward
     /// if no new entry is old enough yet.
     latest_values: Vec<f32>,
-    latest_onset: u64,
+    latest_onset: Vec<u64>,
     num_outputs: usize,
 }
 
@@ -113,7 +113,7 @@ fn run(
                 delay_samples,
                 history: VecDeque::with_capacity(8),
                 latest_values: vec![0.0; num_outputs],
-                latest_onset: 0,
+                latest_onset: Vec::new(),
                 num_outputs,
             }
         })
@@ -131,7 +131,7 @@ fn run(
         for slot in slots.iter_mut() {
             slot.proc.step(&chunk.mono_f32);
             let outs = slot.proc.outputs();
-            let count = slot.proc.onset_count();
+            let count = slot.proc.trigger_counts();
             slot.history.push_back((samples_processed, outs, count));
             // Emit target = samples_processed - delay_samples. Walk forward
             // while the next entry is still at or before emit_target, so the
@@ -149,7 +149,7 @@ fn run(
                 && front.0 <= emit_target
             {
                 slot.latest_values.clone_from(&front.1);
-                slot.latest_onset = front.2;
+                slot.latest_onset.clone_from(&front.2);
             }
             // Cap history length defensively so a misbehaving proc can't
             // leak memory. 256 entries covers ~256 chunks of history.
@@ -161,10 +161,10 @@ fn run(
         // Concatenate emitted values + onset counts into the shared frame.
         let total_outputs: usize = slots.iter().map(|s| s.num_outputs).sum();
         let mut values: Vec<f32> = Vec::with_capacity(total_outputs);
-        let mut onset_counts: Vec<u64> = Vec::with_capacity(slots.len());
+        let mut onset_counts: Vec<Vec<u64>> = Vec::with_capacity(slots.len());
         for slot in slots.iter() {
             values.extend_from_slice(&slot.latest_values);
-            onset_counts.push(slot.latest_onset);
+            onset_counts.push(slot.latest_onset.clone());
         }
 
         let mut fr = frame.lock();

@@ -121,7 +121,7 @@ impl AnalyzerProc for BeatClockProc {
 
     fn outputs(&self) -> Vec<f32> { self.out.to_vec() }
 
-    fn onset_count(&self) -> u64 { self.beats_counted }
+    fn trigger_counts(&self) -> Vec<u64> { vec![self.beats_counted] }
 }
 
 pub fn create(sample_rate: u32) -> (AnalyzerHandle, Box<dyn AnalyzerProc>) {

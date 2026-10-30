@@ -263,6 +263,16 @@ src/
 ### Hardware / IO
 - **Audio Input** nodes read analyzer outputs produced on separate threads by
   `audio::manager`; configuration lives in `SetupFile::audio_inputs`.
+  Analyzers (`audio/analyzers/`): Beat clock, Peak level, Envelope, Spectrum
+  (8 octave bands), Drums (kick/snare/hat triggers), Brightness, Build-up and
+  drop, Signal present, Loudness (LUFS), Key. Audio reaches them as mono.
+  A trigger output is declared in `AnalyzerKind::trigger_outputs` and driven by
+  the analyzer's `trigger_counts` (monotonic counters, edge-detected in the
+  engine node), never by its output value. Output order is a saved-wire
+  contract. New analyzers use `handle_for` for params and `RollingFft` for
+  spectra; the synthetic tracks in `beat_bench` (`generated`) serve as test
+  audio. Known limits: Drums' kick also fires on sustained notes in the 30-120 Hz
+  band; Key needs several seconds of tonal material.
 - **Input Controller** nodes read a persistent virtual controller
   (`SetupFile::input_controllers`). Missing hardware just emits 0s and is
   reconnected by a ~1 Hz worker. Binding modes (Value / TriggerOnPress /

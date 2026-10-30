@@ -131,7 +131,8 @@ impl NodeWidget for AudioInputWidget {
         for (kind, _) in &self.analyzer_results {
             h += match kind {
                 AnalyzerKind::Envelope => ENVELOPE_PLOT_HEIGHT + 4.0,
-                AnalyzerKind::Spectrum => SPECTRUM_HEIGHT + 4.0,
+                AnalyzerKind::Spectrum | AnalyzerKind::Drums | AnalyzerKind::Buildup
+                | AnalyzerKind::Brightness | AnalyzerKind::Loudness => SPECTRUM_HEIGHT + 4.0,
                 _ => 18.0,
             };
         }
@@ -226,13 +227,44 @@ impl NodeWidget for AudioInputWidget {
                         );
                     });
                 }
-                AnalyzerKind::Spectrum => {
+                AnalyzerKind::Presence => {
+                    let on = vals.first().copied().unwrap_or(0.0) >= 0.5;
+                    ui.horizontal(|ui| {
+                        ui.colored_label(theme::TEXT_DIM, format!("a{}", i));
+                        ui.colored_label(if on { theme::SEM_SUCCESS } else { theme::TEXT_DIM }, if on { "signal" } else { "silence" });
+                    });
+                }
+                AnalyzerKind::Key => {
+                    let key = vals.first().copied().unwrap_or(0.0) as usize % 12;
+                    let major = vals.get(1).copied().unwrap_or(0.0) >= 0.5;
+                    let confidence = vals.get(2).copied().unwrap_or(0.0);
+                    ui.horizontal(|ui| {
+                        ui.colored_label(theme::TEXT_DIM, format!("a{}", i));
+                        if confidence > 0.0 {
+                            const NAMES: [&str; 12] = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+                            ui.colored_label(
+                                theme::TEXT,
+                                format!("{} {}  {:.0}%", NAMES[key], if major { "major" } else { "minor" }, confidence * 100.0),
+                            );
+                        } else {
+                            ui.colored_label(theme::TEXT_DIM, "listening...");
+                        }
+                    });
+                }
+                AnalyzerKind::Spectrum | AnalyzerKind::Drums | AnalyzerKind::Brightness
+                | AnalyzerKind::Buildup | AnalyzerKind::Loudness => {
+                    // Drums and build-up show their level outputs; their
+                    // triggers are 0 here.
+                    let shown: &[f32] = match kind {
+                        AnalyzerKind::Drums => vals.get(3..).unwrap_or(&[]),
+                        _ => vals,
+                    };
                     ui.horizontal(|ui| {
                         ui.colored_label(Color32::from_gray(120), format!("a{}", i));
                         let width = (ui.available_width() - PLOT_RIGHT_GAP).max(60.0);
                         let (resp, painter) =
                             ui.allocate_painter(egui::Vec2::new(width, SPECTRUM_HEIGHT), egui::Sense::hover());
-                        draw_spectrum_bars(&painter, resp.rect, vals);
+                        draw_spectrum_bars(&painter, resp.rect, shown);
                     });
                 }
                 AnalyzerKind::Envelope => {

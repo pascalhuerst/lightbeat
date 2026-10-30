@@ -25,9 +25,11 @@ pub struct AudioInputDisplay {
 }
 
 /// Per-analyzer edge-detection cache for onset triggers.
-#[derive(Default, Clone, Copy)]
+#[derive(Default, Clone)]
 struct AnalyzerCache {
-    last_onset_count: u64,
+    /// Trigger counters seen last tick; None until the first one, so a
+    /// worker restarting at zero cannot read as a burst of events.
+    last_counts: Option<Vec<u64>>,
 }
 
 pub struct AudioInputProcessNode {
@@ -142,22 +144,25 @@ impl ProcessNode for AudioInputProcessNode {
         drop(state);
         let frame = frame_arc.lock().clone();
 
-        // Slot analyzer values into the output buffer. For analyzers whose
-        // first output is a trigger (BeatClock), edge-detect from the
-        // monotonic onset counter emitted by the worker.
+        // Slot analyzer values into the output buffer. Trigger outputs are
+        // edge-detected from the monotonic counters emitted by the worker.
         let mut slot = 1;
         for (ai, k) in self.cached_kinds.iter().enumerate() {
             let n = k.outputs().len();
-            let is_trigger = matches!(k, AnalyzerKind::BeatClock);
-            let onset_pulse = if is_trigger {
-                let cur = frame.onset_counts.get(ai).copied().unwrap_or(0);
-                let prev = self.caches[ai].last_onset_count;
-                self.caches[ai].last_onset_count = cur;
-                if cur != prev && prev != 0 { 1.0 } else { 0.0 }
-            } else { 0.0 };
+            let triggers = k.trigger_outputs();
+            let counts = frame.onset_counts.get(ai).cloned().unwrap_or_default();
+            let prev = self.caches[ai].last_counts.replace(counts.clone());
             for j in 0..n {
-                let v = frame.values.get(slot + j).copied().unwrap_or(0.0);
-                let out = if is_trigger && j == 0 { onset_pulse } else { v };
+                let out = match triggers.iter().position(|&t| t == j) {
+                    Some(ti) => {
+                        let cur = counts.get(ti).copied().unwrap_or(0);
+                        match &prev {
+                            Some(p) if p.get(ti).copied().unwrap_or(0) != cur => 1.0,
+                            _ => 0.0,
+                        }
+                    }
+                    None => frame.values.get(slot + j).copied().unwrap_or(0.0),
+                };
                 if let Some(s) = self.output_values.get_mut(slot + j) {
                     *s = out;
                 }

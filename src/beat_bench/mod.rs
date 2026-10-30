@@ -6,7 +6,7 @@
 //! No window is opened. Nothing here is used by the app itself.
 
 mod metrics;
-mod scenarios;
+pub(crate) mod scenarios;
 mod synth;
 mod truth;
 
@@ -144,6 +144,12 @@ fn score_tracker(dir: &Path, filter: Option<&str>) {
     }
 }
 
+/// A generated test signal with its ground truth, for the analyzers' tests.
+#[cfg(test)]
+pub fn generated(name: &str) -> scenarios::Generated {
+    (scenarios::all().into_iter().find(|s| s.name == name).unwrap().build)()
+}
+
 fn scenario_names(filter: Option<&str>) -> Vec<String> {
     let mut names: Vec<String> = scenarios::all().iter().map(|s| s.name.to_string()).collect();
     names.retain(|n| matches(n, filter));
@@ -264,7 +270,7 @@ mod tests {
         assert_eq!(out.len(), 7);
         assert!((out[5] - 124.0).abs() < 2.0, "bpm {}", out[5]);
         // About 124 beats a minute for 80 s, minus the time to lock.
-        let beats = proc.onset_count();
+        let beats = proc.trigger_counts()[0];
         assert!((120..=170).contains(&beats), "{beats} beats");
         assert!(out[1] >= 0.0 && out[1] < 1.0 && out[2] >= 0.0 && out[2] < 1.0);
     }

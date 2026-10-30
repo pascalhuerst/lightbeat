@@ -15,8 +15,15 @@
 //!   levels, and peak meters phase-coherent in the graph.
 
 pub mod beat_clock;
+pub mod brightness;
+pub mod buildup;
+pub mod drums;
 pub mod envelope;
+pub mod fft;
+pub mod key;
+pub mod loudness;
 pub mod peak_level;
+pub mod presence;
 pub mod spectrum;
 pub mod worker;
 
@@ -37,10 +44,33 @@ pub enum AnalyzerKind {
     Envelope,
     /// Level in eight octave bands; see `spectrum`.
     Spectrum,
+    /// Kick, snare and hat triggers; see `drums`.
+    Drums,
+    /// Where the energy sits between dark and bright; see `brightness`.
+    Brightness,
+    /// Breakdowns, build-ups and drops; see `buildup`.
+    Buildup,
+    /// Whether anything is playing; see `presence`.
+    Presence,
+    /// Perceived loudness (LUFS); see `loudness`.
+    Loudness,
+    /// Musical key; see `key`.
+    Key,
 }
 
 impl AnalyzerKind {
-    pub const ALL: [Self; 4] = [Self::BeatClock, Self::PeakLevel, Self::Envelope, Self::Spectrum];
+    pub const ALL: [Self; 10] = [
+        Self::BeatClock,
+        Self::PeakLevel,
+        Self::Envelope,
+        Self::Spectrum,
+        Self::Drums,
+        Self::Brightness,
+        Self::Buildup,
+        Self::Presence,
+        Self::Loudness,
+        Self::Key,
+    ];
 
     pub fn label(&self) -> &'static str {
         match self {
@@ -48,6 +78,24 @@ impl AnalyzerKind {
             AnalyzerKind::PeakLevel => "Peak Level",
             AnalyzerKind::Envelope => "Envelope",
             AnalyzerKind::Spectrum => "Spectrum (8 octave bands)",
+            AnalyzerKind::Drums => "Drums (kick, snare, hat)",
+            AnalyzerKind::Brightness => "Brightness",
+            AnalyzerKind::Buildup => "Build-up and drop",
+            AnalyzerKind::Presence => "Signal present",
+            AnalyzerKind::Loudness => "Loudness (LUFS)",
+            AnalyzerKind::Key => "Key",
+        }
+    }
+
+    /// Which of `outputs()` are triggers, driven by `trigger_counts` instead
+    /// of by the output values.
+    pub fn trigger_outputs(&self) -> &'static [usize] {
+        match self {
+            AnalyzerKind::BeatClock => &[0],
+            AnalyzerKind::Drums => &[0, 1, 2],
+            AnalyzerKind::Buildup => &[2],
+            AnalyzerKind::Presence => &[1, 2],
+            _ => &[],
         }
     }
 
@@ -69,6 +117,34 @@ impl AnalyzerKind {
                 PortDef::new("rms", PortType::Untyped),
             ],
             AnalyzerKind::Envelope => vec![PortDef::new("envelope", PortType::Untyped)],
+            AnalyzerKind::Drums => vec![
+                PortDef::new("kick", PortType::Logic),
+                PortDef::new("snare", PortType::Logic),
+                PortDef::new("hat", PortType::Logic),
+                PortDef::new("kick level", PortType::Untyped),
+                PortDef::new("snare level", PortType::Untyped),
+                PortDef::new("hat level", PortType::Untyped),
+            ],
+            AnalyzerKind::Brightness => vec![PortDef::new("brightness", PortType::Untyped)],
+            AnalyzerKind::Buildup => vec![
+                PortDef::new("tension", PortType::Untyped),
+                PortDef::new("breakdown", PortType::Logic),
+                PortDef::new("drop", PortType::Logic),
+            ],
+            AnalyzerKind::Presence => vec![
+                PortDef::new("signal", PortType::Logic),
+                PortDef::new("started", PortType::Logic),
+                PortDef::new("stopped", PortType::Logic),
+            ],
+            AnalyzerKind::Loudness => vec![
+                PortDef::new("momentary", PortType::Untyped),
+                PortDef::new("short term", PortType::Untyped),
+            ],
+            AnalyzerKind::Key => vec![
+                PortDef::new("key", PortType::Untyped),
+                PortDef::new("major", PortType::Logic),
+                PortDef::new("confidence", PortType::Untyped),
+            ],
             AnalyzerKind::Spectrum => spectrum::BAND_CENTRES
                 .iter()
                 .map(|&c| {
@@ -104,15 +180,16 @@ pub trait AnalyzerProc: Send {
         0
     }
     /// Process one chunk of mono f32 audio. Implementations update their
-    /// internal state so that `outputs()` / `onset_count()` reflect the
+    /// internal state so that `outputs()` / `trigger_counts()` reflect the
     /// post-chunk result.
     fn step(&mut self, samples: &[f32]);
     /// Current analyzer output values, in declared port order.
     fn outputs(&self) -> Vec<f32>;
-    /// Monotonic counter of onsets detected so far. Defaults to 0 for
-    /// analyzers that don't produce a trigger output.
-    fn onset_count(&self) -> u64 {
-        0
+    /// Monotonic count of events so far for each trigger output, in the
+    /// order of `AnalyzerKind::trigger_outputs`. Counting, rather than
+    /// pulsing, means an event is never missed between two engine ticks.
+    fn trigger_counts(&self) -> Vec<u64> {
+        Vec::new()
     }
 }
 
@@ -145,6 +222,20 @@ impl AnalyzerHandle {
     }
 }
 
+/// A handle onto parameters kept in a shared struct: `describe` lists them
+/// for the UI and `apply` sets one by index.
+pub fn handle_for<P: Send + Sync + 'static>(
+    params: Arc<parking_lot::RwLock<P>>,
+    describe: fn(&P) -> Vec<ParamDef>,
+    apply: fn(&mut P, usize, ParamValue),
+) -> AnalyzerHandle {
+    let get = params.clone();
+    AnalyzerHandle::new(
+        Arc::new(move || describe(&get.read())),
+        Arc::new(move |index, value| apply(&mut params.write(), index, value)),
+    )
+}
+
 /// Factory: create the (handle, proc) pair for a given analyzer kind at the
 /// given stream sample rate. Used by the worker when spawning analyzers.
 pub fn create_analyzer(
@@ -156,6 +247,12 @@ pub fn create_analyzer(
         AnalyzerKind::PeakLevel => peak_level::create(sample_rate),
         AnalyzerKind::Envelope => envelope::create(sample_rate),
         AnalyzerKind::Spectrum => spectrum::create(sample_rate),
+        AnalyzerKind::Drums => drums::create(sample_rate),
+        AnalyzerKind::Brightness => brightness::create(sample_rate),
+        AnalyzerKind::Buildup => buildup::create(sample_rate),
+        AnalyzerKind::Presence => presence::create(sample_rate),
+        AnalyzerKind::Loudness => loudness::create(sample_rate),
+        AnalyzerKind::Key => key::create(sample_rate),
     }
 }
 
