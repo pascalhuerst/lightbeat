@@ -754,6 +754,16 @@ impl NodeGraph {
             return;
         };
 
+        // An unwired input has nothing to show, and the tooltip would sit on
+        // top of the port's right-click menu.
+        if port_id.dir == PortDir::Input
+            && !self.active().connections.iter().any(|c| c.to == port_id)
+        {
+            self.hover_port = None;
+            self.hover_samples.clear();
+            return;
+        }
+
         // Reset history if hover moved to a different port.
         if self.hover_port != Some(port_id) {
             self.hover_port = Some(port_id);
