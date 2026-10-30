@@ -46,6 +46,38 @@ impl MidiSource {
     }
 }
 
+/// A port name without the ALSA client and port numbers it ends with
+/// ("BCF2000:BCF2000 MIDI 1 24:0" -> "BCF2000:BCF2000 MIDI 1"). Those
+/// numbers are handed out as devices appear, so they differ between machines
+/// and between boots; the rest names the device.
+pub fn without_address(name: &str) -> &str {
+    let Some((head, tail)) = name.rsplit_once(' ') else { return name };
+    match tail.split_once(':') {
+        Some((client, port))
+            if !client.is_empty()
+                && !port.is_empty()
+                && client.bytes().all(|b| b.is_ascii_digit())
+                && port.bytes().all(|b| b.is_ascii_digit()) =>
+        {
+            head
+        }
+        _ => name,
+    }
+}
+
+/// The available port a saved name stands for: the same name if it is there,
+/// otherwise the same device under a different ALSA address.
+pub fn resolve_port(saved: &str, available: &[String]) -> Option<String> {
+    if saved.is_empty() {
+        return None;
+    }
+    if available.iter().any(|p| p == saved) {
+        return Some(saved.to_string());
+    }
+    let wanted = without_address(saved);
+    available.iter().find(|p| without_address(p) == wanted).cloned()
+}
+
 /// List currently-available MIDI input port names on the system.
 pub fn available_ports() -> Vec<String> {
     let input = match MidiInput::new("LightBeat-probe") {
@@ -412,5 +444,26 @@ fn encode_midi(_kind: &InputControllerKind, source: Option<&InputSource>, value:
         }
         // X1 feedback is driven by the X1Session directly — no MIDI bytes.
         InputSource::X1(_) => None,
+    }
+}
+
+#[cfg(test)]
+mod port_name_tests {
+    use super::*;
+
+    #[test]
+    fn a_saved_port_is_found_again_under_another_alsa_address() {
+        let ports = vec!["Launchpad MIDI 1 20:0".to_string(), "BCF2000:BCF2000 MIDI 1 28:0".to_string(), "BCF2000:BCF2000 MIDI 2 28:1".to_string()];
+        assert_eq!(
+            resolve_port("BCF2000:BCF2000 MIDI 1 24:0", &ports).as_deref(),
+            Some("BCF2000:BCF2000 MIDI 1 28:0")
+        );
+        // The exact name wins when it is there.
+        assert_eq!(resolve_port("Launchpad MIDI 1 20:0", &ports).as_deref(), Some("Launchpad MIDI 1 20:0"));
+        assert_eq!(resolve_port("Push MIDI 1 30:0", &ports), None);
+        assert_eq!(resolve_port("", &ports), None);
+        // Names without an address, and ones that merely end in a number, are left whole.
+        assert_eq!(without_address("USB Midi"), "USB Midi");
+        assert_eq!(without_address("Port 1"), "Port 1");
     }
 }

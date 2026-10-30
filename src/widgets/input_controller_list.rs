@@ -98,7 +98,7 @@ pub fn show(ui: &mut Ui, mgr: &mut InputControllerManager) {
                                                 set_port.push((c.id, String::new()));
                                             }
                                             for p in &available_ports {
-                                                if ui.selectable_label(p == &input_port, p).clicked() {
+                                                if ui.selectable_label(same_device(p, &input_port), p).clicked() {
                                                     set_port.push((c.id, p.clone()));
                                                 }
                                             }
@@ -142,7 +142,7 @@ pub fn show(ui: &mut Ui, mgr: &mut InputControllerManager) {
                                                 set_output_port.push((c.id, String::new()));
                                             }
                                             for p in &available_output_ports {
-                                                if ui.selectable_label(p == &output_port, p).clicked() {
+                                                if ui.selectable_label(same_device(p, &output_port), p).clicked() {
                                                     set_output_port.push((c.id, p.clone()));
                                                 }
                                             }
@@ -642,4 +642,10 @@ fn show_debug_panel(
                 });
         }
     });
+}
+
+/// Same port, ignoring the ALSA address that changes between machines.
+fn same_device(a: &str, b: &str) -> bool {
+    use crate::input_controller::midi::without_address;
+    !b.is_empty() && (a == b || without_address(a) == without_address(b))
 }

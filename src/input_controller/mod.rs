@@ -610,6 +610,9 @@ pub struct InputControllerManager {
     /// Active per-controller sessions (dropped on disconnect / removal).
     sessions: Vec<Session>,
     next_input_id: u32,
+    /// Why the X1 could not be opened last time, so a rescan only reports a
+    /// reason when it changes.
+    x1_error: Option<String>,
 }
 
 impl InputControllerManager {
@@ -618,6 +621,7 @@ impl InputControllerManager {
             shared: Arc::new(Mutex::new(Vec::new())),
             sessions: Vec::new(),
             next_input_id: 1,
+            x1_error: None,
         }
     }
 
@@ -1037,6 +1041,7 @@ impl InputControllerManager {
     /// Rebuild sessions to match `shared` state + port availability.
     fn reconcile_sessions(&mut self) {
         let ports = midi::available_ports();
+        let out_ports = midi::available_output_ports();
 
         // Snapshot of each controller's desired session target.
         // (controller_id, TargetKind)
@@ -1053,12 +1058,14 @@ impl InputControllerManager {
                     | InputControllerKind::Push1 { hw_input_port: hw_port_name, .. }
                     | InputControllerKind::LaunchpadS { hw_input_port: hw_port_name, .. } => {
                         if hw_port_name.is_empty() { return None; }
+                        // Saved names carry ALSA addresses that differ between
+                        // machines; use the port the device has now.
+                        let input = midi::resolve_port(hw_port_name, &ports)
+                            .unwrap_or_else(|| hw_port_name.clone());
                         let op = c.kind.output_port();
-                        let op = if op.is_empty() { None } else { Some(op.to_string()) };
-                        Some((c.id, TargetKind::Midi {
-                            input: hw_port_name.clone(),
-                            output: op,
-                        }))
+                        let op = (!op.is_empty())
+                            .then(|| midi::resolve_port(op, &out_ports).unwrap_or_else(|| op.to_string()));
+                        Some((c.id, TargetKind::Midi { input, output: op }))
                     }
                     InputControllerKind::X1 => Some((c.id, TargetKind::X1)),
                 })
@@ -1074,7 +1081,7 @@ impl InputControllerManager {
                     input == &ms.port_name
                         && output == &ms.output_port_name
                         && ports.contains(&ms.port_name)
-                        && ms.output_port_name.as_ref().map(|p| ports.contains(p)).unwrap_or(true)
+                        && ms.output_port_name.as_ref().map(|p| out_ports.contains(p)).unwrap_or(true)
                 }
                 (Session::X1(x), Some((_, TargetKind::X1))) => !x.is_finished(),
                 _ => false,
@@ -1108,17 +1115,21 @@ impl InputControllerManager {
                 TargetKind::X1 => {
                     match X1Session::open(*cid, self.shared.clone()) {
                         Ok(session) => {
+                            self.x1_error = None;
                             self.sessions.push(Session::X1(session));
                             let mut state = self.shared.lock().unwrap();
                             if let Some(c) = state.iter_mut().find(|c| c.id == *cid) {
                                 c.status = ConnectionStatus::Connected;
                             }
                         }
-                        Err(_e) => {
-                            // Device likely unplugged — stay in Waiting and
-                            // retry next reconnect tick. Silent because the
-                            // user expects a controller that isn't plugged in
-                            // to just show as "Waiting".
+                        Err(e) => {
+                            // Usually just unplugged, so it stays Waiting; but
+                            // a USB permission problem looks the same, so say
+                            // why once per distinct reason.
+                            if self.x1_error.as_deref() != Some(e.as_str()) {
+                                eprintln!("X1 not opened: {e}");
+                                self.x1_error = Some(e);
+                            }
                             let mut state = self.shared.lock().unwrap();
                             if let Some(c) = state.iter_mut().find(|c| c.id == *cid) {
                                 c.status = ConnectionStatus::Waiting;
