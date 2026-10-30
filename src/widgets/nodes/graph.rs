@@ -2423,6 +2423,25 @@ impl NodeGraph {
         let on_canvas = canvas_has_pointer && self.canvas_rect.contains(pointer_pos);
         let z = self.active().zoom;
 
+        // A click anywhere but on a selected node (ports stick out past the
+        // edge) drops a multi-selection, whatever that click goes on to do.
+        if primary_pressed
+            && on_canvas
+            && !ctrl
+            && !shift
+            && self.drag.drawing_conn.is_none()
+            && self.selected_nodes.len() > 1
+        {
+            let slack = Vec2::new((PORT_RADIUS + 4.0) * z, 0.0);
+            let on_selected = self
+                .selected_nodes
+                .iter()
+                .any(|&i| node_rects.get(i).is_some_and(|r| r.expand2(slack).contains(pointer_pos)));
+            if !on_selected {
+                self.selected_nodes.clear();
+            }
+        }
+
         // --- Connection drawing ---
         if self.drag.drawing_conn.is_some() {
             // Bundle-arming: pressing 2..9 (or 0 = 10) while a wire is being
