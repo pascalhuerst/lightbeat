@@ -105,7 +105,8 @@ src/
 ├── interfaces/                   # ArtNet/sACN sender impls.
 ├── audio/                        # Audio input subsystem: AudioBackend trait
 │                                 # (cpal impl), per-input analyzer threads
-│                                 # (spectrum, beat, onset, key, peak, envelope).
+│                                 # (beat clock, peak level, envelope); the beat
+│                                 # tracking itself is in audio/tracker/.
 ├── input_controller/             # Persistent virtual MIDI/X1 controller slots
 │                                 # with learned inputs; midir + reconnect worker.
 ├── macros/                       # .lbm library of reusable subgraphs.

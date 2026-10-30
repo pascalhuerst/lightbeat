@@ -205,16 +205,6 @@ impl NodeWidget for AudioInputWidget {
                         }
                     });
                 }
-                AnalyzerKind::Onset => {
-                    // The Onset analyzer's index-1 output is the raw ODF
-                    // value (unnormalised flux) — useful for a scope, not
-                    // for an in-node label. Just show the analyzer tag.
-                    let odf = vals.get(1).copied().unwrap_or(0.0);
-                    ui.horizontal(|ui| {
-                        ui.colored_label(Color32::from_gray(120), format!("a{}", i));
-                        ui.colored_label(Color32::from_gray(150), format!("ODF {:.1}", odf));
-                    });
-                }
                 AnalyzerKind::PeakLevel => {
                     let peak = vals.first().copied().unwrap_or(0.0);
                     let rms = vals.get(1).copied().unwrap_or(0.0);
