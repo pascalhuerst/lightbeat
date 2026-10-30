@@ -47,7 +47,8 @@ impl ProcessNode for ConstantProcessNode {
         let (min, max, step) = match self.port_type {
             PortType::Logic => (0.0, 1.0, 1.0),
             PortType::Phase => (0.0, 1.0, 0.01),
-            _ => (-10.0, 10.0, 0.01),
+            // A constant can be anything; the node's own box is not bound by this.
+            _ => (-1.0e6, 1.0e6, 0.01),
         };
         vec![ParamDef::Float {
             name: "Value".into(),

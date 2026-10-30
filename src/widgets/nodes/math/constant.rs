@@ -84,7 +84,7 @@ impl NodeWidget for ConstantWidget {
                 .add(egui::DragValue::new(&mut self.value).range(0.0..=1.0).speed(0.005).fixed_decimals(3))
                 .changed(),
             _ => ui
-                .add(egui::DragValue::new(&mut self.value).range(-10.0..=10.0).speed(0.01).fixed_decimals(3))
+                .add(egui::DragValue::new(&mut self.value).speed(0.01).max_decimals(6))
                 .changed(),
         };
         if changed {
