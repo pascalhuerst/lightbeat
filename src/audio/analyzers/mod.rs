@@ -17,6 +17,7 @@
 pub mod beat_clock;
 pub mod envelope;
 pub mod peak_level;
+pub mod spectrum;
 pub mod worker;
 
 use std::sync::Arc;
@@ -34,16 +35,19 @@ pub enum AnalyzerKind {
     BeatClock,
     PeakLevel,
     Envelope,
+    /// Level in eight octave bands; see `spectrum`.
+    Spectrum,
 }
 
 impl AnalyzerKind {
-    pub const ALL: [Self; 3] = [Self::BeatClock, Self::PeakLevel, Self::Envelope];
+    pub const ALL: [Self; 4] = [Self::BeatClock, Self::PeakLevel, Self::Envelope, Self::Spectrum];
 
     pub fn label(&self) -> &'static str {
         match self {
             AnalyzerKind::BeatClock => "Beat clock (tempo, beat, bar)",
             AnalyzerKind::PeakLevel => "Peak Level",
             AnalyzerKind::Envelope => "Envelope",
+            AnalyzerKind::Spectrum => "Spectrum (8 octave bands)",
         }
     }
 
@@ -65,6 +69,13 @@ impl AnalyzerKind {
                 PortDef::new("rms", PortType::Untyped),
             ],
             AnalyzerKind::Envelope => vec![PortDef::new("envelope", PortType::Untyped)],
+            AnalyzerKind::Spectrum => spectrum::BAND_CENTRES
+                .iter()
+                .map(|&c| {
+                    let name = if c >= 1000.0 { format!("{} kHz", c / 1000.0) } else { format!("{c} Hz") };
+                    PortDef::new(name, PortType::Untyped)
+                })
+                .collect(),
         }
     }
 }
@@ -144,6 +155,7 @@ pub fn create_analyzer(
         AnalyzerKind::BeatClock => beat_clock::create(sample_rate),
         AnalyzerKind::PeakLevel => peak_level::create(sample_rate),
         AnalyzerKind::Envelope => envelope::create(sample_rate),
+        AnalyzerKind::Spectrum => spectrum::create(sample_rate),
     }
 }
 

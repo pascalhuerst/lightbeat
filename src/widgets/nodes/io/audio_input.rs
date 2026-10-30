@@ -131,6 +131,7 @@ impl NodeWidget for AudioInputWidget {
         for (kind, _) in &self.analyzer_results {
             h += match kind {
                 AnalyzerKind::Envelope => ENVELOPE_PLOT_HEIGHT + 4.0,
+                AnalyzerKind::Spectrum => SPECTRUM_HEIGHT + 4.0,
                 _ => 18.0,
             };
         }
@@ -225,6 +226,15 @@ impl NodeWidget for AudioInputWidget {
                         );
                     });
                 }
+                AnalyzerKind::Spectrum => {
+                    ui.horizontal(|ui| {
+                        ui.colored_label(Color32::from_gray(120), format!("a{}", i));
+                        let width = (ui.available_width() - PLOT_RIGHT_GAP).max(60.0);
+                        let (resp, painter) =
+                            ui.allocate_painter(egui::Vec2::new(width, SPECTRUM_HEIGHT), egui::Sense::hover());
+                        draw_spectrum_bars(&painter, resp.rect, vals);
+                    });
+                }
                 AnalyzerKind::Envelope => {
                     let env = vals.first().copied().unwrap_or(0.0);
 
@@ -310,6 +320,27 @@ impl NodeWidget for AudioInputWidget {
 
     fn as_any_mut(&mut self) -> &mut dyn Any {
         self
+    }
+}
+
+const SPECTRUM_HEIGHT: f32 = 26.0;
+
+/// One bar per band, lowest on the left.
+fn draw_spectrum_bars(painter: &egui::Painter, rect: egui::Rect, levels: &[f32]) {
+    painter.rect_filled(rect, 2.0, theme::BG_DEEP);
+    let n = levels.len().max(1) as f32;
+    let slot = rect.width() / n;
+    for (i, &level) in levels.iter().enumerate() {
+        let h = (rect.height() - 2.0) * level.clamp(0.0, 1.0);
+        let x = rect.min.x + i as f32 * slot;
+        painter.rect_filled(
+            egui::Rect::from_min_max(
+                egui::pos2(x + 1.5, rect.max.y - 1.0 - h),
+                egui::pos2(x + slot - 1.5, rect.max.y - 1.0),
+            ),
+            1.0,
+            theme::SEM_PRIMARY,
+        );
     }
 }
 
