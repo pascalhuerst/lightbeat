@@ -8446,7 +8446,7 @@
       "buffer_size_frames": 1024,
       "analyzers": [
         {
-          "kind": "Beat"
+          "kind": "BeatClock"
         },
         {
           "kind": "PeakLevel"

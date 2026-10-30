@@ -12,7 +12,6 @@ mod truth;
 
 use std::path::{Path, PathBuf};
 
-use crate::audio::analyzers::{AnalyzerProc, beat};
 use crate::audio::tracker::BeatTracker;
 
 use metrics::TrackerRun;
@@ -78,28 +77,7 @@ fn load(dir: &Path, name: &str) -> Option<(Truth, Vec<f32>)> {
     Some((truth, mono))
 }
 
-/// The current `Beat` analyzer, driven the way the audio worker drives it.
-fn run_current_analyzer(audio: &[f32], sr: u32) -> TrackerRun {
-    const CHUNK: usize = 256;
-    let (_handle, mut proc) = beat::create(sr);
-    let latency = proc.output_latency_samples() as f64;
-    let mut run = TrackerRun::default();
-    let mut seen = 0u64;
-    for (i, chunk) in audio.chunks(CHUNK).enumerate() {
-        proc.step(chunk);
-        let t = ((i + 1) * CHUNK) as f64 - latency;
-        let t = t / sr as f64;
-        run.tempo.push((t, proc.outputs().get(1).copied().unwrap_or(0.0) as f64));
-        let count = proc.onset_count();
-        for _ in seen..count {
-            run.onsets.push(t);
-        }
-        seen = count;
-    }
-    run
-}
-
-/// The beat tracker under development.
+/// Push the file through the tracker in small chunks, as the audio worker would.
 fn run_tracker(audio: &[f32], sr: u32, range: Option<(f64, f64)>) -> TrackerRun {
     const CHUNK: usize = 256;
     let mut tracker = match range {
@@ -172,39 +150,7 @@ fn scenario_names(filter: Option<&str>) -> Vec<String> {
 }
 
 fn score(dir: &Path, filter: Option<&str>) {
-    if std::env::args().nth(5).as_deref() != Some("baseline") {
-        score_tracker(dir, filter);
-        return;
-    }
-    println!("Current Beat analyzer (SuperFlux onsets + autocorrelation BPM), {}", dir.display());
-    println!(
-        "{:<26} {:>7} {:>7} {:>6} {:>6} {:>7} {:>7} {:>8} {:>8}",
-        "scenario", "true", "ratio", "acc1", "acc2", "lock s", "on/beat", "beat-hit", "on-grid"
-    );
-    let mut names: Vec<String> = scenarios::all().iter().map(|s| s.name.to_string()).collect();
-    names.retain(|n| matches(n, filter));
-    for name in names {
-        let Some((truth, audio)) = load(dir, &name) else {
-            println!("{name:<26} (missing; run `bench generate` first)");
-            continue;
-        };
-        let run = run_current_analyzer(&audio, truth.sample_rate);
-        let t = metrics::score_tempo(&truth, &run);
-        let o = metrics::score_onsets(&truth, &run);
-        let mid_bpm = truth.bpm_at(truth.duration_s * 0.5);
-        println!(
-            "{:<26} {:>7.1} {:>7.2} {:>5.0}% {:>5.0}% {:>7} {:>7.1} {:>7.0}% {:>7.0}%",
-            name,
-            mid_bpm,
-            t.median_ratio,
-            t.acc1 * 100.0,
-            t.acc2 * 100.0,
-            t.lock_s.map(|s| format!("{s:.1}")).unwrap_or_else(|| "never".into()),
-            o.onsets_per_beat,
-            o.beat_hit * 100.0,
-            o.on_grid * 100.0,
-        );
-    }
+    score_tracker(dir, filter);
 }
 
 #[cfg(test)]

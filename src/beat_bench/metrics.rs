@@ -7,8 +7,6 @@ use super::truth::Truth;
 pub struct TrackerRun {
     /// (time, bpm) estimates; bpm 0 means "no estimate yet".
     pub tempo: Vec<(f64, f64)>,
-    /// Times at which the tracker fired an onset.
-    pub onsets: Vec<f64>,
     /// (time, beats since start) of the tracker's beat clock.
     pub phase: Vec<(f64, f64)>,
     /// (time, position in the bar in beats, 0..4).
@@ -80,44 +78,6 @@ pub fn score_tempo(truth: &Truth, run: &TrackerRun) -> TempoScore {
         acc2: if n > 0 { ok2 as f64 / n as f64 } else { f64::NAN },
         median_ratio: median(&mut ratios),
         lock_s,
-    }
-}
-
-pub struct OnsetScore {
-    pub onsets_per_beat: f64,
-    /// Share of true beats with an onset within 50 ms.
-    pub beat_hit: f64,
-    /// Share of onsets within 40 ms of some sixteenth of the true grid.
-    pub on_grid: f64,
-}
-
-pub fn score_onsets(truth: &Truth, run: &TrackerRun) -> OnsetScore {
-    let beats: Vec<f64> = truth.beats.iter().copied().filter(|t| *t >= WARMUP_S && !truth.is_skipped(*t)).collect();
-    let onsets: Vec<f64> = run.onsets.iter().copied().filter(|t| *t >= WARMUP_S && !truth.is_skipped(*t)).collect();
-
-    let hits = beats
-        .iter()
-        .filter(|&&b| onsets.iter().any(|&o| (o - b).abs() <= 0.05))
-        .count();
-
-    let on_grid = onsets
-        .iter()
-        .filter(|&&o| {
-            let i = truth.beats.partition_point(|&b| b <= o);
-            if i == 0 || i >= truth.beats.len() {
-                return false;
-            }
-            let (b0, b1) = (truth.beats[i - 1], truth.beats[i]);
-            let quarter = (b1 - b0) / 4.0;
-            let pos = (o - b0) / quarter;
-            (pos - pos.round()).abs() * quarter <= 0.04
-        })
-        .count();
-
-    OnsetScore {
-        onsets_per_beat: if beats.is_empty() { f64::NAN } else { onsets.len() as f64 / beats.len() as f64 },
-        beat_hit: if beats.is_empty() { f64::NAN } else { hits as f64 / beats.len() as f64 },
-        on_grid: if onsets.is_empty() { f64::NAN } else { on_grid as f64 / onsets.len() as f64 },
     }
 }
 

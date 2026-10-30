@@ -14,7 +14,6 @@
 //!   the same audio sample window. This is what makes onsets, envelope
 //!   levels, and peak meters phase-coherent in the graph.
 
-pub mod beat;
 pub mod beat_clock;
 pub mod envelope;
 pub mod onset;
@@ -32,7 +31,6 @@ pub use worker::{AnalyzerWorker, SharedAnalyzerFrame};
 /// Persistent identifier for an analyzer type.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum AnalyzerKind {
-    Beat,
     /// Tempo, beat and bar position as phases; see `beat_clock`.
     BeatClock,
     Onset,
@@ -41,11 +39,10 @@ pub enum AnalyzerKind {
 }
 
 impl AnalyzerKind {
-    pub const ALL: [Self; 5] = [Self::Beat, Self::BeatClock, Self::Onset, Self::PeakLevel, Self::Envelope];
+    pub const ALL: [Self; 4] = [Self::BeatClock, Self::Onset, Self::PeakLevel, Self::Envelope];
 
     pub fn label(&self) -> &'static str {
         match self {
-            AnalyzerKind::Beat => "Beat (onset + BPM)",
             AnalyzerKind::BeatClock => "Beat clock (tempo, beat, bar)",
             AnalyzerKind::Onset => "Onset (LP)",
             AnalyzerKind::PeakLevel => "Peak Level",
@@ -57,10 +54,6 @@ impl AnalyzerKind {
     /// port declaration and for display slicing in the Audio Input node.
     pub fn outputs(&self) -> Vec<PortDef> {
         match self {
-            AnalyzerKind::Beat => vec![
-                PortDef::new("onset", PortType::Logic),
-                PortDef::new("bpm", PortType::Untyped),
-            ],
             AnalyzerKind::BeatClock => vec![
                 PortDef::new("beat", PortType::Logic),
                 PortDef::new("beat phase", PortType::Phase),
@@ -87,7 +80,6 @@ impl AnalyzerKind {
     /// reflects the actual (possibly-edited) param values.
     pub fn default_params(&self) -> Vec<ParamDef> {
         match self {
-            AnalyzerKind::Beat => beat::beat_params(),
             AnalyzerKind::BeatClock => beat_clock::clock_params(),
             AnalyzerKind::Onset => onset::onset_params(),
             AnalyzerKind::PeakLevel => peak_level::peak_params(),
@@ -177,10 +169,35 @@ pub fn create_analyzer(
     sample_rate: u32,
 ) -> (AnalyzerHandle, Box<dyn AnalyzerProc>) {
     match kind {
-        AnalyzerKind::Beat => beat::create(sample_rate),
         AnalyzerKind::BeatClock => beat_clock::create(sample_rate),
         AnalyzerKind::Onset => onset::create(sample_rate),
         AnalyzerKind::PeakLevel => peak_level::create(sample_rate),
         AnalyzerKind::Envelope => envelope::create(sample_rate),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Saved projects wire to analyzer outputs by index, so the layout is a
+    /// contract. Moving these ports means migrating the saved wires.
+    #[test]
+    fn beat_clock_port_layout_is_stable() {
+        let names: Vec<String> = AnalyzerKind::BeatClock.outputs().into_iter().map(|p| p.name).collect();
+        assert_eq!(
+            names,
+            ["beat", "beat phase", "bar phase", "16th phase", "step", "bpm", "confidence"]
+        );
+        assert_eq!(beat_clock::clock_params().len(), 4);
+    }
+
+    #[test]
+    fn every_analyzer_declares_as_many_outputs_as_it_produces() {
+        for kind in AnalyzerKind::ALL {
+            let (_handle, proc) = create_analyzer(kind, 44_100);
+            assert_eq!(proc.num_outputs(), kind.outputs().len(), "{kind:?}");
+            assert_eq!(proc.outputs().len(), kind.outputs().len(), "{kind:?}");
+        }
     }
 }

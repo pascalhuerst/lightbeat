@@ -363,12 +363,10 @@ src/
   `bar phase`, `16th phase`, `step` (0..15), `bpm`, `confidence`. Params
   `min_bpm`/`max_bpm` (a range under one octave is what decides 87 vs 174
   BPM), `bar_shift` (sixteenths, to fix the bar start by ear) and `lead_ms`.
-  The older `Beat` analyzer fires on every onset and is not a beat clock.
 - Outputs update once per audio chunk (~10-20 ms), like every analyzer.
 - **Test bench**: `lightbeat bench generate [dir] [name]` writes synthetic
   dance music with an exact beat/bar grid (`beat_bench_data/`, gitignored);
-  `lightbeat bench score [dir] [name] [baseline]` scores the tracker (or the
-  old analyzer) with no window. `BENCH_BAR_DEBUG=1` prints diagnostics. Run it
+  `lightbeat bench score [dir] [name]` scores the tracker with no window. `BENCH_BAR_DEBUG=1` prints diagnostics. Run it
   after any change to `audio/tracker/` and read the per-scenario table; the
   `cargo test` cases only guard the basics. Synthetic audio is easier than
   records, so real clips should be added as `name.wav` + `name.json`.
