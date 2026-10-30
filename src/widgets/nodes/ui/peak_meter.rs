@@ -5,7 +5,7 @@ use egui::{self, Color32, Pos2, Rect, Sense, Stroke, StrokeKind, Ui};
 use crate::engine::nodes::ui::peak_meter::{PeakMeterDisplay, PeakMeterOrientation};
 use crate::engine::types::*;
 use crate::theme;
-use crate::widgets::nodes::node::NodeWidget;
+use crate::widgets::nodes::node::{NodeLayout, NodeWidget, PORT_RADIUS};
 use crate::widgets::nodes::types::UiPortDef;
 
 // ---- visual / behavior constants ------------------------------------------
@@ -109,6 +109,8 @@ impl NodeWidget for PeakMeterWidget {
     }
     fn ui_outputs(&self) -> Vec<UiPortDef> { vec![] }
 
+    // The dB scale sits at the left edge, where the inputs are.
+    fn layout(&self) -> NodeLayout { NodeLayout::compact().with_side_inset(PORT_RADIUS + 2.0) }
     fn min_width(&self) -> f32 { 80.0 }
     fn min_content_height(&self) -> f32 { 100.0 }
     fn resizable(&self) -> bool { true }

@@ -372,18 +372,7 @@ impl NodeGraph {
 
         for (i, node) in level.nodes.iter().enumerate() {
             let pos = level.states[i].pos;
-            let min_w = node.min_width();
-            let inputs = node.ui_inputs_full();
-            let outputs = node.ui_outputs();
-            let in_types: Vec<PortType> = inputs.iter().map(|p| p.def.port_type).collect();
-            let out_types: Vec<PortType> = outputs.iter().map(|p| p.def.port_type).collect();
-            let port_h = ports_height(&in_types, &out_types);
-            let content_h = PORT_START_Y + node.min_content_height() + NODE_PADDING;
-            let min_h = port_h.max(content_h);
-            let size = level.states[i]
-                .size_override
-                .map(|s| Vec2::new(s.x.max(min_w), s.y.max(min_h)))
-                .unwrap_or(Vec2::new(min_w, min_h));
+            let size = node_size(node.as_ref(), level.states[i].size_override);
 
             min_x = min_x.min(pos.x);
             min_y = min_y.min(pos.y);
@@ -738,7 +727,7 @@ impl NodeGraph {
                 let in_types: Vec<PortType> = inputs.iter().map(|p| p.def.port_type).collect();
                 let mut base = 0usize;
                 for (pi, up) in inputs.iter().enumerate() {
-                    let pos = port_pos_z(rect.min, rect.width(), PortDir::Input, &in_types, pi, z);
+                    let pos = port_pos_in(rect, &level.nodes[i].layout(), PortDir::Input, &in_types, pi, z);
                     if pos.distance(pointer) < radius {
                         found = Some((
                             make_port_id(node_id, PortDir::Input, pi),
@@ -754,7 +743,7 @@ impl NodeGraph {
                 let out_types: Vec<PortType> = outputs.iter().map(|p| p.def.port_type).collect();
                 let mut base = 0usize;
                 for (pi, up) in outputs.iter().enumerate() {
-                    let pos = port_pos_z(rect.min, rect.width(), PortDir::Output, &out_types, pi, z);
+                    let pos = port_pos_in(rect, &level.nodes[i].layout(), PortDir::Output, &out_types, pi, z);
                     if pos.distance(pointer) < radius {
                         found = Some((
                             make_port_id(node_id, PortDir::Output, pi),
@@ -894,7 +883,7 @@ impl NodeGraph {
             let outs = level.nodes[i].ui_outputs();
             let out_types: Vec<PortType> = outs.iter().map(|p| p.def.port_type).collect();
             for (pi, _) in outs.iter().enumerate() {
-                let pos = port_pos_z(rect.min, rect.width(), PortDir::Output, &out_types, pi, z);
+                let pos = port_pos_in(rect, &level.nodes[i].layout(), PortDir::Output, &out_types, pi, z);
                 if pos.distance(pointer) < radius {
                     ui.ctx().set_cursor_icon(egui::CursorIcon::Crosshair);
                     return;
@@ -903,7 +892,7 @@ impl NodeGraph {
             let ins = level.nodes[i].ui_inputs_full();
             let in_types: Vec<PortType> = ins.iter().map(|p| p.def.port_type).collect();
             for (pi, _) in ins.iter().enumerate() {
-                let pos = port_pos_z(rect.min, rect.width(), PortDir::Input, &in_types, pi, z);
+                let pos = port_pos_in(rect, &level.nodes[i].layout(), PortDir::Input, &in_types, pi, z);
                 if pos.distance(pointer) < radius {
                     ui.ctx().set_cursor_icon(egui::CursorIcon::Crosshair);
                     return;
@@ -928,10 +917,7 @@ impl NodeGraph {
         // --- Node title bar: Grab = "drag to move".
         for i in (0..level.nodes.len()).rev() {
             if i >= node_rects.len() { break; }
-            let title_rect = Rect::from_min_size(
-                node_rects[i].min,
-                Vec2::new(node_rects[i].width(), NODE_TITLE_HEIGHT * z),
-            );
+            let title_rect = title_bar_rect(node_rects[i], &level.nodes[i].layout(), z);
             if title_rect.contains(pointer) {
                 ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
                 return;
@@ -1400,19 +1386,7 @@ impl NodeGraph {
         let level = self.active();
         let node_rects: Vec<Rect> = (0..level.nodes.len())
             .map(|i| {
-                let n = &level.nodes[i];
-                let min_w = n.min_width();
-                let inputs = n.ui_inputs_full();
-                let outputs = n.ui_outputs();
-                let in_types: Vec<PortType> = inputs.iter().map(|p| p.def.port_type).collect();
-                let out_types: Vec<PortType> = outputs.iter().map(|p| p.def.port_type).collect();
-                let port_h = ports_height(&in_types, &out_types);
-                let content_h = PORT_START_Y + n.min_content_height() + NODE_PADDING;
-                let min_h = port_h.max(content_h);
-                let size = level.states[i]
-                    .size_override
-                    .map(|s| Vec2::new(s.x.max(min_w), s.y.max(min_h)))
-                    .unwrap_or(Vec2::new(min_w, min_h));
+                let size = node_size(level.nodes[i].as_ref(), level.states[i].size_override);
                 let pos = Pos2::new(
                     level.states[i].pos.x * z,
                     level.states[i].pos.y * z,
@@ -1460,6 +1434,7 @@ impl NodeGraph {
                 &out_highlights,
                 disabled,
                 node_rects[i],
+                &level.nodes[i].layout(),
                 selected,
                 portal_peer,
                 level.nodes[i].show_port_labels(),
@@ -1478,7 +1453,7 @@ impl NodeGraph {
         let level = self.active_mut();
         for i in 0..level.nodes.len() {
             let rect = node_rects[i];
-            let content_rect = node_content_rect(rect, z);
+            let content_rect = content_rect(rect, &level.nodes[i].layout(), z);
             // Intersect with the canvas so node UI doesn't paint over panels
             // (inspector, status bar) when a node is partially off-canvas.
             let clip_rect = content_rect.intersect(canvas_clip);
@@ -1522,7 +1497,7 @@ impl NodeGraph {
             if !disabled { continue; }
             let rect = node_rects[i];
             let body_rect = Rect::from_min_max(
-                Pos2::new(rect.min.x, rect.min.y + NODE_TITLE_HEIGHT * z),
+                Pos2::new(rect.min.x, rect.min.y + level.nodes[i].layout().title_h * z),
                 rect.max,
             );
             painter.rect_filled(
@@ -2071,18 +2046,7 @@ impl NodeGraph {
         let origin = canvas_rect.min.to_vec2() + level.pan;
         for &i in &self.selected_nodes {
             if i >= level.nodes.len() { continue; }
-            let n = &level.nodes[i];
-            let min_w = n.min_width();
-            let inputs = n.ui_inputs_full();
-            let outputs = n.ui_outputs();
-            let in_types: Vec<PortType> = inputs.iter().map(|p| p.def.port_type).collect();
-            let out_types: Vec<PortType> = outputs.iter().map(|p| p.def.port_type).collect();
-            let port_h = ports_height(&in_types, &out_types);
-            let content_h = PORT_START_Y + n.min_content_height() + NODE_PADDING;
-            let min_h = port_h.max(content_h);
-            let size = level.states[i].size_override
-                .map(|s| Vec2::new(s.x.max(min_w), s.y.max(min_h)))
-                .unwrap_or(Vec2::new(min_w, min_h));
+            let size = node_size(level.nodes[i].as_ref(), level.states[i].size_override);
             let pos = Pos2::new(level.states[i].pos.x * z, level.states[i].pos.y * z) + origin;
             let rect = Rect::from_min_size(pos, size * z);
             if rect.contains(screen_pos) {
@@ -2290,8 +2254,8 @@ impl NodeGraph {
                     if level.states[i].id == dc_from_node {
                         continue;
                     }
-                    let pos = port_pos_z(
-                        node_rects[i].min, node_rects[i].width(),
+                    let pos = port_pos_in(
+                        node_rects[i], &level.nodes[i].layout(),
                         target_dir, &port_types, pi, z);
                     let dist = pos.distance(pointer_pos);
                     if dist < best_dist {
@@ -2408,7 +2372,7 @@ impl NodeGraph {
                 let outputs = level.nodes[i].ui_outputs();
                 let out_types: Vec<PortType> = outputs.iter().map(|p| p.def.port_type).collect();
                 for (pi, ui_port) in outputs.iter().enumerate() {
-                    let pos = port_pos_z(rect.min, rect.width(), PortDir::Output, &out_types, pi, z);
+                    let pos = port_pos_in(rect, &level.nodes[i].layout(), PortDir::Output, &out_types, pi, z);
                     if pos.distance(pointer_pos) < (PORT_RADIUS + 4.0) * z {
                         self.drag.drawing_conn = Some(DrawingConnection {
                             from: make_port_id(node_id, PortDir::Output, pi),
@@ -2428,7 +2392,7 @@ impl NodeGraph {
                     .iter()
                     .enumerate()
                     .map(|(pi, up)| {
-                        let pos = port_pos_z(rect.min, rect.width(), PortDir::Input, &in_types, pi, z);
+                        let pos = port_pos_in(rect, &level.nodes[i].layout(), PortDir::Input, &in_types, pi, z);
                         (pi, pos, up.def.port_type)
                     })
                     .collect();
@@ -2517,16 +2481,9 @@ impl NodeGraph {
         if let Some(idx) = self.drag.resizing_node {
             if primary_down {
                 let level = self.active();
-                let n = &level.nodes[idx];
-                let min_w = n.min_width();
-                let inputs = n.ui_inputs_full();
-                let outputs = n.ui_outputs();
-                let in_types: Vec<PortType> = inputs.iter().map(|p| p.def.port_type).collect();
-                let out_types: Vec<PortType> = outputs.iter().map(|p| p.def.port_type).collect();
-                let port_h = ports_height(&in_types, &out_types);
-                let content_h = PORT_START_Y + n.min_content_height() + NODE_PADDING;
-                let min_h = port_h.max(content_h);
-                let current = level.states[idx].size_override.unwrap_or(Vec2::new(min_w, min_h));
+                let min = node_size(level.nodes[idx].as_ref(), None);
+                let (min_w, min_h) = (min.x, min.y);
+                let current = level.states[idx].size_override.unwrap_or(min);
                 let new_size = Vec2::new(
                     (current.x + drag_delta.x / z).max(min_w),
                     (current.y + drag_delta.y / z).max(min_h),
@@ -2571,7 +2528,9 @@ impl NodeGraph {
                     let mut toggle_hit: Option<usize> = None;
                     for i in (0..self.active().nodes.len()).rev() {
                         if i >= node_rects.len() { break; }
-                        let t = title_toggle_rect(node_rects[i], z);
+                        let layout = self.active().nodes[i].layout();
+                        if !layout.toggle { continue; }
+                        let t = title_toggle_rect(node_rects[i], layout.title_h, z);
                         if t.contains(pointer_pos) {
                             toggle_hit = Some(i);
                             break;
@@ -2615,10 +2574,7 @@ impl NodeGraph {
                                     sub.wants_open = true;
                                 }
 
-                    let title_rect = Rect::from_min_size(
-                        node_rects[i].min,
-                        Vec2::new(node_rects[i].width(), NODE_TITLE_HEIGHT * z),
-                    );
+                    let title_rect = title_bar_rect(node_rects[i], &self.active().nodes[i].layout(), z);
                     // Don't start a drag when modifier-clicking — the user is
                     // just toggling selection membership.
                     if title_rect.contains(pointer_pos) && !double_clicked && !shift && !ctrl {
@@ -2757,7 +2713,7 @@ impl NodeGraph {
             let outs = level.nodes[i].ui_outputs();
             let out_types: Vec<PortType> = outs.iter().map(|p| p.def.port_type).collect();
             for (pi, ui_port) in outs.iter().enumerate() {
-                let pos = port_pos_z(rect.min, rect.width(), PortDir::Output, &out_types, pi, z);
+                let pos = port_pos_in(rect, &level.nodes[i].layout(), PortDir::Output, &out_types, pi, z);
                 if pos.distance(pointer_pos) < (PORT_RADIUS + 4.0) * z {
                     ui.ctx().set_cursor_icon(CursorIcon::PointingHand);
                     egui::show_tooltip_at(ui.ctx(), ui.layer_id(), egui::Id::new(("port_tip", i, pi, 1)), pos + egui::vec2(10.0, -10.0), |ui| {
@@ -2768,7 +2724,7 @@ impl NodeGraph {
             let ins = level.nodes[i].ui_inputs_full();
             let in_types: Vec<PortType> = ins.iter().map(|p| p.def.port_type).collect();
             for (pi, ui_port) in ins.iter().enumerate() {
-                let pos = port_pos_z(rect.min, rect.width(), PortDir::Input, &in_types, pi, z);
+                let pos = port_pos_in(rect, &level.nodes[i].layout(), PortDir::Input, &in_types, pi, z);
                 if pos.distance(pointer_pos) < (PORT_RADIUS + 4.0) * z {
                     ui.ctx().set_cursor_icon(CursorIcon::PointingHand);
                     egui::show_tooltip_at(ui.ctx(), ui.layer_id(), egui::Id::new(("port_tip", i, pi, 0)), pos + egui::vec2(10.0, -10.0), |ui| {
@@ -3442,14 +3398,7 @@ fn port_screen_pos_from_rects(
         PortDir::Output => nodes[idx].ui_outputs(),
     };
     let port_types: Vec<PortType> = ports.iter().map(|p| p.def.port_type).collect();
-    Some(port_pos_z(rect.min, rect.width(), port_id.dir, &port_types, port_id.index, zoom))
-}
-
-fn node_content_rect(rect: Rect, zoom: f32) -> Rect {
-    Rect::from_min_max(
-        Pos2::new(rect.min.x + (PORT_RADIUS + 8.0) * zoom, rect.min.y + PORT_START_Y * zoom),
-        Pos2::new(rect.max.x - (PORT_RADIUS + 8.0) * zoom, rect.max.y - NODE_PADDING * zoom),
-    )
+    Some(port_pos_in(rect, &nodes[idx].layout(), port_id.dir, &port_types, port_id.index, zoom))
 }
 
 
@@ -3457,8 +3406,8 @@ fn node_content_rect(rect: Rect, zoom: f32) -> Rect {
 /// right edge of the title bar). Shared between the renderer and the
 /// interaction hit-test so the click region and the visible glyph are
 /// always aligned.
-fn title_toggle_rect(node_rect: Rect, zoom: f32) -> Rect {
-    let title_h = NODE_TITLE_HEIGHT * zoom;
+fn title_toggle_rect(node_rect: Rect, title_height: f32, zoom: f32) -> Rect {
+    let title_h = title_height * zoom;
     let btn_size = 14.0 * zoom;
     let inset = 5.0 * zoom;
     let cx = node_rect.max.x - inset - btn_size * 0.5;
@@ -3479,6 +3428,7 @@ fn draw_node_chrome(
     out_highlights: &[f32],
     disabled: bool,
     rect: Rect,
+    layout: &NodeLayout,
     selected: bool,
     portal_peer: bool,
     show_port_labels: bool,
@@ -3488,8 +3438,10 @@ fn draw_node_chrome(
     zoom: f32,
 ) {
     // Shadow
-    let shadow_rect = rect.translate(Vec2::new(3.0, 3.0));
-    painter.rect_filled(shadow_rect, NODE_CORNER_RADIUS, Color32::from_black_alpha(60));
+    if !layout.bare {
+        let shadow_rect = rect.translate(Vec2::new(3.0, 3.0));
+        painter.rect_filled(shadow_rect, NODE_CORNER_RADIUS, Color32::from_black_alpha(60));
+    }
 
     // Portal-peer halo: when a portal is the peer of a currently-selected
     // portal, paint an amber halo so the linked pair is easy to find.
@@ -3508,8 +3460,10 @@ fn draw_node_chrome(
 
     // Body — darker flat gray when disabled so the overlay later looks
     // uniform, regular dark when enabled.
-    let body_bg = if disabled { theme::BG } else { theme::BG };
-    painter.rect_filled(rect, NODE_CORNER_RADIUS, body_bg);
+    // A bare node has no body of its own: its widget fills the node.
+    if !layout.bare {
+        painter.rect_filled(rect, NODE_CORNER_RADIUS, theme::BG);
+    }
 
     // Title bar — accent-tinted when enabled; when disabled, strip the
     // accent and use a neutral darker gray so no colour leaks into the
@@ -3521,7 +3475,7 @@ fn draw_node_chrome(
             .map(|a| mix_color(a, theme::BG_HIGH, 0.7))
             .unwrap_or(theme::BG_HIGH)
     };
-    let title_rect = Rect::from_min_size(rect.min, Vec2::new(rect.width(), NODE_TITLE_HEIGHT * zoom));
+    let title_rect = title_bar_rect(rect, layout, zoom);
     painter.rect_filled(
         title_rect,
         egui::CornerRadius { nw: NODE_CORNER_RADIUS as u8, ne: NODE_CORNER_RADIUS as u8, sw: 0, se: 0 },
@@ -3532,7 +3486,8 @@ fn draw_node_chrome(
     // an accent_icon, render it immediately before the title as a visual
     // hook (portals, macros, etc.).
     let title_color = if disabled { theme::TEXT_DIM } else { theme::TEXT_BRIGHT };
-    let title_font = egui::FontId::proportional(13.0 * zoom);
+    let title_font = egui::FontId::proportional(if layout.bare { 10.0 } else { 13.0 } * zoom);
+    let title = if layout.show_title { title } else { "" };
     let title_galley = painter.layout_no_wrap(title.to_string(), title_font.clone(), title_color);
     let icon_galley = accent_icon.map(|g| {
         painter.layout_no_wrap(g.to_string(), title_font.clone(), title_color)
@@ -3541,7 +3496,8 @@ fn draw_node_chrome(
     let total_w = title_galley.size().x
         + icon_galley.as_ref().map(|g| g.size().x + gap).unwrap_or(0.0);
     // Shift the block left so it doesn't crash into the disable toggle.
-    let mut cursor_x = title_rect.center().x - total_w * 0.5 - 10.0 * zoom;
+    let toggle_room = if layout.toggle { 10.0 } else { 0.0 };
+    let mut cursor_x = title_rect.center().x - total_w * 0.5 - toggle_room * zoom;
     let center_y = title_rect.center().y;
     if let Some(ig) = icon_galley {
         let pos = Pos2::new(cursor_x, center_y - ig.size().y * 0.5);
@@ -3552,22 +3508,24 @@ fn draw_node_chrome(
     painter.galley(title_pos, title_galley, title_color);
 
     // Enable / disable toggle at the right of the title bar.
-    let toggle = title_toggle_rect(rect, zoom);
-    let (fg, stroke_col) = if disabled {
-        (theme::STROKE, theme::TEXT_DIM)
-    } else {
-        (theme::SEM_SUCCESS, Color32::from_rgb(200, 240, 220))
-    };
-    // Outer ring.
-    painter.circle_stroke(toggle.center(), toggle.width() * 0.4,
-        Stroke::new(1.5 * zoom.max(0.5), stroke_col));
-    // Inner "power" stub — a short vertical tick through the top of the ring.
-    let tick_top = Pos2::new(toggle.center().x, toggle.center().y - toggle.height() * 0.38);
-    let tick_bot = Pos2::new(toggle.center().x, toggle.center().y - toggle.height() * 0.08);
-    painter.line_segment([tick_top, tick_bot], Stroke::new(1.5 * zoom.max(0.5), stroke_col));
-    // Filled dot when enabled so the active state reads at a glance.
-    if !disabled {
-        painter.circle_filled(toggle.center(), toggle.width() * 0.15, fg);
+    if layout.toggle {
+        let toggle = title_toggle_rect(rect, layout.title_h, zoom);
+        let (fg, stroke_col) = if disabled {
+            (theme::STROKE, theme::TEXT_DIM)
+        } else {
+            (theme::SEM_SUCCESS, Color32::from_rgb(200, 240, 220))
+        };
+        // Outer ring.
+        painter.circle_stroke(toggle.center(), toggle.width() * 0.4,
+            Stroke::new(1.5 * zoom.max(0.5), stroke_col));
+        // Inner "power" stub — a short vertical tick through the top of the ring.
+        let tick_top = Pos2::new(toggle.center().x, toggle.center().y - toggle.height() * 0.38);
+        let tick_bot = Pos2::new(toggle.center().x, toggle.center().y - toggle.height() * 0.08);
+        painter.line_segment([tick_top, tick_bot], Stroke::new(1.5 * zoom.max(0.5), stroke_col));
+        // Filled dot when enabled so the active state reads at a glance.
+        if !disabled {
+            painter.circle_filled(toggle.center(), toggle.width() * 0.15, fg);
+        }
     }
 
     // Border. Priority: selected > disabled > portal_peer > accent > default.
@@ -3581,6 +3539,9 @@ fn draw_node_chrome(
         Stroke::new(2.0, theme::SEM_WARNING)
     } else if let Some(a) = accent {
         Stroke::new(1.5, a)
+    } else if layout.bare {
+        // No frame unless something marks the node: the widget is the node.
+        Stroke::NONE
     } else {
         Stroke::new(1.0, theme::STROKE)
     };
@@ -3590,7 +3551,7 @@ fn draw_node_chrome(
     let in_types: Vec<PortType> = inputs.iter().map(|p| p.def.port_type).collect();
     let out_types: Vec<PortType> = outputs.iter().map(|p| p.def.port_type).collect();
     for (i, ui_port) in inputs.iter().enumerate() {
-        let pos = port_pos_z(rect.min, rect.width(), PortDir::Input, &in_types, i, zoom);
+        let pos = port_pos_in(rect, layout, PortDir::Input, &in_types, i, zoom);
         let hi = in_highlights.get(i).copied().unwrap_or(0.0);
         draw_port(painter, pos, ui_port, hi, zoom, disabled);
         if show_port_labels {
@@ -3604,7 +3565,7 @@ fn draw_node_chrome(
 
     // Output ports
     for (i, ui_port) in outputs.iter().enumerate() {
-        let pos = port_pos_z(rect.min, rect.width(), PortDir::Output, &out_types, i, zoom);
+        let pos = port_pos_in(rect, layout, PortDir::Output, &out_types, i, zoom);
         let hi = out_highlights.get(i).copied().unwrap_or(0.0);
         draw_port(painter, pos, ui_port, hi, zoom, disabled);
         if show_port_labels {
@@ -4008,15 +3969,14 @@ fn port_screen_pos(
 ) -> Option<Pos2> {
     let idx = states.iter().position(|s| s.id == port_id.node)?;
     let pos = Pos2::new(states[idx].pos.x * zoom, states[idx].pos.y * zoom) + origin;
-    let width = states[idx].size_override
-        .map(|s| s.x)
-        .unwrap_or(nodes[idx].min_width()) * zoom;
+    let size = node_size(nodes[idx].as_ref(), states[idx].size_override) * zoom;
+    let rect = Rect::from_min_size(pos, size);
     let ports = match port_id.dir {
         PortDir::Input => nodes[idx].ui_inputs_full(),
         PortDir::Output => nodes[idx].ui_outputs(),
     };
     let port_types: Vec<PortType> = ports.iter().map(|p| p.def.port_type).collect();
-    Some(port_pos_z(pos, width, port_id.dir, &port_types, port_id.index, zoom))
+    Some(port_pos_in(rect, &nodes[idx].layout(), port_id.dir, &port_types, port_id.index, zoom))
 }
 
 fn port_type_for(

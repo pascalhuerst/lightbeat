@@ -7,7 +7,7 @@ use crate::engine::nodes::ui::fader_group::FaderGroupDisplay;
 use crate::engine::types::*;
 use crate::theme;
 use crate::widgets::fader::{self, highlight_alpha, FaderStyle, Orientation};
-use crate::widgets::nodes::node::NodeWidget;
+use crate::widgets::nodes::node::{NodeLayout, NodeWidget};
 use crate::widgets::nodes::types::UiPortDef;
 use crate::widgets::nodes::ui::fader::draw_override_indicator;
 
@@ -169,6 +169,7 @@ impl NodeWidget for FaderGroupWidget {
         })).collect()
     }
 
+    fn layout(&self) -> NodeLayout { NodeLayout::compact() }
     fn min_width(&self) -> f32 { (self.cols as f32 * 28.0).max(120.0) }
     fn min_content_height(&self) -> f32 { (self.rows as f32 * 60.0).max(80.0) }
     fn resizable(&self) -> bool { true }

@@ -5,7 +5,7 @@ use egui::{self, Color32, Pos2, Sense, Stroke, StrokeKind, Ui, Vec2};
 use crate::engine::nodes::ui::gradient_stops::GradientStopsDisplay;
 use crate::engine::types::*;
 use crate::theme;
-use crate::widgets::nodes::node::NodeWidget;
+use crate::widgets::nodes::node::{NodeLayout, NodeWidget};
 use crate::widgets::nodes::types::UiPortDef;
 
 const STRIP_HEIGHT: f32 = 22.0;
@@ -84,6 +84,7 @@ impl NodeWidget for GradientStopsWidget {
         ]
     }
 
+    fn layout(&self) -> NodeLayout { NodeLayout::compact() }
     fn min_width(&self) -> f32 { 220.0 }
     fn min_content_height(&self) -> f32 { STRIP_HEIGHT + HANDLE_TRACK_HEIGHT + 4.0 }
     fn resizable(&self) -> bool { true }

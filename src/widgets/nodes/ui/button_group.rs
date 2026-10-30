@@ -9,7 +9,7 @@ use crate::engine::nodes::ui::common::MouseOverrideMode;
 use crate::engine::types::*;
 use crate::theme;
 use crate::widgets::fader::highlight_alpha;
-use crate::widgets::nodes::node::NodeWidget;
+use crate::widgets::nodes::node::{NodeLayout, NodeWidget};
 use crate::widgets::nodes::types::UiPortDef;
 
 const HIGHLIGHT_DURATION: f64 = 0.5;
@@ -110,6 +110,7 @@ impl NodeWidget for ButtonGroupWidget {
         })).collect()
     }
 
+    fn layout(&self) -> NodeLayout { NodeLayout::compact() }
     fn min_width(&self) -> f32 { (self.cols as f32 * 40.0).max(120.0) }
     fn min_content_height(&self) -> f32 { (self.rows as f32 * 32.0).max(60.0) }
     fn resizable(&self) -> bool { true }

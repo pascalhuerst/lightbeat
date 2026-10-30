@@ -7,7 +7,7 @@ use crate::engine::nodes::ui::common::MouseOverrideMode;
 use crate::engine::types::*;
 use crate::theme;
 use crate::widgets::fader::highlight_alpha;
-use crate::widgets::nodes::node::NodeWidget;
+use crate::widgets::nodes::node::{NodeLayout, NodeWidget};
 use crate::widgets::nodes::types::UiPortDef;
 
 const HIGHLIGHT_DURATION: f64 = 0.5;
@@ -102,8 +102,11 @@ impl NodeWidget for ButtonWidget {
         vec![UiPortDef::from_def(&PortDef::new("out", PortType::Logic))]
     }
 
-    fn min_width(&self) -> f32 { 120.0 }
-    fn min_content_height(&self) -> f32 { 30.0 }
+    // The button is the node: a slim header to move it by, the output on
+    // its edge, and its label is on the button, not in the header.
+    fn layout(&self) -> NodeLayout { NodeLayout::compact().without_title() }
+    fn min_width(&self) -> f32 { 90.0 }
+    fn min_content_height(&self) -> f32 { 26.0 }
     fn resizable(&self) -> bool { true }
     fn shared_state(&self) -> &SharedState { &self.shared }
 
@@ -268,4 +271,28 @@ impl NodeWidget for ButtonWidget {
     }
 
     fn as_any_mut(&mut self) -> &mut dyn Any { self }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::widgets::nodes::node::node_size;
+
+    #[test]
+    fn a_button_is_just_a_header_and_the_button_with_the_output_on_its_edge() {
+        let b = ButtonWidget::new(NodeId(1), new_shared_state(1, 1));
+        let l = b.layout();
+        assert!(!l.toggle && !l.show_title && l.bare);
+        // 14 px header plus the 26 px button, nothing around it.
+        assert_eq!(node_size(&b, None), egui::Vec2::new(90.0, 14.0 + 26.0));
+    }
+
+    #[test]
+    fn a_resized_button_keeps_filling_its_node() {
+        let b = ButtonWidget::new(NodeId(1), new_shared_state(1, 1));
+        let size = node_size(&b, Some(egui::Vec2::new(200.0, 70.0)));
+        assert_eq!(size, egui::Vec2::new(200.0, 70.0));
+        // Smaller than the minimum is raised to it.
+        assert_eq!(node_size(&b, Some(egui::Vec2::new(10.0, 10.0))), egui::Vec2::new(90.0, 40.0));
+    }
 }

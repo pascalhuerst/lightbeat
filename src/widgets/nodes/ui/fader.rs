@@ -7,7 +7,7 @@ use crate::engine::nodes::ui::fader::{FaderDisplay, FaderOrientation};
 use crate::engine::types::*;
 use crate::theme;
 use crate::widgets::fader::{self, highlight_alpha, FaderStyle};
-use crate::widgets::nodes::node::NodeWidget;
+use crate::widgets::nodes::node::{NodeLayout, NodeWidget};
 use crate::widgets::nodes::types::UiPortDef;
 
 const HIGHLIGHT_DURATION: f64 = 0.5;
@@ -132,6 +132,7 @@ impl NodeWidget for FaderWidget {
         vec![UiPortDef::from_def(&PortDef::new("out", PortType::Untyped))]
     }
 
+    fn layout(&self) -> NodeLayout { NodeLayout::compact() }
     fn min_width(&self) -> f32 { 80.0 }
     fn min_content_height(&self) -> f32 { 80.0 }
     fn resizable(&self) -> bool { true }

@@ -5,7 +5,7 @@ use egui::{self, Color32, Pos2, Sense, Stroke, StrokeKind, Ui, Vec2};
 use crate::engine::nodes::ui::xy_pad::XyPadDisplay;
 use crate::engine::types::*;
 use crate::theme;
-use crate::widgets::nodes::node::NodeWidget;
+use crate::widgets::nodes::node::{NodeLayout, NodeWidget};
 use crate::widgets::nodes::types::UiPortDef;
 
 pub struct XyPadWidget {
@@ -67,6 +67,7 @@ impl NodeWidget for XyPadWidget {
         ]
     }
 
+    fn layout(&self) -> NodeLayout { NodeLayout::compact() }
     fn min_width(&self) -> f32 { 120.0 }
     fn min_content_height(&self) -> f32 { 120.0 }
     fn resizable(&self) -> bool { true }

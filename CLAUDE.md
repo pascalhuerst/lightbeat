@@ -418,6 +418,14 @@ src/
 
 - **No emojis in code or files** unless the user asks for them.
 - **No inline colors in widgets** — use `theme.rs` constants.
+- **Node shape comes from `NodeWidget::layout()`** (`NodeLayout` in `node.rs`):
+  title height, content area, first port, enable switch, frame. Controls that
+  are the point of their node (buttons, faders, pads, meters) return
+  `NodeLayout::compact()`: a slim header to grab, no switch, no frame, the
+  widget fills the node and a lone port sits on its edge at mid-height. Never
+  use the layout constants directly in the canvas; go through `node_size`,
+  `port_pos_in`, `content_rect` and `title_bar_rect`, so a new layout works
+  everywhere (drawing, hit-testing, wires, resizing).
 - **Comments** describe *why*, not what. Don't narrate steps. Don't add
   comments that just restate the next line.
 - **No backward-compat aliases** unless asked — the user is in active
