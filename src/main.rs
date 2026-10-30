@@ -223,6 +223,7 @@ struct LightBeatApp {
     last_autosave_time: f64,
     /// Whether the close-confirm modal is currently open.
     close_confirm_open: bool,
+    last_window_title: String,
     /// Set once the user chose Discard, so the close request that follows is
     /// not intercepted again while the project is still dirty.
     close_discarded: bool,
@@ -303,6 +304,9 @@ impl LightBeatApp {
         cc.egui_ctx.set_fonts(fonts);
 
         let config = AppConfig::load();
+        if config.msaa_samples > 0 {
+            cc.egui_ctx.tessellation_options_mut(|o| o.feathering = false);
+        }
         let beat_clock = BeatClock::new(4.0);
         let snapshot = beat_clock.snapshot();
         let dmx_shared = dmx_io::new_shared_dmx_state();
@@ -340,6 +344,7 @@ impl LightBeatApp {
             last_saved_project_json: None,
             last_autosave_time: 0.0,
             close_confirm_open: false,
+            last_window_title: String::new(),
             close_discarded: false,
             recover_prompt: None,
             show_dmx_monitor: false,
@@ -1772,10 +1777,36 @@ impl LightBeatApp {
     }
 }
 
+/// How long after the last input the UI keeps repainting at full rate.
+const ACTIVE_REPAINT_WINDOW: f64 = 2.0;
+/// Margin before the intended idle frame time, so the wake-up precedes the vblank it targets.
+const IDLE_WAKE_EARLY_SECS: f32 = 0.003;
+
 impl LightBeatApp {
     fn update_frame(&mut self, ctx: &egui::Context) {
-        ctx.request_repaint();
-        ctx.send_viewport_cmd(egui::ViewportCommand::Title(self.window_title()));
+        // Full rate while the user is working, a slower one when a show runs
+        // unattended: the canvas is expensive to redraw and a hardware
+        // controller changes things without touching the window.
+        let now = ctx.input(|i| i.time);
+        let idle_hz = self.config.idle_repaint_hz;
+        if idle_hz <= 0.0 || now - self.last_interaction_time < ACTIVE_REPAINT_WINDOW {
+            ctx.request_repaint();
+        } else {
+            // egui subtracts its predicted frame time from the delay so as not
+            // to overshoot, which on a vsynced display turns a 33 ms request
+            // into the next vsync, i.e. no slowdown at all. Add it back, and
+            // wake a little early so the swap lands on the intended vblank.
+            let predicted = ctx.input(|i| i.predicted_dt);
+            let wait = (1.0 / idle_hz - IDLE_WAKE_EARLY_SECS).max(0.0) + predicted;
+            ctx.request_repaint_after(std::time::Duration::from_secs_f32(wait));
+        }
+        // Only on change: the command reaches the window system every time
+        // it is sent, and with client-side decorations it redraws the title bar.
+        let title = self.window_title();
+        if title != self.last_window_title {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Title(title.clone()));
+            self.last_window_title = title;
+        }
 
         // Track window size / maximized state so on_exit can persist them.
         // Only record size when *not* maximized, so toggling maximize off on
@@ -1840,6 +1871,7 @@ impl LightBeatApp {
         // at 10 Hz instead of every frame loses nothing.
         const SNAPSHOT_MIN_INTERVAL: f64 = 0.1;
         let in_window = now - self.last_interaction_time < UNDO_SETTLE_WINDOW;
+        engine::sync_hint::set_interacting(in_window);
         let due = now - self.last_snapshot_time >= SNAPSHOT_MIN_INTERVAL;
         if in_window && due {
             self.last_snapshot_time = now;
@@ -2500,7 +2532,10 @@ impl LightBeatApp {
 }
 
 impl eframe::App for LightBeatApp {
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+    fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+        if let Some(secs) = frame.info().cpu_usage {
+            self.ui_timers.record_eframe(&self.perf, (secs * 1_000_000.0) as u64);
+        }
         let started = std::time::Instant::now();
         self.update_frame(ctx);
         self.ui_timers
@@ -2619,6 +2654,7 @@ fn main() -> eframe::Result {
     }
     let options = eframe::NativeOptions {
         viewport,
+        multisampling: saved.msaa_samples,
         ..Default::default()
     };
     eframe::run_native(

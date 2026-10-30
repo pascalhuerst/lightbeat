@@ -6,6 +6,8 @@ use ringbuf::traits::Consumer;
 use super::CommandConsumer;
 use super::nodes::meta::subgraph::SubgraphProcessNode;
 use super::promoted::PromotedInputs;
+use super::routing::RoutePlan;
+use super::sync_hint::SaveDataGate;
 use super::types::*;
 use crate::dmx_io::{DmxOutputManager, SharedDmxState, SharedObjectStore};
 use crate::perf::{EngineTickTimer, NodeProfiler, SharedPerfStats};
@@ -22,11 +24,13 @@ pub struct EngineGraph {
     node_index: HashMap<NodeId, usize>,
     /// Params the user turned into input ports, parallel to `nodes`.
     promoted: Vec<PromotedInputs>,
-    promoted_writes: Vec<(usize, usize, f32)>,
+    plan: RoutePlan,
+    save_data_gate: SaveDataGate,
+    /// Set by anything that can change routing or a node's ports; checked
+    /// each tick. Port counts changing on their own are caught separately.
+    plan_dirty: bool,
     /// Scratch buffers reused across ticks so the hot loop does not allocate.
-    per_node_connected: Vec<Vec<bool>>,
     disabled_mask: Vec<bool>,
-    write_buf: Vec<(usize, usize, f32)>,
     sync_counter: u32,
     node_profile: Option<NodeProfiler>,
 }
@@ -51,10 +55,10 @@ impl EngineGraph {
             perf,
             node_index: HashMap::new(),
             promoted: Vec::new(),
-            promoted_writes: Vec::new(),
-            per_node_connected: Vec::new(),
+            plan: RoutePlan::default(),
+            save_data_gate: SaveDataGate::default(),
+            plan_dirty: true,
             disabled_mask: Vec::new(),
-            write_buf: Vec::new(),
             sync_counter: 0,
             node_profile: NodeProfiler::from_env(),
         }
@@ -96,7 +100,29 @@ impl EngineGraph {
         self.connections.retain(|c| c.to != to);
     }
 
+    fn rebuild_plan(&mut self) {
+        self.plan = RoutePlan::build(
+            &self.nodes,
+            &self.node_index,
+            &self.connections,
+            &self.promoted,
+            &[],
+            &[],
+            None,
+            None,
+        );
+        for (i, node) in self.nodes.iter_mut().enumerate() {
+            let native = node.inputs().len();
+            node.set_input_connections(self.plan.native_connected(i, native));
+            if self.promoted[i].len() > 0 {
+                self.promoted[i].note_wiring(self.plan.promoted_connected(i, native));
+            }
+        }
+        self.plan_dirty = false;
+    }
+
     fn apply_command(&mut self, cmd: EngineCommand) {
+        self.plan_dirty = true;
         match cmd {
             EngineCommand::AddNode { node, shared } => {
                 self.add_node(node, shared);
@@ -185,6 +211,7 @@ impl EngineGraph {
 
     /// One tick of the engine: process all nodes, propagate signals, update shared state.
     fn tick(&mut self) {
+        let mut clock = crate::perf::PhaseClock::start();
         // 0. Take everything the UI pushed, in a single lock per node. This
         // runs before `process` so an edit lands on the tick it arrives, and
         // before the connection scan below because `load_data` can rebuild a
@@ -201,6 +228,9 @@ impl EngineGraph {
                 )
             };
             self.disabled_mask.push(disabled);
+            if promoted_update.is_some() || !pending.is_empty() || config_update.is_some() {
+                self.plan_dirty = true;
+            }
             if let Some(list) = promoted_update {
                 self.promoted[i].adopt(&list, node.as_ref());
             }
@@ -212,30 +242,16 @@ impl EngineGraph {
             }
         }
 
-        // 1. Compute per-node "which logical input ports are connected"
-        //    so nodes can decide whether to honour wired values over their
-        //    own params (the "input-overrides-param" pattern).
-        self.per_node_connected.resize_with(self.nodes.len(), Vec::new);
-        self.per_node_connected.truncate(self.nodes.len());
-        for (i, node) in self.nodes.iter().enumerate() {
-            let slots = node.inputs().len() + self.promoted[i].len();
-            let buf = &mut self.per_node_connected[i];
-            buf.clear();
-            buf.resize(slots, false);
+        clock.lap("[root] 0 take pending");
+
+        // 1. Re-resolve routing and the per-node "which input ports are
+        //    connected" bitmap (the "input-overrides-param" pattern) only when
+        //    something that could change them did.
+        if self.plan_dirty || !self.plan.is_current(&self.nodes, &[], &[]) {
+            self.rebuild_plan();
         }
-        for conn in &self.connections {
-            if let Some(&dst_idx) = self.node_index.get(&conn.to.node)
-                && let Some(slot) = self.per_node_connected[dst_idx].get_mut(conn.to.index) {
-                    *slot = true;
-                }
-        }
-        for (i, node) in self.nodes.iter_mut().enumerate() {
-            let native = node.inputs().len();
-            node.set_input_connections(&self.per_node_connected[i][..native]);
-            if self.promoted[i].len() > 0 {
-                self.promoted[i].note_wiring(&self.per_node_connected[i][native..]);
-            }
-        }
+
+        clock.lap("[root] 1 connected bitmap");
 
         // 2. Process all nodes — skipping disabled ones. Disabled nodes
         // keep their previous tick's output values, so downstream signal
@@ -258,54 +274,12 @@ impl EngineGraph {
             }
         }
 
+        clock.lap("[root] 2 process (nodes)");
+
         // 3. Propagate signals through connections.
         // Multi-channel ports (Color=3, Position=2) expand to multiple float copies.
-        let mut writes = std::mem::take(&mut self.write_buf);
-        writes.clear();
-        let mut promoted_writes = std::mem::take(&mut self.promoted_writes);
-        promoted_writes.clear();
-
-        for conn in &self.connections {
-            let (Some(&src_node_idx), Some(&dst_node_idx)) = (
-                self.node_index.get(&conn.from.node),
-                self.node_index.get(&conn.to.node),
-            ) else {
-                continue;
-            };
-
-            let src_ports = self.nodes[src_node_idx].outputs();
-            let dst_ports = self.nodes[dst_node_idx].inputs();
-
-            let src_base = port_base_index(src_ports, conn.from.index);
-
-            // Past the node's own inputs sit the promoted params; they take a
-            // single value and never go through `write_input`.
-            if conn.to.index >= dst_ports.len() {
-                let val = self.nodes[src_node_idx].read_output(src_base);
-                promoted_writes.push((dst_node_idx, conn.to.index - dst_ports.len(), val));
-                continue;
-            }
-
-            let dst_base = port_base_index(dst_ports, conn.to.index);
-
-            let src_channels = src_ports.get(conn.from.index).map(|p| p.port_type.channel_count()).unwrap_or(1);
-            let dst_channels = dst_ports.get(conn.to.index).map(|p| p.port_type.channel_count()).unwrap_or(1);
-            let channels = src_channels.min(dst_channels);
-
-            for ch in 0..channels {
-                let val = self.nodes[src_node_idx].read_output(src_base + ch);
-                writes.push((dst_node_idx, dst_base + ch, val));
-            }
-        }
-
-        for &(dst_idx, channel, val) in &writes {
-            self.nodes[dst_idx].write_input(channel, val);
-        }
-        self.write_buf = writes;
-        for &(dst_idx, slot, val) in &promoted_writes {
-            self.promoted[dst_idx].apply(self.nodes[dst_idx].as_mut(), slot, val);
-        }
-        self.promoted_writes = promoted_writes;
+        self.plan.run(&mut self.nodes, &mut self.promoted, &[], &mut []);
+        clock.lap("[root] 3 propagate");
 
         // 4. Update shared state for UI, at UI frame rate rather than tick
         // rate. `params()` allocates a fresh Vec of ParamDefs with owned
@@ -324,19 +298,23 @@ impl EngineGraph {
             self.sync_shared_state();
         }
 
+        clock.lap("[root] 4 ui sync");
+
         // 5. Tick the DMX output manager (merge overrides, send to interfaces).
         if let Some(dmx) = &mut self.dmx {
             dmx.tick();
         }
+        clock.lap("[root] 5 dmx");
     }
 
     fn sync_shared_state(&mut self) {
+        let sync_save_data = self.save_data_gate.due();
         for (i, node) in self.nodes.iter().enumerate() {
             let mut shared = self.shared_states[i].lock().unwrap();
             shared.inputs_connected.clear();
             shared
                 .inputs_connected
-                .extend_from_slice(&self.per_node_connected[i]);
+                .extend_from_slice(&self.plan.connected[i]);
             shared.non_promotable = node.non_promotable_params();
             if self.disabled_mask.get(i).copied().unwrap_or(false) {
                 continue;
@@ -350,7 +328,9 @@ impl EngineGraph {
                 shared.inputs[ch] = node.read_input(ch);
             }
             shared.current_params = node.params();
-            shared.save_data = node.save_data();
+            if sync_save_data {
+                shared.save_data = node.save_data();
+            }
             node.update_display(&mut shared);
         }
         for (i, node) in self.nodes.iter().enumerate() {

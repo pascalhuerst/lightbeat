@@ -53,8 +53,6 @@ pub struct InputControllerProcessNode {
     cache: Vec<InputCache>,
     /// Snapshot of current display info (for `update_display`).
     /// Includes the "any change" entry as the first element.
-    display_outputs: Vec<(String, PortType, f32)>,
-    display_feedback_inputs: Vec<(String, PortType)>,
     display_name: String,
     /// Shared input controller state.
     controllers: SharedControllers,
@@ -77,8 +75,6 @@ impl InputControllerProcessNode {
             any_changed: false,
             connected: false,
             cache: Vec::new(),
-            display_outputs: Vec::new(),
-            display_feedback_inputs: Vec::new(),
             display_name: String::new(),
             controllers,
             has_feedback: false,
@@ -106,8 +102,6 @@ impl ProcessNode for InputControllerProcessNode {
             self.any_changed = false;
             self.connected = false;
             self.prev_output_values.clear();
-            self.display_outputs.clear();
-            self.display_feedback_inputs.clear();
             self.display_name.clear();
             if self.outputs.len() != 2 || self.outputs[1].name != "any change" {
                 self.outputs = base_outputs();
@@ -204,17 +198,9 @@ impl ProcessNode for InputControllerProcessNode {
             .any(|(cur, prev)| cur != prev);
         self.prev_output_values.copy_from_slice(&self.output_values);
 
-        self.display_name = c.name.clone();
-        self.display_outputs = [
-            ("connected".to_string(), PortType::Logic, level(self.connected)),
-            ("any change".to_string(), PortType::Logic, level(self.any_changed)),
-        ].into_iter().chain(c.inputs.iter().enumerate().map(|(i, input)| {
-            (input.name.clone(), port_type_for(&input.source), self.output_values[i])
-        })).collect();
-        self.display_feedback_inputs = self.feedback_input_mapping_idx.iter().map(|&idx| {
-            let i = &c.inputs[idx];
-            (i.name.clone(), port_type_for(&i.source))
-        }).collect();
+        if self.display_name != c.name {
+            self.display_name = c.name.clone();
+        }
     }
 
     fn read_output(&self, pi: usize) -> f32 {
@@ -243,11 +229,24 @@ impl ProcessNode for InputControllerProcessNode {
     }
 
     fn update_display(&self, shared: &mut NodeSharedState) {
+        // Built here, not in `process`: the strings are only read once per
+        // UI sync and cloning them every tick dominated this node's cost.
+        let outputs = self
+            .outputs
+            .iter()
+            .enumerate()
+            .map(|(i, p)| (p.name.clone(), p.port_type, self.read_output(i)))
+            .collect();
+        let feedback_inputs = self
+            .inputs
+            .iter()
+            .map(|p| (p.name.clone(), p.port_type))
+            .collect();
         shared.display = Some(Box::new(InputControllerDisplay {
             controller_id: self.controller_id,
             controller_name: self.display_name.clone(),
-            outputs: self.display_outputs.clone(),
-            feedback_inputs: self.display_feedback_inputs.clone(),
+            outputs,
+            feedback_inputs,
         }));
     }
 }

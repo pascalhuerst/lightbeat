@@ -3,6 +3,8 @@ use crate::engine::nodes::display::value_display::ValueDisplayProcessNode;
 use crate::engine::types::*;
 use crate::engine::graph::UI_SYNC_EVERY_N_TICKS;
 use crate::engine::promoted::PromotedInputs;
+use crate::engine::routing::RoutePlan;
+use crate::engine::sync_hint::SaveDataGate;
 use std::any::Any;
 use std::collections::HashMap;
 
@@ -116,12 +118,13 @@ pub struct InnerGraph {
     index_stale: bool,
     /// Params the user turned into input ports, parallel to `nodes`.
     promoted: Vec<PromotedInputs>,
-    promoted_writes: Vec<(usize, usize, f32)>,
+    plan: RoutePlan,
+    save_data_gate: SaveDataGate,
+    /// Set by anything that can change routing or a node's ports; checked
+    /// each tick. Port counts changing on their own are caught separately.
+    plan_dirty: bool,
     /// Scratch buffers reused across ticks so the hot loop does not allocate.
-    per_node_connected: Vec<Vec<bool>>,
     disabled_mask: Vec<bool>,
-    write_buf: Vec<(usize, usize, f32)>,
-    bridge_write_buf: Vec<(usize, f32)>,
     sync_counter: u32,
 }
 
@@ -140,11 +143,10 @@ impl InnerGraph {
             node_index: HashMap::new(),
             index_stale: false,
             promoted: Vec::new(),
-            promoted_writes: Vec::new(),
-            per_node_connected: Vec::new(),
+            plan: RoutePlan::default(),
+            save_data_gate: SaveDataGate::default(),
+            plan_dirty: true,
             disabled_mask: Vec::new(),
-            write_buf: Vec::new(),
-            bridge_write_buf: Vec::new(),
             sync_counter: 0,
         }
     }
@@ -157,9 +159,31 @@ impl InnerGraph {
         self.index_stale = false;
     }
 
+    fn rebuild_plan(&mut self, input_ports: &[PortDef], output_ports: &[PortDef]) {
+        self.plan = RoutePlan::build(
+            &self.nodes,
+            &self.node_index,
+            &self.connections,
+            &self.promoted,
+            input_ports,
+            output_ports,
+            Some(BRIDGE_IN_NODE_ID),
+            Some(BRIDGE_OUT_NODE_ID),
+        );
+        for (i, node) in self.nodes.iter_mut().enumerate() {
+            let native = node.inputs().len();
+            node.set_input_connections(self.plan.native_connected(i, native));
+            if self.promoted[i].len() > 0 {
+                self.promoted[i].note_wiring(self.plan.promoted_connected(i, native));
+            }
+        }
+        self.plan_dirty = false;
+    }
+
     /// Run one tick of the inner graph. Mirrors `EngineGraph::tick`; keep the
     /// two in step when changing either.
     pub fn tick(&mut self, input_ports: &[PortDef], output_ports: &[PortDef]) {
+        let mut clock = crate::perf::PhaseClock::start();
         if self.index_stale {
             self.rebuild_node_index();
         }
@@ -179,6 +203,9 @@ impl InnerGraph {
                 )
             };
             self.disabled_mask.push(disabled);
+            if promoted_update.is_some() || !pending.is_empty() || config_update.is_some() {
+                self.plan_dirty = true;
+            }
             if let Some(list) = promoted_update {
                 self.promoted[i].adopt(&list, node.as_ref());
             }
@@ -190,29 +217,18 @@ impl InnerGraph {
             }
         }
 
-        // 1. Per-node connected-input bitmap so the "input-overrides-param"
-        //    pattern works inside subgraphs.
-        self.per_node_connected.resize_with(self.nodes.len(), Vec::new);
-        self.per_node_connected.truncate(self.nodes.len());
-        for (i, node) in self.nodes.iter().enumerate() {
-            let buf = &mut self.per_node_connected[i];
-            buf.clear();
-            buf.resize(node.inputs().len() + self.promoted[i].len(), false);
+        clock.lap("[inner] 0 take pending");
+
+        // 1. Re-resolve routing and the per-node connected-input bitmap (the
+        //    "input-overrides-param" pattern inside subgraphs) only when
+        //    something that could change them did.
+        if self.plan_dirty
+            || !self.plan.is_current(&self.nodes, input_ports, output_ports)
+        {
+            self.rebuild_plan(input_ports, output_ports);
         }
-        for conn in &self.connections {
-            if conn.to.node == BRIDGE_OUT_NODE_ID { continue; }
-            if let Some(&dst_idx) = self.node_index.get(&conn.to.node)
-                && let Some(slot) = self.per_node_connected[dst_idx].get_mut(conn.to.index) {
-                    *slot = true;
-                }
-        }
-        for (i, node) in self.nodes.iter_mut().enumerate() {
-            let native = node.inputs().len();
-            node.set_input_connections(&self.per_node_connected[i][..native]);
-            if self.promoted[i].len() > 0 {
-                self.promoted[i].note_wiring(&self.per_node_connected[i][native..]);
-            }
-        }
+
+        clock.lap("[inner] 1 connected bitmap");
 
         // 2. Process inner nodes, skipping disabled ones.
         if crate::perf::node_profiling_enabled() {
@@ -235,89 +251,16 @@ impl InnerGraph {
             }
         }
 
+        clock.lap("[inner] 2 process (nodes)");
+
         // 3. Propagate connections (including bridge connections).
-        let mut writes = std::mem::take(&mut self.write_buf);
-        let mut bridge_out_writes = std::mem::take(&mut self.bridge_write_buf);
-        writes.clear();
-        bridge_out_writes.clear();
-        let mut promoted_writes = std::mem::take(&mut self.promoted_writes);
-        promoted_writes.clear();
-
-        for conn in &self.connections {
-            let src_node = if conn.from.node == BRIDGE_IN_NODE_ID {
-                None
-            } else if let Some(&idx) = self.node_index.get(&conn.from.node) {
-                Some(idx)
-            } else {
-                continue;
-            };
-            let dst_node = if conn.to.node == BRIDGE_OUT_NODE_ID {
-                None
-            } else if let Some(&idx) = self.node_index.get(&conn.to.node) {
-                Some(idx)
-            } else {
-                continue;
-            };
-
-            let src_ports = match src_node {
-                Some(idx) => self.nodes[idx].outputs(),
-                None => input_ports,
-            };
-            let dst_ports = match dst_node {
-                Some(idx) => self.nodes[idx].inputs(),
-                None => output_ports,
-            };
-            let src_base = port_base_index(src_ports, conn.from.index);
-
-            // Past a node's own inputs sit its promoted params, which take a
-            // single value and never go through `write_input`.
-            if let Some(idx) = dst_node
-                && conn.to.index >= dst_ports.len()
-            {
-                let val = match src_node {
-                    Some(s) => self.nodes[s].read_output(src_base),
-                    None => self.bridge_in.get(src_base).copied().unwrap_or(0.0),
-                };
-                promoted_writes.push((idx, conn.to.index - dst_ports.len(), val));
-                continue;
-            }
-
-            let dst_base = port_base_index(dst_ports, conn.to.index);
-            let src_channels = src_ports
-                .get(conn.from.index)
-                .map(|p| p.port_type.channel_count())
-                .unwrap_or(1);
-            let dst_channels = dst_ports
-                .get(conn.to.index)
-                .map(|p| p.port_type.channel_count())
-                .unwrap_or(1);
-
-            for ch in 0..src_channels.min(dst_channels) {
-                let val = match src_node {
-                    Some(idx) => self.nodes[idx].read_output(src_base + ch),
-                    None => self.bridge_in.get(src_base + ch).copied().unwrap_or(0.0),
-                };
-                match dst_node {
-                    Some(idx) => writes.push((idx, dst_base + ch, val)),
-                    None => bridge_out_writes.push((dst_base + ch, val)),
-                }
-            }
-        }
-
-        for &(dst_idx, ch, val) in &writes {
-            self.nodes[dst_idx].write_input(ch, val);
-        }
-        for &(ch, val) in &bridge_out_writes {
-            if ch < self.bridge_out.len() {
-                self.bridge_out[ch] = val;
-            }
-        }
-        self.write_buf = writes;
-        self.bridge_write_buf = bridge_out_writes;
-        for &(dst_idx, slot, val) in &promoted_writes {
-            self.promoted[dst_idx].apply(self.nodes[dst_idx].as_mut(), slot, val);
-        }
-        self.promoted_writes = promoted_writes;
+        self.plan.run(
+            &mut self.nodes,
+            &mut self.promoted,
+            &self.bridge_in,
+            &mut self.bridge_out,
+        );
+        clock.lap("[inner] 3 propagate");
 
         // 4. Mirror state for the UI at roughly frame rate. `params()`,
         // `save_data()` and `update_display()` allocate, and the UI only sees
@@ -327,15 +270,17 @@ impl InnerGraph {
             self.sync_counter = 0;
             self.sync_shared_state();
         }
+        clock.lap("[inner] 4 ui sync");
     }
 
     fn sync_shared_state(&mut self) {
+        let sync_save_data = self.save_data_gate.due();
         for (i, node) in self.nodes.iter().enumerate() {
             let mut shared = self.shared_states[i].lock().unwrap();
             shared.inputs_connected.clear();
             shared
                 .inputs_connected
-                .extend_from_slice(&self.per_node_connected[i]);
+                .extend_from_slice(&self.plan.connected[i]);
             shared.non_promotable = node.non_promotable_params();
             if self.disabled_mask[i] {
                 continue;
@@ -349,7 +294,9 @@ impl InnerGraph {
                 shared.inputs[ch] = node.read_input(ch);
             }
             shared.current_params = node.params();
-            shared.save_data = node.save_data();
+            if sync_save_data {
+                shared.save_data = node.save_data();
+            }
             node.update_display(&mut shared);
         }
         for (i, node) in self.nodes.iter().enumerate() {
@@ -536,6 +483,7 @@ impl SubgraphProcessNode {
 
     /// Apply an inner command to this subgraph's inner graph.
     pub fn apply_inner_cmd(&mut self, cmd: SubgraphInnerCmd) {
+        self.inner.plan_dirty = true;
         match cmd {
             SubgraphInnerCmd::AddNode { node, shared } => {
                 self.inner.shared_states.push(shared);
@@ -647,8 +595,8 @@ mod promoted_tests {
     fn promoted_port_counts_as_connected() {
         let (mut g, native) = graph_with_promoted_rate();
         g.tick(&[], &[]);
-        assert_eq!(g.per_node_connected[1].len(), native + 1);
-        assert!(g.per_node_connected[1][native]);
+        assert_eq!(g.plan.connected[1].len(), native + 1);
+        assert!(g.plan.connected[1][native]);
     }
 
     #[test]
@@ -658,5 +606,70 @@ mod promoted_tests {
         g.nodes[1].set_param(0, ParamValue::Float(7.0));
         g.tick(&[], &[]);
         assert_eq!(lfo_rate(&g), 7.0);
+    }
+}
+
+#[cfg(test)]
+mod routing_tests {
+    use super::*;
+    use crate::engine::nodes::math::gain::GainProcessNode;
+
+    fn port(node: NodeId, index: usize, dir: PortDir) -> PortId {
+        PortId { node, index, dir }
+    }
+
+    /// bridge in -> Gain (x1.0 by default) -> bridge out.
+    fn passthrough() -> (InnerGraph, Vec<PortDef>, Vec<PortDef>) {
+        let mut g = InnerGraph::new();
+        let gain_id = NodeId(1);
+        g.nodes.push(Box::new(GainProcessNode::new(gain_id)));
+        g.shared_states.push(new_shared_state(4, 4));
+        g.promoted.push(PromotedInputs::default());
+        g.index_stale = true;
+        g.bridge_in = vec![0.0];
+        g.bridge_out = vec![0.0];
+        g.connections.push(Connection {
+            from: port(BRIDGE_IN_NODE_ID, 0, PortDir::Output),
+            to: port(gain_id, 0, PortDir::Input),
+        });
+        g.connections.push(Connection {
+            from: port(gain_id, 0, PortDir::Output),
+            to: port(BRIDGE_OUT_NODE_ID, 0, PortDir::Input),
+        });
+        let ports = vec![PortDef::new("x", PortType::Untyped)];
+        (g, ports.clone(), ports)
+    }
+
+    #[test]
+    fn values_cross_the_bridge_one_node_per_tick() {
+        let (mut g, ins, outs) = passthrough();
+        g.bridge_in[0] = 0.75;
+        g.tick(&ins, &outs);
+        g.tick(&ins, &outs);
+        assert_eq!(g.bridge_out[0], 0.75);
+    }
+
+    #[test]
+    fn a_removed_wire_stops_carrying_values() {
+        let (mut g, ins, outs) = passthrough();
+        g.tick(&ins, &outs);
+        // What `apply_inner_cmd` does for a RemoveConnectionTo.
+        g.connections.retain(|c| c.to.node != BRIDGE_OUT_NODE_ID);
+        g.plan_dirty = true;
+        g.bridge_in[0] = 0.5;
+        g.bridge_out[0] = 0.0;
+        g.tick(&ins, &outs);
+        g.tick(&ins, &outs);
+        // The cached plan must have been rebuilt without the removed wire.
+        assert_eq!(g.bridge_out[0], 0.0);
+    }
+
+    #[test]
+    fn plan_notices_a_change_in_bridge_channels() {
+        let (mut g, ins, outs) = passthrough();
+        g.tick(&ins, &outs);
+        assert!(g.plan.is_current(&g.nodes, &ins, &outs));
+        let wider = vec![PortDef::new("c", PortType::Color)];
+        assert!(!g.plan.is_current(&g.nodes, &wider, &outs));
     }
 }
