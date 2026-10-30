@@ -102,9 +102,9 @@ impl NodeWidget for ButtonWidget {
         vec![UiPortDef::from_def(&PortDef::new("out", PortType::Logic))]
     }
 
-    // The button is the node: a slim header to move it by, the output on
-    // its edge, and its label is on the button, not in the header.
-    fn layout(&self) -> NodeLayout { NodeLayout::compact().without_title() }
+    // The button is the node: no header, it is moved by dragging it, and its
+    // label is on the button.
+    fn layout(&self) -> NodeLayout { NodeLayout::compact().headerless() }
     fn min_width(&self) -> f32 { 90.0 }
     fn min_content_height(&self) -> f32 { 26.0 }
     fn resizable(&self) -> bool { true }
@@ -279,12 +279,11 @@ mod tests {
     use crate::widgets::nodes::node::node_size;
 
     #[test]
-    fn a_button_is_just_a_header_and_the_button_with_the_output_on_its_edge() {
+    fn a_button_is_just_the_button_with_the_output_on_its_edge() {
         let b = ButtonWidget::new(NodeId(1), new_shared_state(1, 1));
         let l = b.layout();
-        assert!(!l.toggle && !l.show_title && l.bare);
-        // 14 px header plus the 26 px button, nothing around it.
-        assert_eq!(node_size(&b, None), egui::Vec2::new(90.0, 14.0 + 26.0));
+        assert!(!l.toggle && !l.show_title && l.bare && l.drag_by_body);
+        assert_eq!(node_size(&b, None), egui::Vec2::new(90.0, 26.0));
     }
 
     #[test]
@@ -293,6 +292,6 @@ mod tests {
         let size = node_size(&b, Some(egui::Vec2::new(200.0, 70.0)));
         assert_eq!(size, egui::Vec2::new(200.0, 70.0));
         // Smaller than the minimum is raised to it.
-        assert_eq!(node_size(&b, Some(egui::Vec2::new(10.0, 10.0))), egui::Vec2::new(90.0, 40.0));
+        assert_eq!(node_size(&b, Some(egui::Vec2::new(10.0, 10.0))), egui::Vec2::new(90.0, 26.0));
     }
 }

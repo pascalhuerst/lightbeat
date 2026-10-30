@@ -26,11 +26,16 @@ const GRID_SPACING: f32 = 30.0;
 // ---------------------------------------------------------------------------
 
 const RESIZE_HANDLE_SIZE: f32 = 10.0;
+/// Same distance egui uses to tell a click from a drag.
+const BODY_DRAG_THRESHOLD: f32 = 6.0;
 
 #[derive(Default)]
 struct DragState {
     /// Dragging selected nodes by title bar.
     dragging_nodes: bool,
+    /// Press on a header-less node's body: becomes a node drag once the
+    /// pointer has moved further than a click allows.
+    body_press: Option<Pos2>,
     drawing_conn: Option<DrawingConnection>,
     /// Selection rectangle (canvas-space start pos).
     selection_rect_start: Option<Pos2>,
@@ -2579,6 +2584,8 @@ impl NodeGraph {
                     // just toggling selection membership.
                     if title_rect.contains(pointer_pos) && !double_clicked && !shift && !ctrl {
                         self.drag.dragging_nodes = true;
+                    } else if self.active().nodes[i].layout().drag_by_body && !double_clicked && !shift && !ctrl {
+                        self.drag.body_press = Some(pointer_pos);
                     }
                 } else if let Some(hit) = self.frame_hit_at(pointer_pos, self.canvas_rect) {
                     // Click landed on a decorative frame (and no node was hit
@@ -2662,6 +2669,15 @@ impl NodeGraph {
                         }
                         self.drag.selection_rect_start = Some(pointer_pos);
                     }
+                }
+            }
+
+            if let Some(start) = self.drag.body_press {
+                if !primary_down {
+                    self.drag.body_press = None;
+                } else if pointer_pos.distance(start) > BODY_DRAG_THRESHOLD {
+                    self.drag.body_press = None;
+                    self.drag.dragging_nodes = true;
                 }
             }
 

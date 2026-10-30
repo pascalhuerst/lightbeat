@@ -211,6 +211,9 @@ pub struct NodeLayout {
     pub centre_single_port: bool,
     /// Write the node's title in the title bar.
     pub show_title: bool,
+    /// No title bar at all: the node is moved by dragging its body, and a
+    /// click without movement still reaches the widget.
+    pub drag_by_body: bool,
 }
 
 impl NodeLayout {
@@ -224,6 +227,7 @@ impl NodeLayout {
         bare: false,
         centre_single_port: false,
         show_title: true,
+        drag_by_body: false,
     };
 
     /// For a control that fills its node: a slim header to grab, no frame, no
@@ -239,6 +243,7 @@ impl NodeLayout {
             bare: true,
             centre_single_port: true,
             show_title: true,
+            drag_by_body: false,
         }
     }
 
@@ -252,6 +257,16 @@ impl NodeLayout {
     /// Keep the slim header empty when the control already shows its name.
     pub const fn without_title(mut self) -> Self {
         self.show_title = false;
+        self
+    }
+
+    /// Drop the header altogether; dragging the control moves the node.
+    pub const fn headerless(mut self) -> Self {
+        self.title_h = 0.0;
+        self.content_top = 0.0;
+        self.port_start_y = 12.0;
+        self.show_title = false;
+        self.drag_by_body = true;
         self
     }
 }
