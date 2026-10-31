@@ -289,7 +289,8 @@ src/
   slow and prints to stderr every time). Missing controllers/inputs show as
   `Waiting` and are listed in the status bar.
 - Launchpad, Push 1 and X1 have dedicated nodes (`io/`); X1 code is in
-  `input_controller/x1/`.
+  `input_controller/x1/`. The X1 is USB (libusb), not MIDI: on Linux it needs the udev rule in
+  `contrib/70-lightbeat-x1.rules`, and a failed open prints the reason once.
 
 ### Subgraph save/load
 - `SavedNode` has an optional `inner_graph: Option<ProjectFile>` for recursive

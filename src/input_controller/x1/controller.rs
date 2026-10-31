@@ -160,6 +160,17 @@ impl<'a> LedHandle<'a> {
     }
 }
 
+/// What an error from opening the X1 means and what to do about it.
+pub fn explain_error(e: &Error) -> String {
+    match e {
+        Error::NoDevice => "not found on the USB bus".to_string(),
+        Error::Access => "no permission to use the USB device; install contrib/70-lightbeat-x1.rules \
+            into /etc/udev/rules.d, run `sudo udevadm control --reload && sudo udevadm trigger`, and replug it".to_string(),
+        Error::Busy => "another program or driver is using the device".to_string(),
+        other => format!("{other}"),
+    }
+}
+
 impl X1Controller {
     /// Connect to the first Kontrol X1 Mk1 discovered on the USB bus.
     pub fn connect() -> rusb::Result<Self> {
@@ -179,7 +190,15 @@ impl X1Controller {
             None => return Err(Error::NoDevice),
         };
 
-        handle.set_active_configuration(1)?;
+        // On Linux the HID driver usually owns the device; take it over for as
+        // long as we hold it, instead of failing with "resource busy". (Not
+        // supported on every platform, where it is not needed either.)
+        let _ = handle.set_auto_detach_kernel_driver(true);
+        // Changing the configuration needs every interface free, so leave it
+        // alone when the device is already set up as expected.
+        if handle.active_configuration().ok() != Some(1) {
+            handle.set_active_configuration(1)?;
+        }
         handle.claim_interface(0)?;
         handle.set_alternate_setting(0, 0)?;
 
