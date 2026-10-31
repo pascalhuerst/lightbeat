@@ -197,6 +197,14 @@ src/
   after a change because the node producing it restarts a tick or two later.
   Children are blended with amount `w_k / (w_1 + ... + w_k)` bottom to top,
   which gives an exact crossfade without a dip (`compose_scenes`).
+- **Not rendering what nobody sees**: every stack, each frame, puts the
+  children that nothing shows (muted, solo-excluded, zero opacity or amount, a
+  scene that is not on or being faded to) into `HubState::unwanted`, and those
+  effects skip `render` (they still count triggers); an unwanted stack
+  publishes no image and passes the verdict down. A stack whose children have
+  not drawn their first image yet publishes nothing (for up to
+  `READY_PATIENCE` frames), and a scenes stack keeps showing the last scene
+  meanwhile, so a cut never flashes black.
 - Names: a **Burst** is spawned by a trigger and lives for a while (ripple,
   comet); a **Loop** is a function of a phase (wave, chase, fill). Not "voices".
 - To add an effect: implement `EffectKind` (ports, params, `update` for state,

@@ -42,6 +42,10 @@ pub struct HubState {
     pub layers: HashMap<u64, LayerEntry>,
     /// Stack images by stack node id.
     pub stacks: HashMap<u64, StackEntry>,
+    /// Nodes (effects and stacks) whose image nothing shows right now: muted,
+    /// at zero opacity or in a scene that is not on. They skip rendering.
+    /// Anything not listed is wanted, so a node nobody has judged yet renders.
+    pub unwanted: HashSet<u64>,
     /// Objects written by the last flatten, to black out the ones dropped since.
     lit: HashSet<u32>,
 }

@@ -2,10 +2,14 @@
 //!
 //! An *effect* node renders its own layer of pixels about 60 times a second
 //! and hands it to the `EffectHub` under the name of the stack it is linked
-//! to. A *stack* node blends its effects' layers in order and publishes one
-//! image. Once per frame the hub flattens every stack, by priority, into the
+//! to. A *stack* node blends its effects' layers, and the stacks sent to it,
+//! in order and publishes one image; stacks form a tree. Once per frame the
+//! hub writes the roots of the tree, the stacks sent nowhere, into the
 //! objects' pixels. Effects never touch the objects themselves, so they cannot
 //! fight over them and their order is explicit.
+//!
+//! Each stack also tells its children whether anything shows them (a muted
+//! layer, a scene that is not on), and those skip rendering.
 //!
 //! Effects come in two kinds: a **Loop** is a function of a phase (a wave that
 //! travels once per bar), a **Burst** is spawned by a trigger and lives for
@@ -456,6 +460,104 @@ mod tests {
         master.write_input(1, 1.0);
         run(&mut [&mut master], &hub, &store, 4);
         assert_eq!(pixel(&store, 1, 0), BLUE);
+    }
+
+    /// A root `Master` in scenes mode with two child stacks `A` and `B`, each
+    /// with a fill of its own (node ids 2 and 3 for the stacks, 4 and 5 for the fills).
+    fn two_scenes(store: &SharedObjectStore, hub: &EffectHub) -> (EffectStackProcessNode, EffectStackProcessNode, EffectStackProcessNode, EffectNode<Fill>, EffectNode<Fill>) {
+        let mut master = EffectStackProcessNode::new(NodeId(1), hub.clone(), store.clone());
+        master.load_data(&serde_json::json!({
+            "name": "Master", "mode": "scenes",
+            "targets": [{"kind": "strip", "object_id": 1, "logical_start": 0.0, "logical_end": 1.0}],
+            "layers": [{"node_id": 2}, {"node_id": 3}],
+        }));
+        let mut a = EffectStackProcessNode::new(NodeId(2), hub.clone(), store.clone());
+        a.load_data(&serde_json::json!({ "name": "A", "parent": "Master", "layers": [{"node_id": 4}] }));
+        let mut b = EffectStackProcessNode::new(NodeId(3), hub.clone(), store.clone());
+        b.load_data(&serde_json::json!({ "name": "B", "parent": "Master", "layers": [{"node_id": 5}] }));
+        // B is half as bright, so the two scenes can be told apart.
+        b.write_input(0, 0.5);
+        b.set_input_connections(&[true, false, false]);
+        let mut fa = EffectNode::new(NodeId(4), Fill::default(), hub.clone());
+        fa.load_data(&serde_json::json!({ "stack": "A" }));
+        let mut fb = EffectNode::new(NodeId(5), Fill::default(), hub.clone());
+        fb.load_data(&serde_json::json!({ "stack": "B" }));
+        (master, a, b, fa, fb)
+    }
+
+    #[test]
+    fn only_the_scene_that_shows_is_rendered() {
+        let (hub, store) = (EffectHub::new(), store_with_strips(&[4]));
+        let (mut master, mut a, mut b, mut fa, mut fb) = two_scenes(&store, &hub);
+        run(&mut [&mut master, &mut a, &mut b, &mut fa, &mut fb], &hub, &store, 12);
+        assert!((pixel(&store, 1, 0).r - 1.0).abs() < 0.01, "scene A shows");
+        {
+            let hub = hub.lock();
+            assert!(hub.layers.contains_key(&4), "A's fill draws");
+            assert!(!hub.layers.contains_key(&5), "B's fill does not");
+            assert!(hub.unwanted.contains(&3) && hub.unwanted.contains(&5));
+        }
+
+        // A cut to B: A keeps showing until B has drawn, never a black frame.
+        master.write_input(1, 1.0);
+        for _ in 0..12 {
+            let mut frames = Vec::new();
+            run(&mut [&mut master, &mut a, &mut b, &mut fa, &mut fb], &hub, &store, 1);
+            frames.push(pixel(&store, 1, 0).r);
+            assert!(frames[0] > 0.4, "never dark while switching: {frames:?}");
+        }
+        assert!((pixel(&store, 1, 0).r - 0.5).abs() < 0.02, "B shows, at half");
+        let hub = hub.lock();
+        assert!(hub.layers.contains_key(&5) && !hub.layers.contains_key(&4), "and now only B draws");
+    }
+
+    #[test]
+    fn a_muted_child_is_not_rendered_and_comes_back_when_unmuted() {
+        let (hub, store) = (EffectHub::new(), store_with_strips(&[4]));
+        let (mut master, mut colour, mut base, _direct) = tree(&store, &hub);
+        master.load_data(&serde_json::json!({
+            "name": "Master",
+            "targets": [{"kind": "strip", "object_id": 1, "logical_start": 0.0, "logical_end": 1.0}],
+            "layers": [{"node_id": 2, "muted": true}],
+        }));
+        run(&mut [&mut master, &mut colour, &mut base], &hub, &store, 10);
+        assert!(!hub.lock().layers.contains_key(&3), "the effect under a muted stack does not draw");
+
+        master.load_data(&serde_json::json!({
+            "name": "Master",
+            "targets": [{"kind": "strip", "object_id": 1, "logical_start": 0.0, "logical_end": 1.0}],
+            "layers": [{"node_id": 2}],
+        }));
+        run(&mut [&mut master, &mut colour, &mut base], &hub, &store, 10);
+        assert!(pixel(&store, 1, 0).r > 0.99);
+    }
+
+    #[test]
+    fn a_root_with_no_amount_renders_nothing() {
+        let (hub, store) = (EffectHub::new(), store_with_strips(&[4]));
+        let (mut master, mut colour, mut base, _direct) = tree(&store, &hub);
+        master.write_input(0, 0.0);
+        master.set_input_connections(&[true, false, false]);
+        run(&mut [&mut master, &mut colour, &mut base], &hub, &store, 10);
+        assert!(!hub.lock().layers.contains_key(&3));
+        assert!(pixel(&store, 1, 0).r < 0.01);
+    }
+
+    #[test]
+    fn a_trigger_is_still_counted_while_an_effect_is_not_shown() {
+        let (hub, store) = (EffectHub::new(), store_with_strips(&[11]));
+        let mut stack = EffectStackProcessNode::new(NodeId(1), hub.clone(), store.clone());
+        let mut config = stack_config("shelf", &[2], &[(1, 0.0, 1.0)]);
+        config["layers"][0]["muted"] = true.into();
+        stack.load_data(&config);
+        let mut ripple = EffectNode::new(NodeId(2), Ripple::default(), hub.clone());
+        ripple.load_data(&serde_json::json!({ "stack": "shelf" }));
+        run(&mut [&mut stack, &mut ripple], &hub, &store, 3);
+        assert!(!hub.lock().layers.contains_key(&2), "not drawing");
+        ripple.write_input(0, 1.0);
+        ripple.write_input(0, 0.0);
+        ripple.process();
+        assert_eq!(ripple.read_input(0), 0.0, "the pulse was taken");
     }
 
     #[test]

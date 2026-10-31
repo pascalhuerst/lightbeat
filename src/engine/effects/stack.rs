@@ -56,6 +56,11 @@ pub enum StackMode {
 /// end of the last one.
 const FADE_SETTLE_TICKS: u32 = 10;
 
+/// Frames a stack waits for children that have not drawn yet before it shows
+/// what it has. Until then it publishes nothing, so a parent that is fading
+/// to it keeps showing the old scene instead of a blank frame.
+const READY_PATIENCE: u32 = 8;
+
 /// Which scene is showing and where a fade between two stands.
 #[derive(Debug, Clone, Default, PartialEq)]
 struct SceneFade {
@@ -190,6 +195,14 @@ pub struct EffectStackProcessNode {
     scene: SceneFade,
     /// What each scene counts for now, by node id, for the display.
     scene_weights: Vec<(u64, f32)>,
+    /// The scene that was last on show, which keeps showing while the one
+    /// asked for has not drawn its first frame yet.
+    last_shown: Option<u64>,
+    /// Frames in a row spent waiting for a child's first image.
+    waiting: u32,
+    /// The nodes this stack last judged as wanted or not, so the ones that
+    /// left its list can be forgotten.
+    judged: Vec<u64>,
     gate: RenderGate,
     geometry: Option<Arc<Geometry>>,
     composed: LayerBuffer,
@@ -217,6 +230,9 @@ impl EffectStackProcessNode {
             fade_wired: false,
             scene: SceneFade::default(),
             scene_weights: Vec::new(),
+            last_shown: None,
+            waiting: 0,
+            judged: Vec::new(),
             gate: RenderGate::new(),
             geometry: None,
             composed: Vec::new(),
@@ -239,21 +255,64 @@ impl EffectStackProcessNode {
         (e.parent == name).then(|| (&e.buf, layer_level(&e.buf), e.amount))
     }
 
-    /// Blend the children bottom to top, each as its list entry says.
-    fn compose_layers(&mut self, geometry: &Geometry) {
+    /// Tell the children whether anything shows them, so the ones that do not
+    /// are not rendered. A scene being faded to, or still showing until the
+    /// new one has drawn, counts as shown.
+    fn judge_children(&mut self, stack_wanted: bool) {
+        let soloed = self.config.layers.iter().any(|l| l.solo);
+        let weights = match self.config.mode {
+            StackMode::Scenes => Some(self.scene.weights(self.config.layers.len())),
+            StackMode::Layers => None,
+        };
+        let mut hub = self.hub.lock();
+        for (i, layer) in self.config.layers.iter().enumerate() {
+            let amount = hub.stacks.get(&layer.node_id).map_or(1.0, |e| e.amount);
+            let shows = match &weights {
+                Some(w) => {
+                    w[i] > 0.0 || i == self.scene.target || self.last_shown == Some(layer.node_id)
+                }
+                None => !(soloed && !layer.solo),
+            };
+            let wanted = stack_wanted && shows && !layer.muted && layer.opacity > 0.0 && amount > 0.0;
+            if wanted {
+                hub.unwanted.remove(&layer.node_id);
+            } else {
+                hub.unwanted.insert(layer.node_id);
+            }
+        }
+        // Whatever left the list is nobody's concern any more.
+        for id in self.judged.iter().filter(|id| !self.config.layers.iter().any(|l| l.node_id == **id)) {
+            hub.unwanted.remove(id);
+        }
+        self.judged = self.config.layers.iter().map(|l| l.node_id).collect();
+    }
+
+    /// Blend the children bottom to top, each as its list entry says. True
+    /// when a child that should show has not drawn its first image yet.
+    fn compose_layers(&mut self, geometry: &Geometry) -> bool {
         let soloed = self.config.layers.iter().any(|l| l.solo);
         let hub = self.hub.lock();
+        let mut pending = false;
         // The list reads top first, so draw it bottom first.
         for layer in self.config.layers.iter().rev() {
-            let Some((buf, level, amount)) = Self::child_image(&hub, &self.config.name, layer.node_id) else { continue };
+            let shows = !layer.muted && !(soloed && !layer.solo) && layer.opacity > 0.0;
+            let Some((buf, level, amount)) = Self::child_image(&hub, &self.config.name, layer.node_id) else {
+                // Not published at all: an effect that has not started, but
+                // not one that belongs to another stack.
+                pending |= shows && !hub.layers.contains_key(&layer.node_id) && !hub.stacks.contains_key(&layer.node_id);
+                continue;
+            };
             self.levels.push((layer.node_id, level));
-            if layer.muted || (soloed && !layer.solo) {
+            if !shows {
                 continue;
             }
             if geometry.fits(buf) {
                 blend_layer(&mut self.composed, buf, layer.blend, layer.opacity * amount);
+            } else {
+                pending |= amount > 0.0;
             }
         }
+        pending
     }
 
     /// Show the scenes by their weights. Blending them bottom to top with
@@ -261,27 +320,64 @@ impl EffectStackProcessNode {
     /// `sum(w_k * scene_k) / sum(w_k)`, so a fade between two scenes is a
     /// straight crossfade with no dip in the middle. The sum of the weights
     /// (a scene's own opacity and amount count) dims the whole.
-    fn compose_scenes(&mut self, geometry: &Geometry) {
-        let weights = self.scene.weights(self.config.layers.len());
+    ///
+    /// A scene that has not drawn yet (it was not wanted until it was asked
+    /// for) cannot be shown, so its share goes to the scene that was showing
+    /// last, and the change happens once it is ready. True when there is
+    /// nothing to show in its place either.
+    fn compose_scenes(&mut self, geometry: &Geometry) -> bool {
+        let mut weights = self.scene.weights(self.config.layers.len());
         let hub = self.hub.lock();
-        // Per scene, top of the list first: the weight and what it shows.
-        let mut scenes: Vec<(u64, f32, Option<&LayerBuffer>)> = Vec::new();
-        for (layer, w) in self.config.layers.iter().zip(&weights) {
+        // Per scene, top of the list first: what it shows, if it can.
+        let mut images: Vec<Option<(&LayerBuffer, f32)>> = Vec::new();
+        for layer in &self.config.layers {
             let child = Self::child_image(&hub, &self.config.name, layer.node_id);
             if let Some((_, level, _)) = child {
                 self.levels.push((layer.node_id, level));
             }
-            let usable = child.filter(|(buf, _, _)| geometry.fits(buf) && !layer.muted);
-            let weight = usable.map_or(0.0, |(_, _, amount)| w * layer.opacity * amount);
-            self.scene_weights.push((layer.node_id, weight));
-            scenes.push((layer.node_id, weight, usable.map(|(buf, _, _)| buf)));
+            images.push(child.filter(|(buf, _, _)| geometry.fits(buf)).map(|(buf, _, amount)| (buf, amount)));
         }
-        let total: f32 = scenes.iter().map(|(_, w, _)| w).sum();
+
+        let mut spill = 0.0;
+        let mut unresolved = false;
+        for ((layer, w), image) in self.config.layers.iter().zip(weights.iter_mut()).zip(&images) {
+            if *w > 0.0 && image.is_none() && !layer.muted {
+                spill += *w;
+                *w = 0.0;
+            }
+        }
+        if spill > 0.0 {
+            let shown = |i: usize| images[i].is_some() && !self.config.layers[i].muted;
+            let keeper = self
+                .last_shown
+                .and_then(|id| self.config.layers.iter().position(|l| l.node_id == id))
+                .filter(|i| shown(*i))
+                .or_else(|| (0..images.len()).filter(|i| shown(*i)).max_by(|a, b| weights[*a].total_cmp(&weights[*b])));
+            match keeper {
+                Some(i) => weights[i] += spill,
+                None => unresolved = true,
+            }
+        }
+
+        let mut scenes: Vec<(f32, Option<&LayerBuffer>)> = Vec::new();
+        for ((layer, w), image) in self.config.layers.iter().zip(&weights).zip(&images) {
+            let weight = match image {
+                Some((_, amount)) if !layer.muted => w * layer.opacity * amount,
+                _ => 0.0,
+            };
+            self.scene_weights.push((layer.node_id, weight));
+            scenes.push((weight, image.map(|(buf, _)| buf)));
+        }
+        if let Some(i) = (0..scenes.len()).filter(|i| scenes[*i].0 > 0.0).max_by(|a, b| scenes[*a].0.total_cmp(&scenes[*b].0)) {
+            self.last_shown = Some(self.config.layers[i].node_id);
+        }
+
+        let total: f32 = scenes.iter().map(|(w, _)| w).sum();
         if total <= 0.0 {
-            return;
+            return unresolved;
         }
         let mut cumulative = 0.0;
-        for (_, weight, buf) in scenes.iter().rev() {
+        for (weight, buf) in scenes.iter().rev() {
             cumulative += weight;
             if let (Some(buf), true) = (buf, *weight > 0.0) {
                 blend_layer(&mut self.composed, buf, BlendMode::Override, weight / cumulative);
@@ -293,11 +389,15 @@ impl EffectStackProcessNode {
                 px.alpha *= dim;
             }
         }
+        unresolved
     }
 
     fn unpublish(&mut self) {
         let mut hub = self.hub.lock();
         hub.stacks.remove(&self.id.0);
+        for id in self.judged.drain(..) {
+            hub.unwanted.remove(&id);
+        }
         if !self.published_name.is_empty() {
             hub.geometry.remove(&self.published_name);
         }
@@ -392,20 +492,34 @@ impl ProcessNode for EffectStackProcessNode {
             self.geometry = Some(geometry.clone());
         }
 
-        if !geometry.fits(&self.composed) {
-            self.composed = geometry.empty_buffer();
-        } else {
-            clear(&mut self.composed);
-        }
+        let amount = if self.amount_wired { self.amount } else { 1.0 };
+        // A root is shown unless its amount is zero; the others when their
+        // parent says so.
+        let wanted = if is_root { amount > 0.0 } else { !self.hub.lock().unwanted.contains(&self.id.0) };
+        self.judge_children(wanted);
 
         self.levels.clear();
         self.scene_weights.clear();
-        match self.config.mode {
-            StackMode::Layers => self.compose_layers(&geometry),
-            StackMode::Scenes => self.compose_scenes(&geometry),
+        if wanted {
+            if !geometry.fits(&self.composed) {
+                self.composed = geometry.empty_buffer();
+            } else {
+                clear(&mut self.composed);
+            }
+            let pending = match self.config.mode {
+                StackMode::Layers => self.compose_layers(&geometry),
+                StackMode::Scenes => self.compose_scenes(&geometry),
+            };
+            self.waiting = if pending { self.waiting + 1 } else { 0 };
+            if pending && self.waiting <= READY_PATIENCE {
+                self.composed = Vec::new();
+            }
+        } else {
+            self.waiting = 0;
+            // Not shown: no image, but the parent still reads the amount.
+            self.composed = Vec::new();
         }
 
-        let amount = if self.amount_wired { self.amount } else { 1.0 };
         let mut hub = self.hub.lock();
         match hub.stacks.get_mut(&self.id.0) {
             Some(entry) => {
