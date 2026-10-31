@@ -236,7 +236,7 @@ mod tests {
     }
 
     #[test]
-    fn higher_priority_stacks_are_blended_over_lower_ones() {
+    fn roots_on_one_group_blend_in_the_order_they_were_made_and_amount_dims_the_later_one() {
         let (hub, store) = (EffectHub::new(), store_with_strips(&[3]));
         let geometry = Arc::new(Geometry::resolve(
             &[geometry::TargetSpec::Strip { object_id: 1, logical_start: 0.0, logical_end: 1.0 }],
@@ -245,19 +245,93 @@ mod tests {
         let solid = |c: Rgb| -> LayerBuffer {
             geometry.targets.iter().map(|t| vec![Pixel { color: c, alpha: 1.0 }; t.count]).collect()
         };
+        let entry = |name: &str, parent: &str, c: Rgb| StackEntry {
+            name: name.into(),
+            parent: parent.into(),
+            blend: BlendMode::Override,
+            amount: 1.0,
+            geometry: geometry.clone(),
+            buf: solid(c),
+        };
         let mut state = hub.lock();
-        // Inserted high first, so only the priority can decide the order.
-        state.stacks.insert(1, StackEntry { priority: 5, blend: BlendMode::Override, amount: 1.0, geometry: geometry.clone(), buf: solid(Rgb::new(0.0, 1.0, 0.0)) });
-        state.stacks.insert(2, StackEntry { priority: 0, blend: BlendMode::Override, amount: 1.0, geometry: geometry.clone(), buf: solid(Rgb::new(1.0, 0.0, 0.0)) });
+        // Inserted later one first, so only the ids can decide the order.
+        state.stacks.insert(2, entry("b", "", Rgb::new(0.0, 1.0, 0.0)));
+        state.stacks.insert(1, entry("a", "", Rgb::new(1.0, 0.0, 0.0)));
+        // A stack sent to another is not written by itself.
+        state.stacks.insert(3, entry("c", "a", Rgb::new(0.0, 0.0, 1.0)));
         drop(state);
         hub.flatten(&store);
         assert_eq!(pixel(&store, 1, 0), Rgb::new(0.0, 1.0, 0.0));
 
-        // Halving the top stack's amount shows the one below through it.
-        hub.lock().stacks.get_mut(&1).unwrap().amount = 0.5;
+        // Halving the later root's amount shows the earlier one through it.
+        hub.lock().stacks.get_mut(&2).unwrap().amount = 0.5;
         hub.flatten(&store);
         let p = pixel(&store, 1, 0);
         assert!((p.r - 0.5).abs() < 0.02 && (p.g - 0.5).abs() < 0.02, "{p:?}");
+    }
+
+    /// A shelf with a root `Master`, a child stack `Colour` sent to it, and
+    /// effects linked to each.
+    fn tree(store: &SharedObjectStore, hub: &EffectHub) -> (EffectStackProcessNode, EffectStackProcessNode, EffectNode<Fill>, EffectNode<Fill>) {
+        let mut master = EffectStackProcessNode::new(NodeId(1), hub.clone(), store.clone());
+        master.load_data(&serde_json::json!({
+            "name": "Master",
+            "targets": [{"kind": "strip", "object_id": 1, "logical_start": 0.0, "logical_end": 1.0}],
+            "layers": [{"node_id": 2}],
+        }));
+        let mut colour = EffectStackProcessNode::new(NodeId(2), hub.clone(), store.clone());
+        colour.load_data(&serde_json::json!({ "name": "Colour", "parent": "Master", "layers": [{"node_id": 3}] }));
+        let mut base = EffectNode::new(NodeId(3), Fill::default(), hub.clone());
+        base.load_data(&serde_json::json!({ "stack": "Colour" }));
+        let mut direct = EffectNode::new(NodeId(4), Fill::default(), hub.clone());
+        direct.load_data(&serde_json::json!({ "stack": "Master" }));
+        (master, colour, base, direct)
+    }
+
+    #[test]
+    fn a_stack_sent_to_another_blends_into_it_and_inherits_its_groups() {
+        let (hub, store) = (EffectHub::new(), store_with_strips(&[6]));
+        let (mut master, mut colour, mut base, _direct) = tree(&store, &hub);
+        // The child has no groups of its own; the fill reaches the strip through two levels.
+        run(&mut [&mut master, &mut colour, &mut base], &hub, &store, 8);
+        for i in 0..6 {
+            assert!(pixel(&store, 1, i).r > 0.99, "pixel {i}");
+        }
+        // The child is not written to the strip on its own: remove the root and it goes dark.
+        drop(master);
+        hub.flatten(&store);
+        assert!(pixel(&store, 1, 0).r < 0.01);
+    }
+
+    #[test]
+    fn a_child_stacks_amount_and_its_opacity_in_the_parent_scale_its_image() {
+        let (hub, store) = (EffectHub::new(), store_with_strips(&[4]));
+        let (mut master, mut colour, mut base, _direct) = tree(&store, &hub);
+        colour.write_input(0, 0.5);
+        colour.set_input_connections(&[true, false, false]);
+        run(&mut [&mut master, &mut colour, &mut base], &hub, &store, 8);
+        assert!((pixel(&store, 1, 0).r - 0.5).abs() < 0.02, "half of white over black");
+    }
+
+    #[test]
+    fn muting_a_child_stack_in_the_parent_removes_it() {
+        let (hub, store) = (EffectHub::new(), store_with_strips(&[4]));
+        let (mut master, mut colour, mut base, _direct) = tree(&store, &hub);
+        master.load_data(&serde_json::json!({
+            "name": "Master",
+            "targets": [{"kind": "strip", "object_id": 1, "logical_start": 0.0, "logical_end": 1.0}],
+            "layers": [{"node_id": 2, "muted": true}],
+        }));
+        run(&mut [&mut master, &mut colour, &mut base], &hub, &store, 8);
+        assert!(pixel(&store, 1, 0).r < 0.01);
+    }
+
+    #[test]
+    fn a_stack_whose_parent_is_missing_shows_nothing() {
+        let (hub, store) = (EffectHub::new(), store_with_strips(&[4]));
+        let (_master, mut colour, mut base, _direct) = tree(&store, &hub);
+        run(&mut [&mut colour, &mut base], &hub, &store, 6);
+        assert!(!hub.lock().stacks.contains_key(&2), "nothing to inherit geometry from, so nothing is published");
     }
 
     #[test]

@@ -74,8 +74,19 @@ pub trait NodeWidget: Any {
     /// An Effect Stack returns the name its effects link to.
     fn stack_name(&self) -> Option<String> { None }
 
-    /// An effect returns the name of the stack it is linked to, if any.
+    /// An effect, or a stack that is sent to another stack, returns the name
+    /// of the stack it is linked to, if any.
     fn linked_stack(&self) -> Option<String> { None }
+
+    /// The groups a root stack writes to (empty for anything else).
+    fn root_groups(&self) -> Vec<u32> { Vec::new() }
+
+    /// Told every frame which other root stacks write to the same groups, so
+    /// it can warn about it.
+    fn set_stack_conflicts(&mut self, _others: Vec<String>) {}
+
+    /// Called on a stack whose "send to" would make a loop; it lets go of its parent.
+    fn break_stack_link(&mut self) {}
 
     /// Called when the node is created from a port's right-click menu, with
     /// that port's name, so a control can be labelled after what it drives.

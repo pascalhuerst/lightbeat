@@ -1,4 +1,6 @@
-//! Effect Stack: the effects linked to one name, blended in order.
+//! Effect Stack: the effects and other stacks linked to one name, blended in
+//! order. A stack with nothing to send to is a root and writes to its groups;
+//! the others blend into their parent, so stacks form a tree.
 
 use std::any::Any;
 use std::sync::Arc;
@@ -10,7 +12,7 @@ use crate::dmx_io::SharedObjectStore;
 use crate::engine::types::*;
 
 use super::hub::{StackEntry, blend_layer, clear};
-use super::{EffectHub, Geometry, LayerBuffer, RenderGate, TargetSpec};
+use super::{EffectHub, Geometry, LayerBuffer, RenderGate, TargetSpec, layer_level};
 
 fn one() -> f32 {
     1.0
@@ -49,13 +51,15 @@ pub struct StackConfig {
     pub group_names: Vec<String>,
     #[serde(default)]
     pub targets: Vec<TargetSpec>,
-    /// Stacks are blended into the group in this order, lowest first.
+    /// The stack this one is sent to, by name. Empty for a root, which is the
+    /// only kind that writes to the groups (the others take their geometry
+    /// from their parent).
     #[serde(default)]
-    pub priority: i32,
-    /// How this stack blends over the stacks below it.
+    pub parent: String,
+    /// How a root blends over other roots on the same objects.
     #[serde(default)]
     pub blend: BlendMode,
-    /// Top layer first, as the list reads on screen.
+    /// The effects and stacks sent here, top first, as the list reads on screen.
     #[serde(default)]
     pub layers: Vec<LayerConfig>,
     /// Show only the status, not the layer list.
@@ -160,16 +164,37 @@ impl ProcessNode for EffectStackProcessNode {
         if !self.gate.due() {
             return;
         }
-        if self.config.name.is_empty() || self.config.targets.is_empty() {
+        if self.config.name.is_empty() {
             self.unpublish();
             return;
         }
+        let is_root = self.config.parent.is_empty();
 
-        // Pixel counts can change when a fixture is edited, so look them up
-        // each frame; only publish when something actually differs.
-        let resolved = Geometry::resolve(&self.config.targets, &self.store.lock().unwrap());
-        if self.geometry.as_deref() != Some(&resolved) || self.published_name != self.config.name {
-            let geometry = Arc::new(resolved);
+        // A root works out its geometry from its groups, and pixel counts can
+        // change when a fixture is edited, so look them up each frame. The
+        // others inherit their parent's.
+        let geometry = if is_root {
+            if self.config.targets.is_empty() {
+                self.unpublish();
+                return;
+            }
+            let resolved = Geometry::resolve(&self.config.targets, &self.store.lock().unwrap());
+            match &self.geometry {
+                Some(g) if **g == resolved => g.clone(),
+                _ => Arc::new(resolved),
+            }
+        } else {
+            let parent = self.hub.lock().geometry.get(&self.config.parent).cloned();
+            match parent {
+                Some(g) => g,
+                None => {
+                    self.unpublish();
+                    return;
+                }
+            }
+        };
+        let same = self.geometry.as_ref().is_some_and(|g| Arc::ptr_eq(g, &geometry));
+        if !same || self.published_name != self.config.name {
             let mut hub = self.hub.lock();
             if !self.published_name.is_empty() && self.published_name != self.config.name {
                 hub.geometry.remove(&self.published_name);
@@ -177,9 +202,8 @@ impl ProcessNode for EffectStackProcessNode {
             hub.geometry.insert(self.config.name.clone(), geometry.clone());
             drop(hub);
             self.published_name.clone_from(&self.config.name);
-            self.geometry = Some(geometry);
+            self.geometry = Some(geometry.clone());
         }
-        let Some(geometry) = self.geometry.clone() else { return };
 
         if !geometry.fits(&self.composed) {
             self.composed = geometry.empty_buffer();
@@ -193,13 +217,20 @@ impl ProcessNode for EffectStackProcessNode {
             let hub = self.hub.lock();
             // The list reads top first, so draw it bottom first.
             for layer in self.config.layers.iter().rev() {
-                let Some(entry) = hub.layers.get(&layer.node_id) else { continue };
-                self.levels.push((layer.node_id, entry.level));
-                if layer.muted || (soloed && !layer.solo) || entry.stack != self.config.name {
+                // A child is an effect's layer or another stack's image.
+                let (buf, level, linked, amount) = if let Some(e) = hub.layers.get(&layer.node_id) {
+                    (&e.buf, e.level, e.stack == self.config.name, 1.0)
+                } else if let Some(e) = hub.stacks.get(&layer.node_id) {
+                    (&e.buf, layer_level(&e.buf), e.parent == self.config.name, e.amount)
+                } else {
+                    continue;
+                };
+                self.levels.push((layer.node_id, level));
+                if layer.muted || (soloed && !layer.solo) || !linked {
                     continue;
                 }
-                if geometry.fits(&entry.buf) {
-                    blend_layer(&mut self.composed, &entry.buf, layer.blend, layer.opacity);
+                if geometry.fits(buf) {
+                    blend_layer(&mut self.composed, buf, layer.blend, layer.opacity * amount);
                 }
             }
         }
@@ -208,7 +239,8 @@ impl ProcessNode for EffectStackProcessNode {
         let mut hub = self.hub.lock();
         match hub.stacks.get_mut(&self.id.0) {
             Some(entry) => {
-                entry.priority = self.config.priority;
+                entry.name.clone_from(&self.config.name);
+                entry.parent.clone_from(&self.config.parent);
                 entry.blend = self.config.blend;
                 entry.amount = amount;
                 entry.geometry = geometry;
@@ -218,7 +250,8 @@ impl ProcessNode for EffectStackProcessNode {
                 hub.stacks.insert(
                     self.id.0,
                     StackEntry {
-                        priority: self.config.priority,
+                        name: self.config.name.clone(),
+                        parent: self.config.parent.clone(),
                         blend: self.config.blend,
                         amount,
                         geometry,

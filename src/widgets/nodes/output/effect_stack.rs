@@ -1,9 +1,11 @@
-//! The Effect Stack node: the list of effects linked to one name, their order
-//! and blending, and a live picture of the result.
+//! The Effect Stack node: the list of effects and other stacks linked to one
+//! name, their order and blending, and a live picture of the result.
 //!
 //! The effects themselves are separate nodes that pick this stack in their
-//! inspector. The graph tells the stack every frame which effects point at it
+//! inspector, and a stack picks the stack it is sent to the same way. The
+//! graph tells the stack every frame which nodes point at it
 //! (`set_stack_members`); the stack keeps their order and per-layer settings.
+//! A stack that is sent nowhere is a root and writes to its groups.
 
 use std::any::Any;
 
@@ -17,6 +19,7 @@ use crate::objects::channel::ChannelKind;
 use crate::theme;
 use crate::widgets::nodes::node::{NodeWidget, StackMember};
 use crate::widgets::group_context::SharedGroupContext;
+use crate::widgets::nodes::output::effect::SharedStackNames;
 use crate::widgets::nodes::types::UiPortDef;
 
 const BLEND_MODES: &[(&str, BlendMode)] = &[
@@ -48,8 +51,12 @@ pub struct EffectStackWidget {
     id: NodeId,
     shared: SharedState,
     group_ctx: SharedGroupContext,
+    /// The stacks in the graph, for the "send to" list.
+    names: SharedStackNames,
     config: StackConfig,
     members: Vec<StackMember>,
+    /// Other roots that write to the same groups.
+    conflicts: Vec<String>,
     /// The layer whose stack-level settings the inspector shows.
     selected: Option<u64>,
     /// Set when the user renames the stack, for the graph to retarget effects.
@@ -57,14 +64,16 @@ pub struct EffectStackWidget {
 }
 
 impl EffectStackWidget {
-    pub fn new(id: NodeId, shared: SharedState, group_ctx: SharedGroupContext) -> Self {
+    pub fn new(id: NodeId, shared: SharedState, group_ctx: SharedGroupContext, names: SharedStackNames) -> Self {
         let name = if id.0 == 0 { "Stack".to_string() } else { format!("Stack {}", id.0) };
         Self {
             id,
             shared,
             group_ctx,
+            names,
             config: StackConfig { name, ..Default::default() },
             members: Vec::new(),
+            conflicts: Vec::new(),
             selected: None,
             renamed_from: None,
         }
@@ -73,6 +82,19 @@ impl EffectStackWidget {
     #[cfg(test)]
     pub fn config(&self) -> &StackConfig {
         &self.config
+    }
+
+    #[cfg(test)]
+    pub fn conflicts(&self) -> &[String] {
+        &self.conflicts
+    }
+
+    /// Rename as the inspector does, so the graph can move what is linked to it.
+    #[cfg(test)]
+    pub fn rename(&mut self, name: &str) {
+        self.renamed_from.get_or_insert_with(|| self.config.name.clone());
+        self.config.name = name.to_string();
+        self.push_config();
     }
 
     /// Restore a saved configuration and send it to the engine.
@@ -143,6 +165,15 @@ impl EffectStackWidget {
             .unwrap_or_else(|| "(missing)".into())
     }
 
+    fn is_root(&self) -> bool {
+        self.config.parent.is_empty()
+    }
+
+    fn set_parent(&mut self, parent: &str) {
+        self.config.parent = parent.to_string();
+        self.push_config();
+    }
+
     fn kind_of(&self, node_id: u64) -> &'static str {
         self.members.iter().find(|m| m.node_id.0 == node_id).map(|m| m.kind).unwrap_or("")
     }
@@ -190,7 +221,7 @@ impl NodeWidget for EffectStackWidget {
     fn type_name(&self) -> &'static str { "Effect Stack" }
     fn title(&self) -> &str { &self.config.name }
     fn description(&self) -> &'static str {
-        "Blends the effects linked to it, bottom to top, onto one or more groups. Several stacks on a group are blended in priority order, so a stack is also a scene."
+        "Blends the effects and stacks sent to it, bottom to top. A stack that is sent to no other stack writes the result to its groups; the others blend into the stack they are sent to."
     }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> {
@@ -211,6 +242,24 @@ impl NodeWidget for EffectStackWidget {
     }
     fn stack_name(&self) -> Option<String> {
         Some(self.config.name.clone())
+    }
+    fn linked_stack(&self) -> Option<String> {
+        (!self.is_root()).then(|| self.config.parent.clone())
+    }
+    fn effect_kind(&self) -> &'static str { "Stack" }
+    fn root_groups(&self) -> Vec<u32> {
+        if self.is_root() { self.config.group_ids.clone() } else { Vec::new() }
+    }
+    fn set_stack_conflicts(&mut self, others: Vec<String>) {
+        self.conflicts = others;
+    }
+    fn break_stack_link(&mut self) {
+        self.set_parent("");
+    }
+    fn rename_linked_stack(&mut self, from: &str, to: &str) {
+        if self.config.parent == from {
+            self.set_parent(to);
+        }
     }
 
     fn take_stack_rename(&mut self) -> Option<(String, String)> {
@@ -245,12 +294,24 @@ impl NodeWidget for EffectStackWidget {
                 self.config.folded = !self.config.folded;
                 changed = true;
             }
-            if self.config.group_ids.is_empty() {
-                ui.colored_label(theme::SEM_WARNING, "no group");
+            if self.is_root() {
+                if self.config.group_ids.is_empty() {
+                    ui.colored_label(theme::SEM_WARNING, "no group");
+                } else {
+                    ui.colored_label(theme::TEXT_DIM, format!("{}  ·  {} px", self.config.group_names.join(", "), pixels));
+                }
+            } else if self.names.lock().unwrap().names.contains(&self.config.parent) {
+                ui.colored_label(theme::TEXT_DIM, format!("{} {}", egui_phosphor::regular::ARROW_BEND_DOWN_RIGHT, self.config.parent));
             } else {
-                ui.colored_label(theme::TEXT_DIM, format!("{}  ·  {} px", self.config.group_names.join(", "), pixels));
+                ui.colored_label(theme::SEM_WARNING, format!("{} (not found)", self.config.parent));
             }
         });
+        if !self.conflicts.is_empty() {
+            ui.colored_label(
+                theme::SEM_DANGER,
+                format!("{} also writes to this group", self.conflicts.join(", ")),
+            );
+        }
 
         if !preview.is_empty() {
             Self::draw_preview(ui, &preview, rows);
@@ -266,7 +327,7 @@ impl NodeWidget for EffectStackWidget {
             let mut select: Option<u64> = None;
 
             if layers.is_empty() {
-                ui.colored_label(theme::TEXT_DIM, "No effects linked. Pick this stack in an effect's inspector.");
+                ui.colored_label(theme::TEXT_DIM, "Nothing linked. Pick this stack in an effect's or a stack's inspector.");
             }
             for (i, layer) in layers.iter().enumerate() {
                 let row_id = egui::Id::new(("stack_row", self.id.0, layer.node_id));
@@ -295,7 +356,13 @@ impl NodeWidget for EffectStackWidget {
                                 }
 
                                 let color = if layer.muted { theme::TEXT_DIM } else { theme::TEXT };
-                                let label = egui::Label::new(egui::RichText::new(self.label_of(layer.node_id)).color(color))
+                                let name = self.label_of(layer.node_id);
+                                let name = if self.kind_of(layer.node_id) == "Stack" {
+                                    format!("{} {name}", egui_phosphor::regular::STACK)
+                                } else {
+                                    name
+                                };
+                                let label = egui::Label::new(egui::RichText::new(name).color(color))
                                     .sense(Sense::click())
                                     .truncate();
                                 if ui.add(label).clicked() {
@@ -358,35 +425,61 @@ impl NodeWidget for EffectStackWidget {
             }
         });
         ui.horizontal(|ui| {
-            ui.label("Priority:");
-            if ui
-                .add(egui::DragValue::new(&mut self.config.priority).range(-100..=100))
-                .on_hover_text("Stacks on a group are blended in this order, lowest first.")
-                .changed()
-            {
-                changed = true;
-            }
-            ui.label("Blend:");
-            if blend_combo(ui, "stack_blend", &mut self.config.blend) {
+            ui.label("Send to:");
+            let choices = self.names.lock().unwrap().parents_for(&self.config.name);
+            let current = if self.is_root() { "(write to groups)".to_string() } else { self.config.parent.clone() };
+            let mut picked: Option<String> = None;
+            egui::ComboBox::from_id_salt(("stack_parent", self.id.0))
+                .selected_text(current)
+                .show_ui(ui, |ui| {
+                    if ui.selectable_label(self.is_root(), "(write to groups)").clicked() {
+                        picked = Some(String::new());
+                    }
+                    for name in &choices {
+                        if ui.selectable_label(&self.config.parent == name, name).clicked() {
+                            picked = Some(name.clone());
+                        }
+                    }
+                });
+            if let Some(name) = picked {
+                self.config.parent = name;
                 changed = true;
             }
         });
 
-        ui.add_space(4.0);
-        ui.label(egui::RichText::new("Groups").strong());
-        let groups: Vec<(u32, String)> =
-            self.group_ctx.lock().unwrap().groups.iter().map(|g| (g.id, g.name.clone())).collect();
-        for (gid, name) in &groups {
-            let mut on = self.config.group_ids.contains(gid);
-            if ui.checkbox(&mut on, name).changed() {
-                if on {
-                    self.config.group_ids.push(*gid);
-                } else {
-                    self.config.group_ids.retain(|id| id != gid);
+        if self.is_root() {
+            ui.horizontal(|ui| {
+                ui.label("Blend:");
+                if blend_combo(ui, "stack_blend", &mut self.config.blend) {
+                    changed = true;
                 }
-                self.refresh_targets();
-                changed = true;
+                ui.colored_label(theme::TEXT_DIM, "over other stacks on the same group");
+            });
+            if !self.conflicts.is_empty() {
+                ui.colored_label(
+                    theme::SEM_DANGER,
+                    format!("{} also writes to the same group; they blend in the order they were made.", self.conflicts.join(", ")),
+                );
             }
+
+            ui.add_space(4.0);
+            ui.label(egui::RichText::new("Groups").strong());
+            let groups: Vec<(u32, String)> =
+                self.group_ctx.lock().unwrap().groups.iter().map(|g| (g.id, g.name.clone())).collect();
+            for (gid, name) in &groups {
+                let mut on = self.config.group_ids.contains(gid);
+                if ui.checkbox(&mut on, name).changed() {
+                    if on {
+                        self.config.group_ids.push(*gid);
+                    } else {
+                        self.config.group_ids.retain(|id| id != gid);
+                    }
+                    self.refresh_targets();
+                    changed = true;
+                }
+            }
+        } else {
+            ui.colored_label(theme::TEXT_DIM, format!("Writes to the groups of {}.", self.config.parent));
         }
 
         ui.add_space(6.0);
@@ -438,7 +531,7 @@ mod tests {
     }
 
     fn stack() -> EffectStackWidget {
-        EffectStackWidget::new(NodeId(7), new_shared_state(1, 0), new_shared_group_context())
+        EffectStackWidget::new(NodeId(7), new_shared_state(1, 0), new_shared_group_context(), crate::widgets::nodes::output::effect::new_shared_stack_names())
     }
 
     fn order(w: &EffectStackWidget) -> Vec<u64> {

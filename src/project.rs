@@ -933,9 +933,10 @@ mod tests {
         fn graph() -> NodeGraph {
             let mut g = NodeGraph::new();
             let names = new_shared_stack_names();
+            let stack_names = names.clone();
             let ctx = new_shared_group_context();
             g.register_node("Effects", "Effect Stack", move |id| {
-                Box::new(EffectStackWidget::new(id, crate::engine::types::new_shared_state(1, 0), ctx.clone()))
+                Box::new(EffectStackWidget::new(id, crate::engine::types::new_shared_state(1, 0), ctx.clone(), stack_names.clone()))
             });
             g.register_node("Effects", "Ripple Burst", move |id| {
                 Box::new(EffectWidget::new(id, crate::engine::types::new_shared_state(48, 0), RIPPLE_BURST, names.clone()))
@@ -952,7 +953,7 @@ mod tests {
             let w = a.node_mut(si).as_any_mut().downcast_mut::<EffectStackWidget>().unwrap();
             let mut config = w.config().clone();
             config.name = "Shelf".into();
-            config.priority = 3;
+            config.parent = "Master".into();
             config.folded = true;
             let mut layer = LayerConfig::new(2);
             layer.opacity = 0.4;
@@ -974,7 +975,7 @@ mod tests {
         load_graph(&mut b, &saved);
         let w = b.node_mut(0).as_any_mut().downcast_mut::<EffectStackWidget>().unwrap();
         assert_eq!(w.config().name, "Shelf");
-        assert_eq!(w.config().priority, 3);
+        assert_eq!(w.config().parent, "Master");
         assert!(w.config().folded);
         assert_eq!(w.config().layers.len(), 1);
         assert_eq!((w.config().layers[0].opacity, w.config().layers[0].muted), (0.4, true));

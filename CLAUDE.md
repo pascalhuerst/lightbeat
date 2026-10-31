@@ -179,10 +179,16 @@ src/
   inputs and no outputs. It picks an **Effect Stack** by name in its inspector,
   renders its own pixel layer about 60 times a second and hands it to the
   `EffectHub`. The stack blends its linked effects' layers in the order of its
-  list (top first) and publishes one image; once per frame the hub flattens all
-  stacks, by priority, into the objects' pixels. Effects never write to the
-  objects, so they cannot fight over them. A group may have several stacks;
-  a stack has `priority`, `blend` and an `amount` input, so stacks work as scenes.
+  list (top first) and publishes one image. Effects never write to the
+  objects, so they cannot fight over them.
+- Stacks form a **tree**. A stack picks the stack it is sent to ("Send to" in
+  its inspector, `StackConfig::parent`) and then appears in that stack's list,
+  with the same blend, opacity, mute and solo as an effect; its own `amount`
+  input scales it too. A stack that is sent nowhere is a **root**: only roots
+  pick groups and only roots are written to the objects (`EffectHub::flatten`,
+  in the order the stacks were made). Children inherit the root's geometry
+  through the hub, one frame per level. Two roots on one group is allowed but
+  warned about. A loop is broken by the graph (`break_stack_link`).
 - Names: a **Burst** is spawned by a trigger and lives for a while (ripple,
   comet); a **Loop** is a function of a phase (wave, chase, fill). Not "voices".
 - To add an effect: implement `EffectKind` (ports, params, `update` for state,
@@ -192,8 +198,9 @@ src/
   Triggers are edge-counted in `write_input` at the full tick rate (a 1 ms pulse
   is not lost); rendering is gated to `RENDER_HZ`.
 - Link by **name**, like portals, so copy/paste and macros keep working. The
-  graph (`reconcile_effect_stacks`) hands each stack the effects that point at
-  it every frame, follows renames and publishes the names for the pickers. The
+  graph (`reconcile_effect_stacks`) hands each stack the effects and stacks
+  that point at it every frame, follows renames and publishes the names and
+  the tree (`StackRegistry`) for the pickers. The
   stack stores order, blend, opacity, mute and solo per effect; linked nodes
   share an accent colour (`theme::link_color`) and are highlighted together via
   `NodeWidget::link_key`.
