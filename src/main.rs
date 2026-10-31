@@ -87,6 +87,7 @@ use engine::nodes::transport::delay::TriggerDelayProcessNode;
 use engine::nodes::transport::envelope::EnvelopeProcessNode;
 use engine::nodes::transport::hold::TriggerHoldProcessNode;
 use engine::nodes::transport::latch::LatchProcessNode;
+use engine::nodes::math::formula::FormulaProcessNode;
 use engine::nodes::math::random::RandomProcessNode;
 use engine::nodes::transport::sample_hold::SampleHoldProcessNode;
 use engine::nodes::transport::smoothing::SmoothingProcessNode;
@@ -146,6 +147,7 @@ use widgets::nodes::transport::delay::TriggerDelayWidget;
 use widgets::nodes::transport::envelope::EnvelopeWidget;
 use widgets::nodes::transport::hold::TriggerHoldWidget;
 use widgets::nodes::transport::latch::LatchWidget;
+use widgets::nodes::math::formula::FormulaWidget;
 use widgets::nodes::math::random::RandomWidget;
 use widgets::nodes::transport::sample_hold::SampleHoldWidget;
 use widgets::nodes::transport::smoothing::SmoothingWidget;
@@ -529,6 +531,9 @@ impl LightBeatApp {
         self.graph.register_node("Transport", "Trigger Hold", |id| {
             Box::new(TriggerHoldWidget::new(id, new_shared_state(2, 1)))
         });
+        self.graph.register_node("Math", "Formula", |id| {
+            Box::new(FormulaWidget::new(id, new_shared_state(1, 1)))
+        });
         self.graph.register_node("Math", "Random", |id| {
             Box::new(RandomWidget::new(id, new_shared_state(1, 1)))
         });
@@ -897,6 +902,7 @@ impl LightBeatApp {
                 "Envelope" => Some(Box::new(EnvelopeProcessNode::new(id))),
                 "Trigger Delay" => Some(Box::new(TriggerDelayProcessNode::new(id))),
                 "Trigger Hold" => Some(Box::new(TriggerHoldProcessNode::new(id))),
+                "Formula" => Some(Box::new(FormulaProcessNode::new(id))),
                 "Random" => Some(Box::new(RandomProcessNode::new(id))),
                 "Sample & Hold" => Some(Box::new(SampleHoldProcessNode::new(id))),
                 "Smoothing" => Some(Box::new(SmoothingProcessNode::new(id))),
