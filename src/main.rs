@@ -87,6 +87,7 @@ use engine::nodes::transport::delay::TriggerDelayProcessNode;
 use engine::nodes::transport::envelope::EnvelopeProcessNode;
 use engine::nodes::transport::hold::TriggerHoldProcessNode;
 use engine::nodes::transport::latch::LatchProcessNode;
+use engine::nodes::display::meter::{MeterKind, MeterProcessNode};
 use engine::nodes::math::formula::FormulaProcessNode;
 use engine::nodes::math::random::RandomProcessNode;
 use engine::nodes::transport::sample_hold::SampleHoldProcessNode;
@@ -147,6 +148,7 @@ use widgets::nodes::transport::delay::TriggerDelayWidget;
 use widgets::nodes::transport::envelope::EnvelopeWidget;
 use widgets::nodes::transport::hold::TriggerHoldWidget;
 use widgets::nodes::transport::latch::LatchWidget;
+use widgets::nodes::display::meter::MeterWidget;
 use widgets::nodes::math::formula::FormulaWidget;
 use widgets::nodes::math::random::RandomWidget;
 use widgets::nodes::transport::sample_hold::SampleHoldWidget;
@@ -686,6 +688,11 @@ impl LightBeatApp {
         self.graph.register_node("Display", "Value Display", |id| {
             Box::new(ValueDisplayWidget::new(id, new_shared_state(1, 0)))
         });
+        for kind in [MeterKind::Level, MeterKind::Gauge] {
+            self.graph.register_node("Display", kind.type_name(), move |id| {
+                Box::new(MeterWidget::new(id, new_shared_state(1, 0), kind))
+            });
+        }
         self.graph.register_node("Display", "LED Display", |id| {
             Box::new(LedDisplayWidget::new(id, new_shared_state(1, 0)))
         });
@@ -920,6 +927,8 @@ impl LightBeatApp {
                 }
                 "Color Display" => Some(Box::new(ColorDisplayProcessNode::new(id))),
                 "Value Display" => Some(Box::new(ValueDisplayProcessNode::new(id))),
+                "Level Meter" => Some(Box::new(MeterProcessNode::new(id, MeterKind::Level))),
+                "Gauge" => Some(Box::new(MeterProcessNode::new(id, MeterKind::Gauge))),
                 "LED Display" => Some(Box::new(LedDisplayProcessNode::new(id))),
                 "Palette Select" => Some(Box::new(PaletteSelectProcessNode::new(id))),
                 "Gradient Source" => Some(Box::new(GradientSourceProcessNode::new(id))),
