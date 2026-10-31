@@ -146,7 +146,10 @@ impl ProcessNode for AudioInputProcessNode {
 
         // Slot analyzer values into the output buffer. Trigger outputs are
         // edge-detected from the monotonic counters emitted by the worker.
+        // `slot` indexes our outputs, which start with the status port; the
+        // worker's frame has no such port, so it is walked separately.
         let mut slot = 1;
+        let mut frame_slot = 0;
         for (ai, k) in self.cached_kinds.iter().enumerate() {
             let n = k.outputs().len();
             let triggers = k.trigger_outputs();
@@ -161,13 +164,14 @@ impl ProcessNode for AudioInputProcessNode {
                             _ => 0.0,
                         }
                     }
-                    None => frame.values.get(slot + j).copied().unwrap_or(0.0),
+                    None => frame.values.get(frame_slot + j).copied().unwrap_or(0.0),
                 };
                 if let Some(s) = self.output_values.get_mut(slot + j) {
                     *s = out;
                 }
             }
             slot += n;
+            frame_slot += n;
         }
 
         // Snapshot for display (re-lock briefly to read name + params).
@@ -264,5 +268,76 @@ impl ProcessNode for AudioInputProcessNode {
             outputs: self.display_outputs.clone(),
             analyzer_results: self.display_analyzer_results.clone(),
         }));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::{Arc, Mutex};
+
+    use super::*;
+    use crate::audio::analyzers::worker::AnalyzerFrame;
+    use crate::audio::manager::{AudioInputRuntime, ConnectionStatus};
+
+    fn input_with(kinds: &[AnalyzerKind], values: Vec<f32>, counts: Vec<Vec<u64>>) -> SharedAudioInputs {
+        let frame = Arc::new(parking_lot::Mutex::new(AnalyzerFrame {
+            values,
+            onset_counts: counts,
+            sample_index: 0,
+        }));
+        Arc::new(Mutex::new(vec![AudioInputRuntime {
+            id: 7,
+            name: "in".into(),
+            enabled: true,
+            backend: Default::default(),
+            device_name: String::new(),
+            sample_rate: None,
+            buffer_size_frames: None,
+            analyzer_kinds: kinds.to_vec(),
+            analyzer_handles: Vec::new(),
+            analyzer_frame: Some(frame),
+            status: ConnectionStatus::Connected,
+            actual_sample_rate: 44_100,
+            actual_buffer_frames: 512,
+            bound_to: None,
+        }]))
+    }
+
+    fn node(audio: SharedAudioInputs) -> AudioInputProcessNode {
+        let mut n = AudioInputProcessNode::new(NodeId(1), audio);
+        n.load_data(&serde_json::json!({ "input_id": 7 }));
+        n.process();
+        n
+    }
+
+    #[test]
+    fn each_analyzer_output_reads_its_own_value_after_the_status_port() {
+        // Beat clock: beat, beat phase, bar phase, 16th phase, step, bpm, confidence.
+        let clock = vec![0.0, 0.25, 0.5, 0.75, 3.0, 128.0, 0.9];
+        let mut values = clock.clone();
+        values.extend([0.8, 0.3, 0.6]); // peak, rms, envelope
+        let n = node(input_with(
+            &[AnalyzerKind::BeatClock, AnalyzerKind::PeakLevel, AnalyzerKind::Envelope],
+            values,
+            vec![vec![0], vec![], vec![]],
+        ));
+        let out: Vec<f32> = (0..n.outputs().len()).map(|i| n.read_output(i)).collect();
+        assert_eq!(out[0], 1.0, "connected");
+        assert_eq!(out[6], 128.0, "bpm is in beats per minute, not the next value over");
+        assert_eq!(out[7], 0.9, "confidence");
+        assert_eq!(&out[8..11], &[0.8, 0.3, 0.6]);
+    }
+
+    #[test]
+    fn a_trigger_output_pulses_when_its_counter_moves() {
+        let audio = input_with(&[AnalyzerKind::Drums], vec![0.0; 6], vec![vec![1, 0, 0]]);
+        let mut n = node(audio.clone());
+        assert_eq!(n.read_output(1), 0.0, "the first sight of the counters is not an event");
+        let frame = audio.lock().unwrap()[0].analyzer_frame.clone().unwrap();
+        frame.lock().onset_counts = vec![vec![2, 0, 0]];
+        n.process();
+        assert_eq!((n.read_output(1), n.read_output(2)), (1.0, 0.0), "kick pulses, snare does not");
+        n.process();
+        assert_eq!(n.read_output(1), 0.0);
     }
 }
