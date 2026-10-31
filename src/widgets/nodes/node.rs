@@ -427,16 +427,14 @@ pub fn title_bar_rect(rect: Rect, layout: &NodeLayout, zoom: f32) -> Rect {
     Rect::from_min_size(rect.min, Vec2::new(rect.width(), layout.title_h * zoom))
 }
 /// Within a run of same-typed ports, insert an extra blank slot every
-/// `PORT_GROUP_SIZE` ports so long lists are easier to scan. Additionally
-/// a gap always appears wherever the port type changes, so a lone
-/// trigger (Logic) at the top of a list of values (Untyped) stays
-/// visually isolated instead of eating the first slot of the next group.
+/// `PORT_GROUP_SIZE` ports so long lists are easier to scan. A change of
+/// port type adds no gap: the colours show it.
 pub const PORT_GROUP_SIZE: usize = 8;
 
 /// Compute a per-port Y-offset (unscaled pixels, relative to
-/// `PORT_START_Y`) for a list of ports given their types. Gaps are
-/// inserted between runs of different `PortType` and every
-/// `PORT_GROUP_SIZE` ports within a homogeneous run. The returned vec
+/// `PORT_START_Y`) for a list of ports given their types. A gap is
+/// inserted every `PORT_GROUP_SIZE` ports within a run of one `PortType`;
+/// a change of type adds none. The returned vec
 /// has `types.len() + 1` entries — the extra trailing value is the
 /// cumulative height (used by `ports_height`).
 fn compute_port_offsets(types: &[crate::engine::types::PortType]) -> Vec<f32> {
@@ -447,9 +445,8 @@ fn compute_port_offsets(types: &[crate::engine::types::PortType]) -> Vec<f32> {
     for &t in types {
         if let Some(pt) = prev {
             if pt != t {
-                // Type change — lone triggers / single LEDs / etc. get a
-                // gap so they don't merge into the next group.
-                y += PORT_SPACING;
+                // The port colours already tell the types apart, so a new
+                // type only starts a new run of groups, with no gap.
                 run_idx = 0;
             } else if run_idx != 0 && run_idx % PORT_GROUP_SIZE == 0 {
                 // Group break within a homogeneous run.
@@ -511,6 +508,15 @@ mod layout_tests {
         // Input and output of a button line up on the same height.
         let q = port_pos_in(rect(), &l, PortDir::Input, &one, &[], 0, 1.0);
         assert_eq!(p.y, q.y);
+    }
+
+    #[test]
+    fn ports_of_different_types_sit_next_to_each_other_and_long_runs_still_break_into_groups() {
+        use crate::engine::types::PortType::{Logic, Untyped};
+        let tight = compute_port_offsets(&[Logic, Untyped, Untyped]);
+        assert_eq!(tight, vec![0.0, PORT_SPACING, 2.0 * PORT_SPACING, 3.0 * PORT_SPACING]);
+        let long = compute_port_offsets(&[Untyped; 9]);
+        assert_eq!(long[8], 9.0 * PORT_SPACING, "a blank slot after the eighth");
     }
 
     #[test]
