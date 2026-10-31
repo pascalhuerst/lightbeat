@@ -473,6 +473,10 @@ src/
 - **Project save** always uses the *root* level
   (`project::save_graph` calls `graph.root_level()`), so save can happen
   while the user is navigated inside a subgraph.
+- **Quick add**: right-click on empty canvas opens a type-to-add search at the
+  pointer (`show_quick_add`, ranking in `quick_add_matches`); Enter adds the
+  top match there. Right-click on a selected node or a port opens the other
+  menus instead.
 - **Hide unused ports** (`H`, or the node menu) is a per-node flag in
   `NodeSharedState::hide_unused_ports`, saved as `SavedNode.hide_unused_ports`.
   The graph turns it into `hidden_inputs`/`hidden_outputs` each frame
