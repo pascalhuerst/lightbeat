@@ -1783,6 +1783,7 @@ impl LightBeatApp {
             inner_graph: Some(inner),
             disabled: false,
             promoted: Vec::new(),
+            hide_unused_ports: false,
         };
 
         // Load this single node into the active level via the existing

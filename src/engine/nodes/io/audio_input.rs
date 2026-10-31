@@ -111,7 +111,7 @@ impl ProcessNode for AudioInputProcessNode {
         if kinds != self.cached_kinds || self.outputs.is_empty() {
             let mut expected: Vec<PortDef> = Vec::new();
             for (i, k) in kinds.iter().enumerate() {
-                let prefix = format!("a{}.", i);
+                let prefix = crate::audio::analyzers::port_prefix(&kinds, i);
                 for p in k.outputs() {
                     expected.push(PortDef::new(format!("{}{}", prefix, p.name), p.port_type));
                 }

@@ -120,6 +120,9 @@ pub struct SavedNode {
     /// `connections` refer to these ports by index after the node's own.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub promoted: Vec<PromotedParam>,
+    /// Show only the wired ports.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub hide_unused_ports: bool,
 }
 
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
@@ -223,6 +226,7 @@ pub fn save_level(level: &GraphLevel, graph: &NodeGraph) -> ProjectFile {
         let data = shared.save_data.clone();
         let disabled = shared.disabled;
         let promoted = shared.promoted.clone();
+        let hide_unused_ports = shared.hide_unused_ports;
         drop(shared);
 
         // For Subgraph nodes, recursively save the inner level.
@@ -244,6 +248,7 @@ pub fn save_level(level: &GraphLevel, graph: &NodeGraph) -> ProjectFile {
             inner_graph,
             disabled,
             promoted,
+            hide_unused_ports,
         });
     }
 
@@ -391,6 +396,7 @@ pub fn load_graph(graph: &mut NodeGraph, project: &ProjectFile) -> Vec<usize> {
                     shared.pending_params.push((sp.index, val));
                 }
                 shared.disabled = saved.disabled;
+                shared.hide_unused_ports = saved.hide_unused_ports;
                 // Set before connections are restored so the extra ports exist.
                 shared.promoted = saved.promoted.clone();
                 shared.promoted_applied = saved.promoted.clone();
@@ -865,6 +871,7 @@ mod tests {
             inner_graph: None,
             disabled: false,
             promoted: Vec::new(),
+            hide_unused_ports: false,
         }
     }
 
@@ -1005,6 +1012,27 @@ mod tests {
         assert_eq!(shared.promoted.len(), 2);
         assert_eq!(shared.pending_promoted.as_ref().map(Vec::len), Some(2));
         assert!(shared.pending_params.iter().any(|(i, _)| *i == 2), "the anchor was restored");
+    }
+
+    #[test]
+    fn hiding_unused_ports_is_saved_and_restored() {
+        use crate::widgets::nodes::math::constant::ConstantWidget;
+        use crate::widgets::nodes::NodeGraph;
+
+        let mut g = NodeGraph::new();
+        g.register_node("Math", "Const Value", |id| {
+            Box::new(ConstantWidget::new(id, crate::engine::types::PortType::Untyped, crate::engine::types::new_shared_state(0, 1)))
+        });
+        let project: ProjectFile = serde_json::from_str(r#"{
+            "nodes": [{"type_name": "Const Value", "id": 1, "pos": [0.0, 0.0], "params": [], "hide_unused_ports": true}],
+            "connections": []
+        }"#).unwrap();
+        load_graph(&mut g, &project);
+        assert!(g.node_mut(0).shared_state().lock().unwrap().hide_unused_ports);
+        let saved = save_graph(&g);
+        assert!(saved.nodes[0].hide_unused_ports);
+        let json = serde_json::to_string(&saved).unwrap();
+        assert!(json.contains("hide_unused_ports"));
     }
 
     #[test]

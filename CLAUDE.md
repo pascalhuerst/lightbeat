@@ -472,6 +472,14 @@ src/
 - **Project save** always uses the *root* level
   (`project::save_graph` calls `graph.root_level()`), so save can happen
   while the user is navigated inside a subgraph.
+- **Hide unused ports** (`H`, or the node menu) is a per-node flag in
+  `NodeSharedState::hide_unused_ports`, saved as `SavedNode.hide_unused_ports`.
+  The graph turns it into `hidden_inputs`/`hidden_outputs` each frame
+  (`refresh_hidden_ports`): a port with no wire is hidden unless it has a
+  `marker` (the variadic "+"). Hidden ports keep their index, so saved wires
+  are unaffected, but nothing may position or hit-test a port itself: use
+  `NodeWidget::port_pos` / `is_port_hidden` and `node_size`, never
+  `compute_port_offsets` or the raw port list.
 - **`cleanup_stale_connections`** runs every frame and now drops
   type-incompatible wires too. This is what makes mode switching "feel right".
 

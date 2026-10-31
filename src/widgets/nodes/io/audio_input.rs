@@ -85,8 +85,9 @@ impl AudioInputWidget {
             // AudioInputProcessNode::process): per-analyzer prefixed ports.
             let mut outs = vec![("connected".to_string(), PortType::Logic, 0.0)];
             for (i, kind) in input.analyzer_kinds.iter().enumerate() {
+                let prefix = crate::audio::analyzers::port_prefix(&input.analyzer_kinds, i);
                 for p in kind.outputs() {
-                    outs.push((format!("a{}.{}", i, p.name), p.port_type, 0.0));
+                    outs.push((format!("{prefix}{}", p.name), p.port_type, 0.0));
                 }
             }
             self.outputs = outs;

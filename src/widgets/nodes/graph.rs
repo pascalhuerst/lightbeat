@@ -169,6 +169,7 @@ struct ClipboardNode {
     size: Option<Vec2>,
     params: Vec<(usize, ParamValue)>,
     promoted: Vec<PromotedParam>,
+    hide_unused_ports: bool,
     data: Option<serde_json::Value>,
     /// Offset from the first copied node's position.
     offset: Vec2,
@@ -713,10 +714,10 @@ impl NodeGraph {
                 let node_id = level.states[i].id;
 
                 let inputs = level.nodes[i].ui_inputs_full();
-                let in_types: Vec<PortType> = inputs.iter().map(|p| p.def.port_type).collect();
                 let mut base = 0usize;
                 for (pi, up) in inputs.iter().enumerate() {
-                    let pos = port_pos_in(rect, &level.nodes[i].layout(), PortDir::Input, &in_types, pi, z);
+                    if level.nodes[i].is_port_hidden(PortDir::Input, pi) { continue; }
+                    let pos = level.nodes[i].port_pos(rect, PortDir::Input, pi, z);
                     if pos.distance(pointer) < radius {
                         found = Some((
                             make_port_id(node_id, PortDir::Input, pi),
@@ -729,10 +730,10 @@ impl NodeGraph {
                     base += up.def.port_type.channel_count();
                 }
                 let outputs = level.nodes[i].ui_outputs();
-                let out_types: Vec<PortType> = outputs.iter().map(|p| p.def.port_type).collect();
                 let mut base = 0usize;
                 for (pi, up) in outputs.iter().enumerate() {
-                    let pos = port_pos_in(rect, &level.nodes[i].layout(), PortDir::Output, &out_types, pi, z);
+                    if level.nodes[i].is_port_hidden(PortDir::Output, pi) { continue; }
+                    let pos = level.nodes[i].port_pos(rect, PortDir::Output, pi, z);
                     if pos.distance(pointer) < radius {
                         found = Some((
                             make_port_id(node_id, PortDir::Output, pi),
@@ -880,18 +881,18 @@ impl NodeGraph {
             let rect = node_rects[i];
             let radius = (PORT_RADIUS + 4.0) * z;
             let outs = level.nodes[i].ui_outputs();
-            let out_types: Vec<PortType> = outs.iter().map(|p| p.def.port_type).collect();
             for (pi, _) in outs.iter().enumerate() {
-                let pos = port_pos_in(rect, &level.nodes[i].layout(), PortDir::Output, &out_types, pi, z);
+                if level.nodes[i].is_port_hidden(PortDir::Output, pi) { continue; }
+                let pos = level.nodes[i].port_pos(rect, PortDir::Output, pi, z);
                 if pos.distance(pointer) < radius {
                     ui.ctx().set_cursor_icon(egui::CursorIcon::Crosshair);
                     return;
                 }
             }
             let ins = level.nodes[i].ui_inputs_full();
-            let in_types: Vec<PortType> = ins.iter().map(|p| p.def.port_type).collect();
             for (pi, _) in ins.iter().enumerate() {
-                let pos = port_pos_in(rect, &level.nodes[i].layout(), PortDir::Input, &in_types, pi, z);
+                if level.nodes[i].is_port_hidden(PortDir::Input, pi) { continue; }
+                let pos = level.nodes[i].port_pos(rect, PortDir::Input, pi, z);
                 if pos.distance(pointer) < radius {
                     ui.ctx().set_cursor_icon(egui::CursorIcon::Crosshair);
                     return;
@@ -1164,6 +1165,59 @@ impl NodeGraph {
         }
     }
 
+    /// Work out which ports each node with "hide unused ports" on should not
+    /// show: those without a wire, except the "+" port that adds one.
+    fn refresh_hidden_ports(&mut self) {
+        for level in self.levels.iter_mut() {
+            let mut wired: std::collections::HashSet<(NodeId, PortDir, usize)> = std::collections::HashSet::new();
+            let any = level.nodes.iter().any(|n| n.shared_state().lock().unwrap().hide_unused_ports);
+            if any {
+                for c in &level.connections {
+                    wired.insert((c.from.node, PortDir::Output, c.from.index));
+                    wired.insert((c.to.node, PortDir::Input, c.to.index));
+                }
+            }
+            for (node, state) in level.nodes.iter().zip(level.states.iter()) {
+                let hide = node.shared_state().lock().unwrap().hide_unused_ports;
+                let (hidden_in, hidden_out) = if hide {
+                    let hidden = |ports: Vec<UiPortDef>, dir| -> Vec<bool> {
+                        ports
+                            .iter()
+                            .enumerate()
+                            .map(|(i, p)| p.marker.is_none() && !wired.contains(&(state.id, dir, i)))
+                            .collect()
+                    };
+                    (hidden(node.ui_inputs_full(), PortDir::Input), hidden(node.ui_outputs(), PortDir::Output))
+                } else {
+                    (Vec::new(), Vec::new())
+                };
+                let mut shared = node.shared_state().lock().unwrap();
+                if shared.hidden_inputs != hidden_in {
+                    shared.hidden_inputs = hidden_in;
+                }
+                if shared.hidden_outputs != hidden_out {
+                    shared.hidden_outputs = hidden_out;
+                }
+            }
+        }
+    }
+
+    /// Hide the unwired ports of the selected nodes, or show them all again
+    /// when every selected node already hides them.
+    fn toggle_hide_unused_ports(&mut self) {
+        let sel = self.selected_nodes.clone();
+        let level = self.active();
+        let all_hidden = sel
+            .iter()
+            .filter_map(|&i| level.nodes.get(i))
+            .all(|n| n.shared_state().lock().unwrap().hide_unused_ports);
+        for &i in &sel {
+            if let Some(n) = level.nodes.get(i) {
+                n.shared_state().lock().unwrap().hide_unused_ports = !all_hidden;
+            }
+        }
+    }
+
     /// When the user promotes or demotes a param, the extra ports after the
     /// node's own inputs change. Move every wire that points at one of them to
     /// its port's new position, and drop the wires of demoted params.
@@ -1266,6 +1320,7 @@ impl NodeGraph {
 
         self.reconcile_effect_stacks();
         self.remap_promoted_connections();
+        self.refresh_hidden_ports();
         // Clean up stale connections (ports removed by dynamic nodes like Group Output).
         self.cleanup_stale_connections();
 
@@ -1496,6 +1551,8 @@ impl NodeGraph {
                 level.nodes[i].accent_icon(),
                 &inputs,
                 &outputs,
+                &level.nodes[i].hidden_ports(PortDir::Input),
+                &level.nodes[i].hidden_ports(PortDir::Output),
                 &in_highlights,
                 &out_highlights,
                 disabled,
@@ -1635,6 +1692,15 @@ impl NodeGraph {
             && ui.input(|i| i.key_pressed(egui::Key::F) || i.key_pressed(egui::Key::Home))
         {
             self.fit_to_content();
+        }
+
+        // -- Hide / show unused ports (H) --
+        if !text_has_focus
+            && !ctrl
+            && ui.input(|i| i.key_pressed(egui::Key::H))
+            && !self.selected_nodes.is_empty()
+        {
+            self.toggle_hide_unused_ports();
         }
 
         // -- Duplicate (Ctrl+D) --
@@ -1784,6 +1850,7 @@ impl NodeGraph {
 
             let data = shared.save_data.clone();
             let promoted = shared.promoted.clone();
+            let hide_unused_ports = shared.hide_unused_ports;
             drop(shared);
 
             // For Subgraph nodes, snapshot the inner level so duplicate
@@ -1801,6 +1868,7 @@ impl NodeGraph {
                 size: state.size_override,
                 params,
                 promoted,
+                hide_unused_ports,
                 data,
                 offset: state.pos - origin,
                 original_id: state.id,
@@ -1876,6 +1944,7 @@ impl NodeGraph {
                     }
                     state.promoted = cn.promoted.clone();
                     state.promoted_applied = cn.promoted.clone();
+                    state.hide_unused_ports = cn.hide_unused_ports;
                 }
 
                 if let Some(size) = cn.size {
@@ -2138,16 +2207,15 @@ impl NodeGraph {
         let radius = (PORT_RADIUS + 4.0) * z;
         for i in (0..level.nodes.len()).rev() {
             if i >= node_rects.len() { break; }
-            let layout = level.nodes[i].layout();
             let id = level.states[i].id;
             for dir in [PortDir::Input, PortDir::Output] {
                 let ports = match dir {
                     PortDir::Input => level.nodes[i].ui_inputs_full(),
                     PortDir::Output => level.nodes[i].ui_outputs(),
                 };
-                let types: Vec<PortType> = ports.iter().map(|p| p.def.port_type).collect();
                 for (pi, port) in ports.iter().enumerate() {
-                    let pos = port_pos_in(node_rects[i], &layout, dir, &types, pi, z);
+                    if level.nodes[i].is_port_hidden(dir, pi) { continue; }
+                    let pos = level.nodes[i].port_pos(node_rects[i], dir, pi, z);
                     if pos.distance(pointer) < radius {
                         return Some(PortMenu {
                             port: make_port_id(id, dir, pi),
@@ -2249,18 +2317,9 @@ impl NodeGraph {
         }
         let target_pos = level.states[target].pos;
         let target_size = node_size(level.nodes[target].as_ref(), level.states[target].size_override);
-        let ports_of = |n: &dyn NodeWidget, dir| -> Vec<PortType> {
-            match dir {
-                PortDir::Input => n.ui_inputs_full(),
-                PortDir::Output => n.ui_outputs(),
-            }
-            .iter()
-            .map(|p| p.def.port_type)
-            .collect()
-        };
         let port_y = |n: &dyn NodeWidget, size: Vec2, dir, index| -> f32 {
             let rect = Rect::from_min_size(Pos2::ZERO, size);
-            port_pos_in(rect, &n.layout(), dir, &ports_of(n, dir), index, 1.0).y
+            n.port_pos(rect, dir, index, 1.0).y
         };
         let new_size = node_size(node.as_ref(), None);
         let (new_dir, x) = match port.dir {
@@ -2309,6 +2368,16 @@ impl NodeGraph {
             } else { None }
         } else { None };
 
+        let hide_label = {
+            let level = self.active();
+            let all_hidden = self
+                .selected_nodes
+                .iter()
+                .filter_map(|&i| level.nodes.get(i))
+                .all(|n| n.shared_state().lock().unwrap().hide_unused_ports);
+            if all_hidden { "Show all ports" } else { "Hide unused ports" }
+        };
+        let mut toggle_hide = false;
         let mut move_to_sub = false;
         let mut do_auto_connect = false;
         let mut do_save_macro: Option<NodeId> = None;
@@ -2330,6 +2399,9 @@ impl NodeGraph {
                             do_auto_connect = true;
                         }
                         ui.separator();
+                    }
+                    if ui.button(hide_label).on_hover_text("Show only the ports that have a wire (H)").clicked() {
+                        toggle_hide = true;
                     }
                     if ui.button("Move to Subgraph").clicked() {
                         move_to_sub = true;
@@ -2359,6 +2431,11 @@ impl NodeGraph {
                     self.add_connection(from, to);
                 }
             }
+            self.context_menu_pos = None;
+            return;
+        }
+        if toggle_hide {
+            self.toggle_hide_unused_ports();
             self.context_menu_pos = None;
             return;
         }
@@ -2484,7 +2561,6 @@ impl NodeGraph {
                 } else {
                     (level.nodes[i].ui_outputs(), PortDir::Output)
                 };
-                let port_types: Vec<PortType> = ports.iter().map(|p| p.def.port_type).collect();
                 for (pi, ui_port) in ports.iter().enumerate() {
                     if ui_port.disabled {
                         continue;
@@ -2500,9 +2576,10 @@ impl NodeGraph {
                     if level.states[i].id == dc_from_node {
                         continue;
                     }
-                    let pos = port_pos_in(
-                        node_rects[i], &level.nodes[i].layout(),
-                        target_dir, &port_types, pi, z);
+                    if level.nodes[i].is_port_hidden(target_dir, pi) {
+                        continue;
+                    }
+                    let pos = level.nodes[i].port_pos(node_rects[i], target_dir, pi, z);
                     let dist = pos.distance(pointer_pos);
                     if dist < best_dist {
                         best_dist = dist;
@@ -2616,9 +2693,9 @@ impl NodeGraph {
                 let node_id = level.states[i].id;
 
                 let outputs = level.nodes[i].ui_outputs();
-                let out_types: Vec<PortType> = outputs.iter().map(|p| p.def.port_type).collect();
                 for (pi, ui_port) in outputs.iter().enumerate() {
-                    let pos = port_pos_in(rect, &level.nodes[i].layout(), PortDir::Output, &out_types, pi, z);
+                    if level.nodes[i].is_port_hidden(PortDir::Output, pi) { continue; }
+                    let pos = level.nodes[i].port_pos(rect, PortDir::Output, pi, z);
                     if pos.distance(pointer_pos) < (PORT_RADIUS + 4.0) * z {
                         self.drag.drawing_conn = Some(DrawingConnection {
                             from: make_port_id(node_id, PortDir::Output, pi),
@@ -2633,12 +2710,12 @@ impl NodeGraph {
                     }
                 }
                 let in_list = level.nodes[i].ui_inputs_full();
-                let in_types: Vec<PortType> = in_list.iter().map(|p| p.def.port_type).collect();
                 let input_ports: Vec<(usize, Pos2, PortType)> = in_list
                     .iter()
                     .enumerate()
+                    .filter(|(pi, _)| !level.nodes[i].is_port_hidden(PortDir::Input, *pi))
                     .map(|(pi, up)| {
-                        let pos = port_pos_in(rect, &level.nodes[i].layout(), PortDir::Input, &in_types, pi, z);
+                        let pos = level.nodes[i].port_pos(rect, PortDir::Input, pi, z);
                         (pi, pos, up.def.port_type)
                     })
                     .collect();
@@ -2968,9 +3045,9 @@ impl NodeGraph {
         for i in 0..level.nodes.len() {
             let rect = node_rects[i];
             let outs = level.nodes[i].ui_outputs();
-            let out_types: Vec<PortType> = outs.iter().map(|p| p.def.port_type).collect();
             for (pi, ui_port) in outs.iter().enumerate() {
-                let pos = port_pos_in(rect, &level.nodes[i].layout(), PortDir::Output, &out_types, pi, z);
+                if level.nodes[i].is_port_hidden(PortDir::Output, pi) { continue; }
+                let pos = level.nodes[i].port_pos(rect, PortDir::Output, pi, z);
                 if pos.distance(pointer_pos) < (PORT_RADIUS + 4.0) * z {
                     ui.ctx().set_cursor_icon(CursorIcon::PointingHand);
                     egui::show_tooltip_at(ui.ctx(), ui.layer_id(), egui::Id::new(("port_tip", i, pi, 1)), pos + egui::vec2(10.0, -10.0), |ui| {
@@ -2979,9 +3056,9 @@ impl NodeGraph {
                 }
             }
             let ins = level.nodes[i].ui_inputs_full();
-            let in_types: Vec<PortType> = ins.iter().map(|p| p.def.port_type).collect();
             for (pi, ui_port) in ins.iter().enumerate() {
-                let pos = port_pos_in(rect, &level.nodes[i].layout(), PortDir::Input, &in_types, pi, z);
+                if level.nodes[i].is_port_hidden(PortDir::Input, pi) { continue; }
+                let pos = level.nodes[i].port_pos(rect, PortDir::Input, pi, z);
                 if pos.distance(pointer_pos) < (PORT_RADIUS + 4.0) * z {
                     ui.ctx().set_cursor_icon(CursorIcon::PointingHand);
                     egui::show_tooltip_at(ui.ctx(), ui.layer_id(), egui::Id::new(("port_tip", i, pi, 0)), pos + egui::vec2(10.0, -10.0), |ui| {
@@ -3654,8 +3731,8 @@ fn port_screen_pos_from_rects(
         PortDir::Input => nodes[idx].ui_inputs_full(),
         PortDir::Output => nodes[idx].ui_outputs(),
     };
-    let port_types: Vec<PortType> = ports.iter().map(|p| p.def.port_type).collect();
-    Some(port_pos_in(rect, &nodes[idx].layout(), port_id.dir, &port_types, port_id.index, zoom))
+    let _ = ports;
+    Some(nodes[idx].port_pos(rect, port_id.dir, port_id.index, zoom))
 }
 
 
@@ -3681,6 +3758,8 @@ fn draw_node_chrome(
     accent_icon: Option<&str>,
     inputs: &[UiPortDef],
     outputs: &[UiPortDef],
+    hidden_in: &[bool],
+    hidden_out: &[bool],
     in_highlights: &[f32],
     out_highlights: &[f32],
     disabled: bool,
@@ -3808,7 +3887,8 @@ fn draw_node_chrome(
     let in_types: Vec<PortType> = inputs.iter().map(|p| p.def.port_type).collect();
     let out_types: Vec<PortType> = outputs.iter().map(|p| p.def.port_type).collect();
     for (i, ui_port) in inputs.iter().enumerate() {
-        let pos = port_pos_in(rect, layout, PortDir::Input, &in_types, i, zoom);
+        if hidden_in.get(i).copied().unwrap_or(false) { continue; }
+        let pos = port_pos_in(rect, layout, PortDir::Input, &in_types, hidden_in, i, zoom);
         let hi = in_highlights.get(i).copied().unwrap_or(0.0);
         draw_port(painter, pos, ui_port, hi, zoom, disabled);
         if show_port_labels {
@@ -3822,7 +3902,8 @@ fn draw_node_chrome(
 
     // Output ports
     for (i, ui_port) in outputs.iter().enumerate() {
-        let pos = port_pos_in(rect, layout, PortDir::Output, &out_types, i, zoom);
+        if hidden_out.get(i).copied().unwrap_or(false) { continue; }
+        let pos = port_pos_in(rect, layout, PortDir::Output, &out_types, hidden_out, i, zoom);
         let hi = out_highlights.get(i).copied().unwrap_or(0.0);
         draw_port(painter, pos, ui_port, hi, zoom, disabled);
         if show_port_labels {
@@ -4232,8 +4313,8 @@ fn port_screen_pos(
         PortDir::Input => nodes[idx].ui_inputs_full(),
         PortDir::Output => nodes[idx].ui_outputs(),
     };
-    let port_types: Vec<PortType> = ports.iter().map(|p| p.def.port_type).collect();
-    Some(port_pos_in(rect, &nodes[idx].layout(), port_id.dir, &port_types, port_id.index, zoom))
+    let _ = ports;
+    Some(nodes[idx].port_pos(rect, port_id.dir, port_id.index, zoom))
 }
 
 fn port_type_for(
@@ -4299,5 +4380,84 @@ mod port_menu_tests {
         assert_eq!(level.connections.len(), 1);
         assert_eq!(level.connections[0].to, port);
         assert_eq!(level.connections[0].from.node, level.states[1].id);
+    }
+}
+
+#[cfg(test)]
+mod hide_ports_tests {
+    use super::*;
+    use crate::engine::nodes::math::math_op::MathOp;
+    use crate::engine::types::new_shared_state;
+    use crate::widgets::nodes::math::constant::ConstantWidget;
+    use crate::widgets::nodes::math::math_op::MathWidget;
+
+    /// An Add (inputs a, b and the "+" port; one output) with a constant on `a`.
+    fn graph() -> NodeGraph {
+        let mut g = NodeGraph::new();
+        g.add_node(Box::new(MathWidget::new(NodeId(1), MathOp::Add, new_shared_state(8, 1))), Pos2::new(200.0, 0.0));
+        g.add_node(
+            Box::new(ConstantWidget::new(NodeId(2), PortType::Untyped, new_shared_state(0, 1))),
+            Pos2::new(0.0, 0.0),
+        );
+        let from = PortId { node: NodeId(2), index: 0, dir: PortDir::Output };
+        let to = PortId { node: NodeId(1), index: 0, dir: PortDir::Input };
+        g.add_connection(from, to);
+        g
+    }
+
+    #[test]
+    fn only_wired_ports_and_the_plus_port_stay_when_unused_ports_are_hidden() {
+        let mut g = graph();
+        g.refresh_hidden_ports();
+        assert!(g.active().nodes[0].hidden_ports(PortDir::Input).is_empty(), "nothing hidden by default");
+
+        g.selected_nodes = vec![0];
+        g.toggle_hide_unused_ports();
+        g.refresh_hidden_ports();
+        let node = &g.active().nodes[0];
+        // a is wired, b is not, "+" always stays.
+        assert_eq!(node.hidden_ports(PortDir::Input), vec![false, true, false]);
+        // The output has no wire.
+        assert_eq!(node.hidden_ports(PortDir::Output), vec![true]);
+        // The constant's output is wired but its node does not hide anything.
+        assert!(g.active().nodes[1].hidden_ports(PortDir::Output).is_empty());
+
+        g.toggle_hide_unused_ports();
+        g.refresh_hidden_ports();
+        assert!(g.active().nodes[0].hidden_ports(PortDir::Input).is_empty(), "toggled back");
+    }
+
+    #[test]
+    fn hidden_ports_close_up_and_the_node_shrinks() {
+        let mut g = graph();
+        let full = node_size(g.active().nodes[0].as_ref(), None);
+        let rect = Rect::from_min_size(Pos2::ZERO, full);
+        let gap_before = {
+            let n = g.active().nodes[0].as_ref();
+            n.port_pos(rect, PortDir::Input, 2, 1.0).y - n.port_pos(rect, PortDir::Input, 0, 1.0).y
+        };
+
+        g.selected_nodes = vec![0];
+        g.toggle_hide_unused_ports();
+        g.refresh_hidden_ports();
+        let node = g.active().nodes[0].as_ref();
+        let small = node_size(node, None);
+        assert!(small.y <= full.y);
+        let rect = Rect::from_min_size(Pos2::ZERO, small);
+        let a = node.port_pos(rect, PortDir::Input, 0, 1.0);
+        let plus = node.port_pos(rect, PortDir::Input, 2, 1.0);
+        assert!(plus.y - a.y <= gap_before - PORT_SPACING + 0.01, "b is gone from between them");
+    }
+
+    #[test]
+    fn a_wire_added_later_shows_its_port_again() {
+        let mut g = graph();
+        g.selected_nodes = vec![0];
+        g.toggle_hide_unused_ports();
+        let from = PortId { node: NodeId(2), index: 0, dir: PortDir::Output };
+        let to = PortId { node: NodeId(1), index: 1, dir: PortDir::Input };
+        g.add_connection(from, to);
+        g.refresh_hidden_ports();
+        assert_eq!(g.active().nodes[0].hidden_ports(PortDir::Input), vec![false, false, false]);
     }
 }

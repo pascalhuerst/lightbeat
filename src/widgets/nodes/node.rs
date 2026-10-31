@@ -169,6 +169,34 @@ pub trait NodeWidget: Any {
 // Convenience methods that delegate to shared state.
 #[allow(dead_code)]
 impl dyn NodeWidget {
+    /// Which of the ports on this side are hidden, by port index.
+    pub fn hidden_ports(&self, dir: PortDir) -> Vec<bool> {
+        let shared = self.shared_state().lock().unwrap();
+        match dir {
+            PortDir::Input => shared.hidden_inputs.clone(),
+            PortDir::Output => shared.hidden_outputs.clone(),
+        }
+    }
+
+    pub fn is_port_hidden(&self, dir: PortDir, index: usize) -> bool {
+        let shared = self.shared_state().lock().unwrap();
+        let list = match dir {
+            PortDir::Input => &shared.hidden_inputs,
+            PortDir::Output => &shared.hidden_outputs,
+        };
+        list.get(index).copied().unwrap_or(false)
+    }
+
+    /// Where port `index` is when the node is drawn in `rect`.
+    pub fn port_pos(&self, rect: Rect, dir: PortDir, index: usize, zoom: f32) -> Pos2 {
+        let ports = match dir {
+            PortDir::Input => self.ui_inputs_full(),
+            PortDir::Output => self.ui_outputs(),
+        };
+        let types: Vec<crate::engine::types::PortType> = ports.iter().map(|p| p.def.port_type).collect();
+        port_pos_in(rect, &self.layout(), dir, &types, &self.hidden_ports(dir), index, zoom)
+    }
+
     pub fn read_input(&self, port_index: usize) -> f32 {
         let shared = self.shared_state().lock().unwrap();
         shared.inputs.get(port_index).copied().unwrap_or(0.0)
@@ -306,12 +334,6 @@ impl NodeLayout {
         self
     }
 
-    /// Keep the slim header empty when the control already shows its name.
-    pub const fn without_title(mut self) -> Self {
-        self.show_title = false;
-        self
-    }
-
     /// Drop the header altogether; dragging the control moves the node.
     pub const fn headerless(mut self) -> Self {
         self.title_h = 0.0;
@@ -324,25 +346,42 @@ impl NodeLayout {
 }
 
 /// Port position for a node drawn in `rect` (screen space) with `layout`.
+/// Hidden ports take no room: the others close up around them.
 pub fn port_pos_in(
     rect: Rect,
     layout: &NodeLayout,
     dir: PortDir,
     port_types: &[crate::engine::types::PortType],
+    hidden: &[bool],
     index: usize,
     zoom: f32,
 ) -> Pos2 {
+    let (types, slot) = visible_ports(port_types, hidden, index);
     let x = match dir {
         PortDir::Input => rect.min.x,
         PortDir::Output => rect.max.x,
     };
-    if layout.centre_single_port && port_types.len() == 1 {
+    if layout.centre_single_port && types.len() == 1 {
         let top = rect.min.y + layout.content_top * zoom;
         return Pos2::new(x, top + (rect.max.y - top) * 0.5);
     }
-    let offsets = compute_port_offsets(port_types);
-    let offset = offsets.get(index).copied().unwrap_or(index as f32 * PORT_SPACING);
+    let offsets = compute_port_offsets(&types);
+    let offset = offsets.get(slot).copied().unwrap_or(slot as f32 * PORT_SPACING);
     Pos2::new(x, rect.min.y + (layout.port_start_y + offset) * zoom)
+}
+
+/// The types of the ports that are not hidden, and where `index` sits among them.
+fn visible_ports(
+    port_types: &[crate::engine::types::PortType],
+    hidden: &[bool],
+    index: usize,
+) -> (Vec<crate::engine::types::PortType>, usize) {
+    if hidden.iter().all(|h| !h) {
+        return (port_types.to_vec(), index);
+    }
+    let shown: Vec<usize> = (0..port_types.len()).filter(|&i| !hidden.get(i).copied().unwrap_or(false)).collect();
+    let slot = shown.iter().position(|&i| i == index).unwrap_or(0);
+    (shown.iter().map(|&i| port_types[i]).collect(), slot)
 }
 
 /// Smallest height that shows every port of a node with this layout.
@@ -365,6 +404,8 @@ pub fn node_size(node: &dyn NodeWidget, size_override: Option<Vec2>) -> Vec2 {
     let layout = node.layout();
     let in_types: Vec<_> = node.ui_inputs_full().iter().map(|p| p.def.port_type).collect();
     let out_types: Vec<_> = node.ui_outputs().iter().map(|p| p.def.port_type).collect();
+    let (in_types, _) = visible_ports(&in_types, &node.hidden_ports(PortDir::Input), 0);
+    let (out_types, _) = visible_ports(&out_types, &node.hidden_ports(PortDir::Output), 0);
     let min_w = node.min_width();
     let content_h = layout.content_top + node.min_content_height() + layout.bottom_pad;
     let min_h = ports_min_height(&layout, &in_types, &out_types).max(content_h);
@@ -452,11 +493,11 @@ mod layout_tests {
         assert!(l.toggle && !l.bare && l.show_title);
         // First of two input ports: 38 px below the top; the second 22 px lower.
         let types = [PortType::Untyped, PortType::Untyped];
-        let p0 = port_pos_in(rect(), &l, PortDir::Input, &types, 0, 1.0);
-        let p1 = port_pos_in(rect(), &l, PortDir::Input, &types, 1, 1.0);
+        let p0 = port_pos_in(rect(), &l, PortDir::Input, &types, &[], 0, 1.0);
+        let p1 = port_pos_in(rect(), &l, PortDir::Input, &types, &[], 1, 1.0);
         assert_eq!((p0.x, p0.y, p1.y), (100.0, 88.0, 110.0));
         // Outputs sit on the right edge, and everything scales with zoom.
-        let out = port_pos_in(rect(), &l, PortDir::Output, &types, 0, 2.0);
+        let out = port_pos_in(rect(), &l, PortDir::Output, &types, &[], 0, 2.0);
         assert_eq!((out.x, out.y), (220.0, 50.0 + 38.0 * 2.0));
     }
 
@@ -464,11 +505,11 @@ mod layout_tests {
     fn a_compact_node_centres_a_lone_port_on_its_content() {
         let l = NodeLayout::compact();
         let one = [PortType::Logic];
-        let p = port_pos_in(rect(), &l, PortDir::Output, &one, 0, 1.0);
+        let p = port_pos_in(rect(), &l, PortDir::Output, &one, &[], 0, 1.0);
         // Content runs from 14 px below the top to the bottom edge.
         assert_eq!((p.x, p.y), (220.0, 50.0 + 14.0 + (80.0 - 14.0) / 2.0));
         // Input and output of a button line up on the same height.
-        let q = port_pos_in(rect(), &l, PortDir::Input, &one, 0, 1.0);
+        let q = port_pos_in(rect(), &l, PortDir::Input, &one, &[], 0, 1.0);
         assert_eq!(p.y, q.y);
     }
 
@@ -476,8 +517,8 @@ mod layout_tests {
     fn several_ports_on_a_compact_node_hang_from_just_under_the_header() {
         let l = NodeLayout::compact();
         let two = [PortType::Untyped, PortType::Untyped];
-        let p0 = port_pos_in(rect(), &l, PortDir::Output, &two, 0, 1.0);
-        let p1 = port_pos_in(rect(), &l, PortDir::Output, &two, 1, 1.0);
+        let p0 = port_pos_in(rect(), &l, PortDir::Output, &two, &[], 0, 1.0);
+        let p1 = port_pos_in(rect(), &l, PortDir::Output, &two, &[], 1, 1.0);
         assert_eq!(p0.y, 50.0 + 26.0);
         assert_eq!(p1.y - p0.y, PORT_SPACING);
     }
@@ -489,7 +530,6 @@ mod layout_tests {
         let content = content_rect(rect(), &l, 1.0);
         assert_eq!((content.min.x, content.max.x, content.max.y), (100.0, 220.0, 130.0));
         assert_eq!(content.min.y, 50.0 + 14.0);
-        assert!(!NodeLayout::compact().without_title().show_title);
     }
 
     #[test]

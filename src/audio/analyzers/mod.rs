@@ -87,6 +87,22 @@ impl AnalyzerKind {
         }
     }
 
+    /// A few letters for labelling the node's output ports.
+    pub fn short_label(&self) -> &'static str {
+        match self {
+            AnalyzerKind::BeatClock => "Clock",
+            AnalyzerKind::PeakLevel => "Peak",
+            AnalyzerKind::Envelope => "Env",
+            AnalyzerKind::Spectrum => "Spectrum",
+            AnalyzerKind::Drums => "Drums",
+            AnalyzerKind::Brightness => "Bright",
+            AnalyzerKind::Buildup => "Build-up",
+            AnalyzerKind::Presence => "Signal",
+            AnalyzerKind::Loudness => "Loud",
+            AnalyzerKind::Key => "Key",
+        }
+    }
+
     /// Which of `outputs()` are triggers, driven by `trigger_counts` instead
     /// of by the output values.
     pub fn trigger_outputs(&self) -> &'static [usize] {
@@ -153,6 +169,19 @@ impl AnalyzerKind {
                 })
                 .collect(),
         }
+    }
+}
+
+/// What to call analyzer `index` of `kinds` on the node's ports: its short
+/// name, numbered when the same kind is added more than once.
+pub fn port_prefix(kinds: &[AnalyzerKind], index: usize) -> String {
+    let kind = kinds[index];
+    let same = kinds.iter().filter(|k| **k == kind).count();
+    if same > 1 {
+        let nth = kinds[..=index].iter().filter(|k| **k == kind).count();
+        format!("{} {nth}: ", kind.short_label())
+    } else {
+        format!("{}: ", kind.short_label())
     }
 }
 

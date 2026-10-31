@@ -266,6 +266,13 @@ pub struct NodeSharedState {
     pub pending_promoted: Option<Vec<PromotedParam>>,
     /// Param names the node refuses to have promoted (written by the engine).
     pub non_promotable: &'static [&'static str],
+    /// Show only the ports that have a wire (plus the variadic "+" ports).
+    /// UI-owned and saved with the project; the engine never reads it.
+    pub hide_unused_ports: bool,
+    /// Which ports are hidden right now, by port index; empty when none are.
+    /// Kept up to date by the graph each frame.
+    pub hidden_inputs: Vec<bool>,
+    pub hidden_outputs: Vec<bool>,
 }
 
 impl NodeSharedState {
@@ -284,6 +291,9 @@ impl NodeSharedState {
             promoted_applied: Vec::new(),
             pending_promoted: None,
             non_promotable: &[],
+            hide_unused_ports: false,
+            hidden_inputs: Vec::new(),
+            hidden_outputs: Vec::new(),
         }
     }
 }

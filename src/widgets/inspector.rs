@@ -221,7 +221,7 @@ pub fn show_inspector(ui: &mut Ui, node: &mut dyn NodeWidget) {
             let locked = promo.driven(param.name());
             match param {
                 ParamDef::Float {
-                    name,
+                    name: _,
                     value,
                     min,
                     max,
@@ -243,7 +243,7 @@ pub fn show_inspector(ui: &mut Ui, node: &mut dyn NodeWidget) {
                     });
                 }
                 ParamDef::Int {
-                    name,
+                    name: _,
                     value,
                     min,
                     max,
@@ -260,7 +260,7 @@ pub fn show_inspector(ui: &mut Ui, node: &mut dyn NodeWidget) {
                         promote_checkbox(ui, node, &promo, param);
                     });
                 }
-                ParamDef::Bool { name, value } => {
+                ParamDef::Bool { name: _, value } => {
                     let mut v = *value;
                     ui.horizontal(|ui| {
                         ui.add_enabled_ui(!locked, |ui| {
@@ -272,7 +272,7 @@ pub fn show_inspector(ui: &mut Ui, node: &mut dyn NodeWidget) {
                     });
                 }
                 ParamDef::Choice {
-                    name,
+                    name: _,
                     value,
                     options,
                 } => {
