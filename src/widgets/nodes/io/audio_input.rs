@@ -114,6 +114,25 @@ impl NodeWidget for AudioInputWidget {
     fn ui_inputs(&self) -> Vec<UiPortDef> {
         vec![]
     }
+
+    /// Params are keyed "a0.min_bpm", which means nothing to a user: list
+    /// them under the analyzer's name, as the audio inputs window shows it.
+    fn param_display(&self, name: &str) -> (Option<String>, String) {
+        let parsed = name
+            .strip_prefix('a')
+            .and_then(|rest| rest.split_once('.'))
+            .and_then(|(i, local)| Some((i.parse::<usize>().ok()?, local)));
+        let Some((index, local)) = parsed else { return (None, name.to_string()) };
+        let Some((kind, _)) = self.analyzer_results.get(index) else { return (None, name.to_string()) };
+        let same = self.analyzer_results.iter().filter(|(k, _)| k == kind).count();
+        let group = if same > 1 {
+            let nth = self.analyzer_results[..=index].iter().filter(|(k, _)| k == kind).count();
+            format!("{} #{nth}", kind.label())
+        } else {
+            kind.label().to_string()
+        };
+        (Some(group), local.replace('_', " "))
+    }
     fn ui_outputs(&self) -> Vec<UiPortDef> {
         self.outputs
             .iter()
@@ -405,5 +424,36 @@ fn draw_envelope_plot(painter: &egui::Painter, rect: egui::Rect, history: &[f32]
             painter.line_segment([p, pos], Stroke::new(1.5_f32, ENV_LINE));
         }
         prev = Some(pos);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn widget(kinds: &[AnalyzerKind]) -> AudioInputWidget {
+        let audio: SharedAudioInputs = Default::default();
+        let mut w = AudioInputWidget::new(NodeId(1), new_shared_state(0, 8), audio);
+        w.analyzer_results = kinds.iter().map(|k| (*k, Vec::new())).collect();
+        w
+    }
+
+    #[test]
+    fn params_are_listed_under_the_analyzers_name() {
+        let w = widget(&[AnalyzerKind::BeatClock, AnalyzerKind::PeakLevel]);
+        assert_eq!(
+            w.param_display("a0.min_bpm"),
+            (Some(AnalyzerKind::BeatClock.label().to_string()), "min bpm".to_string())
+        );
+        assert_eq!(w.param_display("a1.release_ms").0.as_deref(), Some("Peak Level"));
+        assert_eq!(w.param_display("whatever"), (None, "whatever".to_string()));
+    }
+
+    #[test]
+    fn two_analyzers_of_one_kind_are_numbered() {
+        let w = widget(&[AnalyzerKind::PeakLevel, AnalyzerKind::Envelope, AnalyzerKind::PeakLevel]);
+        assert_eq!(w.param_display("a0.release_ms").0.as_deref(), Some("Peak Level #1"));
+        assert_eq!(w.param_display("a2.release_ms").0.as_deref(), Some("Peak Level #2"));
+        assert_eq!(w.param_display("a1.attack_ms").0.as_deref(), Some("Envelope"));
     }
 }

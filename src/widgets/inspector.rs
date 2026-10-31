@@ -205,8 +205,17 @@ pub fn show_inspector(ui: &mut Ui, node: &mut dyn NodeWidget) {
         ui.add_space(4.0);
 
         let promo = PromoteCtx::read(node);
+        let mut last_group: Option<String> = None;
         for (i, param) in params.iter().enumerate() {
             if hidden.contains(&i) { continue; }
+            let (group, label) = node.param_display(param.name());
+            if group != last_group {
+                if let Some(g) = &group {
+                    ui.add_space(6.0);
+                    ui.label(egui::RichText::new(g).strong());
+                }
+                last_group = group;
+            }
             // A wired promoted param is driven by its signal; editing it by
             // hand would only be overwritten on the next tick.
             let locked = promo.driven(param.name());
@@ -222,7 +231,7 @@ pub fn show_inspector(ui: &mut Ui, node: &mut dyn NodeWidget) {
                     let mut v = *value;
                     ui.horizontal(|ui| {
                         ui.add_enabled_ui(!locked, |ui| {
-                            ui.label(name);
+                            ui.label(&label);
                             let slider = egui::Slider::new(&mut v, *min..=*max)
                                 .step_by(*step as f64)
                                 .suffix(*unit);
@@ -242,7 +251,7 @@ pub fn show_inspector(ui: &mut Ui, node: &mut dyn NodeWidget) {
                     let mut v = *value;
                     ui.horizontal(|ui| {
                         ui.add_enabled_ui(!locked, |ui| {
-                            ui.label(name);
+                            ui.label(&label);
                             let slider = egui::Slider::new(&mut v, *min..=*max);
                             if ui.add(slider).changed() {
                                 push_param(node, i, ParamValue::Int(v));
@@ -255,7 +264,7 @@ pub fn show_inspector(ui: &mut Ui, node: &mut dyn NodeWidget) {
                     let mut v = *value;
                     ui.horizontal(|ui| {
                         ui.add_enabled_ui(!locked, |ui| {
-                            if ui.checkbox(&mut v, name).changed() {
+                            if ui.checkbox(&mut v, &label).changed() {
                                 push_param(node, i, ParamValue::Bool(v));
                             }
                         });
@@ -270,7 +279,7 @@ pub fn show_inspector(ui: &mut Ui, node: &mut dyn NodeWidget) {
                     let mut v = *value;
                     ui.horizontal(|ui| {
                         ui.add_enabled_ui(!locked, |ui| {
-                            ui.label(name);
+                            ui.label(&label);
                             egui::ComboBox::from_id_salt(format!("param_{}", i))
                                 .selected_text(&options[v])
                                 .show_ui(ui, |ui| {

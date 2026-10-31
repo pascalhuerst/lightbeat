@@ -156,6 +156,13 @@ pub trait NodeWidget: Any {
     /// Default: nothing is overridden.
     fn overridden_param_indices(&self) -> Vec<usize> { Vec::new() }
 
+    /// How the inspector and a promoted port show a param: an optional group
+    /// heading it is listed under, and its label. Params are keyed by name,
+    /// so a node whose names are internal can present them differently here.
+    fn param_display(&self, name: &str) -> (Option<String>, String) {
+        (None, name.to_string())
+    }
+
     fn as_any_mut(&mut self) -> &mut dyn Any;
 }
 
@@ -182,7 +189,12 @@ impl dyn NodeWidget {
         let mut ports = self.ui_inputs();
         let shared = self.shared_state().lock().unwrap();
         ports.extend(shared.promoted.iter().map(|p| {
-            UiPortDef::from_def(&PortDef::new(p.name.clone(), p.kind.port_type()))
+            let (group, label) = self.param_display(&p.name);
+            let name = match group {
+                Some(g) => format!("{g}: {label}"),
+                None => p.name.clone(),
+            };
+            UiPortDef::from_def(&PortDef::new(name, p.kind.port_type()))
         }));
         ports
     }
