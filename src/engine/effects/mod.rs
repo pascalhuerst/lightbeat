@@ -334,6 +334,130 @@ mod tests {
         assert!(!hub.lock().stacks.contains_key(&2), "nothing to inherit geometry from, so nothing is published");
     }
 
+    /// A root named `Master` in scenes mode showing `scenes`, each a solid
+    /// colour published as if by a stack sent to it (node ids 2, 3, ...).
+    fn scenes(store: &SharedObjectStore, hub: &EffectHub, colours: &[Rgb]) -> EffectStackProcessNode {
+        let mut master = EffectStackProcessNode::new(NodeId(1), hub.clone(), store.clone());
+        master.load_data(&serde_json::json!({
+            "name": "Master",
+            "mode": "scenes",
+            "targets": [{"kind": "strip", "object_id": 1, "logical_start": 0.0, "logical_end": 1.0}],
+            "layers": (0..colours.len()).map(|i| serde_json::json!({ "node_id": i as u64 + 2 })).collect::<Vec<_>>(),
+        }));
+        let geometry = Arc::new(Geometry::resolve(
+            &[geometry::TargetSpec::Strip { object_id: 1, logical_start: 0.0, logical_end: 1.0 }],
+            &store.lock().unwrap(),
+        ));
+        for (i, c) in colours.iter().enumerate() {
+            hub.lock().stacks.insert(
+                i as u64 + 2,
+                StackEntry {
+                    name: format!("Scene {i}"),
+                    parent: "Master".into(),
+                    blend: BlendMode::Override,
+                    amount: 1.0,
+                    buf: geometry.targets.iter().map(|t| vec![Pixel { color: *c, alpha: 1.0 }; t.count]).collect(),
+                    geometry: geometry.clone(),
+                },
+            );
+        }
+        master
+    }
+
+    const RED: Rgb = Rgb::new(1.0, 0.0, 0.0);
+    const BLUE: Rgb = Rgb::new(0.0, 0.0, 1.0);
+
+    #[test]
+    fn scenes_show_the_one_the_scene_input_names_and_a_change_without_a_fade_is_a_cut() {
+        let (hub, store) = (EffectHub::new(), store_with_strips(&[4]));
+        let mut master = scenes(&store, &hub, &[RED, BLUE]);
+        run(&mut [&mut master], &hub, &store, 4);
+        assert_eq!(pixel(&store, 1, 0), RED, "scene 0 is the first in the list");
+
+        master.write_input(1, 1.0);
+        run(&mut [&mut master], &hub, &store, 4);
+        assert_eq!(pixel(&store, 1, 0), BLUE);
+    }
+
+    #[test]
+    fn a_fade_is_a_straight_crossfade_and_a_scene_alone_is_not_dimmed_by_the_ones_it_leaves() {
+        let (hub, store) = (EffectHub::new(), store_with_strips(&[4]));
+        let mut master = scenes(&store, &hub, &[RED, BLUE]);
+        master.set_input_connections(&[false, true, true]);
+        master.write_input(2, 1.0);
+        run(&mut [&mut master], &hub, &store, 3);
+
+        // The scene changes, and the fade restarts a moment later.
+        master.write_input(1, 1.0);
+        master.process();
+        master.process();
+        master.write_input(2, 0.0);
+        // Ticks pass faster than frames; let the fade's start settle.
+        for _ in 0..12 {
+            master.process();
+        }
+        run(&mut [&mut master], &hub, &store, 3);
+        assert_eq!(pixel(&store, 1, 0), RED, "nothing has faded yet");
+
+        master.write_input(2, 0.5);
+        run(&mut [&mut master], &hub, &store, 3);
+        let p = pixel(&store, 1, 0);
+        assert!((p.r - 0.5).abs() < 0.01 && (p.b - 0.5).abs() < 0.01 && p.g < 0.01, "halfway: {p:?}");
+
+        master.write_input(2, 1.0);
+        run(&mut [&mut master], &hub, &store, 3);
+        assert_eq!(pixel(&store, 1, 0), BLUE);
+    }
+
+    #[test]
+    fn a_crossfade_between_equal_scenes_does_not_dip() {
+        let (hub, store) = (EffectHub::new(), store_with_strips(&[4]));
+        let white = Rgb::new(1.0, 1.0, 1.0);
+        let mut master = scenes(&store, &hub, &[white, white, white]);
+        master.set_input_connections(&[false, true, true]);
+        master.write_input(2, 1.0);
+        run(&mut [&mut master], &hub, &store, 2);
+        master.write_input(1, 2.0);
+        master.process();
+        master.process();
+        master.write_input(2, 0.0);
+        for _ in 0..12 {
+            master.process();
+        }
+        for fade in [0.0, 0.2, 0.5, 0.8] {
+            master.write_input(2, fade);
+            run(&mut [&mut master], &hub, &store, 3);
+            let p = pixel(&store, 1, 0);
+            assert!(p.r > 0.99 && p.g > 0.99 && p.b > 0.99, "at {fade}: {p:?}");
+        }
+    }
+
+    #[test]
+    fn a_scenes_own_amount_and_opacity_dim_it() {
+        let (hub, store) = (EffectHub::new(), store_with_strips(&[4]));
+        let mut master = scenes(&store, &hub, &[RED, BLUE]);
+        hub.lock().stacks.get_mut(&2).unwrap().amount = 0.5;
+        run(&mut [&mut master], &hub, &store, 4);
+        let p = pixel(&store, 1, 0);
+        assert!((p.r - 0.5).abs() < 0.02 && p.b < 0.01, "{p:?}");
+    }
+
+    #[test]
+    fn a_muted_scene_shows_nothing_and_leaves_the_others_alone() {
+        let (hub, store) = (EffectHub::new(), store_with_strips(&[4]));
+        let mut master = scenes(&store, &hub, &[RED, BLUE]);
+        master.load_data(&serde_json::json!({
+            "name": "Master", "mode": "scenes",
+            "targets": [{"kind": "strip", "object_id": 1, "logical_start": 0.0, "logical_end": 1.0}],
+            "layers": [{"node_id": 2, "muted": true}, {"node_id": 3}],
+        }));
+        run(&mut [&mut master], &hub, &store, 4);
+        assert!(pixel(&store, 1, 0).r < 0.01, "scene 0 is muted, so it is dark");
+        master.write_input(1, 1.0);
+        run(&mut [&mut master], &hub, &store, 4);
+        assert_eq!(pixel(&store, 1, 0), BLUE);
+    }
+
     #[test]
     fn a_removed_stack_blacks_out_its_strips() {
         let (hub, store) = (EffectHub::new(), store_with_strips(&[3]));

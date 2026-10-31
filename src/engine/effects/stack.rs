@@ -39,6 +39,88 @@ impl LayerConfig {
     }
 }
 
+/// What the stack does with the things sent to it.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum StackMode {
+    /// Blend them bottom to top, each with its own blend and opacity.
+    #[default]
+    Layers,
+    /// Show one of them at a time, fading from the old to the new one when
+    /// the `scene` input changes, by the progress on the `fade` input.
+    Scenes,
+}
+
+/// Ticks to ignore `fade` after the scene changes. The node that makes the
+/// fade restarts it a tick or two later, and until then it still reads the
+/// end of the last one.
+const FADE_SETTLE_TICKS: u32 = 10;
+
+/// Which scene is showing and where a fade between two stands.
+#[derive(Debug, Clone, Default, PartialEq)]
+struct SceneFade {
+    /// The scene shown when no fade is running.
+    settled: usize,
+    /// The scene being faded from, and the one the `scene` input asks for.
+    from: usize,
+    target: usize,
+    fading: bool,
+    progress: f32,
+    ignore: u32,
+    started: bool,
+}
+
+impl SceneFade {
+    /// One tick. `asked` is the scene the input names, `fade` the progress
+    /// input, or None when nothing is wired to it (the change is a cut).
+    fn step(&mut self, asked: usize, fade: Option<f32>) {
+        if !self.started {
+            *self = Self { settled: asked, from: asked, target: asked, started: true, ..Default::default() };
+            return;
+        }
+        if asked != self.target {
+            // Fading again before the last fade is over starts from whichever
+            // end it was closer to.
+            self.from = if self.fading { if self.progress >= 0.5 { self.target } else { self.from } } else { self.settled };
+            self.target = asked;
+            self.progress = 0.0;
+            self.ignore = FADE_SETTLE_TICKS;
+            self.fading = fade.is_some();
+            if !self.fading {
+                self.settled = asked;
+            }
+        }
+        if self.fading {
+            if self.ignore > 0 {
+                self.ignore -= 1;
+                self.progress = 0.0;
+            } else {
+                self.progress = fade.unwrap_or(1.0).clamp(0.0, 1.0);
+                if self.progress >= 0.999 {
+                    self.settled = self.target;
+                    self.fading = false;
+                }
+            }
+        }
+    }
+
+    /// How much of each of `n` scenes shows, summing to 1.
+    fn weights(&self, n: usize) -> Vec<f32> {
+        let mut w = vec![0.0; n];
+        if n == 0 {
+            return w;
+        }
+        let at = |i: usize| i.min(n - 1);
+        if self.fading {
+            w[at(self.from)] += 1.0 - self.progress;
+            w[at(self.target)] += self.progress;
+        } else {
+            w[at(self.settled)] = 1.0;
+        }
+        w
+    }
+}
+
 /// Everything the UI sets on a stack.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct StackConfig {
@@ -65,6 +147,8 @@ pub struct StackConfig {
     /// Show only the status, not the layer list.
     #[serde(default)]
     pub folded: bool,
+    #[serde(default)]
+    pub mode: StackMode,
 }
 
 /// One target in the preview: where it sits and what it shows.
@@ -87,6 +171,9 @@ pub struct StackDisplay {
     pub rows: usize,
     /// Activity of each layer by effect node id.
     pub levels: Vec<(u64, f32)>,
+    /// In scenes mode, how much of each scene shows (by node id) and the
+    /// index of the scene asked for.
+    pub scenes: Option<(Vec<(u64, f32)>, usize)>,
 }
 
 pub struct EffectStackProcessNode {
@@ -97,6 +184,12 @@ pub struct EffectStackProcessNode {
     inputs: Vec<PortDef>,
     amount: f32,
     amount_wired: bool,
+    scene_in: f32,
+    fade_in: f32,
+    fade_wired: bool,
+    scene: SceneFade,
+    /// What each scene counts for now, by node id, for the display.
+    scene_weights: Vec<(u64, f32)>,
     gate: RenderGate,
     geometry: Option<Arc<Geometry>>,
     composed: LayerBuffer,
@@ -112,14 +205,93 @@ impl EffectStackProcessNode {
             hub,
             store,
             config: StackConfig::default(),
-            inputs: vec![PortDef::new("amount", PortType::Untyped)],
+            inputs: vec![
+                PortDef::new("amount", PortType::Untyped),
+                PortDef::new("scene", PortType::Untyped),
+                PortDef::new("fade", PortType::Phase),
+            ],
             amount: 1.0,
             amount_wired: false,
+            scene_in: 0.0,
+            fade_in: 0.0,
+            fade_wired: false,
+            scene: SceneFade::default(),
+            scene_weights: Vec::new(),
             gate: RenderGate::new(),
             geometry: None,
             composed: Vec::new(),
             levels: Vec::new(),
             published_name: String::new(),
+        }
+    }
+
+    /// What a child of this stack publishes: its image, how bright it is, and
+    /// how much it is scaled by its own `amount` (1 for an effect).
+    fn child_image<'a>(
+        hub: &'a super::hub::HubState,
+        name: &str,
+        node_id: u64,
+    ) -> Option<(&'a LayerBuffer, f32, f32)> {
+        if let Some(e) = hub.layers.get(&node_id) {
+            return (e.stack == name).then_some((&e.buf, e.level, 1.0));
+        }
+        let e = hub.stacks.get(&node_id)?;
+        (e.parent == name).then(|| (&e.buf, layer_level(&e.buf), e.amount))
+    }
+
+    /// Blend the children bottom to top, each as its list entry says.
+    fn compose_layers(&mut self, geometry: &Geometry) {
+        let soloed = self.config.layers.iter().any(|l| l.solo);
+        let hub = self.hub.lock();
+        // The list reads top first, so draw it bottom first.
+        for layer in self.config.layers.iter().rev() {
+            let Some((buf, level, amount)) = Self::child_image(&hub, &self.config.name, layer.node_id) else { continue };
+            self.levels.push((layer.node_id, level));
+            if layer.muted || (soloed && !layer.solo) {
+                continue;
+            }
+            if geometry.fits(buf) {
+                blend_layer(&mut self.composed, buf, layer.blend, layer.opacity * amount);
+            }
+        }
+    }
+
+    /// Show the scenes by their weights. Blending them bottom to top with
+    /// amount `w_k / (w_1 + ... + w_k)` makes the result exactly
+    /// `sum(w_k * scene_k) / sum(w_k)`, so a fade between two scenes is a
+    /// straight crossfade with no dip in the middle. The sum of the weights
+    /// (a scene's own opacity and amount count) dims the whole.
+    fn compose_scenes(&mut self, geometry: &Geometry) {
+        let weights = self.scene.weights(self.config.layers.len());
+        let hub = self.hub.lock();
+        // Per scene, top of the list first: the weight and what it shows.
+        let mut scenes: Vec<(u64, f32, Option<&LayerBuffer>)> = Vec::new();
+        for (layer, w) in self.config.layers.iter().zip(&weights) {
+            let child = Self::child_image(&hub, &self.config.name, layer.node_id);
+            if let Some((_, level, _)) = child {
+                self.levels.push((layer.node_id, level));
+            }
+            let usable = child.filter(|(buf, _, _)| geometry.fits(buf) && !layer.muted);
+            let weight = usable.map_or(0.0, |(_, _, amount)| w * layer.opacity * amount);
+            self.scene_weights.push((layer.node_id, weight));
+            scenes.push((layer.node_id, weight, usable.map(|(buf, _, _)| buf)));
+        }
+        let total: f32 = scenes.iter().map(|(_, w, _)| w).sum();
+        if total <= 0.0 {
+            return;
+        }
+        let mut cumulative = 0.0;
+        for (_, weight, buf) in scenes.iter().rev() {
+            cumulative += weight;
+            if let (Some(buf), true) = (buf, *weight > 0.0) {
+                blend_layer(&mut self.composed, buf, BlendMode::Override, weight / cumulative);
+            }
+        }
+        let dim = total.min(1.0);
+        if dim < 1.0 {
+            for px in self.composed.iter_mut().flatten() {
+                px.alpha *= dim;
+            }
         }
     }
 
@@ -147,20 +319,35 @@ impl ProcessNode for EffectStackProcessNode {
     fn outputs(&self) -> &[PortDef] { &[] }
 
     fn write_input(&mut self, channel: usize, value: f32) {
-        if channel == 0 {
-            self.amount = value.clamp(0.0, 1.0);
+        match channel {
+            0 => self.amount = value.clamp(0.0, 1.0),
+            1 => self.scene_in = value,
+            2 => self.fade_in = value,
+            _ => {}
         }
     }
 
     fn read_input(&self, channel: usize) -> f32 {
-        if channel == 0 { self.amount } else { 0.0 }
+        match channel {
+            0 => self.amount,
+            1 => self.scene_in,
+            2 => self.fade_in,
+            _ => 0.0,
+        }
     }
 
     fn set_input_connections(&mut self, connected: &[bool]) {
         self.amount_wired = connected.first().copied().unwrap_or(false);
+        self.fade_wired = connected.get(2).copied().unwrap_or(false);
     }
 
     fn process(&mut self) {
+        // The scene follows its inputs every tick, not just when rendering.
+        if self.config.mode == StackMode::Scenes {
+            let last = self.config.layers.len().saturating_sub(1);
+            let asked = (self.scene_in.round().max(0.0) as usize).min(last);
+            self.scene.step(asked, self.fade_wired.then_some(self.fade_in));
+        }
         if !self.gate.due() {
             return;
         }
@@ -211,28 +398,11 @@ impl ProcessNode for EffectStackProcessNode {
             clear(&mut self.composed);
         }
 
-        let soloed = self.config.layers.iter().any(|l| l.solo);
         self.levels.clear();
-        {
-            let hub = self.hub.lock();
-            // The list reads top first, so draw it bottom first.
-            for layer in self.config.layers.iter().rev() {
-                // A child is an effect's layer or another stack's image.
-                let (buf, level, linked, amount) = if let Some(e) = hub.layers.get(&layer.node_id) {
-                    (&e.buf, e.level, e.stack == self.config.name, 1.0)
-                } else if let Some(e) = hub.stacks.get(&layer.node_id) {
-                    (&e.buf, layer_level(&e.buf), e.parent == self.config.name, e.amount)
-                } else {
-                    continue;
-                };
-                self.levels.push((layer.node_id, level));
-                if layer.muted || (soloed && !layer.solo) || !linked {
-                    continue;
-                }
-                if geometry.fits(buf) {
-                    blend_layer(&mut self.composed, buf, layer.blend, layer.opacity * amount);
-                }
-            }
+        self.scene_weights.clear();
+        match self.config.mode {
+            StackMode::Layers => self.compose_layers(&geometry),
+            StackMode::Scenes => self.compose_scenes(&geometry),
         }
 
         let amount = if self.amount_wired { self.amount } else { 1.0 };
@@ -308,9 +478,83 @@ impl ProcessNode for EffectStackProcessNode {
             preview,
             rows: geometry.map_or(1, |g| g.row_count()),
             levels: self.levels.clone(),
+            scenes: (self.config.mode == StackMode::Scenes)
+                .then(|| (self.scene_weights.clone(), self.scene.target)),
         }));
     }
 
     fn as_any(&self) -> &dyn Any { self }
     fn as_any_mut(&mut self) -> &mut dyn Any { self }
+}
+
+#[cfg(test)]
+mod scene_tests {
+    use super::*;
+
+    fn settled(f: &mut SceneFade, asked: usize, fade: Option<f32>) {
+        for _ in 0..(FADE_SETTLE_TICKS + 2) {
+            f.step(asked, fade);
+        }
+    }
+
+    #[test]
+    fn the_first_scene_asked_for_shows_at_once() {
+        let mut f = SceneFade::default();
+        f.step(2, Some(0.0));
+        assert_eq!(f.weights(3), vec![0.0, 0.0, 1.0]);
+    }
+
+    #[test]
+    fn a_change_without_a_fade_input_is_a_cut() {
+        let mut f = SceneFade::default();
+        f.step(0, None);
+        f.step(1, None);
+        assert_eq!(f.weights(2), vec![0.0, 1.0]);
+    }
+
+    #[test]
+    fn a_change_fades_by_the_progress_once_the_old_end_of_it_has_been_ignored() {
+        let mut f = SceneFade::default();
+        f.step(0, Some(1.0));
+        // The scene changes while the fade input still reads the end of the last fade.
+        f.step(1, Some(1.0));
+        assert_eq!(f.weights(2), vec![1.0, 0.0], "still the old scene");
+        settled(&mut f, 1, Some(0.25));
+        assert_eq!(f.weights(2), vec![0.75, 0.25]);
+        f.step(1, Some(0.6));
+        let w = f.weights(2);
+        assert!((w[0] - 0.4).abs() < 1e-6 && (w[1] - 0.6).abs() < 1e-6, "{w:?}");
+        f.step(1, Some(1.0));
+        assert_eq!(f.weights(2), vec![0.0, 1.0], "done, and it stays");
+        f.step(1, Some(0.0));
+        assert_eq!(f.weights(2), vec![0.0, 1.0], "the fade input falling back changes nothing");
+    }
+
+    #[test]
+    fn jumping_over_scenes_fades_straight_to_the_new_one() {
+        let mut f = SceneFade::default();
+        f.step(0, Some(1.0));
+        f.step(3, Some(0.0));
+        settled(&mut f, 3, Some(0.5));
+        assert_eq!(f.weights(4), vec![0.5, 0.0, 0.0, 0.5]);
+    }
+
+    #[test]
+    fn asking_again_halfway_fades_from_the_end_it_was_nearer_to() {
+        let mut f = SceneFade::default();
+        f.step(0, Some(1.0));
+        f.step(1, Some(0.0));
+        settled(&mut f, 1, Some(0.8));
+        f.step(2, Some(0.8));
+        settled(&mut f, 2, Some(0.0));
+        assert_eq!(f.weights(3), vec![0.0, 1.0, 0.0], "starts from scene 1, which was nearly there");
+    }
+
+    #[test]
+    fn a_scene_past_the_end_of_the_list_is_the_last_one() {
+        let mut f = SceneFade::default();
+        f.step(5, None);
+        assert_eq!(f.weights(3), vec![0.0, 0.0, 1.0]);
+        assert_eq!(f.weights(0), Vec::<f32>::new());
+    }
 }

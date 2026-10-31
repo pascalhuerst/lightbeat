@@ -13,7 +13,7 @@ use egui::{self, Color32, Sense, Ui, Vec2};
 
 use crate::color::BlendMode;
 use crate::engine::effects::TargetSpec;
-use crate::engine::effects::stack::{LayerConfig, PreviewStrip, StackConfig, StackDisplay};
+use crate::engine::effects::stack::{LayerConfig, PreviewStrip, StackConfig, StackDisplay, StackMode};
 use crate::engine::types::*;
 use crate::objects::channel::ChannelKind;
 use crate::theme;
@@ -45,6 +45,15 @@ fn blend_combo(ui: &mut Ui, id: impl std::hash::Hash, blend: &mut BlendMode) -> 
         }
     });
     changed
+}
+
+/// What the engine last reported, copied out so the lock is not held while drawing.
+struct StackDisplaySnapshot {
+    pixels: usize,
+    preview: Vec<PreviewStrip>,
+    rows: usize,
+    levels: Vec<(u64, f32)>,
+    scenes: Option<(Vec<(u64, f32)>, usize)>,
 }
 
 pub struct EffectStackWidget {
@@ -206,13 +215,15 @@ impl EffectStackWidget {
         }
     }
 
-    fn display(&self) -> Option<(usize, Vec<PreviewStrip>, usize, Vec<(u64, f32)>)> {
+    fn display(&self) -> Option<StackDisplaySnapshot> {
         let shared = self.shared.lock().unwrap();
-        shared
-            .display
-            .as_ref()
-            .and_then(|d| d.downcast_ref::<StackDisplay>())
-            .map(|d| (d.pixels, d.preview.clone(), d.rows, d.levels.clone()))
+        shared.display.as_ref().and_then(|d| d.downcast_ref::<StackDisplay>()).map(|d| StackDisplaySnapshot {
+            pixels: d.pixels,
+            preview: d.preview.clone(),
+            rows: d.rows,
+            levels: d.levels.clone(),
+            scenes: d.scenes.clone(),
+        })
     }
 }
 
@@ -225,7 +236,11 @@ impl NodeWidget for EffectStackWidget {
     }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> {
-        vec![UiPortDef::from_def(&PortDef::new("amount", PortType::Untyped))]
+        vec![
+            UiPortDef::from_def(&PortDef::new("amount", PortType::Untyped)),
+            UiPortDef::from_def(&PortDef::new("scene", PortType::Untyped)),
+            UiPortDef::from_def(&PortDef::new("fade", PortType::Phase)),
+        ]
     }
     fn ui_outputs(&self) -> Vec<UiPortDef> { vec![] }
 
@@ -285,7 +300,9 @@ impl NodeWidget for EffectStackWidget {
     }
 
     fn show_content(&mut self, ui: &mut Ui, _zoom: f32) {
-        let (pixels, preview, rows, levels) = self.display().unwrap_or((0, Vec::new(), 1, Vec::new()));
+        let StackDisplaySnapshot { pixels, preview, rows, levels, scenes } =
+            self.display().unwrap_or(StackDisplaySnapshot { pixels: 0, preview: Vec::new(), rows: 1, levels: Vec::new(), scenes: None });
+        let scenes_mode = self.config.mode == StackMode::Scenes;
         let mut changed = false;
 
         ui.horizontal(|ui| {
@@ -333,6 +350,9 @@ impl NodeWidget for EffectStackWidget {
                 let row_id = egui::Id::new(("stack_row", self.id.0, layer.node_id));
                 let selected = self.selected == Some(layer.node_id);
                 let level = levels.iter().find(|(n, _)| *n == layer.node_id).map(|(_, l)| *l).unwrap_or(0.0);
+                // In scenes mode the bar shows how much of the scene is showing.
+                let weight = scenes.as_ref().and_then(|(w, _)| w.iter().find(|(n, _)| *n == layer.node_id)).map(|(_, w)| *w);
+                let asked = scenes.as_ref().is_some_and(|(_, target)| *target == i);
 
                 let (_, dropped) = ui.dnd_drop_zone::<usize, _>(egui::Frame::new(), |ui| {
                     egui::Frame::new()
@@ -355,8 +375,15 @@ impl NodeWidget for EffectStackWidget {
                                     solo_toggle = Some(i);
                                 }
 
-                                let color = if layer.muted { theme::TEXT_DIM } else { theme::TEXT };
+                                let color = if layer.muted {
+                                    theme::TEXT_DIM
+                                } else if asked {
+                                    theme::SEM_PRIMARY
+                                } else {
+                                    theme::TEXT
+                                };
                                 let name = self.label_of(layer.node_id);
+                                let name = if scenes_mode { format!("{}. {name}", i + 1) } else { name };
                                 let name = if self.kind_of(layer.node_id) == "Stack" {
                                     format!("{} {name}", egui_phosphor::regular::STACK)
                                 } else {
@@ -373,7 +400,7 @@ impl NodeWidget for EffectStackWidget {
                                 let (r, p) = ui.allocate_painter(Vec2::new(18.0, 8.0), Sense::hover());
                                 p.rect_filled(r.rect, 1.0, theme::BG_DEEP);
                                 let mut bar = r.rect;
-                                bar.set_width(r.rect.width() * level.clamp(0.0, 1.0));
+                                bar.set_width(r.rect.width() * weight.unwrap_or(level).clamp(0.0, 1.0));
                                 p.rect_filled(bar, 1.0, theme::SEM_SUCCESS);
                             });
                         });
@@ -422,6 +449,18 @@ impl NodeWidget for EffectStackWidget {
                 }
                 self.config.name = name;
                 changed = true;
+            }
+        });
+        ui.horizontal(|ui| {
+            ui.label("Mode:");
+            for (mode, label, hint) in [
+                (StackMode::Layers, "Layers", "Blend everything sent here, bottom to top"),
+                (StackMode::Scenes, "Scenes", "Show one at a time; the scene input picks it (the first in the list is 0) and the fade input fades to it"),
+            ] {
+                if ui.selectable_label(self.config.mode == mode, label).on_hover_text(hint).clicked() {
+                    self.config.mode = mode;
+                    changed = true;
+                }
             }
         });
         ui.horizontal(|ui| {

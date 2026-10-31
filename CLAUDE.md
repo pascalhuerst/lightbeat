@@ -189,6 +189,14 @@ src/
   in the order the stacks were made). Children inherit the root's geometry
   through the hub, one frame per level. Two roots on one group is allowed but
   warned about. A loop is broken by the graph (`break_stack_link`).
+- A stack has a **mode**. *Layers* blends its children bottom to top. *Scenes*
+  shows one child at a time (the first in the list is scene 0): the `scene`
+  input picks it, and when it changes the stack fades from the old scene to the
+  new one by the `fade` phase input (easing: put a Transition node in front of
+  it; no `fade` wire means a cut). `fade` is ignored for `FADE_SETTLE_TICKS`
+  after a change because the node producing it restarts a tick or two later.
+  Children are blended with amount `w_k / (w_1 + ... + w_k)` bottom to top,
+  which gives an exact crossfade without a dip (`compose_scenes`).
 - Names: a **Burst** is spawned by a trigger and lives for a while (ripple,
   comet); a **Loop** is a function of a phase (wave, chase, fill). Not "voices".
 - To add an effect: implement `EffectKind` (ports, params, `update` for state,

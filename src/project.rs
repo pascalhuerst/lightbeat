@@ -936,7 +936,7 @@ mod tests {
             let stack_names = names.clone();
             let ctx = new_shared_group_context();
             g.register_node("Effects", "Effect Stack", move |id| {
-                Box::new(EffectStackWidget::new(id, crate::engine::types::new_shared_state(1, 0), ctx.clone(), stack_names.clone()))
+                Box::new(EffectStackWidget::new(id, crate::engine::types::new_shared_state(3, 0), ctx.clone(), stack_names.clone()))
             });
             g.register_node("Effects", "Ripple Burst", move |id| {
                 Box::new(EffectWidget::new(id, crate::engine::types::new_shared_state(48, 0), RIPPLE_BURST, names.clone()))
