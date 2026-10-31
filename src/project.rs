@@ -606,6 +606,22 @@ pub fn load_graph(graph: &mut NodeGraph, project: &ProjectFile) -> Vec<usize> {
                 }
             // The extra outputs of a Phase Scaler are ports: restore them
             // before saved wires are attached.
+            // MIDI nodes have a port per entry of their list: restore it
+            // before saved wires are attached.
+            if saved.type_name == "MIDI Input"
+                && let Some(data) = &saved.data {
+                    let n = graph.node_mut(idx);
+                    if let Some(w) = n.as_any_mut().downcast_mut::<crate::widgets::nodes::io::midi_input::MidiInputWidget>() {
+                        w.restore_from_save_data(data);
+                    }
+                }
+            if saved.type_name == "MIDI Output"
+                && let Some(data) = &saved.data {
+                    let n = graph.node_mut(idx);
+                    if let Some(w) = n.as_any_mut().downcast_mut::<crate::widgets::nodes::io::midi_output::MidiOutputWidget>() {
+                        w.restore_from_save_data(data);
+                    }
+                }
             if saved.type_name == "Clock Divider"
                 && let Some(data) = &saved.data {
                     let n = graph.node_mut(idx);
@@ -1056,6 +1072,51 @@ mod tests {
         g.cleanup_stale_connections();
         assert_eq!(g.node_and_state(0).0.ui_outputs().len(), 3);
         assert_eq!(g.root_level().connections.len(), 1, "the wire to the third output was kept");
+    }
+
+    #[test]
+    fn wires_to_midi_node_entries_survive_loading() {
+        use crate::midi_io::MidiHub;
+        use crate::widgets::nodes::display::value_display::ValueDisplayWidget;
+        use crate::widgets::nodes::io::midi_common::new_shared_learned;
+        use crate::widgets::nodes::io::midi_input::MidiInputWidget;
+        use crate::widgets::nodes::io::midi_output::MidiOutputWidget;
+        use crate::widgets::nodes::NodeGraph;
+
+        let mut g = NodeGraph::new();
+        let (hub, learned) = (MidiHub::idle(), new_shared_learned());
+        let (h1, l1, h2, l2) = (hub.clone(), learned.clone(), hub, learned);
+        g.register_node("IO", "MIDI Input", move |id| {
+            Box::new(MidiInputWidget::new(id, crate::engine::types::new_shared_state(0, 33), h1.clone(), l1.clone()))
+        });
+        g.register_node("IO", "MIDI Output", move |id| {
+            Box::new(MidiOutputWidget::new(id, crate::engine::types::new_shared_state(32, 1), h2.clone(), l2.clone()))
+        });
+        g.register_node("Display", "Value Display", |id| {
+            Box::new(ValueDisplayWidget::new(id, crate::engine::types::new_shared_state(1, 0)))
+        });
+        let project: ProjectFile = serde_json::from_str(r#"{
+            "nodes": [
+                {"type_name": "MIDI Input", "id": 1, "pos": [0.0, 0.0], "params": [],
+                 "data": {"port": "dev", "entries": [
+                    {"id": 1, "name": "a", "binding": {"kind": "cc", "channel": 1, "number": 1}, "mode": "value"},
+                    {"id": 2, "name": "b", "binding": {"kind": "note", "channel": 1, "number": 36}, "mode": "gate"}]}},
+                {"type_name": "MIDI Output", "id": 2, "pos": [200.0, 0.0], "params": [],
+                 "data": {"port": "dev", "entries": [
+                    {"id": 1, "binding": {"kind": "cc", "channel": 1, "number": 1}, "mode": "value"},
+                    {"id": 2, "binding": {"kind": "cc", "channel": 1, "number": 2}, "mode": "value"}]}},
+                {"type_name": "Value Display", "id": 3, "pos": [400.0, 0.0], "params": []}
+            ],
+            "connections": [
+                {"from_node": 1, "from_port": 2, "to_node": 3, "to_port": 0},
+                {"from_node": 1, "from_port": 1, "to_node": 2, "to_port": 1}
+            ]
+        }"#).unwrap();
+        load_graph(&mut g, &project);
+        g.cleanup_stale_connections();
+        assert_eq!(g.node_and_state(0).0.ui_outputs().len(), 3);
+        assert_eq!(g.node_and_state(1).0.ui_inputs().len(), 2);
+        assert_eq!(g.root_level().connections.len(), 2, "both wires kept, to the second port of each side");
     }
 
     #[test]

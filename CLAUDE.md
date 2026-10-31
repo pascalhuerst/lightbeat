@@ -300,6 +300,19 @@ src/
   (`SetupFile::input_controllers`). Missing hardware just emits 0s and is
   reconnected by a ~1 Hz worker. Binding modes (Value / TriggerOnPress /
   TriggerOnRelease) are applied in the engine node.
+- **MIDI Input / MIDI Output** nodes are the self-contained alternative to a
+  setup-level MIDI controller: the device and the list of controls are the
+  node's own and saved with the project (`MidiInputConfig`, `MidiOutputConfig`
+  as the node's `save_data`). `midi_io::MidiHub` has a worker thread that
+  opens the devices nodes ask for, keeps the latest state and counters of each
+  control (so a press is never missed between ticks) and sends queued bytes;
+  devices are looked up on start, on a device change and on Rescan, never on a
+  timer. An input entry is learned by pressing Learn and moving a control
+  (`learn_from`) and has a mode (value, relative encoder, gate, velocity,
+  trigger on press/release). An output entry is a message (CC, note, pitch
+  bend) you set by hand or copy from a MIDI Input entry; only wired inputs are
+  sent, only on change. Removing an entry from the middle moves the wires after
+  it via `NodeWidget::take_removed_port` and `NodeGraph::remap_removed_ports`.
 - Every hardware node (Input Controller, Audio Input, Launchpad S, Push 1,
   X1) has a leading **`connected`** Logic output (port 0): high while the
   device has a live session. Build layouts with `io::status::with_status_port`.

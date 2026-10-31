@@ -37,6 +37,8 @@ use engine::nodes::display::value_display::ValueDisplayProcessNode;
 use engine::nodes::io::audio_input::AudioInputProcessNode;
 use engine::nodes::io::clock::ClockProcessNode;
 use engine::nodes::io::input_controller::InputControllerProcessNode;
+use engine::nodes::io::midi_input::MidiInputProcessNode;
+use engine::nodes::io::midi_output::MidiOutputProcessNode;
 use engine::nodes::io::push1::Push1ProcessNode;
 use engine::nodes::io::launchpad::LaunchpadProcessNode;
 use engine::nodes::io::x1::X1ProcessNode;
@@ -104,6 +106,8 @@ use widgets::nodes::display::value_display::ValueDisplayWidget;
 use widgets::nodes::io::audio_input::AudioInputWidget;
 use widgets::nodes::io::clock::ClockWidget;
 use widgets::nodes::io::input_controller::InputControllerWidget;
+use widgets::nodes::io::midi_input::MidiInputWidget;
+use widgets::nodes::io::midi_output::MidiOutputWidget;
 use widgets::nodes::io::push1::Push1Widget;
 use widgets::nodes::io::launchpad::LaunchpadWidget;
 use widgets::nodes::io::x1::X1Widget;
@@ -263,6 +267,10 @@ struct LightBeatApp {
     gradient_preset_manager: widgets::gradient_preset_list::GradientPresetManager,
     gradient_library: widgets::nodes::math::gradient_source::SharedGradientLibrary,
     input_controllers: InputControllerManager,
+    /// MIDI devices of the MIDI Input and MIDI Output nodes.
+    midi_hub: midi_io::MidiHub,
+    /// What the MIDI Input nodes have learned, for the MIDI Output nodes to copy.
+    midi_learned: widgets::nodes::io::midi_common::SharedLearned,
     audio_inputs: AudioInputManager,
     /// Portal registries — one per family so names can overlap.
     /// `output_portals`: Output Portal TX publishes, RXs read.
@@ -385,6 +393,8 @@ impl LightBeatApp {
             gradient_preset_manager: widgets::gradient_preset_list::GradientPresetManager::new(),
             gradient_library: widgets::nodes::math::gradient_source::new_shared_gradient_library(),
             input_controllers: InputControllerManager::new(),
+            midi_hub: midi_io::MidiHub::start(),
+            midi_learned: widgets::nodes::io::midi_common::new_shared_learned(),
             audio_inputs: AudioInputManager::new(),
             output_portals: std::sync::Arc::new(std::sync::Mutex::new(
                 engine::nodes::meta::portal::PortalRegistry::default(),
@@ -460,6 +470,15 @@ impl LightBeatApp {
             // covers generic MIDI and BCF2000 with headroom; Push 1 uses its
             // own dedicated node.
             Box::new(InputControllerWidget::new(id, new_shared_state(192, 192), ic_shared.clone()))
+        });
+        let (hub, learned) = (self.midi_hub.clone(), self.midi_learned.clone());
+        self.graph.register_node("IO", "MIDI Input", move |id| {
+            // The status port and up to 32 controls.
+            Box::new(MidiInputWidget::new(id, new_shared_state(0, 33), hub.clone(), learned.clone()))
+        });
+        let (hub, learned) = (self.midi_hub.clone(), self.midi_learned.clone());
+        self.graph.register_node("IO", "MIDI Output", move |id| {
+            Box::new(MidiOutputWidget::new(id, new_shared_state(32, 1), hub.clone(), learned.clone()))
         });
         let ic_shared_push = self.input_controllers.shared.clone();
         self.graph.register_node("IO", "Push 1", move |id| {
@@ -884,6 +903,8 @@ impl LightBeatApp {
                 "Input Controller" => Some(Box::new(InputControllerProcessNode::new(
                     id, self.input_controllers.shared.clone(),
                 ))),
+                "MIDI Input" => Some(Box::new(MidiInputProcessNode::new(id, self.midi_hub.clone()))),
+                "MIDI Output" => Some(Box::new(MidiOutputProcessNode::new(id, self.midi_hub.clone()))),
                 "Push 1" => Some(Box::new(Push1ProcessNode::new(
                     id, self.input_controllers.shared.clone(),
                 ))),
@@ -2318,6 +2339,7 @@ impl LightBeatApp {
 
                     let mut missing = self.input_controllers.missing_controllers();
                     missing.extend(self.audio_inputs.missing_inputs());
+                    missing.extend(self.midi_hub.missing_devices());
                     if !missing.is_empty() {
                         ui.separator();
                         ui.colored_label(
@@ -2331,6 +2353,7 @@ impl LightBeatApp {
                         {
                             self.input_controllers.rescan();
                             self.audio_inputs.force_rescan();
+                            self.midi_hub.rescan();
                         }
                     }
 
