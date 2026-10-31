@@ -43,7 +43,7 @@ impl X1Session {
     /// device isn't present — the manager will retry on the next reconcile.
     pub fn open(controller_id: u32, shared: SharedControllers) -> Result<Self, String> {
         let mut controller = X1Controller::connect()
-            .map_err(|e| format!("X1 USB connect: {:?}", e))?;
+            .map_err(|e| format!("X1 USB connect: {}", super::controller::explain_error(&e)))?;
 
         install_callbacks(&mut controller, controller_id, shared.clone());
 

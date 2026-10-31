@@ -1,0 +1,5 @@
+# Lets the logged-in user open the Native Instruments Traktor Kontrol X1 (Mk1)
+# without root. Copy to /etc/udev/rules.d/, then:
+#   sudo udevadm control --reload && sudo udevadm trigger
+# and replug the controller.
+SUBSYSTEM=="usb", ATTR{idVendor}=="17cc", ATTR{idProduct}=="2305", MODE="0660", TAG+="uaccess"
