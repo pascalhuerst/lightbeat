@@ -119,8 +119,10 @@ fn draw_level(painter: &egui::Painter, rect: Rect, data: &MeterData, frac: f32, 
 }
 
 fn draw_gauge(painter: &egui::Painter, rect: Rect, data: &MeterData, frac: f32) {
-    let radius = (rect.width().min(rect.height()) * 0.5 - 6.0).max(10.0);
-    let center = rect.center() + Vec2::new(0.0, radius * 0.1);
+    // The dial is a circle of `radius` with the value written in the open
+    // part below it, so the picture is about 1.95 radii tall.
+    let radius = ((rect.width() * 0.5 - 4.0).min((rect.height() - 8.0) / 1.95)).max(10.0);
+    let center = rect.center() + Vec2::new(0.0, radius * 0.025);
     let thickness = (radius * 0.12).clamp(2.0, 8.0);
 
     let red = mix(theme::BG_HIGH, theme::SEM_DANGER, 0.55);
@@ -162,10 +164,10 @@ fn draw_gauge(painter: &egui::Painter, rect: Rect, data: &MeterData, frac: f32) 
     painter.circle_filled(center, (radius * 0.07).clamp(3.0, 6.0), theme::TEXT_BRIGHT);
 
     painter.text(
-        center + Vec2::new(0.0, radius * 0.5),
+        center + Vec2::new(0.0, radius * 0.85),
         Align2::CENTER_CENTER,
         format_value(data.value, data.min, data.max, &data.unit),
-        FontId::monospace((radius * 0.2).clamp(9.0, 16.0)),
+        FontId::monospace((radius * 0.17).clamp(9.0, 15.0)),
         theme::TEXT,
     );
 }
