@@ -21,11 +21,42 @@ use crate::theme;
 use crate::widgets::nodes::node::NodeWidget;
 use crate::widgets::nodes::types::UiPortDef;
 
-/// The names of all stacks in the graph, kept up to date by the graph.
-pub type SharedStackNames = Arc<Mutex<Vec<String>>>;
+/// The stacks in the graph and which stack each is sent to, kept up to date
+/// by the graph.
+#[derive(Debug, Default, Clone)]
+pub struct StackRegistry {
+    pub names: Vec<String>,
+    /// Stack name to the name of the stack it is sent to.
+    pub parent_of: std::collections::HashMap<String, String>,
+}
+
+impl StackRegistry {
+    /// Every stack that is sent to `name`, directly or through others.
+    pub fn descendants_of(&self, name: &str) -> std::collections::HashSet<String> {
+        let mut found = std::collections::HashSet::new();
+        let mut frontier = vec![name.to_string()];
+        while let Some(current) = frontier.pop() {
+            for (child, parent) in &self.parent_of {
+                if *parent == current && found.insert(child.clone()) {
+                    frontier.push(child.clone());
+                }
+            }
+        }
+        found
+    }
+
+    /// The stacks `name` may be sent to: not itself, and not one that is
+    /// (even indirectly) sent to it, which would make a loop.
+    pub fn parents_for(&self, name: &str) -> Vec<String> {
+        let below = self.descendants_of(name);
+        self.names.iter().filter(|n| n.as_str() != name && !below.contains(*n)).cloned().collect()
+    }
+}
+
+pub type SharedStackNames = Arc<Mutex<StackRegistry>>;
 
 pub fn new_shared_stack_names() -> SharedStackNames {
-    Arc::new(Mutex::new(Vec::new()))
+    Arc::new(Mutex::new(StackRegistry::default()))
 }
 
 /// What differs between effects.
@@ -159,7 +190,7 @@ impl NodeWidget for EffectWidget {
     fn show_inspector(&mut self, ui: &mut Ui) {
         ui.horizontal(|ui| {
             ui.label("Stack:");
-            let names = self.names.lock().unwrap().clone();
+            let names = self.names.lock().unwrap().names.clone();
             let current = if self.stack.is_empty() { "(none)".to_string() } else { self.stack.clone() };
             let mut picked: Option<String> = None;
             egui::ComboBox::from_id_salt(("effect_stack_pick", self.id.0))

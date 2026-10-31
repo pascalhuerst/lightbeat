@@ -168,6 +168,14 @@ impl<E: EffectKind> ProcessNode for EffectNode<E> {
         };
         self.linked = true;
 
+        // Nothing shows this effect right now, so it does not draw (it still
+        // follows its inputs above, so a burst does not miss a trigger).
+        if self.hub.lock().unwanted.contains(&self.id.0) {
+            self.level = 0.0;
+            self.unpublish();
+            return;
+        }
+
         if !geometry.fits(&self.buf) {
             self.buf = geometry.empty_buffer();
         } else {

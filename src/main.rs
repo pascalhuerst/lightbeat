@@ -782,8 +782,9 @@ impl LightBeatApp {
 
         // Output
         let gctx2 = self.group_ctx.clone();
+        let stack_names = self.stack_names.clone();
         self.graph.register_node("Effects", "Effect Stack", move |id| {
-            Box::new(EffectStackWidget::new(id, new_shared_state(1, 0), gctx2.clone()))
+            Box::new(EffectStackWidget::new(id, new_shared_state(3, 0), gctx2.clone(), stack_names.clone()))
         });
         for spec in [
             widgets::nodes::output::effect::FILL,
