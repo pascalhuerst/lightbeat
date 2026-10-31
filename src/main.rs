@@ -7,6 +7,7 @@ mod dmx_io;
 mod engine;
 mod input_controller;
 mod macros;
+mod midi_io;
 mod setup;
 mod interfaces;
 mod link_controller;
