@@ -516,7 +516,7 @@ impl LightBeatApp {
 
         // Transport
         self.graph.register_node("Transport", "Phase Scaler", |id| {
-            Box::new(PhaseScalerWidget::new(id, new_shared_state(4, 1)))
+            Box::new(PhaseScalerWidget::new(id, new_shared_state(4, 16)))
         });
         self.graph.register_node("Transport", "LFO", |id| {
             Box::new(LfoWidget::new(id, new_shared_state(1, 2)))
@@ -549,7 +549,7 @@ impl LightBeatApp {
             Box::new(LatchWidget::new(id, new_shared_state(1, 1)))
         });
         self.graph.register_node("Transport", "Clock Divider", |id| {
-            Box::new(ClockDividerWidget::new(id, new_shared_state(1, 1)))
+            Box::new(ClockDividerWidget::new(id, new_shared_state(1, 16)))
         });
         self.graph.register_node("Transport", "Clock Gen", |id| {
             Box::new(ClockGenWidget::new(id, new_shared_state(1, 1)))

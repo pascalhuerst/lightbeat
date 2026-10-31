@@ -1311,7 +1311,7 @@ impl NodeGraph {
         }
     }
 
-    fn cleanup_stale_connections(&mut self) {
+    pub(crate) fn cleanup_stale_connections(&mut self) {
         let level = self.active();
         let stale: Vec<PortId> = level.connections.iter().filter(|conn| {
             let src = level.nodes.iter()

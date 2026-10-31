@@ -604,6 +604,22 @@ pub fn load_graph(graph: &mut NodeGraph, project: &ProjectFile) -> Vec<usize> {
                         w.restore_from_save_data(data);
                     }
                 }
+            // The extra outputs of a Phase Scaler are ports: restore them
+            // before saved wires are attached.
+            if saved.type_name == "Clock Divider"
+                && let Some(data) = &saved.data {
+                    let n = graph.node_mut(idx);
+                    if let Some(w) = n.as_any_mut().downcast_mut::<crate::widgets::nodes::transport::clock_divider::ClockDividerWidget>() {
+                        w.restore_from_save_data(data);
+                    }
+                }
+            if saved.type_name == "Phase Scaler"
+                && let Some(data) = &saved.data {
+                    let n = graph.node_mut(idx);
+                    if let Some(w) = n.as_any_mut().downcast_mut::<crate::widgets::nodes::transport::phase_scaler::PhaseScalerWidget>() {
+                        w.restore_from_save_data(data);
+                    }
+                }
             if saved.type_name == "Gradient Source"
                 && let Some(data) = &saved.data {
                     let n = graph.node_mut(idx);
@@ -1012,6 +1028,33 @@ mod tests {
         assert_eq!(shared.promoted.len(), 2);
         assert_eq!(shared.pending_promoted.as_ref().map(Vec::len), Some(2));
         assert!(shared.pending_params.iter().any(|(i, _)| *i == 2), "the anchor was restored");
+    }
+
+    #[test]
+    fn a_wire_from_an_extra_phase_scaler_output_survives_loading() {
+        use crate::widgets::nodes::display::value_display::ValueDisplayWidget;
+        use crate::widgets::nodes::transport::phase_scaler::PhaseScalerWidget;
+        use crate::widgets::nodes::NodeGraph;
+
+        let mut g = NodeGraph::new();
+        g.register_node("Transport", "Phase Scaler", |id| {
+            Box::new(PhaseScalerWidget::new(id, crate::engine::types::new_shared_state(4, 16)))
+        });
+        g.register_node("Display", "Value Display", |id| {
+            Box::new(ValueDisplayWidget::new(id, crate::engine::types::new_shared_state(1, 0)))
+        });
+        let project: ProjectFile = serde_json::from_str(r#"{
+            "nodes": [
+                {"type_name": "Phase Scaler", "id": 1, "pos": [0.0, 0.0], "params": [],
+                 "data": {"extra": [{"exponent": -2, "offset": 0.0}, {"exponent": 3, "offset": 0.0}]}},
+                {"type_name": "Value Display", "id": 2, "pos": [200.0, 0.0], "params": []}
+            ],
+            "connections": [{"from_node": 1, "from_port": 2, "to_node": 2, "to_port": 0}]
+        }"#).unwrap();
+        load_graph(&mut g, &project);
+        g.cleanup_stale_connections();
+        assert_eq!(g.node_and_state(0).0.ui_outputs().len(), 3);
+        assert_eq!(g.root_level().connections.len(), 1, "the wire to the third output was kept");
     }
 
     #[test]
