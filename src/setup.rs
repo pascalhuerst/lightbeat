@@ -59,7 +59,7 @@ pub struct SavedInterface {
 // ---------------------------------------------------------------------------
 
 pub fn setup_path() -> PathBuf {
-    PathBuf::from(SETUP_FILENAME)
+    crate::paths::data_file(SETUP_FILENAME)
 }
 
 pub fn save_setup(setup: &SetupFile) -> Result<(), String> {
