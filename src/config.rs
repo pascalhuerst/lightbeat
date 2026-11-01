@@ -86,7 +86,7 @@ impl Default for AppConfig {
 
 impl AppConfig {
     fn config_path() -> PathBuf {
-        PathBuf::from(CONFIG_FILENAME)
+        crate::paths::data_file(CONFIG_FILENAME)
     }
 
     pub fn load() -> Self {
