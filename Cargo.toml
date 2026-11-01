@@ -25,3 +25,8 @@ parking_lot = "0.12.5"
 crossbeam-channel = "0.5"
 hound = "3.5"
 meval = "0.2.0"
+
+[features]
+# Build libusb from source and link it in, so a release binary does not need
+# it installed (the X1 controller talks USB through it).
+vendored-usb = ["rusb/vendored"]
