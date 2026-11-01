@@ -328,6 +328,26 @@ src/
   `input_controller/x1/`. The X1 is USB (libusb), not MIDI: on Linux it needs the udev rule in
   `contrib/70-lightbeat-x1.rules`, and a failed open prints the reason once.
 
+### Platforms, files and releases
+- Files (`settings.json`, `setup.json`, the default `project.json`, the
+  crash-recovery autosave) are found through `paths::data_file`: the working
+  directory when it already has one of them (running from a checkout),
+  otherwise `~/.config/lightbeat` (Linux) or `~/Library/Application Support/
+  LightBeat` (macOS); `LIGHTBEAT_HOME` overrides. Never open them with a bare
+  relative path. The macro library is still `~/.local/share/lightbeat/macros`
+  on both systems.
+- The JACK backend is optional: libjack is loaded on first use and the
+  binding panics when it is missing, so `JackBackend::installed()` guards
+  every call (a Mac has no JACK). The X1 uses libusb bulk transfers through
+  `rusb`; releases are built with `--features vendored-usb` so libusb is
+  linked in. `set_auto_detach_kernel_driver` is a no-op on macOS.
+- CI (`.github/workflows/`): `ci.yml` tests on Linux and macOS; `beta.yml`
+  builds both, packages them (`contrib/package-linux.sh`,
+  `contrib/package-macos.sh`) and publishes the rolling `beta` pre-release on
+  every push to main, or a release for a `v*` tag. macOS builds are ad hoc
+  signed, not notarized, and Apple Silicon only. Nothing here has run on a
+  real macOS machine unless a CI run says so: check the run before relying on it.
+
 ### Subgraph save/load
 - `SavedNode` has an optional `inner_graph: Option<ProjectFile>` for recursive
   serialization. `load_graph` navigates into a subgraph, recursively loads its

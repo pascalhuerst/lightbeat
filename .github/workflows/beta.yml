@@ -1,0 +1,110 @@
+name: Beta builds
+
+# Every push to main updates the rolling "beta" pre-release. Pushing a tag
+# such as v0.2.0 or v0.2.0-beta.1 makes a release of its own (a pre-release
+# when the tag has a suffix). Run it by hand from the Actions tab to try it.
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: beta-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: Build (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux
+            os: ubuntu-22.04
+          - name: macOS
+            os: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Version
+        id: version
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            version="${GITHUB_REF_NAME#v}"
+          else
+            base=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
+            version="${base}-beta.${GITHUB_RUN_NUMBER}"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Linux packages
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            pkg-config cmake clang libclang-dev \
+            libasound2-dev libjack-jackd2-dev libudev-dev \
+            libxkbcommon-dev libwayland-dev libx11-dev libxcursor-dev \
+            libxrandr-dev libxi-dev libgl1-mesa-dev
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build
+        run: cargo build --release --locked --features vendored-usb
+
+      - name: Package (Linux)
+        if: runner.os == 'Linux'
+        run: contrib/package-linux.sh target/release/lightbeat "${{ steps.version.outputs.version }}" dist
+
+      - name: Package (macOS)
+        if: runner.os == 'macOS'
+        run: contrib/package-macos.sh target/release/lightbeat "${{ steps.version.outputs.version }}" "${{ github.run_number }}" dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lightbeat-${{ matrix.name }}
+          path: dist/*
+          if-no-files-found: error
+
+  publish:
+    name: Publish
+    needs: build
+    runs-on: ubuntu-22.04
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Release
+        shell: bash
+        run: |
+          ls -l dist
+          short="${GITHUB_SHA::7}"
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            flags=()
+            [[ "$GITHUB_REF_NAME" == *-* ]] && flags+=(--prerelease)
+            gh release create "$GITHUB_REF_NAME" "${flags[@]}" --verify-tag \
+              --title "LightBeat ${GITHUB_REF_NAME#v}" --generate-notes dist/*
+          else
+            # The rolling beta is made again each time, so it always points at
+            # the commit it was built from.
+            gh release delete beta --cleanup-tag --yes || true
+            gh release create beta --prerelease --target "$GITHUB_SHA" \
+              --title "Beta (build ${GITHUB_RUN_NUMBER}, ${short})" \
+              --notes "Built from ${short} on ${GITHUB_REF_NAME}. A beta: expect rough edges." \
+              dist/*
+          fi

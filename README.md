@@ -20,6 +20,31 @@ gradient, palette, and trigger nodes, then out to ArtNet/sACN universes. Every
 node runs on a real-time engine; the UI is decoupled and never blocks the
 output thread.
 
+## Download and build
+
+Beta builds for Linux (x86_64) and macOS (Apple Silicon) are on the
+[releases page](../../releases): the rolling **beta** release follows `main`,
+and tags such as `v0.2.0-beta.1` make releases of their own. They are built by
+`.github/workflows/beta.yml`; `ci.yml` runs the tests on both systems.
+
+- **Linux:** unpack the tarball and run `./lightbeat`. It needs the ALSA and
+  udev libraries; see `README.txt` inside, which also covers the X1 udev rule.
+- **macOS:** unzip and open `LightBeat.app`. The app is signed ad hoc, not
+  notarized, so the first time right-click it and choose Open (or run
+  `xattr -dr com.apple.quarantine LightBeat.app`). It asks for microphone
+  access (audio inputs) and for local network access (ArtNet, sACN, Link).
+- **Your files** (settings, setup, the default project) live in
+  `~/.config/lightbeat` on Linux and `~/Library/Application Support/LightBeat`
+  on macOS. Started from a directory that already has a `settings.json`,
+  `setup.json` or `project.json` (a checkout), it uses that directory instead.
+  `LIGHTBEAT_HOME` overrides both.
+
+To build from source you need a recent stable Rust, `cmake` and `libclang`
+(for Ableton Link), and on Linux the ALSA and JACK development packages
+(`libasound2-dev libjack-jackd2-dev libudev-dev`, plus the X11/Wayland
+packages listed in the workflow). `cargo build --release --features
+vendored-usb` links libusb in, as the releases do.
+
 ## Assets
 
 `assets/` contains:
