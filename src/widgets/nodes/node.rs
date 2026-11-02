@@ -85,6 +85,11 @@ pub trait NodeWidget: Any {
     /// it can warn about it.
     fn set_stack_conflicts(&mut self, _others: Vec<String>) {}
 
+    /// Set when the user removes a port from the middle of a node's list: the
+    /// side and index of the port that went, once. The graph then moves the
+    /// wires on the ports after it, which have shifted down.
+    fn take_removed_port(&mut self) -> Option<(PortDir, usize)> { None }
+
     /// Called on a stack whose "send to" would make a loop; it lets go of its parent.
     fn break_stack_link(&mut self) {}
 

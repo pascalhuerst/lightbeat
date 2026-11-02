@@ -3,6 +3,8 @@ pub mod clock;
 pub mod input_controller;
 pub mod internal_clock;
 pub mod launchpad;
+pub mod midi_input;
+pub mod midi_output;
 pub mod push1;
 pub mod status;
 pub mod x1;

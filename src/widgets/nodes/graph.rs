@@ -1372,6 +1372,45 @@ impl NodeGraph {
         }
     }
 
+    /// A node that had a port removed from the middle of its list reports it
+    /// here: the wires on that port go, and the ones on the ports after it
+    /// follow them down.
+    fn remap_removed_ports(&mut self) {
+        let level = self.active_mut();
+        let ids: Vec<NodeId> = level.states.iter().map(|s| s.id).collect();
+        let removed: Vec<(NodeId, PortDir, usize)> = level
+            .nodes
+            .iter_mut()
+            .zip(ids)
+            .filter_map(|(node, id)| node.take_removed_port().map(|(dir, i)| (id, dir, i)))
+            .collect();
+        for (node, dir, index) in removed {
+            let on_node = |p: &PortId| p.node == node && p.dir == dir;
+            let wires: Vec<(PortId, PortId)> = self
+                .active()
+                .connections
+                .iter()
+                .filter(|c| match dir {
+                    PortDir::Input => on_node(&c.to) && c.to.index >= index,
+                    PortDir::Output => on_node(&c.from) && c.from.index >= index,
+                })
+                .map(|c| (c.from, c.to))
+                .collect();
+            for (_, to) in &wires {
+                self.remove_connection_to(*to);
+            }
+            for (from, to) in wires {
+                let (from, to) = match dir {
+                    PortDir::Input if to.index == index => continue,
+                    PortDir::Output if from.index == index => continue,
+                    PortDir::Input => (from, PortId { index: to.index - 1, ..to }),
+                    PortDir::Output => (PortId { index: from.index - 1, ..from }, to),
+                };
+                self.add_connection(from, to);
+            }
+        }
+    }
+
     pub(crate) fn cleanup_stale_connections(&mut self) {
         let level = self.active();
         let stale: Vec<PortId> = level.connections.iter().filter(|conn| {
@@ -1435,6 +1474,7 @@ impl NodeGraph {
 
         self.reconcile_effect_stacks();
         self.remap_promoted_connections();
+        self.remap_removed_ports();
         self.refresh_hidden_ports();
         // Clean up stale connections (ports removed by dynamic nodes like Group Output).
         self.cleanup_stale_connections();
@@ -4872,5 +4912,88 @@ mod stack_tree_tests {
         g.reconcile_effect_stacks();
         let w = g.node_mut(child).as_any_mut().downcast_mut::<EffectStackWidget>().unwrap();
         assert_eq!(w.config().parent, "Shelf");
+    }
+}
+
+#[cfg(test)]
+mod removed_port_tests {
+    use super::*;
+    use crate::engine::types::new_shared_state;
+    use crate::midi_io::MidiHub;
+    use crate::widgets::nodes::display::value_display::ValueDisplayWidget;
+    use crate::widgets::nodes::io::midi_common::new_shared_learned;
+    use crate::widgets::nodes::io::midi_input::MidiInputWidget;
+    use crate::widgets::nodes::io::midi_output::MidiOutputWidget;
+
+    fn three_entries() -> serde_json::Value {
+        serde_json::json!({ "port": "dev", "entries": [
+            { "id": 1, "name": "a", "binding": {"kind": "cc", "channel": 1, "number": 1}, "mode": "value" },
+            { "id": 2, "name": "b", "binding": {"kind": "cc", "channel": 1, "number": 2}, "mode": "value" },
+            { "id": 3, "name": "c", "binding": {"kind": "cc", "channel": 1, "number": 3}, "mode": "value" },
+        ]})
+    }
+
+    /// A MIDI Input (id 1) with entries a, b, c wired to three displays (ids 10, 11, 12).
+    fn input_graph() -> NodeGraph {
+        let mut g = NodeGraph::new();
+        let mut input = MidiInputWidget::new(NodeId(1), new_shared_state(0, 33), MidiHub::idle(), new_shared_learned());
+        input.restore_from_save_data(&three_entries());
+        g.add_node(Box::new(input), Pos2::ZERO);
+        for k in 0..3u64 {
+            g.add_node(Box::new(ValueDisplayWidget::new(NodeId(10 + k), new_shared_state(1, 0))), Pos2::new(200.0, k as f32 * 50.0));
+            let from = PortId { node: NodeId(1), index: 1 + k as usize, dir: PortDir::Output };
+            let to = PortId { node: NodeId(10 + k), index: 0, dir: PortDir::Input };
+            g.add_connection(from, to);
+        }
+        g
+    }
+
+    fn wires(g: &NodeGraph) -> Vec<(u64, usize)> {
+        let mut w: Vec<(u64, usize)> = g.active().connections.iter().map(|c| (c.to.node.0, c.from.index)).collect();
+        w.sort();
+        w
+    }
+
+    #[test]
+    fn removing_an_input_entry_drops_its_wire_and_moves_the_ones_after_it_down() {
+        let mut g = input_graph();
+        assert_eq!(wires(&g), vec![(10, 1), (11, 2), (12, 3)]);
+        g.node_mut(0).as_any_mut().downcast_mut::<MidiInputWidget>().unwrap().remove_entry(1);
+        g.remap_removed_ports();
+        g.cleanup_stale_connections();
+        assert_eq!(wires(&g), vec![(10, 1), (12, 2)], "b's wire is gone, c's now leaves from the second entry's port");
+    }
+
+    #[test]
+    fn removing_the_last_entry_just_drops_its_wire() {
+        let mut g = input_graph();
+        g.node_mut(0).as_any_mut().downcast_mut::<MidiInputWidget>().unwrap().remove_entry(2);
+        g.remap_removed_ports();
+        g.cleanup_stale_connections();
+        assert_eq!(wires(&g), vec![(10, 1), (11, 2)]);
+    }
+
+    #[test]
+    fn removing_an_output_entry_does_the_same_on_the_input_side() {
+        let mut g = NodeGraph::new();
+        let mut out = MidiOutputWidget::new(NodeId(1), new_shared_state(32, 1), MidiHub::idle(), new_shared_learned());
+        out.restore_from_save_data(&three_entries());
+        g.add_node(Box::new(out), Pos2::new(200.0, 0.0));
+        for k in 0..3u64 {
+            g.add_node(
+                Box::new(crate::widgets::nodes::math::constant::ConstantWidget::new(NodeId(10 + k), PortType::Untyped, new_shared_state(0, 1))),
+                Pos2::new(0.0, k as f32 * 50.0),
+            );
+            g.add_connection(
+                PortId { node: NodeId(10 + k), index: 0, dir: PortDir::Output },
+                PortId { node: NodeId(1), index: k as usize, dir: PortDir::Input },
+            );
+        }
+        g.node_mut(0).as_any_mut().downcast_mut::<MidiOutputWidget>().unwrap().remove_entry(0);
+        g.remap_removed_ports();
+        g.cleanup_stale_connections();
+        let mut w: Vec<(u64, usize)> = g.active().connections.iter().map(|c| (c.from.node.0, c.to.index)).collect();
+        w.sort();
+        assert_eq!(w, vec![(11, 0), (12, 1)]);
     }
 }
