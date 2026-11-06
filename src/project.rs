@@ -608,6 +608,13 @@ pub fn load_graph(graph: &mut NodeGraph, project: &ProjectFile) -> Vec<usize> {
             // before saved wires are attached.
             // MIDI nodes have a port per entry of their list: restore it
             // before saved wires are attached.
+            if saved.type_name == "DMX Input"
+                && let Some(data) = &saved.data {
+                    let n = graph.node_mut(idx);
+                    if let Some(w) = n.as_any_mut().downcast_mut::<crate::widgets::nodes::io::dmx_input::DmxInputWidget>() {
+                        w.restore_from_save_data(data);
+                    }
+                }
             if saved.type_name == "MIDI Input"
                 && let Some(data) = &saved.data {
                     let n = graph.node_mut(idx);
@@ -1117,6 +1124,37 @@ mod tests {
         assert_eq!(g.node_and_state(0).0.ui_outputs().len(), 3);
         assert_eq!(g.node_and_state(1).0.ui_inputs().len(), 2);
         assert_eq!(g.root_level().connections.len(), 2, "both wires kept, to the second port of each side");
+    }
+
+    #[test]
+    fn wires_from_dmx_input_entries_survive_loading() {
+        use crate::dmx_input::DmxInputHub;
+        use crate::widgets::nodes::display::value_display::ValueDisplayWidget;
+        use crate::widgets::nodes::io::dmx_input::DmxInputWidget;
+        use crate::widgets::nodes::NodeGraph;
+
+        let mut g = NodeGraph::new();
+        let hub = DmxInputHub::idle();
+        g.register_node("IO", "DMX Input", move |id| {
+            Box::new(DmxInputWidget::new(id, crate::engine::types::new_shared_state(0, 200), hub.clone()))
+        });
+        g.register_node("Display", "Value Display", |id| {
+            Box::new(ValueDisplayWidget::new(id, crate::engine::types::new_shared_state(1, 0)))
+        });
+        let project: ProjectFile = serde_json::from_str(r#"{
+            "nodes": [
+                {"type_name": "DMX Input", "id": 1, "pos": [0.0, 0.0], "params": [],
+                 "data": {"input": 1, "entries": [
+                    {"id": 1, "name": "a", "kind": "value", "address": 1},
+                    {"id": 2, "name": "b", "kind": "gate", "address": 2}]}},
+                {"type_name": "Value Display", "id": 2, "pos": [200.0, 0.0], "params": []}
+            ],
+            "connections": [{"from_node": 1, "from_port": 2, "to_node": 2, "to_port": 0}]
+        }"#).unwrap();
+        load_graph(&mut g, &project);
+        g.cleanup_stale_connections();
+        assert_eq!(g.node_and_state(0).0.ui_outputs().len(), 3);
+        assert_eq!(g.root_level().connections.len(), 1, "the wire from the second channel was kept");
     }
 
     #[test]

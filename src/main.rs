@@ -38,6 +38,7 @@ use engine::nodes::display::led_display::LedDisplayProcessNode;
 use engine::nodes::display::value_display::ValueDisplayProcessNode;
 use engine::nodes::io::audio_input::AudioInputProcessNode;
 use engine::nodes::io::clock::ClockProcessNode;
+use engine::nodes::io::dmx_input::DmxInputProcessNode;
 use engine::nodes::io::input_controller::InputControllerProcessNode;
 use engine::nodes::io::midi_input::MidiInputProcessNode;
 use engine::nodes::io::midi_output::MidiOutputProcessNode;
@@ -107,6 +108,7 @@ use widgets::nodes::display::led_display::LedDisplayWidget;
 use widgets::nodes::display::value_display::ValueDisplayWidget;
 use widgets::nodes::io::audio_input::AudioInputWidget;
 use widgets::nodes::io::clock::ClockWidget;
+use widgets::nodes::io::dmx_input::DmxInputWidget;
 use widgets::nodes::io::input_controller::InputControllerWidget;
 use widgets::nodes::io::midi_input::MidiInputWidget;
 use widgets::nodes::io::midi_output::MidiOutputWidget;
@@ -477,6 +479,11 @@ impl LightBeatApp {
             // covers generic MIDI and BCF2000 with headroom; Push 1 uses its
             // own dedicated node.
             Box::new(InputControllerWidget::new(id, new_shared_state(192, 192), ic_shared.clone()))
+        });
+        let dmx_hub = self.dmx_inputs.clone();
+        self.graph.register_node("IO", "DMX Input", move |id| {
+            // The status port and up to 64 entries of at most three channels.
+            Box::new(DmxInputWidget::new(id, new_shared_state(0, 200), dmx_hub.clone()))
         });
         let (hub, learned) = (self.midi_hub.clone(), self.midi_learned.clone());
         self.graph.register_node("IO", "MIDI Input", move |id| {
@@ -910,6 +917,7 @@ impl LightBeatApp {
                 "Input Controller" => Some(Box::new(InputControllerProcessNode::new(
                     id, self.input_controllers.shared.clone(),
                 ))),
+                "DMX Input" => Some(Box::new(DmxInputProcessNode::new(id, self.dmx_inputs.clone()))),
                 "MIDI Input" => Some(Box::new(MidiInputProcessNode::new(id, self.midi_hub.clone()))),
                 "MIDI Output" => Some(Box::new(MidiOutputProcessNode::new(id, self.midi_hub.clone()))),
                 "Push 1" => Some(Box::new(Push1ProcessNode::new(

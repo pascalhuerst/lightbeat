@@ -313,6 +313,20 @@ src/
   bend) you set by hand or copy from a MIDI Input entry; only wired inputs are
   sent, only on change. Removing an entry from the middle moves the wires after
   it via `NodeWidget::take_removed_port` and `NodeGraph::remap_removed_ports`.
+- **DMX Input** (Art-Net from another lighting desk, e.g. Chamsys): a *DMX
+  input* in the setup (`SetupFile::dmx_inputs`, tab "DMX Inputs") lists the
+  universes (15-bit port addresses, shown as net.sub.universe) a desk sends us.
+  `dmx_input::DmxInputHub` (worker in `dmx_input/artnet.rs`) listens on UDP 6454
+  (SO_REUSEPORT, so other Art-Net software can share the port; only open while an
+  enabled input has a universe), keeps the latest frame of each universe, and
+  announces LightBeat as an Art-Net node: it answers ArtPoll and announces on
+  setup changes with ArtPollReply packets that list the universes as *output*
+  ports (to Art-Net a receiver is an output), 4 per reply, one bind index each.
+  The DMX Input node's entries read channels as value (8/16 bit), gate, trigger,
+  colour (RGB 8/16 bit) or position (16 bit), with Learn (move a channel on the
+  desk) and a patch summary for the desk. Values hold when the desk goes quiet;
+  `connected` is high while a universe has had a packet in the last 5 s.
+  sACN input would be another `DmxInputKind` feeding the same hub.
 - Every hardware node (Input Controller, Audio Input, Launchpad S, Push 1,
   X1) has a leading **`connected`** Logic output (port 0): high while the
   device has a live session. Build layouts with `io::status::with_status_port`.
