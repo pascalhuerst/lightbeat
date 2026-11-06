@@ -322,9 +322,13 @@ src/
   announces LightBeat as an Art-Net node: it answers ArtPoll and announces on
   setup changes with ArtPollReply packets that list the universes as *output*
   ports (to Art-Net a receiver is an output), 4 per reply, one bind index each.
-  The DMX Input node's entries read channels as value (8/16 bit), gate, trigger,
-  colour (RGB 8/16 bit) or position (16 bit), with Learn (move a channel on the
-  desk) and a patch summary for the desk. Values hold when the desk goes quiet;
+  The DMX Input node has a list of typed **outputs** (inspector "Add output":
+  Value, Color, Position, Gate, Trigger, Selector), each made of **sources**: a
+  channel (any universe of the input) plus an optional fine channel for 16 bit,
+  invert and an input range. Colour is RGB or HSV (+ optional dimmer). Gate has
+  hysteresis (high above X, low below Y), Trigger pulses on the rising crossing,
+  Selector outputs the number of the range the value falls in. Learn picks the
+  lowest channel that moved on the desk. Values hold when the desk goes quiet;
   `connected` is high while a universe has had a packet in the last 5 s.
   sACN input would be another `DmxInputKind` feeding the same hub.
 - Every hardware node (Input Controller, Audio Input, Launchpad S, Push 1,

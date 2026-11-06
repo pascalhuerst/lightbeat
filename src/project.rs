@@ -1144,9 +1144,9 @@ mod tests {
         let project: ProjectFile = serde_json::from_str(r#"{
             "nodes": [
                 {"type_name": "DMX Input", "id": 1, "pos": [0.0, 0.0], "params": [],
-                 "data": {"input": 1, "entries": [
-                    {"id": 1, "name": "a", "kind": "value", "address": 1},
-                    {"id": 2, "name": "b", "kind": "gate", "address": 2}]}},
+                 "data": {"input": 1, "outputs": [
+                    {"id": 1, "name": "a", "kind": "value", "sources": [{"address": 1}]},
+                    {"id": 2, "name": "b", "kind": "gate", "sources": [{"address": 2}]}]}},
                 {"type_name": "Value Display", "id": 2, "pos": [200.0, 0.0], "params": []}
             ],
             "connections": [{"from_node": 1, "from_port": 2, "to_node": 2, "to_port": 0}]
