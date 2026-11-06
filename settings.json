@@ -7,10 +7,13 @@
   "window_size": null,
   "window_maximized": true,
   "recent_projects": [
+    "/home/paso/LightBeat/demo_effects.json",
     "/home/paso/LightBeat/test_project_audio_midi_lp_1.json",
     "/home/paso/LightBeat/test_project_audio_midi_1.json",
     "/home/paso/LightBeat/test_project_audio_1.json",
     "/home/paso/LightBeat/test_project_1.json",
     "project.json"
-  ]
+  ],
+  "idle_repaint_hz": 30.0,
+  "msaa_samples": 0
 }

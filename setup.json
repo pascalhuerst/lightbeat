@@ -361,8 +361,8 @@
               "count": 158,
               "format": {
                 "channels": [
-                  "Red",
                   "Green",
+                  "Red",
                   "Blue"
                 ]
               }
@@ -1238,8 +1238,8 @@
               "count": 99,
               "format": {
                 "channels": [
-                  "Red",
                   "Green",
+                  "Red",
                   "Blue",
                   {
                     "White": {
@@ -1572,8 +1572,8 @@
               "count": 99,
               "format": {
                 "channels": [
-                  "Red",
                   "Green",
+                  "Red",
                   "Blue",
                   {
                     "White": {
@@ -1894,7 +1894,7 @@
       "address": {
         "net": 0,
         "subnet": 0,
-        "universe": 1,
+        "universe": 5,
         "start_channel": 1
       },
       "interface_id": 3,
@@ -1906,8 +1906,8 @@
               "count": 158,
               "format": {
                 "channels": [
-                  "Red",
                   "Green",
+                  "Red",
                   "Blue"
                 ]
               }
@@ -2400,7 +2400,7 @@
       "address": {
         "net": 0,
         "subnet": 0,
-        "universe": 2,
+        "universe": 6,
         "start_channel": 1
       },
       "interface_id": 3,
@@ -2412,8 +2412,8 @@
               "count": 158,
               "format": {
                 "channels": [
-                  "Red",
                   "Green",
+                  "Red",
                   "Blue"
                 ]
               }
@@ -2906,7 +2906,7 @@
       "address": {
         "net": 0,
         "subnet": 0,
-        "universe": 3,
+        "universe": 7,
         "start_channel": 1
       },
       "interface_id": 3,
@@ -2918,8 +2918,8 @@
               "count": 158,
               "format": {
                 "channels": [
-                  "Red",
                   "Green",
+                  "Red",
                   "Blue"
                 ]
               }
@@ -3412,7 +3412,7 @@
       "address": {
         "net": 0,
         "subnet": 0,
-        "universe": 4,
+        "universe": 8,
         "start_channel": 1
       },
       "interface_id": 3,
@@ -3424,8 +3424,8 @@
               "count": 158,
               "format": {
                 "channels": [
-                  "Red",
                   "Green",
+                  "Red",
                   "Blue"
                 ]
               }
@@ -3918,7 +3918,7 @@
       "address": {
         "net": 0,
         "subnet": 0,
-        "universe": 5,
+        "universe": 9,
         "start_channel": 1
       },
       "interface_id": 3,
@@ -3930,8 +3930,8 @@
               "count": 158,
               "format": {
                 "channels": [
-                  "Red",
                   "Green",
+                  "Red",
                   "Blue"
                 ]
               }
@@ -4424,7 +4424,7 @@
       "address": {
         "net": 0,
         "subnet": 0,
-        "universe": 6,
+        "universe": 10,
         "start_channel": 1
       },
       "interface_id": 3,
@@ -4436,8 +4436,8 @@
               "count": 158,
               "format": {
                 "channels": [
-                  "Red",
                   "Green",
+                  "Red",
                   "Blue"
                 ]
               }
@@ -4956,7 +4956,7 @@
           "port": 6454
         }
       },
-      "enabled": false
+      "enabled": true
     }
   ],
   "groups": [
@@ -4975,8 +4975,7 @@
         9,
         10
       ],
-      "strip_layout": [],
-      "preview_columns": 1
+      "strip_layout": []
     },
     {
       "id": 2,
@@ -4996,8 +4995,7 @@
           "logical_start": 1.0,
           "logical_end": 0.5
         }
-      ],
-      "preview_columns": 1
+      ]
     },
     {
       "id": 3,
@@ -5041,8 +5039,7 @@
           "logical_start": 0.5,
           "logical_end": 1.0
         }
-      ],
-      "preview_columns": 1
+      ]
     }
   ],
   "color_palettes": [
@@ -8441,7 +8438,7 @@
       "name": "Jack Input",
       "enabled": true,
       "backend": "Jack",
-      "device_name": "Scarlett Solo (3rd Gen.) 0:capture_AUX1",
+      "device_name": "Scarlett Solo (3rd Gen.) Direct Scarlett Solo USB:capture_FR",
       "sample_rate": 48000,
       "buffer_size_frames": 1024,
       "analyzers": [
@@ -8452,7 +8449,10 @@
           "kind": "PeakLevel"
         },
         {
-          "kind": "Envelope"
+          "kind": "Spectrum"
+        },
+        {
+          "kind": "Drums"
         }
       ]
     }
