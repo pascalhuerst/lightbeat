@@ -185,6 +185,7 @@ enum SetupTab {
     Gradients,
     AudioInputs,
     InputControllers,
+    DmxInputs,
 }
 
 const SETUP_TABS: &[(SetupTab, &str)] = &[
@@ -197,6 +198,7 @@ const SETUP_TABS: &[(SetupTab, &str)] = &[
     (SetupTab::Gradients, "Gradients"),
     (SetupTab::AudioInputs, "Audio Inputs"),
     (SetupTab::InputControllers, "Input Controllers"),
+    (SetupTab::DmxInputs, "DMX Inputs"),
 ];
 
 /// Undo/redo requested from the Edit menu. The menu closure holds `&mut self`,
@@ -274,6 +276,8 @@ struct LightBeatApp {
     /// What the MIDI Input nodes have learned, for the MIDI Output nodes to copy.
     midi_learned: widgets::nodes::io::midi_common::SharedLearned,
     audio_inputs: AudioInputManager,
+    /// DMX from other lighting desks (Art-Net).
+    dmx_inputs: dmx_input::DmxInputHub,
     /// Portal registries — one per family so names can overlap.
     /// `output_portals`: Output Portal TX publishes, RXs read.
     /// `input_portals`: Input Portal RX publishes port layout, TX writes values.
@@ -398,6 +402,7 @@ impl LightBeatApp {
             midi_hub: midi_io::MidiHub::start(),
             midi_learned: widgets::nodes::io::midi_common::new_shared_learned(),
             audio_inputs: AudioInputManager::new(),
+            dmx_inputs: dmx_input::DmxInputHub::start(),
             output_portals: std::sync::Arc::new(std::sync::Mutex::new(
                 engine::nodes::meta::portal::PortalRegistry::default(),
             )),
@@ -1079,6 +1084,7 @@ impl LightBeatApp {
                 self.color_palette_group_manager = widgets::color_palette_group_list::ColorPaletteGroupManager::from_groups(s.color_palette_groups);
                 self.input_controllers.set_controllers(&s.input_controllers);
                 self.audio_inputs.set_inputs(&s.audio_inputs);
+                self.dmx_inputs.set_inputs(&s.dmx_inputs);
                 // Reset history so undo doesn't go back to an empty setup.
                 self.setup_undoer = egui::util::undoer::Undoer::default();
             }
@@ -1425,6 +1431,7 @@ impl LightBeatApp {
             gradient_presets: self.gradient_preset_manager.presets.clone(),
             input_controllers: self.input_controllers.export(),
             audio_inputs: self.audio_inputs.export(),
+            dmx_inputs: self.dmx_inputs.export(),
         }
     }
 
@@ -1439,6 +1446,7 @@ impl LightBeatApp {
         self.gradient_preset_manager = widgets::gradient_preset_list::GradientPresetManager::from_presets(s.gradient_presets.clone());
         self.input_controllers.set_controllers(&s.input_controllers);
         self.audio_inputs.set_inputs(&s.audio_inputs);
+        self.dmx_inputs.set_inputs(&s.dmx_inputs);
 
         self.sync_group_context();
         self.sync_object_store();
@@ -1651,6 +1659,7 @@ impl LightBeatApp {
                 SetupTab::InputControllers => {
                     widgets::input_controller_list::show(ui, &mut self.input_controllers);
                 }
+                SetupTab::DmxInputs => widgets::dmx_input_list::show(ui, &self.dmx_inputs),
             }
         });
     }
