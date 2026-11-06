@@ -531,7 +531,13 @@ src/
   while the user is navigated inside a subgraph.
 - **Quick add**: right-click on empty canvas opens a type-to-add search at the
   pointer (`show_quick_add`, ranking in `quick_add_matches`); Enter adds the
-  top match there. Right-click on a selected node or a port opens the other
+  top match there. Nodes are found by a path-like address (`input/midi`,
+  `math/mul`, `clock/divider`; a word with a slash is matched part by part, each
+  part only has to begin) or by name. The path comes from
+  `widgets/nodes/paths.rs`: add a node's line there when its category and name
+  would put it in the wrong group, otherwise it lands in `<group of its
+  category>/<name>` by itself. Groups: input, output, clock, signal, trigger,
+  math, compare, logic, color, position, route, portal, display, effect. Right-click on a selected node or a port opens the other
   menus instead.
 - **Hide unused ports** (`H`, or the node menu) is a per-node flag in
   `NodeSharedState::hide_unused_ports`, saved as `SavedNode.hide_unused_ports`.

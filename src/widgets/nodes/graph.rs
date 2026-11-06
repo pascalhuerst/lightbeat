@@ -64,39 +64,62 @@ struct QuickAdd {
 }
 
 /// Registry indices matching `query`, best first. Every word of the query
-/// must match: the start of the node's name or of a word in it ranks highest,
-/// then anywhere in the name, then its category, then letters in order.
+/// must match. A word with a slash is an address (`math/mul`, `in/mid`): each
+/// part has to begin the matching part of the node's path. Any other word
+/// ranks by where it hits: the start of the node's name, the start of a part
+/// of its path or of a word in its name, then anywhere in the name, its
+/// category, and last letters in order.
 fn quick_add_matches(registry: &[NodeEntry], query: &str) -> Vec<usize> {
     let words: Vec<String> = query.split_whitespace().map(|w| w.to_lowercase()).collect();
-    let mut scored: Vec<(usize, usize, usize)> = Vec::new();
+    let mut scored: Vec<(usize, usize)> = Vec::new();
     for (i, entry) in registry.iter().enumerate() {
-        let label = entry.label.to_lowercase();
-        let category = entry.category.to_lowercase();
         let mut total = 0;
         let mut all = true;
         for w in &words {
-            let score = if label.starts_with(w.as_str()) {
-                0
-            } else if label.split(|c: char| !c.is_alphanumeric()).any(|part| part.starts_with(w.as_str())) {
-                1
-            } else if label.contains(w.as_str()) {
-                2
-            } else if category.contains(w.as_str()) {
-                3
-            } else if is_subsequence(w, &label) {
-                4
-            } else {
-                all = false;
-                break;
-            };
-            total += score;
+            match word_score(entry, w) {
+                Some(s) => total += s,
+                None => {
+                    all = false;
+                    break;
+                }
+            }
         }
         if all {
-            scored.push((total, label.len(), i));
+            scored.push((total, i));
         }
     }
-    scored.sort_by(|a, b| (a.0, a.1, registry[a.2].label.as_str()).cmp(&(b.0, b.1, registry[b.2].label.as_str())));
-    scored.into_iter().map(|(_, _, i)| i).collect()
+    scored.sort_by(|a, b| (a.0, registry[a.1].path.as_str()).cmp(&(b.0, registry[b.1].path.as_str())));
+    scored.into_iter().map(|(_, i)| i).collect()
+}
+
+/// How well one lowercase word matches an entry; lower is better.
+fn word_score(entry: &NodeEntry, word: &str) -> Option<usize> {
+    let path = entry.path.to_lowercase();
+    if word.contains('/') {
+        // An address: the parts line up with the path's own, and may stop short.
+        let wanted: Vec<&str> = word.split('/').collect();
+        let parts: Vec<&str> = path.split('/').collect();
+        if wanted.len() > parts.len() {
+            return None;
+        }
+        let lines_up = wanted.iter().zip(&parts).all(|(w, p)| w.is_empty() || p.starts_with(w));
+        return lines_up.then_some(0);
+    }
+    let label = entry.label.to_lowercase();
+    let category = entry.category.to_lowercase();
+    Some(if label.starts_with(word) {
+        0
+    } else if path.split('/').any(|part| part.starts_with(word)) || label.split(|c: char| !c.is_alphanumeric()).any(|part| part.starts_with(word)) {
+        1
+    } else if label.contains(word) {
+        2
+    } else if category.contains(word) {
+        3
+    } else if is_subsequence(word, &label) {
+        4
+    } else {
+        return None;
+    })
 }
 
 /// True when the letters of `needle` appear in `haystack` in that order.
@@ -135,6 +158,8 @@ struct DrawingConnection {
 pub struct NodeEntry {
     pub label: String,
     pub category: String,
+    /// Where it is found by name: `input/midi`, `math/mul`.
+    pub path: String,
     pub description: &'static str,
     pub factory: Box<dyn Fn(NodeId) -> Box<dyn NodeWidget>>,
 }
@@ -549,9 +574,13 @@ impl NodeGraph {
         let sample = factory(NodeId(0));
         let description = sample.description();
         drop(sample);
+        let (label, category): (String, String) = (label.into(), category.into());
+        let path = super::paths::node_path(&category, &label);
+        debug_assert!(self.registry.iter().all(|e| e.path != path), "two nodes have the path {path}");
         self.registry.push(NodeEntry {
-            label: label.into(),
-            category: category.into(),
+            path,
+            label,
+            category,
             description,
             factory: Box::new(factory),
         });
@@ -1953,9 +1982,9 @@ impl NodeGraph {
             .fixed_pos(qa.screen)
             .show(ui.ctx(), |ui| {
                 egui::Frame::popup(ui.style()).show(ui, |ui| {
-                    ui.set_width(240.0);
+                    ui.set_width(280.0);
                     let edit = egui::TextEdit::singleline(&mut qa.query)
-                        .hint_text("Add node...")
+                        .hint_text("Add node (math/mul, input/midi, ...)")
                         .desired_width(f32::INFINITY);
                     let response = ui.add(edit);
                     if !qa.focused {
@@ -1974,7 +2003,7 @@ impl NodeGraph {
                         for (row, &idx) in matches.iter().enumerate() {
                             let entry = &self.registry[idx];
                             let resp = ui
-                                .selectable_label(row == qa.selected, format!("{}   {}", entry.label, entry.category))
+                                .selectable_label(row == qa.selected, format!("{}   {}", entry.path, entry.label))
                                 .on_hover_text(entry.description);
                             if (down || up) && row == qa.selected {
                                 resp.scroll_to_me(None);
@@ -4724,6 +4753,7 @@ mod quick_add_tests {
         entries
             .iter()
             .map(|(label, category)| NodeEntry {
+                path: crate::widgets::nodes::paths::node_path(category, label),
                 label: label.to_string(),
                 category: category.to_string(),
                 description: "",
@@ -4753,6 +4783,62 @@ mod quick_add_tests {
         assert_eq!(labels(&r, "color").len(), 3, "the category matches too");
         assert_eq!(labels(&r, "").len(), 6, "an empty query lists everything");
         assert!(labels(&r, "zzz").is_empty());
+    }
+
+    fn paths(r: &[NodeEntry], query: &str) -> Vec<String> {
+        quick_add_matches(r, query).into_iter().map(|i| r[i].path.clone()).collect()
+    }
+
+    fn nodes() -> Vec<NodeEntry> {
+        registry(&[
+            ("MIDI Input", "IO"),
+            ("MIDI Output", "IO"),
+            ("Button", "UI"),
+            ("Fader", "UI"),
+            ("Mul", "Math"),
+            ("Div", "Math"),
+            ("Multiplexer", "Math"),
+            ("Add", "Math"),
+            ("Scope", "Display"),
+            ("Clock Divider", "Transport"),
+        ])
+    }
+
+    #[test]
+    fn an_address_finds_a_node_by_its_path() {
+        let r = nodes();
+        assert_eq!(paths(&r, "math/mul"), ["math/mul"]);
+        assert_eq!(paths(&r, "input/midi"), ["input/midi"]);
+        assert_eq!(paths(&r, "input/button"), ["input/button"]);
+        assert_eq!(paths(&r, "math/div"), ["math/div"]);
+        // Each part only has to begin.
+        assert_eq!(paths(&r, "in/mid"), ["input/midi"]);
+        assert_eq!(paths(&r, "m/d"), ["math/div"]);
+    }
+
+    #[test]
+    fn a_group_lists_its_nodes_in_order() {
+        let r = nodes();
+        assert_eq!(paths(&r, "math/"), ["math/add", "math/div", "math/mul"]);
+        assert_eq!(paths(&r, "input/"), ["input/button", "input/fader", "input/midi"]);
+        assert_eq!(paths(&r, "/mid"), ["input/midi", "output/midi"], "the group may be left open");
+        assert_eq!(
+            paths(&r, "math"),
+            ["math/add", "math/div", "math/mul", "route/multiplexer"],
+            "typing just a group works too, and the category finds Multiplexer after them"
+        );
+        assert!(paths(&r, "nothing/here").is_empty());
+        assert!(paths(&r, "math/mul/extra").is_empty(), "a path has no more parts than it has");
+    }
+
+    #[test]
+    fn an_address_and_a_plain_word_can_be_mixed() {
+        let r = nodes();
+        assert_eq!(paths(&r, "input/ mid"), ["input/midi"]);
+        // The name still finds a node without its group; the group first on a tie.
+        assert_eq!(paths(&r, "mul"), ["math/mul", "route/multiplexer"]);
+        assert_eq!(paths(&r, "").len(), r.len());
+        assert_eq!(paths(&r, "")[0], "clock/divider", "everything, grouped and sorted by path");
     }
 
     #[test]

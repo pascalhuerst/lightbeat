@@ -1,5 +1,6 @@
 pub mod graph;
 pub mod node;
+pub mod paths;
 pub mod types;
 
 pub mod display;
