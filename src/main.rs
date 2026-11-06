@@ -3,6 +3,7 @@ mod audio;
 mod beat_clock;
 mod color;
 mod config;
+mod dmx_input;
 mod dmx_io;
 mod engine;
 mod input_controller;
