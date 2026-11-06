@@ -557,6 +557,11 @@ src/
   category>/<name>` by itself. Groups: input, output, clock, signal, trigger,
   math, compare, logic, color, position, route, portal, display, effect. Right-click on a selected node or a port opens the other
   menus instead.
+- **Canvas navigation**: a mouse wheel zooms at the pointer, a trackpad
+  (wheel events in points) pans and Ctrl+scroll or a pinch zooms; middle drag,
+  Shift+drag or Space+drag on empty canvas pan; `F`/Home fits the selection (or
+  everything); `M` toggles the minimap (top right of the canvas, click or drag
+  to move the view; `show_minimap`, `content_bounds`).
 - **Hide unused ports** (`H`, or the node menu) is a per-node flag in
   `NodeSharedState::hide_unused_ports`, saved as `SavedNode.hide_unused_ports`.
   The graph turns it into `hidden_inputs`/`hidden_outputs` each frame

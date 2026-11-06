@@ -312,6 +312,8 @@ pub struct NodeGraph {
     clipboard_connections: Vec<ClipboardConn>,
     /// Set to true to fit the view to content on the next frame.
     fit_pending: bool,
+    /// The overview in the corner of the canvas (toggle with M).
+    pub show_minimap: bool,
 }
 
 #[derive(Clone)]
@@ -374,6 +376,7 @@ impl NodeGraph {
             clipboard: Vec::new(),
             clipboard_connections: Vec::new(),
             fit_pending: false,
+            show_minimap: true,
         }
     }
 
@@ -468,7 +471,11 @@ impl NodeGraph {
         let mut max_x = f32::MIN;
         let mut max_y = f32::MIN;
 
+        let only_selected = !self.selected_nodes.is_empty();
         for (i, node) in level.nodes.iter().enumerate() {
+            if only_selected && !self.selected_nodes.contains(&i) {
+                continue;
+            }
             let pos = level.states[i].pos;
             let size = node_size(node.as_ref(), level.states[i].size_override);
 
@@ -478,6 +485,9 @@ impl NodeGraph {
             max_y = max_y.max(pos.y + size.y);
         }
 
+        if min_x > max_x {
+            return;
+        }
         let content_w = max_x - min_x;
         let content_h = max_y - min_y;
 
@@ -508,6 +518,86 @@ impl NodeGraph {
         let level = self.active_mut();
         level.zoom = zoom;
         level.pan = pan;
+    }
+
+    const MINIMAP_SIZE: Vec2 = Vec2::new(200.0, 140.0);
+
+    /// Where the overview sits: the top right of the canvas.
+    fn minimap_rect(&self, canvas: Rect) -> Rect {
+        if !self.show_minimap {
+            return Rect::NOTHING;
+        }
+        Rect::from_min_size(
+            Pos2::new(canvas.max.x - Self::MINIMAP_SIZE.x - 10.0, canvas.min.y + 10.0),
+            Self::MINIMAP_SIZE,
+        )
+    }
+
+    /// Everything on the active level in canvas space.
+    fn content_bounds(&self) -> Option<Rect> {
+        let level = self.active();
+        let mut bounds: Option<Rect> = None;
+        let mut add = |r: Rect| bounds = Some(bounds.map_or(r, |b| b.union(r)));
+        for (i, node) in level.nodes.iter().enumerate() {
+            let size = node_size(node.as_ref(), level.states[i].size_override);
+            add(Rect::from_min_size(level.states[i].pos, size));
+        }
+        for f in &level.frames {
+            add(f.rect());
+        }
+        bounds
+    }
+
+    /// An overview of the whole level with the visible part marked. Click or
+    /// drag in it to move the view there.
+    fn show_minimap(&mut self, ui: &mut Ui, canvas: Rect) {
+        let rect = self.minimap_rect(canvas);
+        let Some(bounds) = self.content_bounds() else { return };
+        if rect == Rect::NOTHING {
+            return;
+        }
+        let zoom = self.active().zoom;
+        let pan = self.active().pan;
+        // The view in canvas space, so the minimap also covers what is
+        // currently on screen when that is outside the nodes.
+        let view = Rect::from_min_size(
+            Pos2::ZERO + (-pan / zoom),
+            canvas.size() / zoom,
+        );
+        let world = bounds.union(view).expand(40.0);
+        let inner = rect.shrink(4.0);
+        let scale = (inner.width() / world.width()).min(inner.height() / world.height());
+        let origin = inner.center() - world.center().to_vec2() * scale;
+        let to_map = |p: Pos2| Pos2::new(origin.x + p.x * scale, origin.y + p.y * scale);
+        let from_map = |p: Pos2| Pos2::new((p.x - origin.x) / scale, (p.y - origin.y) / scale);
+
+        let response = ui.interact(rect, ui.id().with("minimap"), Sense::click_and_drag());
+        if (response.clicked() || response.dragged() || response.is_pointer_button_down_on())
+            && let Some(p) = response.interact_pointer_pos()
+        {
+            let target = from_map(p);
+            let level = self.active_mut();
+            level.pan = canvas.size() * 0.5 - target.to_vec2() * level.zoom;
+        }
+
+        let painter = ui.painter().with_clip_rect(canvas);
+        painter.rect_filled(rect, 3.0, theme::BG_DEEP.linear_multiply(0.85));
+        painter.rect_stroke(rect, 3.0, Stroke::new(1.0_f32, theme::STROKE), StrokeKind::Inside);
+        let level = self.active();
+        for f in &level.frames {
+            let r = f.rect();
+            painter.rect_filled(Rect::from_min_max(to_map(r.min), to_map(r.max)), 1.0, f.color.linear_multiply(0.25));
+        }
+        for (i, node) in level.nodes.iter().enumerate() {
+            let size = node_size(node.as_ref(), level.states[i].size_override);
+            let r = Rect::from_min_max(to_map(level.states[i].pos), to_map(level.states[i].pos + size));
+            let r = Rect::from_center_size(r.center(), r.size().max(Vec2::splat(2.0)));
+            let color = if self.selected_nodes.contains(&i) { theme::SEM_PRIMARY } else { theme::TEXT_DIM };
+            painter.rect_filled(r, 0.5, color);
+        }
+        let seen = Rect::from_min_max(to_map(view.min), to_map(view.max)).intersect(rect);
+        painter.rect_filled(seen, 0.0, theme::SEM_PRIMARY_FILL);
+        painter.rect_stroke(seen, 0.0, Stroke::new(1.0_f32, theme::SEM_PRIMARY), StrokeKind::Inside);
     }
 
     fn active(&self) -> &GraphLevel { &self.levels[self.active_level] }
@@ -1519,15 +1609,36 @@ impl NodeGraph {
             self.apply_fit_to_content(canvas_rect);
         }
 
-        // Zoom with scroll wheel, centered on mouse position.
-        if response.contains_pointer() {
-            let scroll_delta = ui.input(|i| i.smooth_scroll_delta.y);
-            if scroll_delta != 0.0 {
-                let zoom_factor = 1.0 + scroll_delta * 0.002;
+        // A mouse wheel zooms around the pointer, Ctrl+wheel and pinch too; a
+        // trackpad (scrolling in points) pans, so two fingers move the view.
+        if response.contains_pointer() && !self.minimap_rect(canvas_rect).contains(ui.input(|i| i.pointer.hover_pos()).unwrap_or_default()) {
+            let (wheel_lines, wheel_points, ctrl, pinch) = ui.input(|i| {
+                let mut lines = 0.0_f32;
+                let mut points = Vec2::ZERO;
+                for e in &i.events {
+                    if let egui::Event::MouseWheel { unit, delta, .. } = e {
+                        match unit {
+                            egui::MouseWheelUnit::Line | egui::MouseWheelUnit::Page => lines += delta.y,
+                            egui::MouseWheelUnit::Point => points += *delta,
+                        }
+                    }
+                }
+                (lines, points, i.modifiers.ctrl || i.modifiers.command, i.zoom_delta())
+            });
+            let mut zoom_factor = pinch;
+            if wheel_lines != 0.0 {
+                zoom_factor *= 1.0 + wheel_lines * 0.1;
+            }
+            if wheel_points != Vec2::ZERO {
+                if ctrl {
+                    zoom_factor *= 1.0 + wheel_points.y * 0.004;
+                } else {
+                    self.active_mut().pan += wheel_points;
+                }
+            }
+            if (zoom_factor - 1.0).abs() > f32::EPSILON {
                 let level = self.active_mut();
                 let new_zoom = (level.zoom * zoom_factor).clamp(0.2, 3.0);
-
-                // Zoom around mouse position.
                 if let Some(mouse) = ui.input(|i| i.pointer.hover_pos()) {
                     let mc = mouse.to_vec2() - canvas_rect.min.to_vec2();
                     level.pan = (level.pan - mc) * (new_zoom / level.zoom) + mc;
@@ -1830,6 +1941,7 @@ impl NodeGraph {
 
         // -- Handle interactions --
         self.handle_interactions(ui, &response, &node_rects, snap_to_grid);
+        self.show_minimap(ui, canvas_rect);
 
         // -- Port-hover scope tooltip --
         // Skipped while a drag is in progress (wire draw / node move / frame)
@@ -1875,7 +1987,11 @@ impl NodeGraph {
         if !text_has_focus
             && ui.input(|i| i.key_pressed(egui::Key::F) || i.key_pressed(egui::Key::Home))
         {
-            self.fit_to_content();
+            self.fit_pending = true;
+        }
+
+        if !text_has_focus && !ctrl && ui.input(|i| i.key_pressed(egui::Key::M)) {
+            self.show_minimap = !self.show_minimap;
         }
 
         // -- Hide / show unused ports (H) --
@@ -2781,7 +2897,9 @@ impl NodeGraph {
         let ctrl = ui.input(|i| i.modifiers.ctrl || i.modifiers.command);
         let shift = ui.input(|i| i.modifiers.shift);
         let drag_delta = response.drag_delta();
-        let on_canvas = canvas_has_pointer && self.canvas_rect.contains(pointer_pos);
+        let on_canvas = canvas_has_pointer
+            && self.canvas_rect.contains(pointer_pos)
+            && !self.minimap_rect(self.canvas_rect).contains(pointer_pos);
         let z = self.active().zoom;
 
         // A click anywhere but on a selected node (ports stick out past the
@@ -3257,8 +3375,9 @@ impl NodeGraph {
                         return;
                     }
 
-                    // Empty canvas: shift+drag = pan, plain drag = selection rect.
-                    if shift {
+                    // Empty canvas: shift or space + drag = pan, plain drag = selection rect.
+                    let space = ui.input(|i| i.key_down(egui::Key::Space));
+                    if shift || space {
                         self.drag.panning = true;
                     } else {
                         if !ctrl {
