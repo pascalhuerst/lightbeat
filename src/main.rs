@@ -12,6 +12,7 @@ mod setup;
 mod interfaces;
 mod link_controller;
 mod objects;
+mod paths;
 mod perf;
 mod project;
 mod theme;

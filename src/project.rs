@@ -849,13 +849,13 @@ pub fn load_graph(graph: &mut NodeGraph, project: &ProjectFile) -> Vec<usize> {
 // ---------------------------------------------------------------------------
 
 pub fn default_project_path() -> PathBuf {
-    PathBuf::from("project.json")
+    crate::paths::data_file("project.json")
 }
 
 /// Path for the crash-recovery autosave file that shadows a given project
 /// file. Convention: same directory as the project, filename is the project's
 /// stem with `.autosave.json` appended and a leading `.` (hidden on unix).
-/// If `project_path` is `None`, falls back to `./.project.autosave.json`.
+/// If `project_path` is `None`, falls back to the data directory.
 pub fn autosave_path_for(project_path: Option<&std::path::Path>) -> PathBuf {
     match project_path {
         Some(p) => {
@@ -865,7 +865,7 @@ pub fn autosave_path_for(project_path: Option<&std::path::Path>) -> PathBuf {
                 .unwrap_or("project");
             dir.join(format!(".{}.autosave.json", stem))
         }
-        None => PathBuf::from(".project.autosave.json"),
+        None => crate::paths::data_file(".project.autosave.json"),
     }
 }
 

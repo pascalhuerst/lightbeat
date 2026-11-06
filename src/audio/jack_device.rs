@@ -24,9 +24,21 @@ use super::backend::{
 
 pub struct JackBackend;
 
+impl JackBackend {
+    /// Whether libjack can be loaded at all. The binding loads it on first
+    /// use and panics when it is missing, which is the normal state of a Mac
+    /// and of a Linux machine without JACK or PipeWire's JACK layer.
+    fn installed() -> bool {
+        jack::jack_sys::library().is_ok()
+    }
+}
+
 impl AudioBackend for JackBackend {
 
     fn list_input_names(&self) -> Vec<String> {
+        if !Self::installed() {
+            return Vec::new();
+        }
         // Spin up a disposable client just to walk the port graph. No server
         // auto-start — if there's no JACK server (or no pipewire-jack), we
         // silently return an empty list so the UI degrades gracefully.
@@ -47,6 +59,9 @@ impl AudioBackend for JackBackend {
         _request: StreamRequest,
         subscribers: Vec<Sender<AudioChunk>>,
     ) -> Result<InputStream, String> {
+        if !Self::installed() {
+            return Err("JACK is not installed on this system".to_string());
+        }
         let (client, _status) = Client::new("lightbeat-capture", ClientOptions::NO_START_SERVER)
             .map_err(|e| format!("jack client: {}", e))?;
 
