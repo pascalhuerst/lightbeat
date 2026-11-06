@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 
 use crate::audio::manager::AudioInputConfig;
+use crate::dmx_input::DmxInputConfig;
 use crate::input_controller::InputController;
 use crate::objects::color_palette::{ColorPalette, ColorPaletteGroup};
 use crate::objects::fixture::Fixture;
@@ -44,6 +45,9 @@ pub struct SetupFile {
     /// Audio inputs + per-input analyzer lists.
     #[serde(default)]
     pub audio_inputs: Vec<AudioInputConfig>,
+    /// DMX coming in from other lighting desks.
+    #[serde(default)]
+    pub dmx_inputs: Vec<DmxInputConfig>,
 }
 
 #[derive(Serialize, Deserialize, Clone, PartialEq)]

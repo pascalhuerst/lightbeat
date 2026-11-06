@@ -2,7 +2,7 @@
   "autosave_enabled": true,
   "autoload_on_open": true,
   "snap_to_grid": false,
-  "inspector_mode": "Show",
+  "inspector_mode": "Auto",
   "dmx_bypass_on_startup": false,
   "window_size": null,
   "window_maximized": true,

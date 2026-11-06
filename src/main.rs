@@ -3,6 +3,7 @@ mod audio;
 mod beat_clock;
 mod color;
 mod config;
+mod dmx_input;
 mod dmx_io;
 mod engine;
 mod input_controller;
@@ -37,6 +38,7 @@ use engine::nodes::display::led_display::LedDisplayProcessNode;
 use engine::nodes::display::value_display::ValueDisplayProcessNode;
 use engine::nodes::io::audio_input::AudioInputProcessNode;
 use engine::nodes::io::clock::ClockProcessNode;
+use engine::nodes::io::dmx_input::DmxInputProcessNode;
 use engine::nodes::io::input_controller::InputControllerProcessNode;
 use engine::nodes::io::midi_input::MidiInputProcessNode;
 use engine::nodes::io::midi_output::MidiOutputProcessNode;
@@ -106,6 +108,7 @@ use widgets::nodes::display::led_display::LedDisplayWidget;
 use widgets::nodes::display::value_display::ValueDisplayWidget;
 use widgets::nodes::io::audio_input::AudioInputWidget;
 use widgets::nodes::io::clock::ClockWidget;
+use widgets::nodes::io::dmx_input::DmxInputWidget;
 use widgets::nodes::io::input_controller::InputControllerWidget;
 use widgets::nodes::io::midi_input::MidiInputWidget;
 use widgets::nodes::io::midi_output::MidiOutputWidget;
@@ -184,6 +187,7 @@ enum SetupTab {
     Gradients,
     AudioInputs,
     InputControllers,
+    DmxInputs,
 }
 
 const SETUP_TABS: &[(SetupTab, &str)] = &[
@@ -196,6 +200,7 @@ const SETUP_TABS: &[(SetupTab, &str)] = &[
     (SetupTab::Gradients, "Gradients"),
     (SetupTab::AudioInputs, "Audio Inputs"),
     (SetupTab::InputControllers, "Input Controllers"),
+    (SetupTab::DmxInputs, "DMX Inputs"),
 ];
 
 /// Undo/redo requested from the Edit menu. The menu closure holds `&mut self`,
@@ -273,6 +278,8 @@ struct LightBeatApp {
     /// What the MIDI Input nodes have learned, for the MIDI Output nodes to copy.
     midi_learned: widgets::nodes::io::midi_common::SharedLearned,
     audio_inputs: AudioInputManager,
+    /// DMX from other lighting desks (Art-Net).
+    dmx_inputs: dmx_input::DmxInputHub,
     /// Portal registries — one per family so names can overlap.
     /// `output_portals`: Output Portal TX publishes, RXs read.
     /// `input_portals`: Input Portal RX publishes port layout, TX writes values.
@@ -397,6 +404,7 @@ impl LightBeatApp {
             midi_hub: midi_io::MidiHub::start(),
             midi_learned: widgets::nodes::io::midi_common::new_shared_learned(),
             audio_inputs: AudioInputManager::new(),
+            dmx_inputs: dmx_input::DmxInputHub::start(),
             output_portals: std::sync::Arc::new(std::sync::Mutex::new(
                 engine::nodes::meta::portal::PortalRegistry::default(),
             )),
@@ -471,6 +479,11 @@ impl LightBeatApp {
             // covers generic MIDI and BCF2000 with headroom; Push 1 uses its
             // own dedicated node.
             Box::new(InputControllerWidget::new(id, new_shared_state(192, 192), ic_shared.clone()))
+        });
+        let dmx_hub = self.dmx_inputs.clone();
+        self.graph.register_node("IO", "DMX Input", move |id| {
+            // The status port and up to 64 entries of at most three channels.
+            Box::new(DmxInputWidget::new(id, new_shared_state(0, 200), dmx_hub.clone()))
         });
         let (hub, learned) = (self.midi_hub.clone(), self.midi_learned.clone());
         self.graph.register_node("IO", "MIDI Input", move |id| {
@@ -904,6 +917,7 @@ impl LightBeatApp {
                 "Input Controller" => Some(Box::new(InputControllerProcessNode::new(
                     id, self.input_controllers.shared.clone(),
                 ))),
+                "DMX Input" => Some(Box::new(DmxInputProcessNode::new(id, self.dmx_inputs.clone()))),
                 "MIDI Input" => Some(Box::new(MidiInputProcessNode::new(id, self.midi_hub.clone()))),
                 "MIDI Output" => Some(Box::new(MidiOutputProcessNode::new(id, self.midi_hub.clone()))),
                 "Push 1" => Some(Box::new(Push1ProcessNode::new(
@@ -1078,6 +1092,7 @@ impl LightBeatApp {
                 self.color_palette_group_manager = widgets::color_palette_group_list::ColorPaletteGroupManager::from_groups(s.color_palette_groups);
                 self.input_controllers.set_controllers(&s.input_controllers);
                 self.audio_inputs.set_inputs(&s.audio_inputs);
+                self.dmx_inputs.set_inputs(&s.dmx_inputs);
                 // Reset history so undo doesn't go back to an empty setup.
                 self.setup_undoer = egui::util::undoer::Undoer::default();
             }
@@ -1424,6 +1439,7 @@ impl LightBeatApp {
             gradient_presets: self.gradient_preset_manager.presets.clone(),
             input_controllers: self.input_controllers.export(),
             audio_inputs: self.audio_inputs.export(),
+            dmx_inputs: self.dmx_inputs.export(),
         }
     }
 
@@ -1438,6 +1454,7 @@ impl LightBeatApp {
         self.gradient_preset_manager = widgets::gradient_preset_list::GradientPresetManager::from_presets(s.gradient_presets.clone());
         self.input_controllers.set_controllers(&s.input_controllers);
         self.audio_inputs.set_inputs(&s.audio_inputs);
+        self.dmx_inputs.set_inputs(&s.dmx_inputs);
 
         self.sync_group_context();
         self.sync_object_store();
@@ -1650,6 +1667,7 @@ impl LightBeatApp {
                 SetupTab::InputControllers => {
                     widgets::input_controller_list::show(ui, &mut self.input_controllers);
                 }
+                SetupTab::DmxInputs => widgets::dmx_input_list::show(ui, &self.dmx_inputs),
             }
         });
     }
