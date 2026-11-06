@@ -4175,7 +4175,11 @@ fn draw_node_chrome(
         if show_port_labels {
             let pad = 6.0 * zoom;
             let label_x = pos.x + PORT_RADIUS * zoom + pad;
-            let right_limit = rect.max.x - (PORT_RADIUS + 8.0) * zoom;
+            let mut right_limit = rect.max.x - (PORT_RADIUS + 8.0) * zoom;
+            if !outputs.is_empty() {
+                // Output names use the other half.
+                right_limit = right_limit.min(rect.center().x - 4.0 * zoom);
+            }
             draw_port_label(painter, &ui_port.def.name, label_x, pos.y,
                 (right_limit - label_x).max(0.0), egui::Align::LEFT, zoom);
         }
@@ -4190,7 +4194,10 @@ fn draw_node_chrome(
         if show_port_labels {
             let pad = 6.0 * zoom;
             let label_right = pos.x - PORT_RADIUS * zoom - pad;
-            let left_limit = rect.min.x + (PORT_RADIUS + 8.0) * zoom;
+            let mut left_limit = rect.min.x + (PORT_RADIUS + 8.0) * zoom;
+            if !inputs.is_empty() {
+                left_limit = left_limit.max(rect.center().x + 4.0 * zoom);
+            }
             draw_port_label(painter, &ui_port.def.name, label_right, pos.y,
                 (label_right - left_limit).max(0.0), egui::Align::RIGHT, zoom);
         }
@@ -4416,7 +4423,7 @@ fn draw_port_label(
     zoom: f32,
 ) {
     if max_width <= 0.0 || text.is_empty() { return; }
-    let font = egui::FontId::proportional(11.0 * zoom.max(0.5));
+    let font = egui::FontId::proportional(11.0 * zoom);
     let color = theme::TEXT_DIM;
 
     let full = painter.layout_no_wrap(text.to_string(), font.clone(), color);

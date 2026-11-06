@@ -305,6 +305,10 @@ pub struct NodeLayout {
     pub bare: bool,
     /// A lone port on a side sits at the middle of the content, on its edge.
     pub centre_single_port: bool,
+    /// Room kept clear of content on the left and the right for the port
+    /// names written inside the node, in unzoomed pixels.
+    pub gutter_left: f32,
+    pub gutter_right: f32,
     /// Write the node's title in the title bar.
     pub show_title: bool,
     /// No title bar at all: the node is moved by dragging its body, and a
@@ -322,6 +326,8 @@ impl NodeLayout {
         toggle: true,
         bare: false,
         centre_single_port: false,
+        gutter_left: 0.0,
+        gutter_right: 0.0,
         show_title: true,
         drag_by_body: false,
     };
@@ -338,6 +344,8 @@ impl NodeLayout {
             toggle: false,
             bare: true,
             centre_single_port: true,
+            gutter_left: 0.0,
+            gutter_right: 0.0,
             show_title: true,
             drag_by_body: false,
         }
@@ -347,6 +355,13 @@ impl NodeLayout {
     /// near their edges.
     pub const fn with_side_inset(mut self, inset: f32) -> Self {
         self.side_inset = inset;
+        self
+    }
+
+    /// Keep the content clear of port names written inside the node.
+    pub const fn with_gutters(mut self, left: f32, right: f32) -> Self {
+        self.gutter_left = left;
+        self.gutter_right = right;
         self
     }
 
@@ -422,7 +437,7 @@ pub fn node_size(node: &dyn NodeWidget, size_override: Option<Vec2>) -> Vec2 {
     let out_types: Vec<_> = node.ui_outputs().iter().map(|p| p.def.port_type).collect();
     let (in_types, _) = visible_ports(&in_types, &node.hidden_ports(PortDir::Input), 0);
     let (out_types, _) = visible_ports(&out_types, &node.hidden_ports(PortDir::Output), 0);
-    let min_w = node.min_width();
+    let min_w = node.min_width() + layout.gutter_left + layout.gutter_right;
     let content_h = layout.content_top + node.min_content_height() + layout.bottom_pad;
     let min_h = ports_min_height(&layout, &in_types, &out_types).max(content_h);
     size_override
@@ -433,9 +448,19 @@ pub fn node_size(node: &dyn NodeWidget, size_override: Option<Vec2>) -> Vec2 {
 /// Where the widget draws, in screen space.
 pub fn content_rect(rect: Rect, layout: &NodeLayout, zoom: f32) -> Rect {
     Rect::from_min_max(
-        Pos2::new(rect.min.x + layout.side_inset * zoom, rect.min.y + layout.content_top * zoom),
-        Pos2::new(rect.max.x - layout.side_inset * zoom, rect.max.y - layout.bottom_pad * zoom),
+        Pos2::new(rect.min.x + (layout.side_inset + layout.gutter_left) * zoom, rect.min.y + layout.content_top * zoom),
+        Pos2::new(rect.max.x - (layout.side_inset + layout.gutter_right) * zoom, rect.max.y - layout.bottom_pad * zoom),
     )
+}
+
+/// Room for the longest of `names` written beside a port, in unzoomed pixels
+/// (an estimate: the port, a gap and about six pixels a letter).
+pub fn label_gutter<'a>(names: impl Iterator<Item = &'a str>) -> f32 {
+    let longest = names.map(|n| n.chars().count()).max().unwrap_or(0);
+    if longest == 0 {
+        return 0.0;
+    }
+    (PORT_RADIUS + 10.0 + longest as f32 * 6.0).clamp(60.0, 190.0)
 }
 
 /// The title bar, which also moves the node.
@@ -533,6 +558,27 @@ mod layout_tests {
         assert_eq!(tight, vec![0.0, PORT_SPACING, 2.0 * PORT_SPACING, 3.0 * PORT_SPACING]);
         let long = compute_port_offsets(&[Untyped; 9]);
         assert_eq!(long[8], 9.0 * PORT_SPACING, "a blank slot after the eighth");
+    }
+
+    #[test]
+    fn a_gutter_keeps_the_content_clear_of_port_names_and_widens_the_node() {
+        let plain = NodeLayout::STANDARD;
+        let gutter = NodeLayout::STANDARD.with_gutters(30.0, 90.0);
+        let r = Rect::from_min_size(Pos2::new(100.0, 50.0), Vec2::new(300.0, 200.0));
+        let (a, b) = (content_rect(r, &plain, 1.0), content_rect(r, &gutter, 1.0));
+        assert_eq!((b.min.x - a.min.x, a.max.x - b.max.x), (30.0, 90.0));
+        // It scales with the canvas, like the names do.
+        let b2 = content_rect(r, &gutter, 2.0);
+        assert_eq!(b2.min.x - content_rect(r, &plain, 2.0).min.x, 60.0);
+    }
+
+    #[test]
+    fn the_room_for_names_follows_the_longest_name_within_limits() {
+        assert_eq!(label_gutter(std::iter::empty()), 0.0);
+        assert_eq!(label_gutter(["a", ""].into_iter()), 60.0, "short names still get a minimum");
+        let long = label_gutter(["Clock: beat phase"].into_iter());
+        assert!(long > 100.0 && long < 190.0, "{long}");
+        assert_eq!(label_gutter(["x".repeat(80).as_str()].into_iter()), 190.0, "and a maximum");
     }
 
     #[test]

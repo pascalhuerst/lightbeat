@@ -141,6 +141,15 @@ impl NodeWidget for AudioInputWidget {
             .collect()
     }
 
+    // Many outputs and little else: write their names beside them.
+    fn show_port_labels(&self) -> bool { true }
+    fn layout(&self) -> crate::widgets::nodes::node::NodeLayout {
+        crate::widgets::nodes::node::NodeLayout::STANDARD.with_gutters(
+            0.0,
+            crate::widgets::nodes::node::label_gutter(self.outputs.iter().map(|(n, _, _)| n.as_str())),
+        )
+    }
+
     fn min_width(&self) -> f32 {
         180.0
     }

@@ -44,6 +44,14 @@ impl NodeWidget for ColorReshapeWidget {
         ports(self.kind, self.stops).1.iter().map(UiPortDef::from_def).collect()
     }
 
+    fn show_port_labels(&self) -> bool { true }
+    fn layout(&self) -> crate::widgets::nodes::node::NodeLayout {
+        let (inputs, outputs) = (self.ui_inputs(), self.ui_outputs());
+        crate::widgets::nodes::node::NodeLayout::STANDARD.with_gutters(
+            crate::widgets::nodes::node::label_gutter(inputs.iter().map(|p| p.def.name.as_str())),
+            crate::widgets::nodes::node::label_gutter(outputs.iter().map(|p| p.def.name.as_str())),
+        )
+    }
     fn min_width(&self) -> f32 { 110.0 }
     fn min_content_height(&self) -> f32 { 4.0 }
     fn shared_state(&self) -> &SharedState { &self.shared }

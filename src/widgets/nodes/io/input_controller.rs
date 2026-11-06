@@ -94,6 +94,13 @@ impl NodeWidget for InputControllerWidget {
         }).collect()
     }
 
+    fn show_port_labels(&self) -> bool { true }
+    fn layout(&self) -> crate::widgets::nodes::node::NodeLayout {
+        crate::widgets::nodes::node::NodeLayout::STANDARD.with_gutters(
+            crate::widgets::nodes::node::label_gutter(self.feedback_inputs.iter().map(|(n, _)| n.as_str())),
+            crate::widgets::nodes::node::label_gutter(self.outputs.iter().map(|(n, _, _)| n.as_str())),
+        )
+    }
     fn min_width(&self) -> f32 { 160.0 }
     fn min_content_height(&self) -> f32 { 24.0 }
     fn shared_state(&self) -> &SharedState { &self.shared }

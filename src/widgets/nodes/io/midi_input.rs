@@ -170,6 +170,12 @@ impl NodeWidget for MidiInputWidget {
         output_ports(&self.config.entries).iter().map(UiPortDef::from_def).collect()
     }
 
+    fn show_port_labels(&self) -> bool { true }
+    fn layout(&self) -> crate::widgets::nodes::node::NodeLayout {
+        let ports = self.ui_outputs();
+        crate::widgets::nodes::node::NodeLayout::STANDARD
+            .with_gutters(0.0, crate::widgets::nodes::node::label_gutter(ports.iter().map(|p| p.def.name.as_str())))
+    }
     fn min_width(&self) -> f32 { 160.0 }
     fn min_content_height(&self) -> f32 { 24.0 }
     fn shared_state(&self) -> &SharedState { &self.shared }

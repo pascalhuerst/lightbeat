@@ -547,6 +547,12 @@ src/
   are unaffected, but nothing may position or hit-test a port itself: use
   `NodeWidget::port_pos` / `is_port_hidden` and `node_size`, never
   `compute_port_offsets` or the raw port list.
+- **Port names inside a node**: a node with many ports and little else
+  returns `show_port_labels() == true`; inputs are named to the right of their
+  port, outputs to the left. Reserve the room with
+  `NodeLayout::with_gutters(left, right)` (see `label_gutter`) so the widget's
+  content, which is drawn between them, does not collide with the names. The
+  names are drawn at `11 * zoom`, so they shrink with the canvas.
 - **`cleanup_stale_connections`** runs every frame and now drops
   type-incompatible wires too. This is what makes mode switching "feel right".
 

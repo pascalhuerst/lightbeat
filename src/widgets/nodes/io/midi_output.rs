@@ -82,6 +82,12 @@ impl NodeWidget for MidiOutputWidget {
         vec![UiPortDef::from_def(&status_port())]
     }
 
+    fn show_port_labels(&self) -> bool { true }
+    fn layout(&self) -> crate::widgets::nodes::node::NodeLayout {
+        let ports = self.ui_inputs();
+        crate::widgets::nodes::node::NodeLayout::STANDARD
+            .with_gutters(crate::widgets::nodes::node::label_gutter(ports.iter().map(|p| p.def.name.as_str())), 60.0)
+    }
     fn min_width(&self) -> f32 { 160.0 }
     fn min_content_height(&self) -> f32 { 24.0 }
     fn shared_state(&self) -> &SharedState { &self.shared }
