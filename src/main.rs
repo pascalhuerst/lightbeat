@@ -57,6 +57,7 @@ use engine::nodes::ui::color_mixer::ColorMixerProcessNode;
 use engine::nodes::ui::xy_pad::XyPadProcessNode;
 use engine::nodes::ui::gradient_stops::GradientStopsProcessNode;
 use engine::nodes::math::bipolar::BipolarProcessNode;
+use engine::nodes::math::scale_offset::ScaleOffsetProcessNode;
 use engine::nodes::math::change_detect::ChangeDetectProcessNode;
 use engine::nodes::math::schmitt::SchmittTriggerProcessNode;
 use engine::nodes::math::toggle_bank::ToggleBankProcessNode;
@@ -127,6 +128,7 @@ use widgets::nodes::ui::color_mixer::ColorMixerWidget;
 use widgets::nodes::ui::xy_pad::XyPadWidget;
 use widgets::nodes::ui::gradient_stops::GradientStopsWidget;
 use widgets::nodes::math::bipolar::BipolarWidget;
+use widgets::nodes::math::scale_offset::ScaleOffsetWidget;
 use widgets::nodes::math::change_detect::ChangeDetectWidget;
 use widgets::nodes::math::schmitt::SchmittTriggerWidget;
 use widgets::nodes::math::toggle_bank::ToggleBankWidget;
@@ -752,6 +754,10 @@ impl LightBeatApp {
             // Inputs: in, min, max (3). Output: out (1).
             Box::new(ScalerWidget::new(id, new_shared_state(3, 1)))
         });
+        self.graph.register_node("Math", "Scale Offset", |id| {
+            // Inputs: in, scale, offset (3). Output: out (1).
+            Box::new(ScaleOffsetWidget::new(id, new_shared_state(3, 1)))
+        });
         self.graph.register_node("Math", "Bipolar", |id| {
             // Inputs: in, range, center (3). Output: out (1).
             Box::new(BipolarWidget::new(id, new_shared_state(3, 1)))
@@ -992,6 +998,7 @@ impl LightBeatApp {
                 "Demultiplexer" => Some(Box::new(DemultiplexerProcessNode::new(id))),
                 "Scaler" => Some(Box::new(ScalerProcessNode::new(id))),
                 "Bipolar" => Some(Box::new(BipolarProcessNode::new(id))),
+                "Scale Offset" => Some(Box::new(ScaleOffsetProcessNode::new(id))),
                 ">=" | "<=" | "==" | "!=" => {
                     let op = match type_name {
                         ">=" => CompareOp::Gte, "<=" => CompareOp::Lte,

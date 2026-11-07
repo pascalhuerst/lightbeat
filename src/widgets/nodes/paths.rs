@@ -86,6 +86,7 @@ fn explicit(label: &str) -> Option<&'static str> {
         "Gain" => "math/gain",
         "Scaler" => "math/scaler",
         "Bipolar" => "math/bipolar",
+        "Scale Offset" => "math/scale",
         "Lookup" => "math/lookup",
         // Comparing: the symbols are not names.
         ">=" => "compare/gte",
