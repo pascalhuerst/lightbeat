@@ -372,6 +372,21 @@ src/
   signed, not notarized, and Apple Silicon only. Nothing here has run on a
   real macOS machine unless a CI run says so: check the run before relying on it.
 
+### Moving a setup between computers
+- File, Export Setup / Import Setup write and read a plain `SetupFile`.
+  Import runs `setup::adapt_to_machine` against `Machine::probe()` (audio
+  devices per backend, MIDI ports, local IPs) and lists what did not match in a
+  window. Audio inputs fall back to `(system default input)` (cpal's default
+  device, the same name everywhere); MIDI ports are found again through
+  `midi::device_key` (ALSA "BCF2000:BCF2000 MIDI 1 28:0" vs CoreMIDI
+  "BCF2000 Port 1"); a DMX input's announce network that is not here is
+  cleared. Import replaces the setup; Edit, Undo brings the old one back.
+- Audio on macOS is cpal's CoreAudio host (labelled by `AudioBackendKind::label`);
+  JACK is only offered where libjack exists (`AudioBackendKind::available`).
+  The bundle's Info.plist carries the microphone usage text, which macOS needs
+  before it lets an app record at all.
+- `/proc` is only used by the perf log and reads as zero on a Mac.
+
 ### Subgraph save/load
 - `SavedNode` has an optional `inner_graph: Option<ProjectFile>` for recursive
   serialization. `load_graph` navigates into a subgraph, recursively loads its

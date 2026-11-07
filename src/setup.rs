@@ -79,3 +79,192 @@ pub fn load_setup() -> Result<SetupFile, String> {
     let json = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
     serde_json::from_str(&json).map_err(|e| e.to_string())
 }
+
+// ---------------------------------------------------------------------------
+// Moving a setup between computers
+// ---------------------------------------------------------------------------
+
+/// Write the setup to any file, for taking it to another computer.
+pub fn export_to(setup: &SetupFile, path: &std::path::Path) -> Result<(), String> {
+    let json = serde_json::to_string_pretty(setup).map_err(|e| e.to_string())?;
+    std::fs::write(path, json).map_err(|e| e.to_string())
+}
+
+pub fn import_from(path: &std::path::Path) -> Result<SetupFile, String> {
+    let json = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
+    serde_json::from_str(&json).map_err(|e| format!("not a LightBeat setup: {e}"))
+}
+
+/// What this computer has that a setup refers to by name.
+#[derive(Default, Clone)]
+pub struct Machine {
+    pub audio_backends: Vec<crate::audio::backend::AudioBackendKind>,
+    pub audio_devices: std::collections::HashMap<crate::audio::backend::AudioBackendKind, Vec<String>>,
+    pub midi_inputs: Vec<String>,
+    pub midi_outputs: Vec<String>,
+    pub network_addresses: Vec<String>,
+}
+
+impl Machine {
+    pub fn probe() -> Self {
+        use crate::audio::backend::{AudioBackendKind, backend_for};
+        let audio_backends = AudioBackendKind::available();
+        let audio_devices = audio_backends.iter().map(|k| (*k, backend_for(*k).list_input_names())).collect();
+        Self {
+            audio_backends,
+            audio_devices,
+            midi_inputs: crate::input_controller::midi::available_ports(),
+            midi_outputs: crate::input_controller::midi::available_output_ports(),
+            network_addresses: crate::dmx_input::artnet::local_interfaces().iter().map(|i| i.ip.to_string()).collect(),
+        }
+    }
+}
+
+/// Point what a setup refers to by name at what this computer has, and say
+/// what could not be matched. Audio inputs fall back to the system default
+/// input (a device name means nothing on another machine); MIDI ports are
+/// found again under the name this system gives them; a controller whose
+/// hardware is not plugged in stays as it is and waits for it.
+pub fn adapt_to_machine(setup: &mut SetupFile, machine: &Machine) -> Vec<String> {
+    use crate::audio::backend::AudioBackendKind;
+    use crate::input_controller::InputControllerKind as K;
+    use crate::input_controller::midi::resolve_port;
+
+    let mut notes = Vec::new();
+
+    for input in &mut setup.audio_inputs {
+        if !machine.audio_backends.contains(&input.backend) {
+            notes.push(format!("Audio input \"{}\" used {}, which is not available here; it uses {} now.", input.name, input.backend.label(), AudioBackendKind::Cpal.label()));
+            input.backend = AudioBackendKind::Cpal;
+            if !input.device_name.is_empty() {
+                input.device_name = crate::audio::cpal_device::DEFAULT_INPUT.to_string();
+            }
+            continue;
+        }
+        if input.device_name.is_empty() {
+            continue;
+        }
+        let known = machine.audio_devices.get(&input.backend).is_some_and(|d| d.contains(&input.device_name));
+        if known {
+            continue;
+        }
+        if input.backend == AudioBackendKind::Cpal {
+            notes.push(format!("Audio input \"{}\": \"{}\" is not on this computer; it listens to the system default input. Pick another device in Setup, Audio Inputs.", input.name, input.device_name));
+            input.device_name = crate::audio::cpal_device::DEFAULT_INPUT.to_string();
+        } else {
+            notes.push(format!("Audio input \"{}\": \"{}\" is not on this computer. Pick a device in Setup, Audio Inputs.", input.name, input.device_name));
+            input.device_name.clear();
+        }
+    }
+
+    for c in &mut setup.input_controllers {
+        let name = c.name.clone();
+        let mut fix = |port: &mut String, available: &[String], what: &str| {
+            if port.is_empty() || available.contains(port) {
+                return;
+            }
+            match resolve_port(port, available) {
+                Some(found) => *port = found,
+                None => notes.push(format!("Controller \"{name}\": {what} port \"{port}\" is not connected; it connects when the device is plugged in and Rescan is pressed.")),
+            }
+        };
+        match &mut c.kind {
+            K::Midi { hw_port_name } => fix(hw_port_name, &machine.midi_inputs, "MIDI"),
+            K::Bcf2000 { hw_input_port, hw_output_port }
+            | K::Push1 { hw_input_port, hw_output_port }
+            | K::LaunchpadS { hw_input_port, hw_output_port } => {
+                fix(hw_input_port, &machine.midi_inputs, "MIDI input");
+                fix(hw_output_port, &machine.midi_outputs, "MIDI output");
+            }
+            K::X1 => {}
+        }
+    }
+
+    for input in &mut setup.dmx_inputs {
+        let crate::dmx_input::DmxInputKind::ArtNet { interface, .. } = &mut input.kind;
+        if !interface.is_empty() && !machine.network_addresses.contains(interface) {
+            notes.push(format!("DMX input \"{}\": the network {interface} is not on this computer; it announces on all networks.", input.name));
+            interface.clear();
+        }
+    }
+
+    notes
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::audio::backend::AudioBackendKind;
+    use crate::audio::manager::AudioInputConfig;
+    use crate::input_controller::{InputController, InputControllerKind};
+
+    fn mac() -> Machine {
+        let mut m = Machine::default();
+        m.audio_backends = vec![AudioBackendKind::Cpal];
+        m.audio_devices.insert(AudioBackendKind::Cpal, vec!["(system default input)".into(), "MacBook Pro Microphone".into()]);
+        m.midi_inputs = vec!["BCF2000 Port 1".into()];
+        m.midi_outputs = vec!["BCF2000 Port 1".into()];
+        m.network_addresses = vec!["192.168.1.20".into()];
+        m
+    }
+
+    fn audio(name: &str, backend: AudioBackendKind, device: &str) -> AudioInputConfig {
+        AudioInputConfig {
+            id: 1, name: name.into(), enabled: true, backend, device_name: device.into(),
+            sample_rate: None, buffer_size_frames: None, analyzers: vec![],
+        }
+    }
+
+    #[test]
+    fn a_setup_from_linux_lands_on_the_defaults_of_a_mac() {
+        let mut setup = SetupFile::default();
+        setup.audio_inputs = vec![
+            audio("Master", AudioBackendKind::Cpal, "alsa_input.usb-Focusrite"),
+            audio("Jack", AudioBackendKind::Jack, "system:capture_1"),
+            audio("Here", AudioBackendKind::Cpal, "MacBook Pro Microphone"),
+            audio("None", AudioBackendKind::Cpal, ""),
+        ];
+        setup.input_controllers = vec![
+            InputController { id: 1, name: "Faders".into(), kind: InputControllerKind::Bcf2000 { hw_input_port: "BCF2000:BCF2000 MIDI 1 28:0".into(), hw_output_port: "BCF2000:BCF2000 MIDI 1 28:0".into() }, inputs: vec![] },
+            InputController { id: 2, name: "Pad".into(), kind: InputControllerKind::LaunchpadS { hw_input_port: "Launchpad S:Launchpad S MIDI 1 20:0".into(), hw_output_port: String::new() }, inputs: vec![] },
+        ];
+        let notes = adapt_to_machine(&mut setup, &mac());
+        assert_eq!(setup.audio_inputs[0].device_name, "(system default input)");
+        assert_eq!(setup.audio_inputs[1].backend, AudioBackendKind::Cpal);
+        assert_eq!(setup.audio_inputs[2].device_name, "MacBook Pro Microphone");
+        assert_eq!(setup.audio_inputs[3].device_name, "");
+        match &setup.input_controllers[0].kind {
+            InputControllerKind::Bcf2000 { hw_input_port, hw_output_port } => {
+                assert_eq!((hw_input_port.as_str(), hw_output_port.as_str()), ("BCF2000 Port 1", "BCF2000 Port 1"));
+            }
+            _ => unreachable!(),
+        }
+        assert_eq!(notes.len(), 3, "{notes:?}");
+        assert!(notes.iter().any(|n| n.contains("Pad")), "the Launchpad is not plugged in");
+    }
+
+    #[test]
+    fn a_dmx_input_on_a_network_that_is_not_here_announces_everywhere() {
+        let mut setup = SetupFile::default();
+        let mut input = crate::dmx_input::DmxInputConfig::new_art_net(1, "Desk");
+        input.kind = crate::dmx_input::DmxInputKind::ArtNet { universes: vec![0], interface: "10.0.0.5".into() };
+        setup.dmx_inputs = vec![input];
+        let notes = adapt_to_machine(&mut setup, &mac());
+        assert_eq!(setup.dmx_inputs[0].interface(), "");
+        assert_eq!(notes.len(), 1);
+    }
+
+    #[test]
+    fn an_exported_setup_imports_unchanged() {
+        let mut setup = SetupFile::default();
+        setup.audio_inputs = vec![audio("Master", AudioBackendKind::Cpal, "x")];
+        let dir = std::env::temp_dir().join(format!("lightbeat-setup-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("setup-export.json");
+        export_to(&setup, &path).unwrap();
+        assert!(import_from(&path) == Ok(setup));
+        std::fs::write(&path, "{\"hello\": 1").unwrap();
+        assert!(import_from(&path).is_err());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}

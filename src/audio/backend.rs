@@ -32,10 +32,22 @@ impl AudioBackendKind {
         AudioBackendKind::Jack,
     ];
 
+    /// The backends this machine can use: JACK only where libjack is there
+    /// (a Mac usually has none).
+    pub fn available() -> Vec<AudioBackendKind> {
+        Self::ALL
+            .iter()
+            .copied()
+            .filter(|k| *k != AudioBackendKind::Jack || crate::audio::jack_device::JackBackend::installed())
+            .collect()
+    }
+
     pub fn label(self) -> &'static str {
         match self {
-            AudioBackendKind::Cpal => "cpal",
-            AudioBackendKind::Jack => "jack",
+            AudioBackendKind::Cpal if cfg!(target_os = "macos") => "CoreAudio",
+            AudioBackendKind::Cpal if cfg!(target_os = "windows") => "WASAPI",
+            AudioBackendKind::Cpal => "ALSA / PipeWire",
+            AudioBackendKind::Jack => "JACK",
         }
     }
 }

@@ -173,6 +173,8 @@ use widgets::nodes::NodeGraph;
 enum FileDialogResult {
     OpenProject(PathBuf),
     SaveProjectAs(PathBuf),
+    ExportSetup(PathBuf),
+    ImportSetup(PathBuf),
 }
 
 /// Active tab in the consolidated Setup window.
@@ -237,6 +239,8 @@ struct LightBeatApp {
     config: AppConfig,
     project_path: Option<PathBuf>,
     file_dialog_rx: Option<std::sync::mpsc::Receiver<FileDialogResult>>,
+    /// What an imported setup could not match on this computer, shown until dismissed.
+    setup_notice: Option<Vec<String>>,
     snapshot: Arc<std::sync::Mutex<beat_clock::LinkSnapshot>>,
     quit_requested: bool,
     /// Serialized form (JSON) of the project at the moment it was last saved
@@ -376,6 +380,7 @@ impl LightBeatApp {
             config,
             project_path: None,
             file_dialog_rx: None,
+            setup_notice: None,
             snapshot,
             quit_requested: false,
             last_saved_project_json: None,
@@ -1090,6 +1095,7 @@ impl LightBeatApp {
                 self.group_manager = widgets::group_list::GroupManager::from_groups(s.groups);
                 self.color_palette_manager = widgets::color_palette_list::ColorPaletteManager::from_palettes(s.color_palettes);
                 self.color_palette_group_manager = widgets::color_palette_group_list::ColorPaletteGroupManager::from_groups(s.color_palette_groups);
+                self.gradient_preset_manager = widgets::gradient_preset_list::GradientPresetManager::from_presets(s.gradient_presets);
                 self.input_controllers.set_controllers(&s.input_controllers);
                 self.audio_inputs.set_inputs(&s.audio_inputs);
                 self.dmx_inputs.set_inputs(&s.dmx_inputs);
@@ -1235,6 +1241,61 @@ impl LightBeatApp {
         });
     }
 
+    fn export_setup_dialog(&mut self, ctx: &egui::Context) {
+        if self.file_dialog_rx.is_some() { return; }
+        let (tx, rx) = std::sync::mpsc::channel();
+        self.file_dialog_rx = Some(rx);
+        let ctx = ctx.clone();
+        std::thread::spawn(move || {
+            let dialog = rfd::FileDialog::new()
+                .set_title("Export Setup")
+                .add_filter("LightBeat Setup", &["json"])
+                .set_file_name("lightbeat-setup.json");
+            if let Some(path) = dialog.save_file() {
+                let _ = tx.send(FileDialogResult::ExportSetup(path));
+            }
+            ctx.request_repaint();
+        });
+    }
+
+    fn import_setup_dialog(&mut self, ctx: &egui::Context) {
+        if self.file_dialog_rx.is_some() { return; }
+        let (tx, rx) = std::sync::mpsc::channel();
+        self.file_dialog_rx = Some(rx);
+        let ctx = ctx.clone();
+        std::thread::spawn(move || {
+            let dialog = rfd::FileDialog::new()
+                .set_title("Import Setup")
+                .add_filter("LightBeat Setup", &["json"]);
+            if let Some(path) = dialog.pick_file() {
+                let _ = tx.send(FileDialogResult::ImportSetup(path));
+            }
+            ctx.request_repaint();
+        });
+    }
+
+    /// Replace the setup with one from a file, adapted to this computer. The
+    /// old setup stays reachable with undo.
+    fn import_setup(&mut self, path: &std::path::Path) {
+        let mut imported = match setup::import_from(path) {
+            Ok(s) => s,
+            Err(e) => {
+                self.setup_notice = Some(vec![format!("Could not import {}: {e}", path.display())]);
+                return;
+            }
+        };
+        let notes = setup::adapt_to_machine(&mut imported, &setup::Machine::probe());
+        self.apply_setup(&imported);
+        self.save_setup();
+        self.setup_notice = Some(if notes.is_empty() {
+            vec!["Setup imported. Everything it refers to was found on this computer.".to_string()]
+        } else {
+            std::iter::once("Setup imported. Some things it refers to are different on this computer:".to_string())
+                .chain(notes)
+                .collect()
+        });
+    }
+
     fn poll_file_dialog(&mut self) {
         let rx = match &self.file_dialog_rx {
             Some(rx) => rx,
@@ -1248,6 +1309,14 @@ impl LightBeatApp {
                     FileDialogResult::OpenProject(path) => {
                         self.load_project_from(&path);
                     }
+                    FileDialogResult::ExportSetup(path) => {
+                        let message = match setup::export_to(&self.current_setup(), &path) {
+                            Ok(()) => format!("Setup exported to {}.", path.display()),
+                            Err(e) => format!("Could not export the setup: {e}"),
+                        };
+                        self.setup_notice = Some(vec![message]);
+                    }
+                    FileDialogResult::ImportSetup(path) => self.import_setup(&path),
                     FileDialogResult::SaveProjectAs(path) => {
                         if let Err(e) = project::save_to_file(&self.graph, self.view_state(), &path) {
                             eprintln!("Failed to save project: {}", e);
@@ -2004,6 +2073,23 @@ impl LightBeatApp {
         let (can_undo_proj, can_redo_proj) = (self.can_undo_proj, self.can_redo_proj);
         let (can_undo_setup, can_redo_setup) = (self.can_undo_setup, self.can_redo_setup);
 
+        if let Some(lines) = self.setup_notice.clone() {
+            let mut open = true;
+            let mut dismiss = false;
+            egui::Window::new("Setup").open(&mut open).collapsible(false).resizable(true).show(ctx, |ui| {
+                for line in &lines {
+                    ui.label(line);
+                }
+                ui.add_space(6.0);
+                if ui.button("OK").clicked() {
+                    dismiss = true;
+                }
+            });
+            if !open || dismiss {
+                self.setup_notice = None;
+            }
+        }
+
         // Menu bar.
         egui::TopBottomPanel::top("menu_bar").show(ctx, |ui| {
             egui::menu::bar(ui, |ui| {
@@ -2056,6 +2142,15 @@ impl LightBeatApp {
                     if ui.button("Save As...").clicked() {
                         ui.close_menu();
                         self.save_project_as(ctx);
+                    }
+                    ui.separator();
+                    if ui.button("Export Setup...").on_hover_text("Fixtures, objects, groups, interfaces, palettes, controllers and audio inputs, as one file").clicked() {
+                        ui.close_menu();
+                        self.export_setup_dialog(ctx);
+                    }
+                    if ui.button("Import Setup...").on_hover_text("Replace the setup with one from a file; Edit, Undo brings the old one back").clicked() {
+                        ui.close_menu();
+                        self.import_setup_dialog(ctx);
                     }
                     ui.separator();
                     if ui.button("Quit").clicked() {
