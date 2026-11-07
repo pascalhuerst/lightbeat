@@ -11,6 +11,7 @@ mod macros;
 mod midi_io;
 mod setup;
 mod interfaces;
+mod latency;
 mod link_controller;
 mod objects;
 mod paths;
@@ -349,6 +350,7 @@ impl LightBeatApp {
         cc.egui_ctx.set_fonts(fonts);
 
         let config = AppConfig::load();
+        latency::set_lead_ms(config.latency_ms);
         if config.msaa_samples > 0 {
             cc.egui_ctx.tessellation_options_mut(|o| o.feathering = false);
         }
@@ -2641,6 +2643,25 @@ impl LightBeatApp {
                             self.audio_inputs.force_rescan();
                             self.midi_hub.rescan();
                         }
+                    }
+
+                    ui.separator();
+                    ui.colored_label(theme::TEXT_DIM, "Latency");
+                    let mut ms = self.config.latency_ms;
+                    let drag = egui::DragValue::new(&mut ms)
+                        .speed(0.5)
+                        .range(-latency::LIMIT_MS..=latency::LIMIT_MS)
+                        .suffix(" ms")
+                        .fixed_decimals(0);
+                    let drag = ui.add(drag).on_hover_text(
+                        "Runs every clock (audio beat clock, Link, internal) this far ahead of the music, to make up for the delay to the lights. Set it once for the room.",
+                    );
+                    if drag.changed() {
+                        self.config.latency_ms = ms;
+                        latency::set_lead_ms(ms);
+                    }
+                    if drag.drag_stopped() || drag.lost_focus() {
+                        self.config.save();
                     }
 
                     match self.updater.state() {

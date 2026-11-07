@@ -67,6 +67,11 @@ pub struct AppConfig {
     pub check_for_updates: bool,
     #[serde(default)]
     pub update_channel: crate::update::Channel,
+    /// How far ahead of the music every clock runs, in ms, to make up for the
+    /// delay to the light. Kept with the settings, not the setup: it belongs
+    /// to this room and this computer.
+    #[serde(default)]
+    pub latency_ms: f32,
 }
 
 fn default_true() -> bool {
@@ -92,6 +97,7 @@ impl Default for AppConfig {
             msaa_samples: 0,
             check_for_updates: true,
             update_channel: crate::update::Channel::default(),
+            latency_ms: 0.0,
         }
     }
 }

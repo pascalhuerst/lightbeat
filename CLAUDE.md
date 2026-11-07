@@ -510,6 +510,11 @@ src/
   after any change to `audio/tracker/` and read the per-scenario table; the
   `cargo test` cases only guard the basics. Synthetic audio is easier than
   records, so real clips should be added as `name.wav` + `name.json`.
+- **Latency**: `latency.rs` holds one global lead in ms (status bar "Latency",
+  saved in `settings.json`, not the setup) that the audio Beat Clock, the Link
+  Clock node and the Internal Clock all run ahead by, as a time and not a phase
+  so it stays right when the tempo changes. The Audio Input node also has a
+  per-input nudge (the beat clock's `lead_ms`); the two add up.
 - Known limits (see the scores): the bar start of a pure kick+hat loop is
   undecidable until something else happens; half-time, heavy swing and
   syncopated patterns lock a sub-beat off; drum and bass needs a 150-190 BPM
