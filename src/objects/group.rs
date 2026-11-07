@@ -12,9 +12,18 @@ pub struct StripLayout {
     pub object_id: u32,
     pub logical_start: f32,
     pub logical_end: f32,
+    /// Height in the group's space, 0..1 from the top. None puts the strip in
+    /// a row by itself or with the strips it only touches.
+    #[serde(default)]
+    pub y: Option<f32>,
 }
 
-impl StripLayout {
+/// Where a single fixture stands in the group's space.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct FixturePlacement {
+    pub object_id: u32,
+    pub x: f32,
+    pub y: f32,
 }
 
 /// What capabilities a group exposes as inputs.
@@ -47,6 +56,10 @@ pub struct Group {
     /// Strips not listed here are still in the group but have no layout role.
     #[serde(default)]
     pub strip_layout: Vec<StripLayout>,
+    /// Fixtures placed by hand; the others are spread along the axis in the
+    /// order of `object_ids`, on the middle line.
+    #[serde(default)]
+    pub fixture_layout: Vec<FixturePlacement>,
 }
 
 impl Group {
@@ -56,6 +69,7 @@ impl Group {
             name: name.into(),
             object_ids: Vec::new(),
             strip_layout: Vec::new(),
+            fixture_layout: Vec::new(),
         }
     }
 
