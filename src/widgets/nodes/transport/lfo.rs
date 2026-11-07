@@ -8,24 +8,42 @@ use crate::theme;
 use crate::widgets::nodes::node::NodeWidget;
 use crate::widgets::nodes::types::UiPortDef;
 
+/// The index of the "Phase input" parameter.
+const PHASE_INPUT_PARAM: usize = 3;
+
 pub struct LfoWidget {
     id: NodeId,
     shared: SharedState,
-    inputs: Vec<PortDef>,
-    outputs: Vec<PortDef>,
+}
+
+fn ports_for(phase_input: bool) -> (Vec<PortDef>, Vec<PortDef>) {
+    if phase_input {
+        (
+            vec![PortDef::new("phase", PortType::Phase)],
+            vec![PortDef::new("value", PortType::Untyped)],
+        )
+    } else {
+        (
+            vec![PortDef::new("sync", PortType::Logic)],
+            vec![PortDef::new("value", PortType::Untyped), PortDef::new("phase", PortType::Phase)],
+        )
+    }
 }
 
 impl LfoWidget {
     pub fn new(id: NodeId, shared: SharedState) -> Self {
-        Self {
-            id,
-            shared,
-            inputs: vec![PortDef::new("sync", PortType::Logic)],
-            outputs: vec![
-                PortDef::new("value", PortType::Untyped),
-                PortDef::new("phase", PortType::Phase),
-            ],
+        Self { id, shared }
+    }
+
+    /// Whether the phase comes from a wire. A change still waiting for the
+    /// engine counts, so wires saved in this mode are not dropped as the
+    /// wrong type while a loaded project settles.
+    fn phase_input(&self) -> bool {
+        let s = self.shared.lock().unwrap();
+        if let Some((_, v)) = s.pending_params.iter().rev().find(|(i, _)| *i == PHASE_INPUT_PARAM) {
+            return matches!(v, ParamValue::Bool(true));
         }
+        matches!(s.current_params.get(PHASE_INPUT_PARAM), Some(ParamDef::Bool { value: true, .. }))
     }
 }
 
@@ -33,14 +51,17 @@ impl NodeWidget for LfoWidget {
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { "LFO" }
     fn description(&self) -> &'static str {
-        "Low-frequency oscillator: sine, triangle, saw, square, or random; rate in Hz."
+        "Low-frequency oscillator: sine, triangle, saw, square, or random; rate in Hz. \
+         With Phase input on (inspector) it follows a phase wire instead of running on its own."
     }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> {
-        self.inputs.iter().map(UiPortDef::from_def).collect()
+        let (inputs, _) = ports_for(self.phase_input());
+        inputs.iter().map(UiPortDef::from_def).collect()
     }
     fn ui_outputs(&self) -> Vec<UiPortDef> {
-        self.outputs.iter().map(UiPortDef::from_def).collect()
+        let (_, outputs) = ports_for(self.phase_input());
+        outputs.iter().map(UiPortDef::from_def).collect()
     }
 
     fn min_width(&self) -> f32 { 130.0 }

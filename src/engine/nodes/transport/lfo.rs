@@ -52,6 +52,10 @@ pub struct LfoProcessNode {
     waveform: LfoWaveform,
     /// If true, output is mapped from -1..1 to 0..1.
     unipolar: bool,
+    /// When true the phase comes from a wire and the oscillator no longer
+    /// runs on its own: no sync input, no phase output.
+    phase_input: bool,
+    phase_in: f32,
     sync_in: f32,
     prev_sync: f32,
     phase: f64,
@@ -72,6 +76,8 @@ impl LfoProcessNode {
             rate_hz: 1.0,
             waveform: LfoWaveform::Sine,
             unipolar: false,
+            phase_input: false,
+            phase_in: 0.0,
             sync_in: 0.0,
             prev_sync: 0.0,
             phase: 0.0,
@@ -79,11 +85,35 @@ impl LfoProcessNode {
             value_out: 0.0,
             sh_value: 0.0,
             rng_state: 0x1234_5678,
-            inputs: vec![PortDef::new("sync", PortType::Logic)],
-            outputs: vec![
-                PortDef::new("value", PortType::Untyped),
-                PortDef::new("phase", PortType::Phase),
-            ],
+            inputs: Self::input_ports(false),
+            outputs: Self::output_ports(false),
+        }
+    }
+
+    fn input_ports(phase_input: bool) -> Vec<PortDef> {
+        if phase_input {
+            vec![PortDef::new("phase", PortType::Phase)]
+        } else {
+            vec![PortDef::new("sync", PortType::Logic)]
+        }
+    }
+
+    fn output_ports(phase_input: bool) -> Vec<PortDef> {
+        let mut ports = vec![PortDef::new("value", PortType::Untyped)];
+        if !phase_input {
+            ports.push(PortDef::new("phase", PortType::Phase));
+        }
+        ports
+    }
+
+    fn set_phase_input(&mut self, on: bool) {
+        if self.phase_input != on {
+            self.phase_input = on;
+            self.inputs = Self::input_ports(on);
+            self.outputs = Self::output_ports(on);
+            self.sync_in = 0.0;
+            self.prev_sync = 0.0;
+            self.phase_in = 0.0;
         }
     }
 
@@ -120,13 +150,31 @@ impl ProcessNode for LfoProcessNode {
     fn outputs(&self) -> &[PortDef] { &self.outputs }
 
     fn write_input(&mut self, pi: usize, v: f32) {
-        if pi == 0 { self.sync_in = v; }
+        if pi == 0 {
+            if self.phase_input { self.phase_in = v } else { self.sync_in = v }
+        }
     }
     fn read_input(&self, pi: usize) -> f32 {
-        if pi == 0 { self.sync_in } else { 0.0 }
+        match (pi, self.phase_input) {
+            (0, true) => self.phase_in,
+            (0, false) => self.sync_in,
+            _ => 0.0,
+        }
     }
 
     fn process(&mut self) {
+        if self.phase_input {
+            // The wire is the clock: a new random value whenever it wraps.
+            let phase = (self.phase_in as f64).rem_euclid(1.0);
+            if phase < self.phase && matches!(self.waveform, LfoWaveform::Random) {
+                self.sh_value = self.next_random();
+            }
+            self.phase = phase;
+            let raw = self.waveform_value();
+            self.value_out = if self.unipolar { raw * 0.5 + 0.5 } else { raw };
+            return;
+        }
+
         // Sync rising edge resets phase.
         if self.sync_in >= 0.5 && self.prev_sync < 0.5 {
             self.phase = 0.0;
@@ -199,6 +247,10 @@ impl ProcessNode for LfoProcessNode {
                 name: "Unipolar (0..1)".into(),
                 value: self.unipolar,
             },
+            ParamDef::Bool {
+                name: "Phase input".into(),
+                value: self.phase_input,
+            },
         ]
     }
 
@@ -207,8 +259,13 @@ impl ProcessNode for LfoProcessNode {
             0 => self.rate_hz = value.as_f32().clamp(0.01, 20.0),
             1 => self.waveform = LfoWaveform::from_index(value.as_usize()),
             2 => self.unipolar = matches!(value, ParamValue::Bool(true)),
+            3 => self.set_phase_input(matches!(value, ParamValue::Bool(true))),
             _ => {}
         }
+    }
+
+    fn non_promotable_params(&self) -> &'static [&'static str] {
+        &["Phase input"]
     }
 
     fn update_display(&self, shared: &mut NodeSharedState) {
@@ -218,5 +275,60 @@ impl ProcessNode for LfoProcessNode {
             phase: self.phase as f32,
             value: self.value_out,
         }));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn lfo(waveform: usize, unipolar: bool) -> LfoProcessNode {
+        let mut n = LfoProcessNode::new(NodeId(1));
+        n.set_param(1, ParamValue::Int(waveform as i64));
+        n.set_param(2, ParamValue::Bool(unipolar));
+        n.set_param(3, ParamValue::Bool(true));
+        n
+    }
+
+    fn at(n: &mut LfoProcessNode, phase: f32) -> f32 {
+        n.write_input(0, phase);
+        n.process();
+        n.read_output(0)
+    }
+
+    #[test]
+    fn the_phase_input_mode_swaps_sync_for_phase_and_drops_the_phase_output() {
+        let mut n = LfoProcessNode::new(NodeId(1));
+        assert_eq!((n.inputs().len(), n.outputs().len()), (1, 2));
+        assert_eq!(n.inputs()[0].port_type, PortType::Logic);
+        n.set_param(3, ParamValue::Bool(true));
+        assert_eq!((n.inputs().len(), n.outputs().len()), (1, 1));
+        assert_eq!(n.inputs()[0].port_type, PortType::Phase);
+        assert_eq!(n.outputs()[0].name, "value");
+        n.set_param(3, ParamValue::Bool(false));
+        assert_eq!(n.outputs().len(), 2);
+    }
+
+    #[test]
+    fn the_wire_sets_the_phase_of_the_waveform() {
+        let mut saw = lfo(2, true);
+        assert!((at(&mut saw, 0.0) - 0.0).abs() < 1e-6);
+        assert!((at(&mut saw, 0.5) - 0.5).abs() < 1e-6);
+        let mut sine = lfo(0, false);
+        assert!((at(&mut sine, 0.25) - 1.0).abs() < 1e-5);
+        assert!((at(&mut sine, 1.25) - 1.0).abs() < 1e-5, "it wraps");
+        assert!((at(&mut sine, -0.75) - 1.0).abs() < 1e-5, "also below zero");
+    }
+
+    #[test]
+    fn sync_is_ignored_in_phase_mode_and_random_changes_when_the_phase_wraps() {
+        let mut n = lfo(5, false);
+        n.write_input(0, 0.5);
+        n.process();
+        let held = n.read_output(0);
+        for p in [0.6, 0.7, 0.9] {
+            assert_eq!(at(&mut n, p), held, "held within a cycle");
+        }
+        assert_ne!(at(&mut n, 0.1), held, "a new value after the wrap");
     }
 }
