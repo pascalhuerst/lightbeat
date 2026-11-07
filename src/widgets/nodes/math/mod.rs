@@ -9,6 +9,7 @@ pub mod constant;
 pub mod flipflop;
 pub mod formula;
 pub mod gain;
+pub mod scale_offset;
 pub mod gradient_source;
 pub mod logic_gate;
 pub mod lookup;
