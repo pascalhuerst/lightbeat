@@ -28,7 +28,7 @@ impl JackBackend {
     /// Whether libjack can be loaded at all. The binding loads it on first
     /// use and panics when it is missing, which is the normal state of a Mac
     /// and of a Linux machine without JACK or PipeWire's JACK layer.
-    fn installed() -> bool {
+    pub fn installed() -> bool {
         jack::jack_sys::library().is_ok()
     }
 }

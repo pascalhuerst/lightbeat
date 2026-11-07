@@ -75,7 +75,38 @@ pub fn resolve_port(saved: &str, available: &[String]) -> Option<String> {
         return Some(saved.to_string());
     }
     let wanted = without_address(saved);
-    available.iter().find(|p| without_address(p) == wanted).cloned()
+    if let Some(p) = available.iter().find(|p| without_address(p) == wanted) {
+        return Some(p.clone());
+    }
+    // The same device on another system: ALSA says "BCF2000:BCF2000 MIDI 1
+    // 28:0", CoreMIDI says "BCF2000 Port 1", Windows "BCF2000".
+    let wanted = device_key(saved);
+    if wanted.is_empty() {
+        return None;
+    }
+    available.iter().find(|p| device_key(p) == wanted).cloned()
+}
+
+/// What a port name says about the device, whatever the system calls its
+/// ports: lower case, without the ALSA client prefix and address and without
+/// a trailing "MIDI n" / "Port n" / "n".
+pub fn device_key(name: &str) -> String {
+    let name = without_address(name);
+    let name = name.rsplit_once(':').map_or(name, |(client, rest)| if rest.trim().is_empty() { client } else { rest });
+    let mut words: Vec<&str> = name.split_whitespace().collect();
+    loop {
+        match words.as_slice() {
+            [.., "MIDI" | "Port" | "port" | "midi", n] if words.len() > 2 && n.bytes().all(|b| b.is_ascii_digit()) => {
+                words.truncate(words.len() - 2)
+            }
+            [.., n] if n.bytes().all(|b| b.is_ascii_digit()) && words.len() > 1 => {
+                words.truncate(words.len() - 1)
+            }
+            [.., "MIDI" | "midi"] if words.len() > 1 => words.truncate(words.len() - 1),
+            _ => break,
+        }
+    }
+    words.join(" ").to_lowercase()
 }
 
 /// List currently-available MIDI input port names on the system.
@@ -465,5 +496,16 @@ mod port_name_tests {
         // Names without an address, and ones that merely end in a number, are left whole.
         assert_eq!(without_address("USB Midi"), "USB Midi");
         assert_eq!(without_address("Port 1"), "Port 1");
+    }
+
+    #[test]
+    fn a_saved_port_is_found_again_on_another_system() {
+        let mac = vec!["Launchpad S".to_string(), "BCF2000 Port 1".to_string(), "IAC Driver Bus 1".to_string()];
+        assert_eq!(resolve_port("BCF2000:BCF2000 MIDI 1 28:0", &mac).as_deref(), Some("BCF2000 Port 1"));
+        assert_eq!(resolve_port("Launchpad S:Launchpad S MIDI 1 20:0", &mac).as_deref(), Some("Launchpad S"));
+        assert_eq!(resolve_port("Push MIDI 1 30:0", &mac), None);
+        let linux = vec!["BCF2000:BCF2000 MIDI 1 28:0".to_string()];
+        assert_eq!(resolve_port("BCF2000 Port 1", &linux).as_deref(), Some("BCF2000:BCF2000 MIDI 1 28:0"));
+        assert_eq!(device_key("IAC Driver Bus 1"), "iac driver bus");
     }
 }

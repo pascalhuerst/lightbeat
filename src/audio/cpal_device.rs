@@ -22,7 +22,11 @@ impl AudioBackend for CpalBackend {
 
     fn list_input_names(&self) -> Vec<String> {
         let Ok(devices) = host().input_devices() else { return Vec::new(); };
-        devices.filter_map(|d| d.name().ok()).collect()
+        // The default first: it is the same name on every machine, so a setup
+        // moved to another computer keeps working.
+        std::iter::once(DEFAULT_INPUT.to_string())
+            .chain(devices.filter_map(|d| d.name().ok()))
+            .collect()
     }
 
     fn open_input(
@@ -39,7 +43,13 @@ impl AudioBackend for CpalBackend {
 
 fn host() -> Host { cpal::default_host() }
 
+/// Stands for whatever input the system has chosen as its default.
+pub const DEFAULT_INPUT: &str = "(system default input)";
+
 fn find_input_by_name(name: &str) -> Option<Device> {
+    if name == DEFAULT_INPUT {
+        return host().default_input_device();
+    }
     host().input_devices().ok()?
         .find(|d| d.name().map(|n| n == name).unwrap_or(false))
 }

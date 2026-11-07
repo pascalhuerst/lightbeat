@@ -157,9 +157,15 @@ fn announce(hub: &DmxInputHub, socket: &UdpSocket, asked_by: Option<SocketAddrV4
     };
 
     for iface in &interfaces {
+        // An interface chosen on another computer is not here: announce
+        // everywhere rather than nowhere.
         let here: Vec<DmxInputConfig> = inputs
             .iter()
-            .filter(|i| i.interface().is_empty() || i.interface() == iface.ip.to_string())
+            .filter(|i| {
+                i.interface().is_empty()
+                    || i.interface() == iface.ip.to_string()
+                    || !interfaces.iter().any(|x| x.ip.to_string() == i.interface())
+            })
             .cloned()
             .collect();
         for reply in poll_replies(&here, iface.ip, number, &live) {

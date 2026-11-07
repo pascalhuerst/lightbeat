@@ -67,7 +67,7 @@ pub fn show(ui: &mut Ui, mgr: &mut AudioInputManager) {
                                 egui::ComboBox::from_id_salt(("backend", c.id))
                                     .selected_text(c.backend.label())
                                     .show_ui(ui, |ui| {
-                                        for k in AudioBackendKind::ALL {
+                                        for k in &AudioBackendKind::available() {
                                             if ui.selectable_label(c.backend == *k, k.label()).clicked() {
                                                 set_backend.push((c.id, *k));
                                             }
