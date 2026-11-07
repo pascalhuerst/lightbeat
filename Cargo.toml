@@ -27,6 +27,8 @@ hound = "3.5"
 meval = "0.2.0"
 socket2 = { version = "0.5", features = ["all"] }
 if-addrs = "0.10"
+ureq = "2"
+sha2 = "0.10"
 
 [features]
 # Build libusb from source and link it in, so a release binary does not need

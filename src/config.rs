@@ -61,6 +61,16 @@ pub struct AppConfig {
     /// cut the UI thread's CPU by about a third on the reference project.
     #[serde(default)]
     pub msaa_samples: u16,
+    /// Ask GitHub for a newer release now and then. With this off the app
+    /// makes no network request of its own accord.
+    #[serde(default = "default_true")]
+    pub check_for_updates: bool,
+    #[serde(default)]
+    pub update_channel: crate::update::Channel,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 fn default_idle_repaint_hz() -> f32 {
@@ -80,6 +90,8 @@ impl Default for AppConfig {
             recent_projects: Vec::new(),
             idle_repaint_hz: default_idle_repaint_hz(),
             msaa_samples: 0,
+            check_for_updates: true,
+            update_channel: crate::update::Channel::default(),
         }
     }
 }

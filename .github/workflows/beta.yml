@@ -60,6 +60,9 @@ jobs:
       - uses: Swatinem/rust-cache@v2
 
       - name: Build
+        env:
+          # Compiled in, so the app knows which release it is when it looks for a newer one.
+          LIGHTBEAT_RELEASE: ${{ steps.version.outputs.version }}
         run: cargo build --release --locked --features vendored-usb
 
       - name: Package (Linux)
@@ -92,6 +95,8 @@ jobs:
       - name: Release
         shell: bash
         run: |
+          # The app checks what it downloaded against these before installing.
+          (cd dist && sha256sum -- * > SHA256SUMS)
           ls -l dist
           short="${GITHUB_SHA::7}"
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
