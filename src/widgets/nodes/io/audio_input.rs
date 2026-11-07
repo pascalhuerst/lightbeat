@@ -21,6 +21,9 @@ const ENVELOPE_PLOT_HEIGHT: f32 = 36.0;
 /// meter's bar (which leaves space for the clip indicator on the right).
 const PLOT_RIGHT_GAP: f32 = 16.0;
 
+/// How far the beat clock can be moved, as `lead_ms` allows.
+const LEAD_LIMIT_MS: f32 = 250.0;
+
 pub struct AudioInputWidget {
     id: NodeId,
     shared: SharedState,
@@ -59,6 +62,25 @@ impl AudioInputWidget {
     fn push_config(&self) {
         let mut shared = self.shared.lock().unwrap();
         shared.pending_config = Some(serde_json::json!({ "input_id": self.input_id }));
+    }
+
+    /// The `lead_ms` parameter of analyzer `index`: its position in the
+    /// node's parameter list and its value now. A change still on its way to
+    /// the engine counts, so the control does not jump back while it waits.
+    fn lead_param(&self, index: usize) -> Option<(usize, f32)> {
+        let name = format!("a{index}.lead_ms");
+        let s = self.shared.lock().unwrap();
+        let (param, current) = s.current_params.iter().enumerate().find_map(|(i, p)| match p {
+            ParamDef::Float { name: n, value, .. } if *n == name => Some((i, *value)),
+            _ => None,
+        })?;
+        let pending = s.pending_params.iter().rev().find(|(i, _)| *i == param).map(|(_, v)| v.as_f32());
+        Some((param, pending.unwrap_or(current)))
+    }
+
+    fn set_lead(&self, param: usize, ms: f32) {
+        let ms = ms.clamp(-LEAD_LIMIT_MS, LEAD_LIMIT_MS);
+        self.shared.lock().unwrap().pending_params.push((param, ParamValue::Float(ms)));
     }
 
     fn rebind_to(&mut self, new_id: u32) {
@@ -162,6 +184,7 @@ impl NodeWidget for AudioInputWidget {
                 AnalyzerKind::Envelope => ENVELOPE_PLOT_HEIGHT + 4.0,
                 AnalyzerKind::Spectrum | AnalyzerKind::Drums | AnalyzerKind::Buildup
                 | AnalyzerKind::Brightness | AnalyzerKind::Loudness => SPECTRUM_HEIGHT + 4.0,
+                AnalyzerKind::BeatClock => 40.0,
                 _ => 18.0,
             };
         }
@@ -235,6 +258,29 @@ impl NodeWidget for AudioInputWidget {
                             ui.colored_label(theme::TEXT_DIM, "listening...");
                         }
                     });
+                    // Nudge: the lights lag behind the sound by the audio buffer,
+                    // the analysis and the fixtures; move the clock ahead to match.
+                    if let Some((param, lead)) = self.lead_param(i) {
+                        ui.horizontal(|ui| {
+                            ui.colored_label(theme::TEXT_DIM, "nudge");
+                            let step = if ui.input(|inp| inp.modifiers.shift) { 10.0 } else { 1.0 };
+                            let hint = "Run the beat clock ahead (+) or behind (-) to make up for latency. Click: 1 ms, Shift-click: 10 ms.";
+                            if ui.small_button(egui_phosphor::regular::MINUS).on_hover_text(hint).clicked() {
+                                self.set_lead(param, lead - step);
+                            }
+                            let mut ms = lead;
+                            let drag = egui::DragValue::new(&mut ms).speed(0.5).range(-LEAD_LIMIT_MS..=LEAD_LIMIT_MS).suffix(" ms").fixed_decimals(0);
+                            if ui.add(drag).on_hover_text(hint).changed() {
+                                self.set_lead(param, ms);
+                            }
+                            if ui.small_button(egui_phosphor::regular::PLUS).on_hover_text(hint).clicked() {
+                                self.set_lead(param, lead + step);
+                            }
+                            if lead != 0.0 && ui.small_button(egui_phosphor::regular::ARROW_COUNTER_CLOCKWISE).on_hover_text("Reset to 0 ms").clicked() {
+                                self.set_lead(param, 0.0);
+                            }
+                        });
+                    }
                 }
                 AnalyzerKind::PeakLevel => {
                     let peak = vals.first().copied().unwrap_or(0.0);
@@ -465,5 +511,40 @@ mod tests {
         assert_eq!(w.param_display("a0.release_ms").0.as_deref(), Some("Peak Level #1"));
         assert_eq!(w.param_display("a2.release_ms").0.as_deref(), Some("Peak Level #2"));
         assert_eq!(w.param_display("a1.attack_ms").0.as_deref(), Some("Envelope"));
+    }
+}
+
+#[cfg(test)]
+mod nudge_tests {
+    use super::*;
+    use std::sync::{Arc, Mutex};
+
+    fn nudge_widget() -> AudioInputWidget {
+        let shared = new_shared_state(0, 1);
+        shared.lock().unwrap().current_params = vec![
+            ParamDef::Float { name: "a0.min_bpm".into(), value: 80.0, min: 40.0, max: 240.0, step: 1.0, unit: "BPM" },
+            ParamDef::Float { name: "a0.lead_ms".into(), value: 12.0, min: -250.0, max: 250.0, step: 1.0, unit: "ms" },
+        ];
+        AudioInputWidget::new(NodeId(1), shared, Arc::new(Mutex::new(Vec::new())))
+    }
+
+    #[test]
+    fn the_nudge_finds_the_lead_parameter_of_its_analyzer_and_shows_a_change_before_the_engine_has_it() {
+        let w = nudge_widget();
+        assert_eq!(w.lead_param(0), Some((1, 12.0)));
+        assert_eq!(w.lead_param(1), None);
+        w.set_lead(1, 15.0);
+        assert_eq!(w.lead_param(0), Some((1, 15.0)), "the pending value, not the old one");
+        let pending = w.shared.lock().unwrap().pending_params.clone();
+        assert_eq!(pending.len(), 1);
+    }
+
+    #[test]
+    fn the_nudge_stays_within_what_the_clock_accepts() {
+        let w = nudge_widget();
+        w.set_lead(1, 900.0);
+        assert_eq!(w.lead_param(0), Some((1, 250.0)));
+        w.set_lead(1, -900.0);
+        assert_eq!(w.lead_param(0), Some((1, -250.0)));
     }
 }

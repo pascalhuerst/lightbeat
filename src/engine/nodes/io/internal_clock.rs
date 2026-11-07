@@ -33,6 +33,8 @@ pub struct InternalClockProcessNode {
     reset_in: f32,
     prev_reset: f32,
     beat_output: f32,
+    /// How far ahead of the true position the outputs run (see `latency`).
+    lead_beats: f64,
     /// For display (set when a beat fires).
     last_beat_time: Option<Instant>,
     last_beat_is_downbeat: bool,
@@ -57,6 +59,7 @@ impl InternalClockProcessNode {
             reset_in: 0.0,
             prev_reset: 0.0,
             beat_output: 0.0,
+            lead_beats: 0.0,
             last_beat_time: None,
             last_beat_is_downbeat: false,
             inputs: vec![
@@ -78,32 +81,10 @@ impl InternalClockProcessNode {
     }
 }
 
-impl ProcessNode for InternalClockProcessNode {
-    fn node_id(&self) -> NodeId { self.id }
-    fn type_name(&self) -> &'static str { "Internal Clock" }
-    fn inputs(&self) -> &[PortDef] { &self.inputs }
-    fn outputs(&self) -> &[PortDef] { &self.outputs }
-
-    fn write_input(&mut self, pi: usize, v: f32) {
-        match pi {
-            0 => self.play_stop_in = v,
-            1 => self.bpm_in = v,
-            2 => self.set_bpm_in = v,
-            3 => self.reset_in = v,
-            _ => {}
-        }
-    }
-    fn read_input(&self, pi: usize) -> f32 {
-        match pi {
-            0 => self.play_stop_in,
-            1 => self.bpm_in,
-            2 => self.set_bpm_in,
-            3 => self.reset_in,
-            _ => 0.0,
-        }
-    }
-
-    fn process(&mut self) {
+impl InternalClockProcessNode {
+    /// One tick, with the clock run `lead_ms` ahead to make up for delay
+    /// between the engine and the light.
+    fn step(&mut self, lead_ms: f32) {
         // Rising edge on `set bpm`: capture bpm input into the internal BPM.
         if self.set_bpm_in >= 0.5 && self.prev_set_bpm < 0.5 && self.bpm_in > 0.0 {
             self.bpm = self.bpm_in.clamp(20.0, 300.0);
@@ -149,7 +130,8 @@ impl ProcessNode for InternalClockProcessNode {
         self.beat_pos += dt * beats_per_sec;
 
         // Fire beat output when crossing into a new whole beat.
-        let cur_beat_idx = self.beat_pos.floor() as i64;
+        self.lead_beats = crate::latency::beats(lead_ms, self.bpm as f64);
+        let cur_beat_idx = (self.beat_pos + self.lead_beats).floor() as i64;
         if cur_beat_idx > self.last_beat_idx {
             self.beat_output = 1.0;
             self.last_beat_idx = cur_beat_idx;
@@ -157,12 +139,42 @@ impl ProcessNode for InternalClockProcessNode {
             self.last_beat_is_downbeat = cur_beat_idx % 4 == 0;
         }
     }
+}
+
+impl ProcessNode for InternalClockProcessNode {
+    fn node_id(&self) -> NodeId { self.id }
+    fn type_name(&self) -> &'static str { "Internal Clock" }
+    fn inputs(&self) -> &[PortDef] { &self.inputs }
+    fn outputs(&self) -> &[PortDef] { &self.outputs }
+
+    fn write_input(&mut self, pi: usize, v: f32) {
+        match pi {
+            0 => self.play_stop_in = v,
+            1 => self.bpm_in = v,
+            2 => self.set_bpm_in = v,
+            3 => self.reset_in = v,
+            _ => {}
+        }
+    }
+    fn read_input(&self, pi: usize) -> f32 {
+        match pi {
+            0 => self.play_stop_in,
+            1 => self.bpm_in,
+            2 => self.set_bpm_in,
+            3 => self.reset_in,
+            _ => 0.0,
+        }
+    }
+
+    fn process(&mut self) {
+        self.step(crate::latency::lead_ms());
+    }
 
     fn read_output(&self, port_index: usize) -> f32 {
         match port_index {
             0 => self.beat_output,
             1 => if self.playing { 1.0 } else { 0.0 },
-            2 => self.beat_pos.fract() as f32,
+            2 => (self.beat_pos + self.lead_beats).rem_euclid(1.0) as f32,
             _ => 0.0,
         }
     }
@@ -189,5 +201,39 @@ impl ProcessNode for InternalClockProcessNode {
             last_beat_time: self.last_beat_time,
             last_beat_is_downbeat: self.last_beat_is_downbeat,
         }));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn running(bpm: f32) -> InternalClockProcessNode {
+        let mut c = InternalClockProcessNode::new(NodeId(1));
+        c.bpm = bpm;
+        c.playing = true;
+        c
+    }
+
+    #[test]
+    fn a_lead_moves_the_phase_and_the_beat_ahead_by_that_time() {
+        // 120 BPM: 250 ms is half a beat.
+        let mut c = running(120.0);
+        c.step(250.0);
+        assert!((c.read_output(2) - 0.5).abs() < 0.01, "phase {}", c.read_output(2));
+        assert_eq!(c.read_output(0), 1.0, "the first beat is already due");
+
+        let mut c = running(120.0);
+        c.step(0.0);
+        assert!(c.read_output(2) < 0.01);
+    }
+
+    #[test]
+    fn a_negative_lead_holds_the_phase_back_without_leaving_the_range() {
+        let mut c = running(120.0);
+        c.step(-250.0);
+        let p = c.read_output(2);
+        assert!((0.0..1.0).contains(&p) && (p - 0.5).abs() < 0.01, "phase {p}");
+        assert_eq!(c.read_output(0), 0.0);
     }
 }

@@ -96,7 +96,8 @@ impl AnalyzerProc for BeatClockProc {
             return;
         }
 
-        let lead_beats = p.lead_ms as f64 / 1000.0 * s.tempo_bpm / 60.0;
+        // This input's own nudge plus the delay to the room every clock has.
+        let lead_beats = crate::latency::beats(p.lead_ms + crate::latency::lead_ms(), s.tempo_bpm);
         let beats = s.beat_phase + lead_beats + p.bar_shift as f64 / 4.0;
         let beat_index = beats.floor() as i64;
         match self.last_beat {

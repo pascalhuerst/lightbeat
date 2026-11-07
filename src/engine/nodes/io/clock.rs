@@ -51,6 +51,8 @@ pub struct ClockProcessNode {
     outputs: Vec<PortDef>,
     beat_output: f32,
     phase_output: f32,
+    /// Whole beat the shifted clock was in at the last tick; none while stopped.
+    last_beat_idx: Option<i64>,
 }
 
 impl ClockProcessNode {
@@ -66,7 +68,34 @@ impl ClockProcessNode {
             ],
             beat_output: 0.0,
             phase_output: 0.0,
+            last_beat_idx: None,
         }
+    }
+
+    /// One tick with the clock run `lead_ms` ahead of Link's position, to
+    /// make up for the delay between the engine and the light. The beat is
+    /// found by watching that shifted position cross a whole beat, so it
+    /// moves with the phase.
+    fn step(&mut self, lead_ms: f32) {
+        // The subscription still feeds the display; its count is not used.
+        self.beat_state.lock().unwrap().pending_beats = 0;
+        let snap = self.snapshot.lock().unwrap().clone();
+
+        self.beat_output = 0.0;
+        if !snap.playing {
+            self.last_beat_idx = None;
+            return;
+        }
+        let lead = crate::latency::beats(lead_ms, snap.tempo);
+        let position = snap.beat + lead;
+        let idx = position.floor() as i64;
+        if self.last_beat_idx.is_some_and(|last| idx > last) {
+            self.beat_output = 1.0;
+        }
+        self.last_beat_idx = Some(idx);
+        // Link's phase is within the bar of `quantum` beats, normalized.
+        const QUANTUM: f64 = 4.0;
+        self.phase_output = (snap.phase + lead / QUANTUM).rem_euclid(1.0) as f32;
     }
 }
 
@@ -88,19 +117,7 @@ impl ProcessNode for ClockProcessNode {
     }
 
     fn process(&mut self) {
-        let snap = self.snapshot.lock().unwrap();
-        let mut bs = self.beat_state.lock().unwrap();
-
-        if bs.pending_beats > 0 {
-            bs.pending_beats = 0;
-            self.beat_output = 1.0;
-        } else {
-            self.beat_output = 0.0;
-        }
-
-        if snap.playing {
-            self.phase_output = snap.phase as f32;
-        }
+        self.step(crate::latency::lead_ms());
     }
 
     fn read_output(&self, port_index: usize) -> f32 {
@@ -126,5 +143,56 @@ impl ProcessNode for ClockProcessNode {
             last_beat_time: bs.last_beat_time,
             last_beat_is_downbeat: bs.last_beat_is_downbeat,
         }));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn clock_at(beat: f64, tempo: f64) -> (ClockProcessNode, Arc<Mutex<LinkSnapshot>>) {
+        let snap = Arc::new(Mutex::new(LinkSnapshot {
+            tempo,
+            beat,
+            phase: (beat / 4.0).fract(),
+            playing: true,
+            num_peers: 0,
+        }));
+        (ClockProcessNode::new(NodeId(1), snap.clone()), snap)
+    }
+
+    fn move_to(snap: &Arc<Mutex<LinkSnapshot>>, beat: f64) {
+        let mut s = snap.lock().unwrap();
+        s.beat = beat;
+        s.phase = (beat / 4.0).fract();
+    }
+
+    #[test]
+    fn a_lead_fires_the_beat_and_moves_the_phase_earlier() {
+        // 120 BPM, 250 ms is half a beat.
+        let (mut c, snap) = clock_at(0.3, 120.0);
+        c.step(250.0);
+        assert_eq!(c.read_output(0), 0.0);
+        move_to(&snap, 0.6);
+        c.step(250.0);
+        assert_eq!(c.read_output(0), 1.0, "Link is at 0.6, the shifted clock at 1.1");
+        assert!((c.read_output(2) - (0.6 + 0.5) / 4.0).abs() < 1e-5);
+        move_to(&snap, 0.7);
+        c.step(250.0);
+        assert_eq!(c.read_output(0), 0.0, "once per beat");
+    }
+
+    #[test]
+    fn without_a_lead_it_follows_link_and_never_fires_on_start_or_while_stopped() {
+        let (mut c, snap) = clock_at(3.9, 120.0);
+        c.step(0.0);
+        assert_eq!(c.read_output(0), 0.0, "joining mid-beat is not a beat");
+        move_to(&snap, 4.1);
+        c.step(0.0);
+        assert_eq!(c.read_output(0), 1.0);
+        snap.lock().unwrap().playing = false;
+        move_to(&snap, 5.2);
+        c.step(0.0);
+        assert_eq!(c.read_output(0), 0.0);
     }
 }
