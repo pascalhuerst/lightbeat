@@ -387,6 +387,22 @@ src/
   before it lets an app record at all.
 - `/proc` is only used by the perf log and reads as zero on a Mac.
 
+### Self-update (`update.rs`, `version.rs`)
+- CI builds with `LIGHTBEAT_RELEASE=<version>` (compiled in, see `build.rs`,
+  which also stamps the commit) and publishes `SHA256SUMS` with the packages. A
+  build from a checkout has no release stamp, so it never checks or installs.
+- Help menu: About (version), Check for Updates, automatic checks and the
+  channel (Beta = the rolling `beta` pre-release, compared by commit; Stable =
+  latest `v*` release, compared by version). The menu bar shows the version.
+  Automatic checks are the only network use of their own accord, at start and
+  every 6 h, and can be switched off (`AppConfig::check_for_updates`).
+- Install: download the platform package, verify SHA-256, unpack (`tar` /
+  `ditto` + `codesign --verify`), rename the old binary (Linux) or the whole
+  `.app` (macOS) to `*.old` and the new one in; `Target::of_running_app` is
+  cached at start because the running file gets renamed. "Restart now" starts a
+  waiter that relaunches after this process exits. `*.old` and the staging
+  folder are removed at the next start.
+
 ### Subgraph save/load
 - `SavedNode` has an optional `inner_graph: Option<ProjectFile>` for recursive
   serialization. `load_graph` navigates into a subgraph, recursively loads its

@@ -17,6 +17,8 @@ mod paths;
 mod perf;
 mod project;
 mod theme;
+mod update;
+mod version;
 mod widgets;
 
 use std::path::PathBuf;
@@ -243,6 +245,10 @@ struct LightBeatApp {
     setup_notice: Option<Vec<String>>,
     snapshot: Arc<std::sync::Mutex<beat_clock::LinkSnapshot>>,
     quit_requested: bool,
+    updater: update::Updater,
+    last_update_check: Option<std::time::Instant>,
+    show_update_window: bool,
+    show_about: bool,
     /// Serialized form (JSON) of the project at the moment it was last saved
     /// (or loaded). Comparing the current serialized project against this
     /// tells us whether there are unsaved changes.
@@ -333,6 +339,7 @@ struct FrameDragPayload;
 
 impl LightBeatApp {
     fn new(cc: &eframe::CreationContext<'_>) -> Self {
+        update::clean_up_leftovers();
         // Add Phosphor icons as a fallback font so we can use icon glyphs
         // (constants like egui_phosphor::regular::ARROW_UP) anywhere in the UI.
         let mut fonts = egui::FontDefinitions::default();
@@ -383,6 +390,10 @@ impl LightBeatApp {
             setup_notice: None,
             snapshot,
             quit_requested: false,
+            updater: update::Updater::default(),
+            last_update_check: None,
+            show_update_window: false,
+            show_about: false,
             last_saved_project_json: None,
             last_autosave_time: 0.0,
             close_confirm_open: false,
@@ -1239,6 +1250,127 @@ impl LightBeatApp {
             }
             ctx.request_repaint();
         });
+    }
+
+    /// Check for updates at start and every few hours, if the user allows it.
+    fn update_check_tick(&mut self) {
+        const EVERY: std::time::Duration = std::time::Duration::from_secs(6 * 3600);
+        if !self.config.check_for_updates || !version::is_release() {
+            return;
+        }
+        if self.last_update_check.is_none_or(|t| t.elapsed() >= EVERY) {
+            self.last_update_check = Some(std::time::Instant::now());
+            self.updater.check(self.config.update_channel);
+        }
+    }
+
+    fn show_update_ui(&mut self, ctx: &egui::Context) {
+        use update::State;
+        let state = self.updater.state();
+        if matches!(state, State::Installing | State::Checking) {
+            ctx.request_repaint_after(std::time::Duration::from_millis(100));
+        }
+
+        if self.show_about {
+            let mut open = true;
+            egui::Window::new("About LightBeat").open(&mut open).collapsible(false).resizable(false).show(ctx, |ui| {
+                ui.heading("LightBeat");
+                ui.label("Beat-synchronized, node-based lighting control.");
+                ui.add_space(4.0);
+                ui.label(format!("Version {}", version::label()));
+                ui.hyperlink_to("github.com/pascalhuerst/lightbeat", format!("https://github.com/{}", update::REPO));
+            });
+            self.show_about = open;
+        }
+
+        if !self.show_update_window {
+            return;
+        }
+        let mut open = true;
+        egui::Window::new("Software Update").open(&mut open).collapsible(false).resizable(false).show(ctx, |ui| {
+            ui.label(format!("You have {}.", version::label()));
+            ui.add_space(4.0);
+            match &state {
+                State::Idle => {
+                    if ui.button("Check now").clicked() {
+                        self.updater.check(self.config.update_channel);
+                    }
+                }
+                State::Checking => {
+                    ui.horizontal(|ui| {
+                        ui.spinner();
+                        ui.label("Looking for updates...");
+                    });
+                }
+                State::UpToDate => {
+                    ui.colored_label(theme::SEM_SUCCESS, "LightBeat is up to date.");
+                }
+                State::Failed(e) => {
+                    ui.colored_label(theme::SEM_DANGER, e);
+                    if ui.button("Try again").clicked() {
+                        self.updater.check(self.config.update_channel);
+                    }
+                }
+                State::Available(release) => {
+                    let name = if release.title.is_empty() { &release.tag } else { &release.title };
+                    ui.label(egui::RichText::new(format!("Available: {name}")).strong());
+                    if !release.notes.trim().is_empty() {
+                        egui::ScrollArea::vertical().max_height(120.0).show(ui, |ui| {
+                            ui.colored_label(theme::TEXT_MUTED, release.notes.trim());
+                        });
+                    }
+                    ui.add_space(4.0);
+                    ui.colored_label(theme::TEXT_DIM, "The update replaces the app and restarts it. Your projects and setup are kept. Do not do it during a show.");
+                    ui.horizontal(|ui| {
+                        if ui.button("Update").clicked() {
+                            self.updater.install(release.clone());
+                        }
+                        ui.hyperlink_to("Release page", release.page.clone());
+                    });
+                }
+                State::Installing => {
+                    let (done, total) = self.updater.progress();
+                    ui.label("Downloading and installing...");
+                    if total > 0 {
+                        ui.add(egui::ProgressBar::new(done as f32 / total as f32).show_percentage());
+                    } else {
+                        ui.spinner();
+                    }
+                }
+                State::Installed(_) => {
+                    ui.colored_label(theme::SEM_SUCCESS, "Updated. Restart to run the new version.");
+                    if ui.button("Restart now").clicked() {
+                        match update::relaunch_after_exit() {
+                            Ok(()) => self.quit_requested = true,
+                            Err(e) => eprintln!("Could not arrange the restart: {e}"),
+                        }
+                    }
+                }
+            }
+            ui.add_space(4.0);
+            ui.horizontal(|ui| {
+                let mut auto = self.config.check_for_updates;
+                if ui.checkbox(&mut auto, "Check automatically").changed() {
+                    self.config.check_for_updates = auto;
+                    self.config.save();
+                }
+                egui::ComboBox::from_id_salt("update_channel")
+                    .selected_text(self.config.update_channel.label())
+                    .show_ui(ui, |ui| {
+                        for channel in update::Channel::ALL {
+                            if ui.selectable_label(self.config.update_channel == channel, channel.label()).clicked() {
+                                self.config.update_channel = channel;
+                                self.config.save();
+                                self.updater.check(channel);
+                            }
+                        }
+                    });
+            });
+        });
+        if !open {
+            self.show_update_window = false;
+            self.updater.dismiss();
+        }
     }
 
     fn export_setup_dialog(&mut self, ctx: &egui::Context) {
@@ -2204,8 +2336,41 @@ impl LightBeatApp {
                         ui.close_menu();
                     }
                 });
+                ui.menu_button("Help", |ui| {
+                    if ui.button(format!("About LightBeat {}", version::version())).clicked() {
+                        ui.close_menu();
+                        self.show_about = true;
+                    }
+                    ui.separator();
+                    if ui.button("Check for Updates").clicked() {
+                        ui.close_menu();
+                        self.show_update_window = true;
+                        self.updater.check(self.config.update_channel);
+                        self.last_update_check = Some(std::time::Instant::now());
+                    }
+                    let mut auto = self.config.check_for_updates;
+                    if ui.checkbox(&mut auto, "Check automatically").changed() {
+                        self.config.check_for_updates = auto;
+                        self.config.save();
+                    }
+                    ui.menu_button(format!("Update channel: {}", self.config.update_channel.label()), |ui| {
+                        for channel in update::Channel::ALL {
+                            if ui.selectable_label(self.config.update_channel == channel, channel.label()).clicked() {
+                                self.config.update_channel = channel;
+                                self.config.save();
+                                ui.close_menu();
+                            }
+                        }
+                    });
+                });
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    ui.colored_label(theme::TEXT_DIM, format!("LightBeat {}", version::version()));
+                });
             });
         });
+
+        self.update_check_tick();
+        self.show_update_ui(ctx);
 
         // Consolidated Setup window — embedded `egui::Window` inside the
         // main viewport. All setup managers (interfaces, fixtures, objects,
@@ -2469,6 +2634,25 @@ impl LightBeatApp {
                             self.audio_inputs.force_rescan();
                             self.midi_hub.rescan();
                         }
+                    }
+
+                    match self.updater.state() {
+                        update::State::Available(release) => {
+                            ui.separator();
+                            if ui
+                                .small_button(egui::RichText::new(format!("Update available: {}", release.tag)).color(theme::SEM_PRIMARY))
+                                .clicked()
+                            {
+                                self.show_update_window = true;
+                            }
+                        }
+                        update::State::Installed(_) => {
+                            ui.separator();
+                            if ui.small_button(egui::RichText::new("Updated: restart").color(theme::SEM_SUCCESS)).clicked() {
+                                self.show_update_window = true;
+                            }
+                        }
+                        _ => {}
                     }
 
                     // Right-aligned zoom indicator + performance readout.
