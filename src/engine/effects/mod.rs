@@ -243,7 +243,7 @@ mod tests {
     fn roots_on_one_group_blend_in_the_order_they_were_made_and_amount_dims_the_later_one() {
         let (hub, store) = (EffectHub::new(), store_with_strips(&[3]));
         let geometry = Arc::new(Geometry::resolve(
-            &[geometry::TargetSpec::Strip { object_id: 1, logical_start: 0.0, logical_end: 1.0 }],
+            &[geometry::TargetSpec::Strip { object_id: 1, logical_start: 0.0, logical_end: 1.0, y: None }],
             &store.lock().unwrap(),
         ));
         let solid = |c: Rgb| -> LayerBuffer {
@@ -349,7 +349,7 @@ mod tests {
             "layers": (0..colours.len()).map(|i| serde_json::json!({ "node_id": i as u64 + 2 })).collect::<Vec<_>>(),
         }));
         let geometry = Arc::new(Geometry::resolve(
-            &[geometry::TargetSpec::Strip { object_id: 1, logical_start: 0.0, logical_end: 1.0 }],
+            &[geometry::TargetSpec::Strip { object_id: 1, logical_start: 0.0, logical_end: 1.0, y: None }],
             &store.lock().unwrap(),
         ));
         for (i, c) in colours.iter().enumerate() {

@@ -220,9 +220,15 @@ src/
   stack stores order, blend, opacity, mute and solo per effect; linked nodes
   share an accent colour (`theme::link_color`) and are highlighted together via
   `NodeWidget::link_key`.
-- Positions: `Geometry::position` gives (x, row). There is only one row until
-  groups get a real layout (see things.txt), but effects already measure
-  distances in two dimensions.
+- Positions: `Geometry::position` gives (x, y), both 0..1 in the group's space
+  (y from the top). A strip's `StripLayout::y` and a fixture's
+  `FixturePlacement` (x, y) are set by hand in the group editor's "Space"
+  picture; without them strips fall into rows by their spans (the shelf's
+  halves that touch share a row) and fixtures spread along the axis on the
+  middle line. `Geometry::rows` ranks the heights for the stack preview.
+  Wave Loop can travel Down/Up as well as along x. Still 2D; 3D is not planned.
+- The Effect Stack inspector shows a "Stack tree" (`StackRegistry::tree`) with
+  this stack marked, since the sending is by name and not visible as wires.
 
 ### Subgraph (`engine/nodes/meta/subgraph.rs`)
 - Acts like a "module" with its own inner graph and configurable input/output

@@ -45,6 +45,25 @@ impl StackRegistry {
         found
     }
 
+    /// Every stack in tree order, roots first and each followed by what is
+    /// sent to it, with its depth. Stacks in a loop (the graph breaks those)
+    /// are left out rather than followed forever.
+    pub fn tree(&self) -> Vec<(usize, String)> {
+        let mut out = Vec::new();
+        let is_root = |n: &String| self.parent_of.get(n).is_none_or(|p| p.is_empty() || !self.names.contains(p));
+        let mut stack: Vec<(usize, &String)> = self.names.iter().filter(|n| is_root(n)).rev().map(|n| (0, n)).collect();
+        while let Some((depth, name)) = stack.pop() {
+            if out.len() > self.names.len() {
+                break;
+            }
+            out.push((depth, name.clone()));
+            for child in self.names.iter().filter(|c| self.parent_of.get(*c) == Some(name)).rev() {
+                stack.push((depth + 1, child));
+            }
+        }
+        out
+    }
+
     /// The stacks `name` may be sent to: not itself, and not one that is
     /// (even indirectly) sent to it, which would make a loop.
     pub fn parents_for(&self, name: &str) -> Vec<String> {
@@ -219,6 +238,17 @@ impl NodeWidget for EffectWidget {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn the_stack_tree_lists_roots_first_with_what_is_sent_to_each() {
+        let mut reg = StackRegistry::default();
+        reg.names = ["Main", "Scenes", "Pulse", "Solo"].iter().map(|s| s.to_string()).collect();
+        reg.parent_of.insert("Scenes".into(), "Main".into());
+        reg.parent_of.insert("Pulse".into(), "Scenes".into());
+        let tree = reg.tree();
+        let tree: Vec<(usize, &str)> = tree.iter().map(|(d, n)| (*d, n.as_str())).collect();
+        assert_eq!(tree, vec![(0, "Main"), (1, "Scenes"), (2, "Pulse"), (0, "Solo")]);
+    }
+
     use super::*;
 
     fn ripple() -> EffectWidget {

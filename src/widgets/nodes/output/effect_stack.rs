@@ -141,6 +141,7 @@ impl EffectStackWidget {
                         object_id: layout.object_id,
                         logical_start: layout.logical_start,
                         logical_end: layout.logical_end,
+                        y: layout.y,
                     });
                 }
             }
@@ -155,8 +156,13 @@ impl EffectStackWidget {
                 .collect();
             let n = fixtures.len();
             for (i, object_id) in fixtures.into_iter().enumerate() {
-                let position = if n <= 1 { 0.5 } else { i as f32 / (n - 1) as f32 };
-                targets.push(TargetSpec::Fixture { object_id, position });
+                match group.fixture_layout.iter().find(|f| f.object_id == object_id) {
+                    Some(f) => targets.push(TargetSpec::Fixture { object_id, position: f.x, y: Some(f.y) }),
+                    None => {
+                        let position = if n <= 1 { 0.5 } else { i as f32 / (n - 1) as f32 };
+                        targets.push(TargetSpec::Fixture { object_id, position, y: None });
+                    }
+                }
             }
         }
         drop(ctx);
@@ -164,6 +170,24 @@ impl EffectStackWidget {
         self.config.targets = targets;
         self.config.group_names = names;
         changed
+    }
+
+    /// All stacks as a tree, this one marked, so it is clear where the picture
+    /// goes: down the tree to a root, which writes to the groups.
+    fn show_tree(&self, ui: &mut Ui) {
+        let tree = self.names.lock().unwrap().tree();
+        if tree.len() < 2 {
+            return;
+        }
+        ui.add_space(2.0);
+        egui::CollapsingHeader::new("Stack tree").id_salt(("stack_tree", self.id.0)).default_open(true).show(ui, |ui| {
+            for (depth, name) in &tree {
+                let here = *name == self.config.name;
+                let text = format!("{}{}{}", "    ".repeat(*depth), if *depth > 0 { "\u{2514} " } else { "" }, name);
+                let text = egui::RichText::new(text);
+                ui.label(if here { text.strong().color(theme::SEM_PRIMARY) } else { text.color(theme::TEXT_MUTED) });
+            }
+        });
     }
 
     fn label_of(&self, node_id: u64) -> String {
@@ -485,6 +509,8 @@ impl NodeWidget for EffectStackWidget {
                 changed = true;
             }
         });
+
+        self.show_tree(ui);
 
         if self.is_root() {
             ui.horizontal(|ui| {

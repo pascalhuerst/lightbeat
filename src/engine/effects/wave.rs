@@ -7,7 +7,7 @@ use super::node::{EffectKind, RenderCtx};
 use super::{LayerBuffer, Pixel};
 
 const SHAPES: [&str; 4] = ["Sine", "Triangle", "Saw", "Square"];
-const DIRECTIONS: [&str; 4] = ["Right", "Left", "Outward", "Inward"];
+const DIRECTIONS: [&str; 6] = ["Right", "Left", "Outward", "Inward", "Down", "Up"];
 
 pub struct Wave {
     wavelength: f32,
@@ -63,13 +63,15 @@ impl EffectKind for Wave {
         let phase = ctx.inputs.first().copied().unwrap_or(0.0);
         for (t, strip) in buf.iter_mut().enumerate() {
             for (i, px) in strip.iter_mut().enumerate() {
-                let (x, _) = ctx.geometry.position(t, i);
+                let (x, y) = ctx.geometry.position(t, i);
                 // Distance along the direction of travel.
                 let (u, sign) = match self.direction {
                     0 => (x, -1.0),
                     1 => (x, 1.0),
                     2 => ((x - 0.5).abs() * 2.0, -1.0),
-                    _ => ((x - 0.5).abs() * 2.0, 1.0),
+                    3 => ((x - 0.5).abs() * 2.0, 1.0),
+                    4 => (y, -1.0),
+                    _ => (y, 1.0),
                 };
                 let v = shape_value(self.shape, u / self.wavelength + sign * phase);
                 let (color, alpha) = ctx.gradient.sample_with_alpha(x.clamp(0.0, 1.0));
@@ -96,5 +98,14 @@ mod tests {
         assert!((shape_value(1, 0.5) - 1.0).abs() < 1e-6);
         assert_eq!(shape_value(3, 0.25), 1.0);
         assert_eq!(shape_value(3, 0.75), 0.0);
+    }
+
+    #[test]
+    fn heights_set_by_hand_reach_the_wave_through_the_layout() {
+        use super::super::Geometry;
+        let ys = Geometry::from_specs_for_layout(&[(1, 0.0, 1.0, Some(0.0)), (2, 0.0, 1.0, Some(0.25))]);
+        assert_eq!((ys[&1], ys[&2]), (0.0, 0.25));
+        // A downward wave reads the height, so the two strips differ.
+        assert!((shape_value(0, ys[&1] / 0.5) - shape_value(0, ys[&2] / 0.5)).abs() > 0.5);
     }
 }
