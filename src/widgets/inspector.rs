@@ -10,6 +10,41 @@ fn read_params(node: &dyn NodeWidget) -> Vec<ParamDef> {
     node.shared_state().lock().unwrap().current_params.clone()
 }
 
+/// What a double-click on `param` sets it to: the value it had when the node
+/// was made. None when the node does not know (its parameters are made up
+/// later) or the setting already is the default.
+fn reset_value(node: &dyn NodeWidget, param: &ParamDef) -> Option<ParamValue> {
+    let shared = node.shared_state().lock().unwrap();
+    let default = shared
+        .default_params
+        .iter()
+        .find(|d| d.name() == param.name() && std::mem::discriminant(*d) == std::mem::discriminant(param))?;
+    let differs = format!("{:?}", default.as_value()) != format!("{:?}", param.as_value());
+    differs.then(|| default.as_value())
+}
+
+/// Put the setting `name` of every node back to its default.
+fn reset_all(nodes: &[&mut Box<dyn NodeWidget>], name: &str) {
+    for node in nodes {
+        let params = read_params(node.as_ref());
+        if let Some((i, param)) = params.iter().enumerate().find(|(_, p)| p.name() == name)
+            && let Some(d) = reset_value(node.as_ref(), param)
+        {
+            push_param(node.as_ref(), i, d);
+        }
+    }
+}
+
+/// A setting's name that resets the setting when double-clicked. Takes the
+/// place of `ui.label`.
+fn param_label(ui: &mut Ui, text: &str, reset: Option<ParamValue>) -> Option<ParamValue> {
+    let response = ui.add(egui::Label::new(text).sense(egui::Sense::click()));
+    if reset.is_some() {
+        response.clone().on_hover_text("Double-click to reset");
+    }
+    if response.double_clicked() { reset } else { None }
+}
+
 /// Push a param change into a node's shared state for the engine to pick up.
 fn push_param(node: &dyn NodeWidget, index: usize, value: ParamValue) {
     node.shared_state()
@@ -229,14 +264,22 @@ pub fn show_inspector(ui: &mut Ui, node: &mut dyn NodeWidget) {
                     unit,
                 } => {
                     let mut v = *value;
+                    let default = reset_value(node, param);
                     ui.horizontal(|ui| {
                         ui.add_enabled_ui(!locked, |ui| {
-                            ui.label(&label);
+                            let mut reset = param_label(ui, &label, default.clone());
                             let slider = egui::Slider::new(&mut v, *min..=*max)
                                 .step_by(*step as f64)
                                 .suffix(*unit);
-                            if ui.add(slider).changed() {
+                            let response = ui.add(slider);
+                            if response.changed() {
                                 push_param(node, i, ParamValue::Float(v));
+                            }
+                            if response.double_clicked() {
+                                reset = default;
+                            }
+                            if let Some(d) = reset {
+                                push_param(node, i, d);
                             }
                         });
                         promote_checkbox(ui, node, &promo, param);
@@ -249,12 +292,20 @@ pub fn show_inspector(ui: &mut Ui, node: &mut dyn NodeWidget) {
                     max,
                 } => {
                     let mut v = *value;
+                    let default = reset_value(node, param);
                     ui.horizontal(|ui| {
                         ui.add_enabled_ui(!locked, |ui| {
-                            ui.label(&label);
+                            let mut reset = param_label(ui, &label, default.clone());
                             let slider = egui::Slider::new(&mut v, *min..=*max);
-                            if ui.add(slider).changed() {
+                            let response = ui.add(slider);
+                            if response.changed() {
                                 push_param(node, i, ParamValue::Int(v));
+                            }
+                            if response.double_clicked() {
+                                reset = default;
+                            }
+                            if let Some(d) = reset {
+                                push_param(node, i, d);
                             }
                         });
                         promote_checkbox(ui, node, &promo, param);
@@ -262,10 +313,18 @@ pub fn show_inspector(ui: &mut Ui, node: &mut dyn NodeWidget) {
                 }
                 ParamDef::Bool { name: _, value } => {
                     let mut v = *value;
+                    let default = reset_value(node, param);
                     ui.horizontal(|ui| {
                         ui.add_enabled_ui(!locked, |ui| {
-                            if ui.checkbox(&mut v, &label).changed() {
+                            let response = ui.checkbox(&mut v, &label);
+                            if response.changed() {
                                 push_param(node, i, ParamValue::Bool(v));
+                            }
+                            if let Some(d) = default {
+                                response.clone().on_hover_text("Double-click to reset");
+                                if response.double_clicked() {
+                                    push_param(node, i, d);
+                                }
                             }
                         });
                         promote_checkbox(ui, node, &promo, param);
@@ -277,9 +336,12 @@ pub fn show_inspector(ui: &mut Ui, node: &mut dyn NodeWidget) {
                     options,
                 } => {
                     let mut v = *value;
+                    let default = reset_value(node, param);
                     ui.horizontal(|ui| {
                         ui.add_enabled_ui(!locked, |ui| {
-                            ui.label(&label);
+                            if let Some(d) = param_label(ui, &label, default) {
+                                push_param(node, i, d);
+                            }
                             egui::ComboBox::from_id_salt(format!("param_{}", i))
                                 .selected_text(&options[v])
                                 .show_ui(ui, |ui| {
@@ -350,11 +412,15 @@ pub fn show_multi_inspector(ui: &mut Ui, nodes: Vec<&mut Box<dyn NodeWidget>>) {
             } => {
                 let mut v = *value;
                 ui.horizontal(|ui| {
-                    ui.label(name);
+                    let label_reset = param_label(ui, name, Some(ParamValue::Bool(true))).is_some();
                     let slider = egui::Slider::new(&mut v, *min..=*max)
                         .step_by(*step as f64)
                         .suffix(*unit);
-                    if ui.add(slider).changed() {
+                    let response = ui.add(slider);
+                    if label_reset || response.double_clicked() {
+                        reset_all(&nodes, name);
+                    }
+                    if response.changed() {
                         for node in &nodes {
                             let idx = read_params(node.as_ref())
                                 .iter()
@@ -371,9 +437,13 @@ pub fn show_multi_inspector(ui: &mut Ui, nodes: Vec<&mut Box<dyn NodeWidget>>) {
             } => {
                 let mut v = *value;
                 ui.horizontal(|ui| {
-                    ui.label(name);
+                    let label_reset = param_label(ui, name, Some(ParamValue::Bool(true))).is_some();
                     let slider = egui::Slider::new(&mut v, *min..=*max);
-                    if ui.add(slider).changed() {
+                    let response = ui.add(slider);
+                    if label_reset || response.double_clicked() {
+                        reset_all(&nodes, name);
+                    }
+                    if response.changed() {
                         for node in &nodes {
                             let idx = read_params(node.as_ref())
                                 .iter()
@@ -400,5 +470,42 @@ pub fn show_multi_inspector(ui: &mut Ui, nodes: Vec<&mut Box<dyn NodeWidget>>) {
             }
             _ => {}
         }
+    }
+}
+
+#[cfg(test)]
+mod reset_tests {
+    use super::*;
+    use crate::engine::types::{NodeId, new_shared_state};
+    use crate::widgets::nodes::math::gain::GainWidget;
+
+    fn float(value: f32) -> ParamDef {
+        ParamDef::Float { name: "Gain".into(), value, min: 0.0, max: 1.0, step: 0.01, unit: "" }
+    }
+
+    fn widget(default: Option<f32>, current: f32) -> GainWidget {
+        let shared = new_shared_state(1, 1);
+        {
+            let mut s = shared.lock().unwrap();
+            s.default_params = default.map(|d| vec![float(d)]).unwrap_or_default();
+            s.current_params = vec![float(current)];
+        }
+        GainWidget::new(NodeId(1), shared)
+    }
+
+    #[test]
+    fn a_changed_setting_resets_to_the_value_the_node_was_made_with() {
+        let w = widget(Some(1.0), 0.3);
+        let param = float(0.3);
+        match reset_value(&w, &param) {
+            Some(ParamValue::Float(v)) => assert_eq!(v, 1.0),
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn nothing_is_offered_when_it_already_is_the_default_or_the_default_is_not_known() {
+        assert!(reset_value(&widget(Some(1.0), 1.0), &float(1.0)).is_none());
+        assert!(reset_value(&widget(None, 0.3), &float(0.3)).is_none());
     }
 }

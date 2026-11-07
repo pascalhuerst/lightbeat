@@ -81,6 +81,7 @@ impl EngineGraph {
     }
 
     fn add_node(&mut self, node: Box<dyn ProcessNode>, shared: SharedState) {
+        shared.lock().unwrap().default_params = node.params();
         self.shared_states.push(shared);
         self.promoted.push(PromotedInputs::default());
         self.node_index.insert(node.node_id(), self.nodes.len());

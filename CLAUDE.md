@@ -604,6 +604,11 @@ src/
   Shift+drag or Space+drag on empty canvas pan; `F`/Home fits the selection (or
   everything); `M` toggles the minimap (top right of the canvas, click or drag
   to move the view; `show_minimap`, `content_bounds`).
+- **Reset to default**: double-clicking a setting's name or its slider in the
+  inspector (also for several selected nodes) puts it back to what the node was
+  made with. The engine records that in `NodeSharedState::default_params` when a
+  node is added (before any load), so a node needs no default of its own.
+  Node-body controls (faders, knobs, step cells) do their own reset.
 - **Hide unused ports** (`H`, or the node menu) is a per-node flag in
   `NodeSharedState::hide_unused_ports`, saved as `SavedNode.hide_unused_ports`.
   The graph turns it into `hidden_inputs`/`hidden_outputs` each frame

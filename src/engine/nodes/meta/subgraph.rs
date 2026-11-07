@@ -486,6 +486,7 @@ impl SubgraphProcessNode {
         self.inner.plan_dirty = true;
         match cmd {
             SubgraphInnerCmd::AddNode { node, shared } => {
+                shared.lock().unwrap().default_params = node.params();
                 self.inner.shared_states.push(shared);
                 self.inner.nodes.push(node);
                 self.inner.promoted.push(PromotedInputs::default());
