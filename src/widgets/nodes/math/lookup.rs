@@ -38,7 +38,7 @@ const COLUMN_TYPES: &[PortType] = &[
 
 fn column_type_label(pt: PortType) -> &'static str {
     match pt {
-        PortType::Untyped => "Untyped",
+        PortType::Untyped => "Number",
         PortType::Logic => "Logic",
         PortType::Phase => "Phase",
         PortType::Color => "Color",
@@ -218,9 +218,9 @@ impl LookupWidget {
 
 impl NodeWidget for LookupWidget {
     fn node_id(&self) -> NodeId { self.id }
-    fn type_name(&self) -> &'static str { "Lookup" }
+    fn type_name(&self) -> &'static str { "Lookup Table" }
     fn description(&self) -> &'static str {
-        "Table with one row selected by the `index` input. Each column becomes its own typed output (Untyped / Logic / Phase / Color / Position / Palette)."
+        "Table of rows. The input picks a row (by number, or as a phase over the whole table), optionally blending between rows. Each column is its own typed output (Number / Logic / Phase / Color / Position / Palette / Gradient)."
     }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> {

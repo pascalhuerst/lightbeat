@@ -102,6 +102,7 @@ use engine::nodes::math::formula::FormulaProcessNode;
 use engine::nodes::math::random::RandomProcessNode;
 use engine::nodes::transport::sample_hold::SampleHoldProcessNode;
 use engine::nodes::transport::smoothing::SmoothingProcessNode;
+use engine::nodes::transport::time_to_phase::TimeToPhaseProcessNode;
 use engine::nodes::transport::transition::TransitionProcessNode;
 use engine::nodes::transport::lfo::LfoProcessNode;
 use engine::nodes::transport::phase_scaler::PhaseScalerProcessNode;
@@ -167,6 +168,7 @@ use widgets::nodes::math::formula::FormulaWidget;
 use widgets::nodes::math::random::RandomWidget;
 use widgets::nodes::transport::sample_hold::SampleHoldWidget;
 use widgets::nodes::transport::smoothing::SmoothingWidget;
+use widgets::nodes::transport::time_to_phase::TimeToPhaseWidget;
 use widgets::nodes::transport::transition::TransitionWidget;
 use widgets::nodes::transport::lfo::LfoWidget;
 use widgets::nodes::transport::phase_scaler::PhaseScalerWidget;
@@ -608,6 +610,9 @@ impl LightBeatApp {
         self.graph.register_node("Transport", "Clock Gen", |id| {
             Box::new(ClockGenWidget::new(id, new_shared_state(1, 1)))
         });
+        self.graph.register_node("Transport", "Time to Phase", |id| {
+            Box::new(TimeToPhaseWidget::new(id, new_shared_state(1, 2)))
+        });
         self.graph.register_node("Transport", "Transition", |id| {
             // trigger(1) + phase(1) + palette(12) = 14 input channels, 12 output channels max
             Box::new(TransitionWidget::new(id, new_shared_state(14, 12)))
@@ -645,7 +650,7 @@ impl LightBeatApp {
             });
         }
         let gradient_library = self.gradient_library.clone();
-        self.graph.register_node("Math", "Lookup", move |id| {
+        self.graph.register_node("Route", "Lookup Table", move |id| {
             // Outputs: 1 (rows) + worst case 8 columns × Gradient (40 ch) = 321.
             Box::new(LookupWidget::new(id, new_shared_state(1, 321), gradient_library.clone()))
         });
@@ -965,6 +970,7 @@ impl LightBeatApp {
                 "XY Pad" => Some(Box::new(XyPadProcessNode::new(id))),
                 "Gradient Stops" => Some(Box::new(GradientStopsProcessNode::new(id))),
                 "Phase Scaler" => Some(Box::new(PhaseScalerProcessNode::new(id))),
+                "Time to Phase" => Some(Box::new(TimeToPhaseProcessNode::new(id))),
                 "LFO" => Some(Box::new(LfoProcessNode::new(id))),
                 "Step Sequencer" => Some(Box::new(StepSequencerProcessNode::new(id))),
                 "Scope" => Some(Box::new(ScopeProcessNode::new(id))),
@@ -1027,7 +1033,7 @@ impl LightBeatApp {
                 }
                 "Position Merge" => Some(Box::new(PositionMergeProcessNode::new(id))),
                 "Position Split" => Some(Box::new(PositionSplitProcessNode::new(id))),
-                "Lookup" => Some(Box::new(LookupProcessNode::new(id))),
+                "Lookup Table" => Some(Box::new(LookupProcessNode::new(id))),
                 "Counter" => Some(Box::new(CounterProcessNode::new(id))),
                 "Change Detect" => Some(Box::new(ChangeDetectProcessNode::new(id))),
                 "Schmitt Trigger" => Some(Box::new(SchmittTriggerProcessNode::new(id))),
@@ -2531,6 +2537,21 @@ impl LightBeatApp {
             egui::SidePanel::right("inspector")
                 .default_width(250.0)
                 .show(ctx, |ui| {
+                    // The snapshot list lives at the bottom of the panel with a
+                    // handle to size it; the inspector keeps the rest.
+                    if self.graph.selected_frame_ids().next().is_none() {
+                        let mut selected = self.graph.selected_nodes_mut();
+                        if selected.len() == 1 {
+                            let node = &mut *selected[0];
+                            if widgets::snapshots::applicable(node.as_ref()) {
+                                egui::TopBottomPanel::bottom("snapshot_panel")
+                                    .resizable(true)
+                                    .default_height(220.0)
+                                    .height_range(110.0..=700.0)
+                                    .show_inside(ui, |ui| widgets::snapshots::show(ui, node.as_ref()));
+                            }
+                        }
+                    }
                     egui::ScrollArea::vertical()
                         .auto_shrink([false; 2])
                         .show(ui, |ui| {

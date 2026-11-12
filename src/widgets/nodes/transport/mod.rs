@@ -9,4 +9,5 @@ pub mod phase_scaler;
 pub mod sample_hold;
 pub mod smoothing;
 pub mod step_sequencer;
+pub mod time_to_phase;
 pub mod transition;

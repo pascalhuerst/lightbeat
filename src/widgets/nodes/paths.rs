@@ -60,6 +60,7 @@ fn explicit(label: &str) -> Option<&'static str> {
         "Clock Gen" => "clock/gen",
         "Clock Divider" => "clock/divider",
         "Phase Scaler" => "clock/phase-scaler",
+        "Time to Phase" => "clock/time-to-phase",
         "Phase Accumulator" => "clock/phase-accumulator",
         // Making and shaping signals.
         "LFO" => "signal/lfo",
@@ -87,7 +88,7 @@ fn explicit(label: &str) -> Option<&'static str> {
         "Scaler" => "math/scaler",
         "Bipolar" => "math/bipolar",
         "Scale Offset" => "math/scale",
-        "Lookup" => "math/lookup",
+        "Lookup Table" => "route/lookup-table",
         // Comparing: the symbols are not names.
         ">=" => "compare/gte",
         "<=" => "compare/lte",
