@@ -145,9 +145,17 @@ pub struct Player {
     current: Option<u64>,
     /// (param index, value when the recall began, value to reach)
     plan: Vec<(usize, SnapValue, SnapValue)>,
-    /// 0..1 along the fade of a timed recall; 1 means settled.
+    /// 0..1 along the fade; 1 means done (see `done`).
     progress: f32,
     settle: u32,
+    /// A recall that has run its course: the phase reached 1, or came back to 0
+    /// after leaving it. The settings are the user's again.
+    done: bool,
+    /// The phase has moved off 0 since the recall began.
+    left_zero: bool,
+    /// The snapshot that was active before this recall, which a fade that
+    /// returns to 0 falls back to.
+    previous: Option<u64>,
     /// What was last written, so a param is only set when it moves.
     last_pos: Option<f32>,
     pub fade_wired: bool,
@@ -165,8 +173,15 @@ impl Player {
         self.current
     }
 
+    /// A recall is under way: its transition has neither finished nor been
+    /// taken back.
     pub fn fading(&self) -> bool {
-        !self.plan.is_empty() && (self.progress < 1.0 || self.fade_wired && self.last_pos.is_some_and(|p| p < 1.0))
+        !self.plan.is_empty() && !self.done
+    }
+
+    /// How far along the transition is, 0..1.
+    pub fn progress(&self) -> f32 {
+        if self.plan.is_empty() { 1.0 } else { self.progress }
     }
 
     /// Take the UI's copy of the list. The UI's `active` wins: it only differs
@@ -220,6 +235,7 @@ impl Player {
         let Some(target) = self.set.get(id).cloned() else { return };
         let params = node.params();
         let skip = node.non_promotable_params();
+        self.previous = if self.current == Some(id) { self.previous } else { self.current };
         self.plan = target.values.iter()
             .filter_map(|(name, to)| {
                 let i = params.iter().position(|p| p.name() == name)?;
@@ -232,10 +248,13 @@ impl Player {
         self.current = Some(id);
         self.last_pos = None;
         self.progress = 0.0;
+        self.done = false;
+        self.left_zero = false;
         self.settle = if self.fade_wired { SETTLE_TICKS } else { 0 };
         if !self.fade_wired && self.set.fade_time <= 0.0 {
             self.write(node, 1.0);
             self.progress = 1.0;
+            self.done = true;
         }
     }
 
@@ -249,21 +268,47 @@ impl Player {
 
     /// Advance a recall by one engine tick.
     pub fn step(&mut self, node: &mut dyn ProcessNode) {
-        if self.plan.is_empty() {
+        if self.plan.is_empty() || self.done {
             return;
         }
         if self.fade_wired {
-            // The phase is the position: it can run on to 1 and back again, and
-            // when it stands still the settings are left to the user.
-            let pos = if self.settle > 0 { self.settle -= 1; 0.0 } else { self.fade_phase.clamp(0.0, 1.0) };
-            if self.last_pos != Some(pos) {
+            // The phase is the position, so it can go part of the way and
+            // back. Reaching 1 completes the transition; coming back to 0
+            // after leaving it undoes it. Either way it is over then, and a
+            // phase that moves on does not touch the settings again.
+            if self.settle > 0 {
+                self.settle -= 1;
+                if self.last_pos != Some(0.0) {
+                    self.write(node, 0.0);
+                }
+                return;
+            }
+            let pos = self.fade_phase.clamp(0.0, 1.0);
+            if pos > 0.0 {
+                self.left_zero = true;
+            }
+            if pos >= 1.0 {
+                self.write(node, 1.0);
+                self.finish();
+            } else if self.left_zero && pos <= 0.0 {
+                self.write(node, 0.0);
+                self.current = self.previous;
+                self.finish();
+            } else if self.last_pos != Some(pos) {
                 self.write(node, pos);
             }
             self.progress = pos;
         } else if self.progress < 1.0 {
             self.progress = (self.progress + DT / self.set.fade_time.max(DT)).min(1.0);
             self.write(node, self.progress);
+            if self.progress >= 1.0 {
+                self.finish();
+            }
         }
+    }
+
+    fn finish(&mut self) {
+        self.done = true;
     }
 }
 
@@ -336,9 +381,32 @@ mod tests {
         p.set_fade_phase(1.0);
         p.step(&mut n);
         assert_eq!(float(&n, "Scale"), 1.0);
+        assert!(!p.fading());
+        // Over: the phase going back does nothing.
+        p.set_fade_phase(0.0);
+        p.step(&mut n);
+        assert_eq!(float(&n, "Scale"), 1.0);
+    }
+
+    #[test]
+    fn a_phase_that_returns_to_zero_undoes_the_recall() {
+        let mut n = node();
+        let mut set = set_two(&mut n, 0.0);
+        set.active = Some(2);
+        let mut p = Player::default();
+        p.adopt(set);
+        p.fade_wired = true;
+        p.recall(0, &mut n);
+        for _ in 0..SETTLE_TICKS + 1 { p.step(&mut n); }
+        p.set_fade_phase(0.5);
+        p.step(&mut n);
+        assert!((float(&n, "Scale") - 2.0).abs() < 1e-4);
+        assert!(p.fading());
         p.set_fade_phase(0.0);
         p.step(&mut n);
         assert_eq!(float(&n, "Scale"), 3.0);
+        assert!(!p.fading());
+        assert_eq!(p.active(), Some(2));
     }
 
     #[test]

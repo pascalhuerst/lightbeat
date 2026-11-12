@@ -386,8 +386,6 @@ pub fn show_inspector(ui: &mut Ui, node: &mut dyn NodeWidget) {
 
     // Custom inspector content (e.g. scope waveform)
     node.show_inspector(ui);
-
-    super::snapshots::show(ui, &*node);
 }
 
 /// Find params that are common across all selected nodes (same name, same type).

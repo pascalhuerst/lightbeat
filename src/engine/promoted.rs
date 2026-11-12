@@ -201,9 +201,10 @@ impl PromotedInputs {
         }
     }
 
-    /// (active snapshot, whether a fade is running) for the UI mirror.
-    pub fn snapshot_state(&self) -> (Option<u64>, bool) {
-        (self.player.active(), self.player.fading())
+    /// (active snapshot, whether a transition is running, how far it is) for
+    /// the UI mirror.
+    pub fn snapshot_state(&self) -> (Option<u64>, bool, f32) {
+        (self.player.active(), self.player.fading(), self.player.progress())
     }
 
     /// Re-read ranges and indices, which can change with a node's mode.

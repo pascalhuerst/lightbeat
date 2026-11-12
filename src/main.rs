@@ -2531,6 +2531,21 @@ impl LightBeatApp {
             egui::SidePanel::right("inspector")
                 .default_width(250.0)
                 .show(ctx, |ui| {
+                    // The snapshot list lives at the bottom of the panel with a
+                    // handle to size it; the inspector keeps the rest.
+                    if self.graph.selected_frame_ids().next().is_none() {
+                        let mut selected = self.graph.selected_nodes_mut();
+                        if selected.len() == 1 {
+                            let node = &mut *selected[0];
+                            if widgets::snapshots::applicable(node.as_ref()) {
+                                egui::TopBottomPanel::bottom("snapshot_panel")
+                                    .resizable(true)
+                                    .default_height(220.0)
+                                    .height_range(110.0..=700.0)
+                                    .show_inside(ui, |ui| widgets::snapshots::show(ui, node.as_ref()));
+                            }
+                        }
+                    }
                     egui::ScrollArea::vertical()
                         .auto_shrink([false; 2])
                         .show(ui, |ui| {

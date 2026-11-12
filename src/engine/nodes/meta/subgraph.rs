@@ -312,10 +312,11 @@ impl InnerGraph {
         }
         for (i, node) in self.nodes.iter().enumerate() {
             self.promoted[i].refresh(node.as_ref());
-            let (active, fading) = self.promoted[i].snapshot_state();
+            let (active, fading, progress) = self.promoted[i].snapshot_state();
             let mut shared = self.shared_states[i].lock().unwrap();
             shared.snapshot_active = active;
             shared.snapshot_fading = fading;
+            shared.snapshot_progress = progress;
         }
     }
 }

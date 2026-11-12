@@ -287,6 +287,7 @@ pub struct NodeSharedState {
     /// Written by the engine: the snapshot in effect, and whether a fade runs.
     pub snapshot_active: Option<u64>,
     pub snapshot_fading: bool,
+    pub snapshot_progress: f32,
     /// Param names the node refuses to have promoted (written by the engine).
     pub non_promotable: &'static [&'static str],
     /// Show only the ports that have a wire (plus the variadic "+" ports).
@@ -319,6 +320,7 @@ impl NodeSharedState {
             pending_recall: None,
             snapshot_active: None,
             snapshot_fading: false,
+            snapshot_progress: 1.0,
             non_promotable: &[],
             hide_unused_ports: false,
             hidden_inputs: Vec::new(),
