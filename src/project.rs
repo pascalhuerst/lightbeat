@@ -15,7 +15,7 @@ use crate::widgets::nodes::io::push1::Push1Widget;
 use crate::widgets::nodes::io::launchpad::LaunchpadWidget;
 use crate::widgets::nodes::io::x1::X1Widget;
 use crate::widgets::nodes::meta::portal::{
-    InputPortalRxWidget, InputPortalTxWidget, OutputPortalRxWidget, OutputPortalTxWidget,
+    PortalReceiveWidget, PortalSendWidget,
 };
 use crate::widgets::nodes::meta::subgraph::SubgraphWidget;
 use crate::widgets::nodes::output::effect::EffectWidget;
@@ -352,14 +352,7 @@ pub fn load_graph(graph: &mut NodeGraph, project: &ProjectFile) -> Vec<usize> {
 
     for saved in &project.nodes {
         let id = NodeId(saved.id);
-        // Legacy project files saved the portal node types under their
-        // pre-rename names. Remap so `create_from_registry` still finds a
-        // factory. The rest of this function continues using `type_name`
-        // instead of `saved.type_name` so downstream string matches pick up
-        // the new names too.
         let type_name: &str = match saved.type_name.as_str() {
-            "Portal In" => "Output Portal TX",
-            "Portal Out" => "Output Portal RX",
             // ADSR was renamed to "Envelope" when the node gained
             // multiple envelope kinds. Old projects still save under
             // the former type_name.
@@ -521,34 +514,17 @@ pub fn load_graph(graph: &mut NodeGraph, project: &ProjectFile) -> Vec<usize> {
             // Portal widgets need their port defs restored before
             // `cleanup_stale_connections` runs, otherwise wires targeting
             // the portal's input/output ports get dropped on the first frame.
-            // Each branch matches both the current type name and the
-            // pre-rename legacy name ("Portal In"/"Portal Out") so older
-            // project files keep loading.
-            if matches!(type_name, "Output Portal TX" | "Portal In")
+            if type_name == "Portal Send"
                 && let Some(data) = &saved.data {
                     let n = graph.node_mut(idx);
-                    if let Some(w) = n.as_any_mut().downcast_mut::<OutputPortalTxWidget>() {
+                    if let Some(w) = n.as_any_mut().downcast_mut::<PortalSendWidget>() {
                         w.restore_from_save_data(data);
                     }
                 }
-            if matches!(type_name, "Output Portal RX" | "Portal Out")
+            if type_name == "Portal Receive"
                 && let Some(data) = &saved.data {
                     let n = graph.node_mut(idx);
-                    if let Some(w) = n.as_any_mut().downcast_mut::<OutputPortalRxWidget>() {
-                        w.restore_from_save_data(data);
-                    }
-                }
-            if type_name == "Input Portal RX"
-                && let Some(data) = &saved.data {
-                    let n = graph.node_mut(idx);
-                    if let Some(w) = n.as_any_mut().downcast_mut::<InputPortalRxWidget>() {
-                        w.restore_from_save_data(data);
-                    }
-                }
-            if type_name == "Input Portal TX"
-                && let Some(data) = &saved.data {
-                    let n = graph.node_mut(idx);
-                    if let Some(w) = n.as_any_mut().downcast_mut::<InputPortalTxWidget>() {
+                    if let Some(w) = n.as_any_mut().downcast_mut::<PortalReceiveWidget>() {
                         w.restore_from_save_data(data);
                     }
                 }

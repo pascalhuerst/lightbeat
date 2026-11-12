@@ -279,10 +279,14 @@ src/
   you Ctrl+drag overrides on a wire without first setting up fixtures/objects.
 
 ### Portals (`engine/nodes/meta/portal.rs`)
-- Wireless connections, matched by name. Two independent families:
-  **Output Portal** (one TX with inputs, many RX with outputs: broadcast) and
-  **Input Portal** (one RX with outputs near consumers, one TX with inputs
-  far away). Registries are separate, so a name can be reused across families.
+- Wireless connections matched by name, two nodes: **Portal Send** (inputs; one
+  per name; the ports are defined on it) and **Portal Receive** (the same ports
+  as outputs; any number per name). Adding either from a menu, quick add or the
+  panel asks for the name first (`PortalPrompt` in `graph.rs`): a Send needs an
+  unused name, a Receive picks an existing Send, because a portal without a
+  name does nothing. A second Send with a taken name is refused by the registry
+  (`PortalEntry::owner`) and flagged on the node. Duplicating a Send numbers
+  its name; a Receive keeps its binding.
 
 ### Macros (`macros/`)
 - A `.lbm` file is a subgraph's inner `ProjectFile` plus metadata, stored in
