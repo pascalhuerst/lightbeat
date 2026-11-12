@@ -106,8 +106,6 @@ pub fn mix_color(a: Color32, b: Color32, t: f32) -> Color32 {
 pub const SEM_PRIMARY_FILL: Color32 = Color32::from_rgba_premultiplied(100, 160, 255, 30);
 /// Wash drawn on top of overridden controls.
 pub const SEM_WARNING_FILL: Color32 = Color32::from_rgba_premultiplied(220, 150, 40, 130);
-/// Halo behind portal-peer nodes — premultiplied form of `SEM_WARNING` at α40.
-pub const SEM_WARNING_HALO: Color32 = Color32::from_rgba_premultiplied(35, 24, 6, 40);
 /// White halo behind selected wires — premultiplied form of white at α180.
 pub const WIRE_HALO: Color32 = Color32::from_rgba_premultiplied(180, 180, 180, 180);
 /// Wash drawn on top of disabled nodes to flatten them.

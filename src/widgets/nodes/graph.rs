@@ -5,7 +5,7 @@ use super::types::*;
 use crate::engine::nodes::meta::subgraph::{SubgraphPortDef, port_type_to_idx, BRIDGE_IN_NODE_ID, BRIDGE_OUT_NODE_ID};
 use crate::engine::types::{Connection, NodeId, ParamDef, ParamValue, PortDir, PortId, PortType, SubgraphInnerCmd};
 use crate::widgets::nodes::meta::portal::{
-    InputPortalRxWidget, InputPortalTxWidget, OutputPortalRxWidget, OutputPortalTxWidget,
+    PortalReceiveWidget, PortalSendWidget,
 };
 use crate::widgets::nodes::meta::subgraph::{SubgraphWidget, GraphInputWidget, GraphOutputWidget};
 
@@ -52,6 +52,17 @@ struct PortMenu {
     name: String,
     port_type: PortType,
     pos: Pos2,
+}
+
+/// Asking for the name of a portal being added: a portal that has none does
+/// nothing, so it is not created until it has one.
+struct PortalPrompt {
+    registry_idx: usize,
+    pos: Pos2,
+    /// Receive picks an existing Send; Send types a new, unused name.
+    receive: bool,
+    name: String,
+    focused: bool,
 }
 
 struct QuickAdd {
@@ -286,6 +297,8 @@ pub struct NodeGraph {
     port_menu: Option<PortMenu>,
     /// Type-to-add search opened by right-clicking empty canvas.
     quick_add: Option<QuickAdd>,
+    /// A portal waiting for its name before it is put on the canvas.
+    portal_prompt: Option<PortalPrompt>,
     /// Pending macro action emitted by the right-click menu, consumed by the
     /// app each frame.
     pending_macro_request: Option<MacroRequest>,
@@ -370,6 +383,7 @@ impl NodeGraph {
             context_menu_pos: None,
             port_menu: None,
             quick_add: None,
+            portal_prompt: None,
             pending_macro_request: None,
             selected_nodes: Vec::new(),
             selected_frames: std::collections::HashSet::new(),
@@ -692,9 +706,86 @@ impl NodeGraph {
     /// Silently no-ops if the index is out of bounds.
     pub fn spawn_from_registry(&mut self, registry_idx: usize, canvas_pos: Pos2) -> Option<usize> {
         if registry_idx >= self.registry.len() { return None; }
+        let label = self.registry[registry_idx].label.as_str();
+        if matches!(label, "Portal Send" | "Portal Receive") {
+            self.portal_prompt = Some(PortalPrompt {
+                registry_idx,
+                pos: canvas_pos,
+                receive: label == "Portal Receive",
+                name: String::new(),
+                focused: false,
+            });
+            return None;
+        }
         let id = self.alloc_id();
         let node = (self.registry[registry_idx].factory)(id);
         Some(self.add_node(node, canvas_pos))
+    }
+
+    /// Names of the Portal Sends anywhere in the graph.
+    fn portal_send_names(&self) -> Vec<String> {
+        let mut names: Vec<String> = self.levels.iter()
+            .flat_map(|l| l.nodes.iter())
+            .filter(|n| n.type_name() == "Portal Send" && !n.title().is_empty())
+            .map(|n| n.title().to_string())
+            .collect();
+        names.sort();
+        names.dedup();
+        names
+    }
+
+    fn show_portal_prompt(&mut self, ctx: &egui::Context) {
+        let Some(mut prompt) = self.portal_prompt.take() else { return };
+        let taken = self.portal_send_names();
+        let mut create: Option<String> = None;
+        let mut cancel = ctx.input(|i| i.key_pressed(egui::Key::Escape));
+        egui::Window::new(if prompt.receive { "Portal Receive" } else { "Portal Send" })
+            .collapsible(false)
+            .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+            .show(ctx, |ui| {
+                if prompt.receive {
+                    if taken.is_empty() {
+                        ui.label("There is no Portal Send yet. Add one first and give it a name.");
+                    } else {
+                        ui.label("Receive from which Portal Send?");
+                        for name in &taken {
+                            if ui.button(name).clicked() {
+                                create = Some(name.clone());
+                            }
+                        }
+                    }
+                } else {
+                    ui.label("Name of the portal (a Portal Receive finds it by this name):");
+                    let r = ui.text_edit_singleline(&mut prompt.name);
+                    if !prompt.focused {
+                        r.request_focus();
+                        prompt.focused = true;
+                    }
+                    let name = prompt.name.trim().to_string();
+                    let duplicate = taken.contains(&name);
+                    if duplicate {
+                        ui.colored_label(theme::SEM_DANGER, "A Portal Send with this name exists.");
+                    }
+                    let ok = !name.is_empty() && !duplicate;
+                    let enter = r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+                    if ui.add_enabled(ok, egui::Button::new("Add")).clicked() || (enter && ok) {
+                        create = Some(name);
+                    }
+                }
+                if ui.button("Cancel").clicked() {
+                    cancel = true;
+                }
+            });
+        if let Some(name) = create {
+            let id = self.alloc_id();
+            let mut node = (self.registry[prompt.registry_idx].factory)(id);
+            node.set_name(&name);
+            let idx = self.add_node(node, prompt.pos);
+            self.selected_nodes = vec![idx];
+        } else if !cancel {
+            self.portal_prompt = Some(prompt);
+        }
     }
 
     pub fn alloc_id(&mut self) -> NodeId {
@@ -1890,10 +1981,11 @@ impl NodeGraph {
         let mut any_peer_pulsing = false;
         for i in 0..level.nodes.len() {
             let selected = self.selected_nodes.contains(&i);
-            let portal_peer = !selected
-                && level.nodes[i].link_key()
-                    .map(|k| highlighted_link_keys.contains(&k))
-                    .unwrap_or(false);
+            // Every member of the group pulses, the selected one too: seeing
+            // all of them at once is the point.
+            let portal_peer = level.nodes[i].link_key()
+                .map(|k| highlighted_link_keys.contains(&k))
+                .unwrap_or(false);
             if portal_peer { any_peer_pulsing = true; }
             let inputs = level.nodes[i].ui_inputs_full();
             let outputs = level.nodes[i].ui_outputs();
@@ -2135,6 +2227,7 @@ impl NodeGraph {
         self.show_context_menu(ui, canvas_rect, just_opened);
         self.show_port_menu(ui, just_opened);
         self.show_quick_add(ui, just_opened);
+        self.show_portal_prompt(ui.ctx());
     }
 
     fn show_quick_add(&mut self, ui: &mut Ui, just_opened: bool) {
@@ -2495,21 +2588,16 @@ impl NodeGraph {
                 // Dispatch the source node's save_data to the duplicate's
                 // process node so per-instance settings (fader-group rows/cols
                 // and enable flags, controller bindings, layer stacks, etc.)
-                // survive copy-paste. Widgets with dynamic ports (the four
+                // survive copy-paste. Widgets with dynamic ports (the two
                 // portal kinds) also need their port layout restored on the
                 // widget side BEFORE `cleanup_stale_connections` runs on
                 // the next frame — otherwise any internal wire we just
                 // duplicated into those ports would be culled.
                 if let Some(mut data) = cn.data.clone() {
-                    // Portal "defining" widgets (Output Portal TX, Input
-                    // Portal RX) publish under a unique name. Dropping a
-                    // duplicate with the same name would collide with the
-                    // original's binding — so bump the trailing number on
-                    // the copy. Receiver widgets (OutputPortalRx /
-                    // InputPortalTx) store `bound_name` instead and must
-                    // keep it so the duplicate stays wired to the same
-                    // defining end.
-                    if matches!(cn.type_name.as_str(), "Output Portal TX" | "Input Portal RX")
+                    // A Portal Send publishes under a unique name, so the copy
+                    // gets the next number. A Portal Receive keeps its
+                    // `bound_name` so the copy stays bound to the same Send.
+                    if cn.type_name == "Portal Send"
                         && let Some(name) = data.get("name").and_then(|v| v.as_str()) {
                             let next = Self::next_name_suffix(name);
                             data["name"] = serde_json::Value::String(next);
@@ -2524,13 +2612,9 @@ impl NodeGraph {
                     // load dispatch.
                     {
                         let n = self.active_mut().nodes[idx].as_mut();
-                        if let Some(w) = n.as_any_mut().downcast_mut::<OutputPortalTxWidget>() {
+                        if let Some(w) = n.as_any_mut().downcast_mut::<PortalSendWidget>() {
                             w.restore_from_save_data(&data);
-                        } else if let Some(w) = n.as_any_mut().downcast_mut::<OutputPortalRxWidget>() {
-                            w.restore_from_save_data(&data);
-                        } else if let Some(w) = n.as_any_mut().downcast_mut::<InputPortalRxWidget>() {
-                            w.restore_from_save_data(&data);
-                        } else if let Some(w) = n.as_any_mut().downcast_mut::<InputPortalTxWidget>() {
+                        } else if let Some(w) = n.as_any_mut().downcast_mut::<PortalReceiveWidget>() {
                             w.restore_from_save_data(&data);
                         } else if let Some(w) = n.as_any_mut().downcast_mut::<SubgraphWidget>() {
                             w.restore_from_save_data(&data);
@@ -3896,19 +3980,11 @@ impl NodeGraph {
             if let Some(ref data) = save_data {
                 let n: &mut dyn NodeWidget = node.as_mut();
                 if let Some(w) = n.as_any_mut()
-                    .downcast_mut::<OutputPortalTxWidget>()
+                    .downcast_mut::<PortalSendWidget>()
                 {
                     w.restore_from_save_data(data);
                 } else if let Some(w) = n.as_any_mut()
-                    .downcast_mut::<OutputPortalRxWidget>()
-                {
-                    w.restore_from_save_data(data);
-                } else if let Some(w) = n.as_any_mut()
-                    .downcast_mut::<InputPortalRxWidget>()
-                {
-                    w.restore_from_save_data(data);
-                } else if let Some(w) = n.as_any_mut()
-                    .downcast_mut::<InputPortalTxWidget>()
+                    .downcast_mut::<PortalReceiveWidget>()
                 {
                     w.restore_from_save_data(data);
                 }
@@ -4252,19 +4328,21 @@ fn draw_node_chrome(
         painter.rect_filled(shadow_rect, NODE_CORNER_RADIUS, Color32::from_black_alpha(60));
     }
 
-    // Portal-peer halo: when a portal is the peer of a currently-selected
-    // portal, paint an amber halo so the linked pair is easy to find.
-    // Pulses slowly so a user glancing at a busy graph can still catch it.
+    // Link halo: every node in the same linked group as a selected node (a
+    // portal's peers, an effect stack's effects) pulses amber.
     // Suppressed when disabled so "off" reads as pure grayscale.
     if !disabled && portal_peer {
-        // 0.5 Hz breathing envelope (one full cycle every 2 s), amplitude
-        // 0.4 around a base level of 0.6 — so alpha rides 0.2..1.0 of the
-        // halo's normal strength.
-        let phase = (time * std::f64::consts::TAU * 0.5).sin() as f32;
-        let env = 0.6 + 0.4 * phase;
-        let halo_color = theme::SEM_WARNING_HALO.linear_multiply(env.clamp(0.1, 1.0));
-        let halo = rect.expand(3.0);
-        painter.rect_filled(halo, NODE_CORNER_RADIUS + 3.0, halo_color);
+        // 1 Hz pulse from 0 to 1, strong enough to find a node in a busy
+        // graph: a glow that swells and a ring around it.
+        let env = 0.5 + 0.5 * (time * std::f64::consts::TAU).sin() as f32;
+        let halo = rect.expand(4.0 + 6.0 * env);
+        painter.rect_filled(halo, NODE_CORNER_RADIUS + 6.0, theme::SEM_WARNING.linear_multiply(0.10 + 0.25 * env));
+        painter.rect_stroke(
+            halo,
+            NODE_CORNER_RADIUS + 6.0,
+            Stroke::new(2.0_f32, theme::SEM_WARNING.linear_multiply(0.35 + 0.65 * env)),
+            egui::StrokeKind::Outside,
+        );
     }
 
     // Body — darker flat gray when disabled so the overlay later looks

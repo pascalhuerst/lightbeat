@@ -111,10 +111,8 @@ fn explicit(label: &str) -> Option<&'static str> {
         "Multiplexer" => "route/multiplexer",
         "Demultiplexer" => "route/demultiplexer",
         "Subgraph" => "route/subgraph",
-        "Output Portal TX" => "portal/output-tx",
-        "Output Portal RX" => "portal/output-rx",
-        "Input Portal RX" => "portal/input-rx",
-        "Input Portal TX" => "portal/input-tx",
+        "Portal Send" => "portal/send",
+        "Portal Receive" => "portal/receive",
         // Lights.
         "Effect Stack" => "effect/stack",
         _ => return None,

@@ -295,11 +295,8 @@ struct LightBeatApp {
     audio_inputs: AudioInputManager,
     /// DMX from other lighting desks (Art-Net).
     dmx_inputs: dmx_input::DmxInputHub,
-    /// Portal registries — one per family so names can overlap.
-    /// `output_portals`: Output Portal TX publishes, RXs read.
-    /// `input_portals`: Input Portal RX publishes port layout, TX writes values.
-    output_portals: engine::nodes::meta::portal::SharedPortalRegistry,
-    input_portals: engine::nodes::meta::portal::SharedPortalRegistry,
+    /// Portal Sends publish here by name; Portal Receives read.
+    portals: engine::nodes::meta::portal::SharedPortalRegistry,
     library: LibraryManager,
     show_library: bool,
     library_search: String,
@@ -427,10 +424,7 @@ impl LightBeatApp {
             midi_learned: widgets::nodes::io::midi_common::new_shared_learned(),
             audio_inputs: AudioInputManager::new(),
             dmx_inputs: dmx_input::DmxInputHub::start(),
-            output_portals: std::sync::Arc::new(std::sync::Mutex::new(
-                engine::nodes::meta::portal::PortalRegistry::default(),
-            )),
-            input_portals: std::sync::Arc::new(std::sync::Mutex::new(
+            portals: std::sync::Arc::new(std::sync::Mutex::new(
                 engine::nodes::meta::portal::PortalRegistry::default(),
             )),
             library: LibraryManager::new(macros::default_library_root()),
@@ -820,26 +814,15 @@ impl LightBeatApp {
             // Start with generous shared state; will resize as ports are added.
             Box::new(SubgraphWidget::new(id, new_shared_state(12, 12)))
         });
-        self.graph.register_node("Meta", "Output Portal TX", |id| {
-            Box::new(widgets::nodes::meta::portal::OutputPortalTxWidget::new(
+        self.graph.register_node("Meta", "Portal Send", |id| {
+            Box::new(widgets::nodes::meta::portal::PortalSendWidget::new(
                 id, new_shared_state(64, 0),
             ))
         });
-        let out_portals_for_rx = self.output_portals.clone();
-        self.graph.register_node("Meta", "Output Portal RX", move |id| {
-            Box::new(widgets::nodes::meta::portal::OutputPortalRxWidget::new(
-                id, new_shared_state(0, 64), out_portals_for_rx.clone(),
-            ))
-        });
-        self.graph.register_node("Meta", "Input Portal RX", |id| {
-            Box::new(widgets::nodes::meta::portal::InputPortalRxWidget::new(
-                id, new_shared_state(0, 64),
-            ))
-        });
-        let in_portals_for_tx = self.input_portals.clone();
-        self.graph.register_node("Meta", "Input Portal TX", move |id| {
-            Box::new(widgets::nodes::meta::portal::InputPortalTxWidget::new(
-                id, new_shared_state(64, 0), in_portals_for_tx.clone(),
+        let portals_for_receive = self.portals.clone();
+        self.graph.register_node("Meta", "Portal Receive", move |id| {
+            Box::new(widgets::nodes::meta::portal::PortalReceiveWidget::new(
+                id, new_shared_state(0, 64), portals_for_receive.clone(),
             ))
         });
 
@@ -1048,25 +1031,11 @@ impl LightBeatApp {
                 "Sin" => Some(Box::new(OscillatorProcessNode::new(id, OscFunc::Sin))),
                 "Cos" => Some(Box::new(OscillatorProcessNode::new(id, OscFunc::Cos))),
                 "Subgraph" => Some(Box::new(SubgraphProcessNode::new(id))),
-                "Output Portal TX" => Some(Box::new(
-                    engine::nodes::meta::portal::OutputPortalTxProcessNode::new(
-                        id, self.output_portals.clone(),
-                    ),
+                "Portal Send" => Some(Box::new(
+                    engine::nodes::meta::portal::PortalSendProcessNode::new(id, self.portals.clone()),
                 )),
-                "Output Portal RX" => Some(Box::new(
-                    engine::nodes::meta::portal::OutputPortalRxProcessNode::new(
-                        id, self.output_portals.clone(),
-                    ),
-                )),
-                "Input Portal RX" => Some(Box::new(
-                    engine::nodes::meta::portal::InputPortalRxProcessNode::new(
-                        id, self.input_portals.clone(),
-                    ),
-                )),
-                "Input Portal TX" => Some(Box::new(
-                    engine::nodes::meta::portal::InputPortalTxProcessNode::new(
-                        id, self.input_portals.clone(),
-                    ),
+                "Portal Receive" => Some(Box::new(
+                    engine::nodes::meta::portal::PortalReceiveProcessNode::new(id, self.portals.clone()),
                 )),
                 "Effect Stack" => Some(Box::new(EffectStackProcessNode::new(id, self.effect_hub.clone(), self.object_store.clone()))),
                 "Fill" => Some(Box::new(EffectNode::new(id, Fill::default(), self.effect_hub.clone()))),

@@ -1,21 +1,9 @@
-//! Portals — "wireless cables" between node pairs.
+//! Portals: wireless cables between nodes, matched by name.
 //!
-//! Two families, matching the two signal-flow directions:
-//!
-//! - **Output Portal** beams an *output* signal to many consumers. One TX
-//!   (singleton, defines layout, has INPUT ports) publishes; many RX
-//!   widgets bound to the same name mirror those ports as OUTPUTS and
-//!   hand them to downstream nodes. Use it for "broadcast this signal to
-//!   scattered places in the graph".
-//!
-//! - **Input Portal** makes a local output-hub that's fed from somewhere
-//!   far away. One RX (singleton, defines layout, has OUTPUT ports) is
-//!   placed near the consumers; exactly one TX (singleton, has INPUT
-//!   ports) elsewhere accepts the upstream signal and pipes it into the
-//!   RX. Use it for "consumers here, source lives elsewhere".
-//!
-//! The two families use independent registries so a name can be reused
-//! across them without collision.
+//! A **Portal Send** has input ports and a name; wire signals into it. Any
+//! number of **Portal Receive** nodes bound to that name show the same ports as
+//! outputs, wherever in the graph they are placed. One Send per name; its ports
+//! (names and types) are defined on the Send.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -27,6 +15,9 @@ use crate::engine::types::*;
 /// (one float per internal channel — multi-channel port types fan out).
 #[derive(Debug, Clone)]
 pub struct PortalEntry {
+    /// The Send that publishes this name; a second Send with the same name
+    /// must not take it over.
+    pub owner: NodeId,
     pub ports: Vec<PortDef>,
     pub values: Vec<f32>,
 }
@@ -58,7 +49,7 @@ impl PortalPortDef {
 }
 
 /// Snapshot of the current portal names in a registry — used by the
-/// binding-side picker (Output Portal RX and Input Portal TX).
+/// binding-side picker of Portal Receive.
 pub fn available_portal_names(registry: &SharedPortalRegistry) -> Vec<String> {
     let reg = match registry.lock() {
         Ok(r) => r,
@@ -70,24 +61,26 @@ pub fn available_portal_names(registry: &SharedPortalRegistry) -> Vec<String> {
 }
 
 // ---------------------------------------------------------------------------
-// Output Portal TX — has INPUT ports, publishes layout + values.
-// Was "Portal In" pre-rename.
+// Portal Send: has INPUT ports, publishes layout + values.
 // ---------------------------------------------------------------------------
 
-pub struct OutputPortalTxDisplay {
+pub struct PortalSendDisplay {
     pub name: String,
     pub port_defs: Vec<PortDef>,
+    /// Another Send already publishes this name.
+    pub conflict: bool,
 }
 
-pub struct OutputPortalTxProcessNode {
+pub struct PortalSendProcessNode {
     id: NodeId,
     name: String,
     ports: Vec<PortDef>,
     values: Vec<f32>,
     registry: SharedPortalRegistry,
+    conflict: bool,
 }
 
-impl OutputPortalTxProcessNode {
+impl PortalSendProcessNode {
     pub fn new(id: NodeId, registry: SharedPortalRegistry) -> Self {
         Self {
             id,
@@ -95,22 +88,30 @@ impl OutputPortalTxProcessNode {
             ports: Vec::new(),
             values: Vec::new(),
             registry,
+            conflict: false,
+        }
+    }
+
+    /// Take our name out of the registry, unless it is another Send's.
+    fn release(&self) {
+        if !self.name.is_empty()
+            && let Ok(mut reg) = self.registry.lock()
+            && reg.entries.get(&self.name).is_some_and(|e| e.owner == self.id)
+        {
+            reg.entries.remove(&self.name);
         }
     }
 }
 
-impl Drop for OutputPortalTxProcessNode {
+impl Drop for PortalSendProcessNode {
     fn drop(&mut self) {
-        if !self.name.is_empty()
-            && let Ok(mut reg) = self.registry.lock() {
-                reg.entries.remove(&self.name);
-            }
+        self.release();
     }
 }
 
-impl ProcessNode for OutputPortalTxProcessNode {
+impl ProcessNode for PortalSendProcessNode {
     fn node_id(&self) -> NodeId { self.id }
-    fn type_name(&self) -> &'static str { "Output Portal TX" }
+    fn type_name(&self) -> &'static str { "Portal Send" }
     fn inputs(&self) -> &[PortDef] { &self.ports }
     fn outputs(&self) -> &[PortDef] { &[] }
 
@@ -126,9 +127,14 @@ impl ProcessNode for OutputPortalTxProcessNode {
     fn process(&mut self) {
         if self.name.is_empty() { return; }
         if let Ok(mut reg) = self.registry.lock() {
+            if reg.entries.get(&self.name).is_some_and(|e| e.owner != self.id) {
+                self.conflict = true;
+                return;
+            }
+            self.conflict = false;
             reg.entries.insert(
                 self.name.clone(),
-                PortalEntry { ports: self.ports.clone(), values: self.values.clone() },
+                PortalEntry { owner: self.id, ports: self.ports.clone(), values: self.values.clone() },
             );
         }
     }
@@ -139,11 +145,7 @@ impl ProcessNode for OutputPortalTxProcessNode {
     }
 
     fn load_data(&mut self, data: &serde_json::Value) {
-        let old_name = self.name.clone();
-        if !old_name.is_empty()
-            && let Ok(mut reg) = self.registry.lock() {
-                reg.entries.remove(&old_name);
-            }
+        self.release();
         if let Some(n) = data.get("name").and_then(|v| v.as_str()) {
             self.name = n.to_string();
         }
@@ -157,25 +159,25 @@ impl ProcessNode for OutputPortalTxProcessNode {
     }
 
     fn update_display(&self, shared: &mut NodeSharedState) {
-        shared.display = Some(Box::new(OutputPortalTxDisplay {
+        shared.display = Some(Box::new(PortalSendDisplay {
             name: self.name.clone(),
             port_defs: self.ports.clone(),
+            conflict: self.conflict,
         }));
     }
 }
 
 // ---------------------------------------------------------------------------
-// Output Portal RX — has OUTPUT ports, mirrors a TX's layout + values.
-// Was "Portal Out" pre-rename.
+// Portal Receive: has OUTPUT ports, mirrors a Send's layout + values.
 // ---------------------------------------------------------------------------
 
-pub struct OutputPortalRxDisplay {
+pub struct PortalReceiveDisplay {
     pub bound_name: String,
     pub port_defs: Vec<PortDef>,
     pub connected: bool,
 }
 
-pub struct OutputPortalRxProcessNode {
+pub struct PortalReceiveProcessNode {
     id: NodeId,
     bound_name: String,
     ports: Vec<PortDef>,
@@ -184,7 +186,7 @@ pub struct OutputPortalRxProcessNode {
     connected: bool,
 }
 
-impl OutputPortalRxProcessNode {
+impl PortalReceiveProcessNode {
     pub fn new(id: NodeId, registry: SharedPortalRegistry) -> Self {
         Self {
             id,
@@ -197,9 +199,9 @@ impl OutputPortalRxProcessNode {
     }
 }
 
-impl ProcessNode for OutputPortalRxProcessNode {
+impl ProcessNode for PortalReceiveProcessNode {
     fn node_id(&self) -> NodeId { self.id }
-    fn type_name(&self) -> &'static str { "Output Portal RX" }
+    fn type_name(&self) -> &'static str { "Portal Receive" }
     fn inputs(&self) -> &[PortDef] { &[] }
     fn outputs(&self) -> &[PortDef] { &self.ports }
 
@@ -250,7 +252,7 @@ impl ProcessNode for OutputPortalRxProcessNode {
     }
 
     fn update_display(&self, shared: &mut NodeSharedState) {
-        shared.display = Some(Box::new(OutputPortalRxDisplay {
+        shared.display = Some(Box::new(PortalReceiveDisplay {
             bound_name: self.bound_name.clone(),
             port_defs: self.ports.clone(),
             connected: self.connected,
@@ -258,213 +260,40 @@ impl ProcessNode for OutputPortalRxProcessNode {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Input Portal RX — has OUTPUT ports, defines layout. Reads values from
-// the paired TX via the input-portal registry.
-// ---------------------------------------------------------------------------
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-pub struct InputPortalRxDisplay {
-    pub name: String,
-    pub port_defs: Vec<PortDef>,
-}
-
-pub struct InputPortalRxProcessNode {
-    id: NodeId,
-    name: String,
-    ports: Vec<PortDef>,
-    values: Vec<f32>,
-    registry: SharedPortalRegistry,
-}
-
-impl InputPortalRxProcessNode {
-    pub fn new(id: NodeId, registry: SharedPortalRegistry) -> Self {
-        Self {
-            id,
-            name: String::new(),
-            ports: Vec::new(),
-            values: Vec::new(),
-            registry,
-        }
-    }
-}
-
-impl Drop for InputPortalRxProcessNode {
-    fn drop(&mut self) {
-        if !self.name.is_empty()
-            && let Ok(mut reg) = self.registry.lock() {
-                reg.entries.remove(&self.name);
-            }
-    }
-}
-
-impl ProcessNode for InputPortalRxProcessNode {
-    fn node_id(&self) -> NodeId { self.id }
-    fn type_name(&self) -> &'static str { "Input Portal RX" }
-    fn inputs(&self) -> &[PortDef] { &[] }
-    fn outputs(&self) -> &[PortDef] { &self.ports }
-
-    fn process(&mut self) {
-        if self.name.is_empty() { return; }
-        if let Ok(mut reg) = self.registry.lock() {
-            // Publish own port layout so the TX widget can mirror it.
-            // Preserve (and subsequently read) whatever values the TX
-            // already wrote this tick — otherwise we'd flush them.
-            let entry = reg.entries.entry(self.name.clone()).or_insert_with(|| PortalEntry {
-                ports: self.ports.clone(),
-                values: vec![0.0; total_channels(&self.ports)],
-            });
-            entry.ports = self.ports.clone();
-            // Resize values buffer to match our port layout; zero-fill any
-            // new slots.
-            let needed = total_channels(&self.ports);
-            if entry.values.len() != needed {
-                entry.values.resize(needed, 0.0);
-            }
-            self.values = entry.values.clone();
-        }
+    fn send(id: u64, reg: &SharedPortalRegistry, name: &str) -> PortalSendProcessNode {
+        let mut n = PortalSendProcessNode::new(NodeId(id), reg.clone());
+        n.load_data(&serde_json::json!({"name": name, "ports": [{"name": "a", "port_type_idx": 2}]}));
+        n
     }
 
-    fn read_output(&self, port_index: usize) -> f32 {
-        self.values.get(port_index).copied().unwrap_or(0.0)
+    #[test]
+    fn a_receive_sees_what_the_send_gets() {
+        let reg: SharedPortalRegistry = Default::default();
+        let mut tx = send(1, &reg, "bus");
+        let mut rx = PortalReceiveProcessNode::new(NodeId(2), reg.clone());
+        rx.load_data(&serde_json::json!({"bound_name": "bus"}));
+        tx.write_input(0, 0.75);
+        tx.process();
+        rx.process();
+        assert_eq!(rx.read_output(0), 0.75);
     }
 
-    fn save_data(&self) -> Option<serde_json::Value> {
-        let ports: Vec<PortalPortDef> = self.ports.iter().map(PortalPortDef::from_port_def).collect();
-        Some(serde_json::json!({ "name": self.name, "ports": ports }))
-    }
-
-    fn load_data(&mut self, data: &serde_json::Value) {
-        let old_name = self.name.clone();
-        if !old_name.is_empty()
-            && let Ok(mut reg) = self.registry.lock() {
-                reg.entries.remove(&old_name);
-            }
-        if let Some(n) = data.get("name").and_then(|v| v.as_str()) {
-            self.name = n.to_string();
-        }
-        if let Some(arr) = data.get("ports").and_then(|v| v.as_array()) {
-            self.ports = arr.iter()
-                .filter_map(|v| serde_json::from_value::<PortalPortDef>(v.clone()).ok())
-                .map(|p| p.to_port_def())
-                .collect();
-            self.values = vec![0.0; total_channels(&self.ports)];
-        }
-    }
-
-    fn update_display(&self, shared: &mut NodeSharedState) {
-        shared.display = Some(Box::new(InputPortalRxDisplay {
-            name: self.name.clone(),
-            port_defs: self.ports.clone(),
-        }));
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Input Portal TX — has INPUT ports, mirrors the paired RX's layout and
-// forwards its current input values to the input-portal registry.
-// ---------------------------------------------------------------------------
-
-pub struct InputPortalTxDisplay {
-    pub bound_name: String,
-    pub port_defs: Vec<PortDef>,
-    pub connected: bool,
-}
-
-pub struct InputPortalTxProcessNode {
-    id: NodeId,
-    bound_name: String,
-    ports: Vec<PortDef>,
-    values: Vec<f32>,
-    registry: SharedPortalRegistry,
-    connected: bool,
-}
-
-impl InputPortalTxProcessNode {
-    pub fn new(id: NodeId, registry: SharedPortalRegistry) -> Self {
-        Self {
-            id,
-            bound_name: String::new(),
-            ports: Vec::new(),
-            values: Vec::new(),
-            registry,
-            connected: false,
-        }
-    }
-}
-
-impl ProcessNode for InputPortalTxProcessNode {
-    fn node_id(&self) -> NodeId { self.id }
-    fn type_name(&self) -> &'static str { "Input Portal TX" }
-    fn inputs(&self) -> &[PortDef] { &self.ports }
-    fn outputs(&self) -> &[PortDef] { &[] }
-
-    fn write_input(&mut self, port_index: usize, value: f32) {
-        if let Some(slot) = self.values.get_mut(port_index) {
-            *slot = value;
-        }
-    }
-    fn read_input(&self, port_index: usize) -> f32 {
-        self.values.get(port_index).copied().unwrap_or(0.0)
-    }
-
-    fn process(&mut self) {
-        if self.bound_name.is_empty() {
-            self.ports.clear();
-            self.values.clear();
-            self.connected = false;
-            return;
-        }
-        if let Ok(mut reg) = self.registry.lock() {
-            match reg.entries.get_mut(&self.bound_name) {
-                Some(entry) => {
-                    // Mirror the RX's port layout — it owns the definition.
-                    // Compare by (name, type) pairs since PortDef itself
-                    // isn't PartialEq.
-                    let layout_changed = entry.ports.len() != self.ports.len()
-                        || entry.ports.iter().zip(self.ports.iter()).any(|(a, b)| {
-                            a.name != b.name || a.port_type != b.port_type
-                        });
-                    if layout_changed {
-                        self.ports = entry.ports.clone();
-                        self.values.resize(total_channels(&self.ports), 0.0);
-                    }
-                    // Write our input values back so the RX picks them up on
-                    // its next tick.
-                    let n = entry.values.len().min(self.values.len());
-                    entry.values[..n].copy_from_slice(&self.values[..n]);
-                    self.connected = true;
-                }
-                None => {
-                    for v in self.values.iter_mut() { *v = 0.0; }
-                    self.connected = false;
-                }
-            }
-        }
-    }
-
-    fn save_data(&self) -> Option<serde_json::Value> {
-        let ports: Vec<PortalPortDef> = self.ports.iter().map(PortalPortDef::from_port_def).collect();
-        Some(serde_json::json!({ "bound_name": self.bound_name, "ports": ports }))
-    }
-
-    fn load_data(&mut self, data: &serde_json::Value) {
-        if let Some(n) = data.get("bound_name").and_then(|v| v.as_str()) {
-            self.bound_name = n.to_string();
-        }
-        if let Some(arr) = data.get("ports").and_then(|v| v.as_array()) {
-            self.ports = arr.iter()
-                .filter_map(|v| serde_json::from_value::<PortalPortDef>(v.clone()).ok())
-                .map(|p| p.to_port_def())
-                .collect();
-            self.values = vec![0.0; total_channels(&self.ports)];
-        }
-    }
-
-    fn update_display(&self, shared: &mut NodeSharedState) {
-        shared.display = Some(Box::new(InputPortalTxDisplay {
-            bound_name: self.bound_name.clone(),
-            port_defs: self.ports.clone(),
-            connected: self.connected,
-        }));
+    #[test]
+    fn a_second_send_cannot_take_a_name() {
+        let reg: SharedPortalRegistry = Default::default();
+        let mut first = send(1, &reg, "bus");
+        let mut second = send(2, &reg, "bus");
+        first.write_input(0, 1.0);
+        first.process();
+        second.write_input(0, 5.0);
+        second.process();
+        assert!(second.conflict && !first.conflict);
+        assert_eq!(reg.lock().unwrap().entries["bus"].values[0], 1.0);
+        drop(second);
+        assert!(reg.lock().unwrap().entries.contains_key("bus"));
     }
 }
