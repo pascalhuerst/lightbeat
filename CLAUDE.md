@@ -623,12 +623,26 @@ src/
   `pending_recall`. The select and fade inputs are promoted entries of kind
   `SnapshotSelect` / `SnapshotFade`, so they reuse the port and wire-remap
   machinery. A `Player` in `PromotedInputs` runs recalls: a timed fade, or, with
-  a fade wire, the phase *is* the position (so it can run back). Floats and ints
+  the fade input on, the phase *is* the position (time and phase exclude each
+  other). A transition ends when the phase reaches 1 (the new snapshot stands)
+  or comes back to 0 after leaving it (the old one stands again); after that the
+  phase no longer touches the settings. The panel sits at the bottom of the
+  inspector in a resizable `TopBottomPanel` (`main.rs`). Floats and ints
   blend, dropdowns and checkboxes switch at the halfway point. The engine
   publishes the active snapshot and whether a fade runs (`snapshot_active`,
   `snapshot_fading`); the list shows "modified" when the settings differ from
   the active one. Only `params()` are stored, not state a node keeps in its
   config (step sequencer steps, say).
+- **Time and phase**: nodes that need a duration take a phase wire and do not
+  carry a time of their own where that is avoidable. *Time to Phase*
+  (`transport/time_to_phase.rs`) makes the phase: one run per trigger, or
+  "Run continuously". *Transition* in "Phase out" mode is a curve shaper (trigger
+  arms it, the phase input moves it, the output is the eased phase). Effects'
+  lifetimes, Random's rate and the Envelope's stage times stay as times.
+- **Lookup Table** (`math/lookup.rs`, category Route): rows of typed columns; the
+  input is a row number or a 0..1 phase over the table (`Input`), past the ends
+  it wraps or holds (`Edge`), and between rows it steps or blends (`Blend`;
+  Logic columns never blend).
 - **Hide unused ports** (`H`, or the node menu) is a per-node flag in
   `NodeSharedState::hide_unused_ports`, saved as `SavedNode.hide_unused_ports`.
   The graph turns it into `hidden_inputs`/`hidden_outputs` each frame

@@ -11,6 +11,29 @@
 
 use crate::engine::types::*;
 
+/// What the index input means.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum LookupInput {
+    /// A row number: 0 is the first row. A clock's step counter goes here.
+    Index,
+    /// 0..1 spread over the whole table, so a phase or a fader walks through it.
+    Phase,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum LookupEdge {
+    Wrap,
+    Clamp,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum LookupBlend {
+    /// The nearest row.
+    Step,
+    /// A position between two rows mixes them (not a Logic column).
+    Linear,
+}
+
 /// A single column in the lookup table.
 #[derive(Debug, Clone)]
 pub struct LookupColumn {
@@ -35,6 +58,11 @@ pub struct LookupProcessNode {
     row_count: usize,
     current_row: usize,
     index_in: f32,
+    /// How `index_in` is read (see `LookupInput`), what happens past the ends
+    /// of the table and whether a position between rows blends them.
+    input: LookupInput,
+    edge: LookupEdge,
+    blend: LookupBlend,
     inputs: Vec<PortDef>,
     outputs: Vec<PortDef>,
     output_values: Vec<f32>,
@@ -55,6 +83,9 @@ impl LookupProcessNode {
             row_count: 4,
             current_row: 0,
             index_in: 0.0,
+            input: LookupInput::Index,
+            edge: LookupEdge::Wrap,
+            blend: LookupBlend::Step,
             inputs: vec![PortDef::new("index", PortType::Untyped)],
             outputs: Vec::new(),
             output_values: Vec::new(),
@@ -90,7 +121,7 @@ impl LookupProcessNode {
 
 impl ProcessNode for LookupProcessNode {
     fn node_id(&self) -> NodeId { self.id }
-    fn type_name(&self) -> &'static str { "Lookup" }
+    fn type_name(&self) -> &'static str { "Lookup Table" }
     fn inputs(&self) -> &[PortDef] { &self.inputs }
     fn outputs(&self) -> &[PortDef] { &self.outputs }
 
@@ -111,12 +142,74 @@ impl ProcessNode for LookupProcessNode {
         }
         let stride = self.row_stride();
         if stride == 0 { return; }
-        // Round + wrap (same semantics as before).
-        let idx = (self.index_in.round() as i64).rem_euclid(self.row_count as i64) as usize;
-        self.current_row = idx;
-        let row_start = idx * stride;
-        for c in 0..stride {
-            self.output_values[1 + c] = self.data.get(row_start + c).copied().unwrap_or(0.0);
+        let n = self.row_count as i64;
+        let edge = |i: i64| match self.edge {
+            LookupEdge::Wrap => i.rem_euclid(n) as usize,
+            LookupEdge::Clamp => i.clamp(0, n - 1) as usize,
+        };
+        // Where in the table the input points, in rows (0.0 is the first row).
+        let pos = match (self.input, self.blend, self.edge) {
+            (LookupInput::Index, _, _) => self.index_in,
+            // Clamped and blended, the phase's end is the last row itself.
+            (LookupInput::Phase, LookupBlend::Linear, LookupEdge::Clamp) => {
+                self.index_in.clamp(0.0, 1.0) * (n - 1) as f32
+            }
+            (LookupInput::Phase, _, _) => self.index_in.clamp(0.0, 1.0) * n as f32,
+        };
+        let (row_a, row_b, t) = match self.blend {
+            LookupBlend::Step => {
+                let i = match self.input {
+                    LookupInput::Index => pos.round(),
+                    LookupInput::Phase => pos.floor(),
+                } as i64;
+                (edge(i), edge(i), 0.0)
+            }
+            LookupBlend::Linear => {
+                let f = pos.floor();
+                (edge(f as i64), edge(f as i64 + 1), pos - f)
+            }
+        };
+        self.current_row = if t >= 0.5 { row_b } else { row_a };
+        let mut offset = 0;
+        for col in &self.columns {
+            let width = col.port_type.channel_count();
+            let mix = if col.port_type == PortType::Logic { if t >= 0.5 { 1.0 } else { 0.0 } } else { t };
+            for c in offset..offset + width {
+                let a = self.data.get(row_a * stride + c).copied().unwrap_or(0.0);
+                let b = self.data.get(row_b * stride + c).copied().unwrap_or(0.0);
+                self.output_values[1 + c] = a + (b - a) * mix;
+            }
+            offset += width;
+        }
+    }
+
+    fn params(&self) -> Vec<ParamDef> {
+        vec![
+            ParamDef::Choice {
+                name: "Input".into(),
+                value: match self.input { LookupInput::Index => 0, LookupInput::Phase => 1 },
+                options: vec!["Row number".into(), "Phase over the table".into()],
+            },
+            ParamDef::Choice {
+                name: "Edge".into(),
+                value: match self.edge { LookupEdge::Wrap => 0, LookupEdge::Clamp => 1 },
+                options: vec!["Wrap around".into(), "Hold the ends".into()],
+            },
+            ParamDef::Choice {
+                name: "Blend".into(),
+                value: match self.blend { LookupBlend::Step => 0, LookupBlend::Linear => 1 },
+                options: vec!["Step".into(), "Linear".into()],
+            },
+        ]
+    }
+
+    fn set_param(&mut self, index: usize, value: ParamValue) {
+        let v = value.as_usize();
+        match index {
+            0 => self.input = if v == 1 { LookupInput::Phase } else { LookupInput::Index },
+            1 => self.edge = if v == 1 { LookupEdge::Clamp } else { LookupEdge::Wrap },
+            2 => self.blend = if v == 1 { LookupBlend::Linear } else { LookupBlend::Step },
+            _ => {}
         }
     }
 
@@ -196,4 +289,63 @@ pub fn port_type_from_str(s: &str) -> Option<PortType> {
         "gradient" => PortType::Gradient,
         _ => return None,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A table of the numbers 0, 10, 100, 1000 in one number column.
+    fn table() -> LookupProcessNode {
+        let mut n = LookupProcessNode::new(NodeId(1));
+        n.load_data(&serde_json::json!({
+            "columns": [{"name": "value", "type": "untyped"}],
+            "row_count": 4,
+            "data": [0.0, 10.0, 100.0, 1000.0],
+        }));
+        n
+    }
+
+    fn out(n: &mut LookupProcessNode, v: f32) -> f32 {
+        n.write_input(0, v);
+        n.process();
+        n.read_output(1)
+    }
+
+    #[test]
+    fn a_step_counter_picks_the_rows() {
+        let mut n = table();
+        let got: Vec<f32> = (0..4).map(|i| out(&mut n, i as f32)).collect();
+        assert_eq!(got, vec![0.0, 10.0, 100.0, 1000.0]);
+        assert_eq!(out(&mut n, 5.0), 10.0);
+    }
+
+    #[test]
+    fn clamping_holds_the_ends() {
+        let mut n = table();
+        n.set_param(1, ParamValue::Choice(1));
+        assert_eq!(out(&mut n, 9.0), 1000.0);
+        assert_eq!(out(&mut n, -3.0), 0.0);
+    }
+
+    #[test]
+    fn a_phase_spreads_over_the_table() {
+        let mut n = table();
+        n.set_param(0, ParamValue::Choice(1));
+        assert_eq!(out(&mut n, 0.0), 0.0);
+        assert_eq!(out(&mut n, 0.30), 10.0);
+        assert_eq!(out(&mut n, 0.99), 1000.0);
+    }
+
+    #[test]
+    fn linear_blends_between_rows() {
+        let mut n = table();
+        n.set_param(2, ParamValue::Choice(1));
+        assert_eq!(out(&mut n, 1.5), 55.0);
+        // Wrapped, the last row blends back into the first.
+        assert_eq!(out(&mut n, 3.5), 500.0);
+        n.set_param(1, ParamValue::Choice(1));
+        n.set_param(0, ParamValue::Choice(1));
+        assert_eq!(out(&mut n, 1.0), 1000.0);
+    }
 }

@@ -20,15 +20,19 @@ impl TransitionWidget {
     }
 
     fn build_inputs(mode: TransitionMode) -> Vec<UiPortDef> {
-        vec![
+        let mut ports = vec![
             UiPortDef::from_def(&PortDef::new("trigger", PortType::Logic)),
             UiPortDef::from_def(&PortDef::new("phase", PortType::Phase)),
-            UiPortDef::from_def(&PortDef::new("value", mode.value_type())),
-        ]
+        ];
+        if mode != TransitionMode::Phase {
+            ports.push(UiPortDef::from_def(&PortDef::new("value", mode.value_type())));
+        }
+        ports
     }
 
     fn build_outputs(mode: TransitionMode) -> Vec<UiPortDef> {
-        vec![UiPortDef::from_def(&PortDef::new("out", mode.value_type()))]
+        let name = if mode == TransitionMode::Phase { "phase" } else { "out" };
+        vec![UiPortDef::from_def(&PortDef::new(name, mode.value_type()))]
     }
 
     fn push_mode(&self, mode: TransitionMode) {
@@ -52,7 +56,7 @@ const CURVE_SEGMENTS: usize = 30;
 impl NodeWidget for TransitionWidget {
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { "Transition" }
-    fn description(&self) -> &'static str { "Smoothly interpolates between values using an easing curve when triggered." }
+    fn description(&self) -> &'static str { "Smoothly interpolates between values using an easing curve when triggered; the phase input moves it along. In Phase out mode there is no value: the output is the eased phase itself, a curve shaper that a trigger starts. For a time instead of a phase, drive it with Time to Phase." }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> { Self::build_inputs(self.mode) }
     fn ui_outputs(&self) -> Vec<UiPortDef> { Self::build_outputs(self.mode) }

@@ -663,7 +663,7 @@ pub fn load_graph(graph: &mut NodeGraph, project: &ProjectFile) -> Vec<usize> {
             // Lookup's widget owns the column list, so it must be restored
             // before cleanup_stale_connections or wires to columns past the
             // default single-column layout get dropped on the first frame.
-            if saved.type_name == "Lookup"
+            if saved.type_name == "Lookup Table"
                 && let Some(data) = &saved.data {
                     let n = graph.node_mut(idx);
                     if let Some(w) = n.as_any_mut().downcast_mut::<LookupWidget>() {

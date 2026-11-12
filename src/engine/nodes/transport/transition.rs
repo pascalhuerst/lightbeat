@@ -9,6 +9,8 @@ pub enum TransitionMode {
     Float,
     Color,
     Palette,
+    /// No value to move: the output is the eased progress itself, a phase.
+    Phase,
 }
 
 impl TransitionMode {
@@ -18,6 +20,7 @@ impl TransitionMode {
             Self::Float => PortType::Untyped,
             Self::Color => PortType::Color,
             Self::Palette => PortType::Palette,
+            Self::Phase => PortType::Phase,
         }
     }
     pub fn channels(&self) -> usize {
@@ -26,6 +29,7 @@ impl TransitionMode {
             Self::Float => 1,
             Self::Color => 3,
             Self::Palette => 12,
+            Self::Phase => 1,
         }
     }
     pub fn from_index(i: usize) -> Self {
@@ -33,6 +37,7 @@ impl TransitionMode {
             1 => Self::Float,
             2 => Self::Color,
             3 => Self::Palette,
+            4 => Self::Phase,
             _ => Self::Neutral,
         }
     }
@@ -42,6 +47,7 @@ impl TransitionMode {
             Self::Float => 1,
             Self::Color => 2,
             Self::Palette => 3,
+            Self::Phase => 4,
         }
     }
 }
@@ -96,15 +102,19 @@ impl TransitionProcessNode {
     }
 
     fn build_inputs(mode: TransitionMode) -> Vec<PortDef> {
-        vec![
+        let mut ports = vec![
             PortDef::new("trigger", PortType::Logic),
             PortDef::new("phase", PortType::Phase),
-            PortDef::new("value", mode.value_type()),
-        ]
+        ];
+        if mode != TransitionMode::Phase {
+            ports.push(PortDef::new("value", mode.value_type()));
+        }
+        ports
     }
 
     fn build_outputs(mode: TransitionMode) -> Vec<PortDef> {
-        vec![PortDef::new("out", mode.value_type())]
+        let name = if mode == TransitionMode::Phase { "phase" } else { "out" };
+        vec![PortDef::new(name, mode.value_type())]
     }
 }
 
@@ -143,6 +153,9 @@ impl ProcessNode for TransitionProcessNode {
 
         // On rising edge: capture from (current output) and to (current input).
         if gate && !self.prev_trigger {
+            if self.mode == TransitionMode::Phase {
+                self.output[0] = 0.0;
+            }
             self.from = self.output;
             self.to = self.value_in;
             self.active = true;
@@ -163,13 +176,21 @@ impl ProcessNode for TransitionProcessNode {
             let p = self.progress.clamp(0.0, 1.0);
 
             let eased = self.curve.apply(p);
-            let ch = self.mode.channels();
-            for i in 0..ch {
-                self.output[i] = self.from[i] + (self.to[i] - self.from[i]) * eased;
+            if self.mode == TransitionMode::Phase {
+                self.output[0] = eased;
+            } else {
+                let ch = self.mode.channels();
+                for i in 0..ch {
+                    self.output[i] = self.from[i] + (self.to[i] - self.from[i]) * eased;
+                }
             }
 
             if self.progress >= 1.0 {
-                self.output = self.to;
+                if self.mode == TransitionMode::Phase {
+                    self.output[0] = 1.0;
+                } else {
+                    self.output = self.to;
+                }
                 self.active = false;
             }
         }
@@ -189,7 +210,7 @@ impl ProcessNode for TransitionProcessNode {
             ParamDef::Choice {
                 name: "Mode".into(),
                 value: self.mode.to_index(),
-                options: vec!["Auto".into(), "Float".into(), "Color".into(), "Palette".into()],
+                options: vec!["Auto".into(), "Float".into(), "Color".into(), "Palette".into(), "Phase out".into()],
             },
             ParamDef::Choice {
                 name: "Curve".into(),
@@ -226,5 +247,34 @@ impl ProcessNode for TransitionProcessNode {
             phase: progress,
             active: self.active,
         }));
+    }
+}
+
+#[cfg(test)]
+mod phase_mode_tests {
+    use super::*;
+
+    #[test]
+    fn phase_out_follows_the_phase_through_the_curve_after_a_trigger() {
+        let mut n = TransitionProcessNode::new(NodeId(1));
+        n.set_param(0, ParamValue::Choice(TransitionMode::Phase.to_index()));
+        n.set_param(1, ParamValue::Choice(EasingCurve::EaseInQuad.to_index()));
+        assert_eq!(n.inputs().len(), 2);
+        n.write_input(1, 0.0);
+        n.process();
+        n.write_input(0, 1.0);
+        n.process();
+        n.write_input(0, 0.0);
+        for i in 1..=5 {
+            n.write_input(1, i as f32 * 0.1);
+            n.process();
+        }
+        // Halfway along an ease-in quad is a quarter.
+        assert!((n.read_output(0) - 0.25).abs() < 1e-3, "{}", n.read_output(0));
+        for i in 6..=11 {
+            n.write_input(1, (i as f32 * 0.1).min(1.0));
+            n.process();
+        }
+        assert_eq!(n.read_output(0), 1.0);
     }
 }
