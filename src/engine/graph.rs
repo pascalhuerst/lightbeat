@@ -291,6 +291,13 @@ impl EngineGraph {
         self.plan.run(&mut self.nodes, &mut self.promoted, &[], &mut []);
         clock.lap("[root] 3 propagate");
 
+        if let Some(t) = super::probe::target()
+            && let Some(&i) = self.node_index.get(&t.node)
+        {
+            let v = if t.output { self.nodes[i].read_output(t.channel) } else { self.nodes[i].read_input(t.channel) };
+            super::probe::record(v);
+        }
+
         // 4. Update shared state for UI, at UI frame rate rather than tick
         // rate. `params()` allocates a fresh Vec of ParamDefs with owned
         // Strings, `save_data()` builds a serde_json tree and

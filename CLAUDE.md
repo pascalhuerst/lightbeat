@@ -609,6 +609,12 @@ src/
   made with. The engine records that in `NodeSharedState::default_params` when a
   node is added (before any load), so a node needs no default of its own.
   Node-body controls (faders, knobs, step cells) do their own reset.
+- **Hover scope**: hovering a root-level port records it at the full tick rate
+  through `engine::probe` (the UI mirror only refreshes every 16th tick and lost
+  short pulses). Inside subgraphs it falls back to the mirror.
+- **Envelope curves**: ADSR/AD/AR segments have a bend (params 5-7, `shape` in
+  `engine/nodes/transport/envelope.rs`); the node body draws that same function,
+  drags points to set times and bends a line when it is dragged.
 - **Hide unused ports** (`H`, or the node menu) is a per-node flag in
   `NodeSharedState::hide_unused_ports`, saved as `SavedNode.hide_unused_ports`.
   The graph turns it into `hidden_inputs`/`hidden_outputs` each frame
