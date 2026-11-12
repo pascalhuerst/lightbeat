@@ -171,6 +171,16 @@ pub enum ParamDef {
 }
 
 impl ParamDef {
+    /// The value to write to set this parameter to what this definition holds.
+    pub fn as_value(&self) -> ParamValue {
+        match self {
+            ParamDef::Float { value, .. } => ParamValue::Float(*value),
+            ParamDef::Int { value, .. } => ParamValue::Int(*value),
+            ParamDef::Bool { value, .. } => ParamValue::Bool(*value),
+            ParamDef::Choice { value, .. } => ParamValue::Choice(*value),
+        }
+    }
+
     pub fn name(&self) -> &str {
         match self {
             ParamDef::Float { name, .. } => name,
@@ -248,6 +258,9 @@ pub struct NodeSharedState {
     pub disabled: bool,
     /// Current parameter definitions with values (written by engine, read by UI).
     pub current_params: Vec<ParamDef>,
+    /// The parameters as the node was made, before anything was loaded or
+    /// changed: what a double-click on a setting resets it to.
+    pub default_params: Vec<ParamDef>,
     /// Custom display state (e.g. scope buffers, step sequencer values).
     pub display: Option<Box<dyn Any + Send>>,
     /// Parameter changes pushed by UI, consumed by engine each tick.
@@ -283,6 +296,7 @@ impl NodeSharedState {
             inputs_connected: Vec::new(),
             disabled: false,
             current_params: Vec::new(),
+            default_params: Vec::new(),
             display: None,
             pending_params: Vec::new(),
             save_data: None,
