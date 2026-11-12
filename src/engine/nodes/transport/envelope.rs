@@ -77,6 +77,9 @@ pub struct EnvelopeDisplay {
     pub decay: f32,
     pub sustain: f32,
     pub release: f32,
+    pub attack_curve: f32,
+    pub decay_curve: f32,
+    pub release_curve: f32,
 }
 
 pub struct EnvelopeProcessNode {
@@ -87,6 +90,13 @@ pub struct EnvelopeProcessNode {
     decay: f32,    // Decay (ADSR, AD)
     sustain: f32,  // Sustain level 0..1 (ADSR)
     release: f32,  // Release / Fall
+    /// Bend of each segment, -1..1 (0 = straight); see `shape`.
+    attack_curve: f32,
+    decay_curve: f32,
+    release_curve: f32,
+    /// Where the running segment started and how far along it is (0..1).
+    seg_from: f32,
+    seg_pos: f32,
 
     // Triggered-mode state.
     stage: EnvStage,
@@ -112,6 +122,11 @@ impl EnvelopeProcessNode {
             decay: 0.08,
             sustain: 0.6,
             release: 0.15,
+            attack_curve: 0.0,
+            decay_curve: 0.0,
+            release_curve: 0.0,
+            seg_from: 0.0,
+            seg_pos: 0.0,
             stage: EnvStage::Idle,
             envelope: 0.0,
             prev_gate: false,
@@ -128,7 +143,27 @@ impl EnvelopeProcessNode {
         }
     }
 
+    fn enter(&mut self, stage: EnvStage) {
+        self.stage = stage;
+        self.seg_from = self.envelope;
+        self.seg_pos = 0.0;
+    }
+
+    /// Moves the running segment on by one tick towards `to`, bent by `curve`.
+    /// True when it has arrived.
+    fn advance(&mut self, secs: f32, curve: f32, to: f32) -> bool {
+        self.seg_pos += if secs > 0.0 { DT / secs } else { 1.0 };
+        if self.seg_pos >= 1.0 {
+            self.envelope = to;
+            return true;
+        }
+        self.envelope = self.seg_from + (to - self.seg_from) * shape(self.seg_pos, curve);
+        false
+    }
+
     fn reset_triggered_state(&mut self) {
+        self.seg_from = 0.0;
+        self.seg_pos = 0.0;
         self.stage = EnvStage::Idle;
         self.envelope = 0.0;
         self.prev_gate = false;
@@ -137,6 +172,25 @@ impl EnvelopeProcessNode {
 
 // Engine tick rate ~1kHz, so dt ~0.001s
 const DT: f32 = 0.001;
+
+/// How far along a segment's height the point at time fraction `t` is.
+/// `curve` 0 is a straight line, above 0 starts slowly and ends fast, below 0
+/// the opposite. The widget draws the same function, so the picture is the
+/// sound.
+pub fn shape(t: f32, curve: f32) -> f32 {
+    let t = t.clamp(0.0, 1.0);
+    let k = curve.clamp(-1.0, 1.0) * CURVE_SCALE;
+    if k.abs() < 1e-3 { t } else { ((k * t).exp() - 1.0) / (k.exp() - 1.0) }
+}
+
+/// The curve value that makes `shape(0.5, c)` equal `mid` (0..1): what the
+/// widget needs when the user drags the middle of a line to a height.
+pub fn curve_for_mid(mid: f32) -> f32 {
+    let mid = mid.clamp(0.02, 0.98);
+    (2.0 * (1.0 / mid - 1.0).ln() / CURVE_SCALE).clamp(-1.0, 1.0)
+}
+
+const CURVE_SCALE: f32 = 6.0;
 
 /// One-pole time-constant coefficient for a smoothing filter: values closer
 /// to 1.0 mean slower response. `tau` is the 1/e time in seconds.
@@ -217,6 +271,9 @@ impl ProcessNode for EnvelopeProcessNode {
                 value: self.kind.to_index(),
                 options: EnvelopeKind::ALL.iter().map(|k| k.label().to_string()).collect(),
             },
+            ParamDef::Float { name: "Attack curve".into(), value: self.attack_curve, min: -1.0, max: 1.0, step: 0.01, unit: "" },
+            ParamDef::Float { name: "Decay curve".into(), value: self.decay_curve, min: -1.0, max: 1.0, step: 0.01, unit: "" },
+            ParamDef::Float { name: "Release curve".into(), value: self.release_curve, min: -1.0, max: 1.0, step: 0.01, unit: "" },
         ]
     }
 
@@ -233,6 +290,9 @@ impl ProcessNode for EnvelopeProcessNode {
                     self.reset_triggered_state();
                 }
             }
+            5 => self.attack_curve = value.as_f32().clamp(-1.0, 1.0),
+            6 => self.decay_curve = value.as_f32().clamp(-1.0, 1.0),
+            7 => self.release_curve = value.as_f32().clamp(-1.0, 1.0),
             _ => {}
         }
     }
@@ -253,6 +313,9 @@ impl ProcessNode for EnvelopeProcessNode {
             decay: self.decay,
             sustain: self.sustain,
             release: self.release,
+            attack_curve: self.attack_curve,
+            decay_curve: self.decay_curve,
+            release_curve: self.release_curve,
         }));
     }
 }
@@ -264,34 +327,25 @@ impl ProcessNode for EnvelopeProcessNode {
 impl EnvelopeProcessNode {
     fn process_adsr(&mut self) {
         let gate_high = self.gate_in >= 0.5;
-        if gate_high && !self.prev_gate { self.stage = EnvStage::Attack; }
-        if !gate_high && self.prev_gate { self.stage = EnvStage::Release; }
+        if gate_high && !self.prev_gate { self.enter(EnvStage::Attack); }
+        if !gate_high && self.prev_gate { self.enter(EnvStage::Release); }
         self.prev_gate = gate_high;
 
         match self.stage {
             EnvStage::Idle => { self.envelope = 0.0; }
             EnvStage::Attack => {
-                let rate = if self.attack > 0.0 { DT / self.attack } else { 1.0 };
-                self.envelope += rate;
-                if self.envelope >= 1.0 {
-                    self.envelope = 1.0;
-                    self.stage = EnvStage::Decay;
+                if self.advance(self.attack, self.attack_curve, 1.0) {
+                    self.enter(EnvStage::Decay);
                 }
             }
             EnvStage::Decay => {
-                let rate = if self.decay > 0.0 { DT / self.decay } else { 1.0 };
-                self.envelope -= rate * (1.0 - self.sustain);
-                if self.envelope <= self.sustain {
-                    self.envelope = self.sustain;
+                if self.advance(self.decay, self.decay_curve, self.sustain) {
                     self.stage = EnvStage::Sustain;
                 }
             }
             EnvStage::Sustain => { self.envelope = self.sustain; }
             EnvStage::Release => {
-                let rate = if self.release > 0.0 { DT / self.release } else { 1.0 };
-                self.envelope -= rate * self.envelope.max(0.01);
-                if self.envelope <= 0.001 {
-                    self.envelope = 0.0;
+                if self.advance(self.release, self.release_curve, 0.0) {
                     self.stage = EnvStage::Idle;
                 }
             }
@@ -304,47 +358,38 @@ impl EnvelopeProcessNode {
         // Decay restarts from Attack.
         let gate_high = self.gate_in >= 0.5;
         if gate_high && !self.prev_gate {
-            self.stage = EnvStage::Attack;
+            self.enter(EnvStage::Attack);
         }
         self.prev_gate = gate_high;
 
         match self.stage {
             EnvStage::Idle => { self.envelope = 0.0; }
             EnvStage::Attack => {
-                let rate = if self.attack > 0.0 { DT / self.attack } else { 1.0 };
-                self.envelope += rate;
-                if self.envelope >= 1.0 {
-                    self.envelope = 1.0;
-                    self.stage = EnvStage::Decay;
+                if self.advance(self.attack, self.attack_curve, 1.0) {
+                    self.enter(EnvStage::Decay);
                 }
             }
             EnvStage::Decay => {
-                let rate = if self.decay > 0.0 { DT / self.decay } else { 1.0 };
-                self.envelope -= rate;
-                if self.envelope <= 0.0 {
-                    self.envelope = 0.0;
+                if self.advance(self.decay, self.decay_curve, 0.0) {
                     self.stage = EnvStage::Idle;
                 }
             }
             // AD collapses Sustain/Release into Decay — those branches
             // shouldn't occur but fall through defensively.
-            EnvStage::Sustain | EnvStage::Release => { self.stage = EnvStage::Decay; }
+            EnvStage::Sustain | EnvStage::Release => { self.enter(EnvStage::Decay); }
         }
     }
 
     fn process_ar(&mut self) {
         let gate_high = self.gate_in >= 0.5;
-        if gate_high && !self.prev_gate { self.stage = EnvStage::Attack; }
-        if !gate_high && self.prev_gate { self.stage = EnvStage::Release; }
+        if gate_high && !self.prev_gate { self.enter(EnvStage::Attack); }
+        if !gate_high && self.prev_gate { self.enter(EnvStage::Release); }
         self.prev_gate = gate_high;
 
         match self.stage {
             EnvStage::Idle => { self.envelope = 0.0; }
             EnvStage::Attack => {
-                let rate = if self.attack > 0.0 { DT / self.attack } else { 1.0 };
-                self.envelope += rate;
-                if self.envelope >= 1.0 {
-                    self.envelope = 1.0;
+                if self.advance(self.attack, self.attack_curve, 1.0) {
                     // `Sustain` is reused as the "hold while gate high"
                     // stage — stage=3 lights the right indicator in the UI.
                     self.stage = EnvStage::Sustain;
@@ -352,14 +397,11 @@ impl EnvelopeProcessNode {
             }
             EnvStage::Sustain => { self.envelope = 1.0; }
             EnvStage::Release => {
-                let rate = if self.release > 0.0 { DT / self.release } else { 1.0 };
-                self.envelope -= rate;
-                if self.envelope <= 0.0 {
-                    self.envelope = 0.0;
+                if self.advance(self.release, self.release_curve, 0.0) {
                     self.stage = EnvStage::Idle;
                 }
             }
-            EnvStage::Decay => { self.stage = EnvStage::Attack; }
+            EnvStage::Decay => { self.enter(EnvStage::Attack); }
         }
     }
 
@@ -406,5 +448,44 @@ impl EnvelopeProcessNode {
             self.envelope = target;
         }
         self.stage = EnvStage::Idle;
+    }
+}
+
+#[cfg(test)]
+mod curve_tests {
+    use super::*;
+
+    #[test]
+    fn shape_is_linear_at_zero_and_hits_the_ends() {
+        assert!((shape(0.3, 0.0) - 0.3).abs() < 1e-6);
+        for c in [-1.0, -0.4, 0.7, 1.0] {
+            assert!(shape(0.0, c).abs() < 1e-6);
+            assert!((shape(1.0, c) - 1.0).abs() < 1e-6);
+        }
+        assert!(shape(0.5, 0.8) < 0.5 && shape(0.5, -0.8) > 0.5);
+    }
+
+    #[test]
+    fn curve_for_mid_inverts_shape() {
+        for c in [-0.9, -0.3, 0.0, 0.5, 0.9] {
+            let back = curve_for_mid(shape(0.5, c));
+            assert!((back - c).abs() < 1e-3, "{c} -> {back}");
+        }
+    }
+
+    #[test]
+    fn adsr_goes_up_down_to_sustain_and_releases() {
+        let mut e = EnvelopeProcessNode::new(NodeId(1));
+        e.set_param(0, ParamValue::Float(0.01));
+        e.set_param(1, ParamValue::Float(0.01));
+        e.set_param(3, ParamValue::Float(0.01));
+        e.write_input(0, 1.0);
+        let mut peak = 0.0f32;
+        for _ in 0..100 { e.process(); peak = peak.max(e.read_output(0)); }
+        assert!((peak - 1.0).abs() < 1e-3);
+        assert!((e.read_output(0) - 0.6).abs() < 1e-3);
+        e.write_input(0, 0.0);
+        for _ in 0..30 { e.process(); }
+        assert_eq!(e.read_output(0), 0.0);
     }
 }

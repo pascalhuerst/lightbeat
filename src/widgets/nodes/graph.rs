@@ -295,6 +295,10 @@ pub struct NodeGraph {
     /// Selected wires, keyed by their full `Connection` identity so they
     /// survive connection-vec re-ordering / removals without stale indices.
     selected_connections: std::collections::HashSet<Connection>,
+    /// Hash of each node's port names and types as of the last frame, to
+    /// notice a mode switch (which reshapes the ports) and let go of the
+    /// selected wires of that node.
+    port_signatures: std::collections::HashMap<NodeId, u64>,
     /// Port currently under the cursor, and a rolling sample buffer of its
     /// scalar value. Cleared when hover moves to a different port or off
     /// any port. Populated every frame so the tooltip scope has history.
@@ -369,6 +373,7 @@ impl NodeGraph {
             selected_nodes: Vec::new(),
             selected_frames: std::collections::HashSet::new(),
             selected_connections: std::collections::HashSet::new(),
+            port_signatures: std::collections::HashMap::new(),
             hover_port: None,
             hover_samples: std::collections::VecDeque::with_capacity(128),
             frame_drag: None,
@@ -862,6 +867,18 @@ impl NodeGraph {
         response: &egui::Response,
         node_rects: &[Rect],
     ) {
+        self.hover_tooltip_inner(ui, response, node_rects);
+        if self.hover_port.is_none() {
+            crate::engine::probe::set_target(None);
+        }
+    }
+
+    fn hover_tooltip_inner(
+        &mut self,
+        ui: &mut Ui,
+        response: &egui::Response,
+        node_rects: &[Rect],
+    ) {
         // Pointer must be over the canvas and not over a floating area.
         if ui.ctx().is_pointer_over_area() || !response.contains_pointer() {
             self.hover_port = None;
@@ -889,7 +906,10 @@ impl NodeGraph {
                 let inputs = level.nodes[i].ui_inputs_full();
                 let mut base = 0usize;
                 for (pi, up) in inputs.iter().enumerate() {
-                    if level.nodes[i].is_port_hidden(PortDir::Input, pi) { continue; }
+                    if level.nodes[i].is_port_hidden(PortDir::Input, pi) {
+                        base += up.def.port_type.channel_count();
+                        continue;
+                    }
                     let pos = level.nodes[i].port_pos(rect, PortDir::Input, pi, z);
                     if pos.distance(pointer) < radius {
                         found = Some((
@@ -905,7 +925,10 @@ impl NodeGraph {
                 let outputs = level.nodes[i].ui_outputs();
                 let mut base = 0usize;
                 for (pi, up) in outputs.iter().enumerate() {
-                    if level.nodes[i].is_port_hidden(PortDir::Output, pi) { continue; }
+                    if level.nodes[i].is_port_hidden(PortDir::Output, pi) {
+                        base += up.def.port_type.channel_count();
+                        continue;
+                    }
                     let pos = level.nodes[i].port_pos(rect, PortDir::Output, pi, z);
                     if pos.distance(pointer) < radius {
                         found = Some((
@@ -965,7 +988,23 @@ impl NodeGraph {
         let is_scalar = matches!(port_type,
             PortType::Logic | PortType::Phase | PortType::Untyped | PortType::Any);
         if is_scalar {
-            let first = values.first().copied().unwrap_or(0.0);
+            let mut first = values.first().copied().unwrap_or(0.0);
+            // Every tick of the engine for the hovered port, not the 16th
+            // that the mirror holds, so a pulse is not lost. Only the root
+            // level can be probed (inner nodes reuse the ids).
+            if self.active_level == 0 {
+                crate::engine::probe::set_target(Some(crate::engine::probe::ProbeTarget {
+                    node: port_id.node,
+                    output: port_id.dir == PortDir::Output,
+                    channel: channel_base,
+                }));
+                let reference = self.hover_samples.back().copied().unwrap_or(first);
+                if let Some(v) = crate::engine::probe::most_extreme(&crate::engine::probe::drain(), reference) {
+                    first = v;
+                }
+            } else {
+                crate::engine::probe::set_target(None);
+            }
             self.hover_samples.push_back(first);
             const SCOPE_SAMPLES: usize = 120;
             while self.hover_samples.len() > SCOPE_SAMPLES {
@@ -1530,7 +1569,33 @@ impl NodeGraph {
         }
     }
 
+    /// A mode switch reshapes a node's ports; a wire that stays selected across
+    /// that ends up pointing at something else, so deselect the node's wires.
+    fn deselect_on_port_change(&mut self) {
+        use std::hash::{Hash, Hasher};
+        let level = &self.levels[self.active_level];
+        let mut changed: Vec<NodeId> = Vec::new();
+        let mut fresh = std::collections::HashMap::new();
+        for (node, state) in level.nodes.iter().zip(level.states.iter()) {
+            let mut h = std::collections::hash_map::DefaultHasher::new();
+            for p in node.ui_inputs_full() { p.def.name.hash(&mut h); p.def.port_type.hash(&mut h); }
+            0xffu8.hash(&mut h);
+            for p in node.ui_outputs() { p.def.name.hash(&mut h); p.def.port_type.hash(&mut h); }
+            let sig = h.finish();
+            if self.port_signatures.get(&state.id).is_some_and(|old| *old != sig) {
+                changed.push(state.id);
+            }
+            fresh.insert(state.id, sig);
+        }
+        self.port_signatures.extend(fresh);
+        if !changed.is_empty() {
+            self.selected_connections
+                .retain(|c| !changed.contains(&c.from.node) && !changed.contains(&c.to.node));
+        }
+    }
+
     pub(crate) fn cleanup_stale_connections(&mut self) {
+        self.deselect_on_port_change();
         let level = self.active();
         let stale: Vec<PortId> = level.connections.iter().filter(|conn| {
             let src = level.nodes.iter()

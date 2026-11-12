@@ -1,6 +1,7 @@
 pub mod effects;
 pub mod graph;
 pub mod nodes;
+pub mod probe;
 pub mod promoted;
 pub mod routing;
 pub mod sync_hint;

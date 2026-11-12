@@ -139,10 +139,12 @@ impl NodeWidget for StepSequencerWidget {
         // Handle fader interaction — send value edits to engine via shared state.
         // Uses the shared fader gesture conventions: double-click to reset,
         // shift+drag for fine-grained (delta-based) adjustment, else absolute.
-        if let Some(pos) = response.interact_pointer_pos()
-            && rect.contains(pos) {
-                let step_index = ((pos.x - rect.min.x) / step_width).floor() as usize;
-                let step_index = step_index.min(num_steps - 1);
+        // No "pointer inside" test: once a press started here the drag keeps
+        // following the pointer, and the clamps below pin it to the first or
+        // last step and to 0..1, so pulling a step to zero can overshoot.
+        if let Some(pos) = response.interact_pointer_pos().or_else(|| response.hover_pos()) {
+                let step_index = (((pos.x - rect.min.x) / step_width).floor().max(0.0) as usize)
+                    .min(num_steps - 1);
 
                 let shift = ui.input(|i| i.modifiers.shift);
                 if response.double_clicked() {
