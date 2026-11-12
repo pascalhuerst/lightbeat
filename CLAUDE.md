@@ -615,6 +615,20 @@ src/
 - **Envelope curves**: ADSR/AD/AR segments have a bend (params 5-7, `shape` in
   `engine/nodes/transport/envelope.rs`); the node body draws that same function,
   drags points to set times and bends a line when it is dragged.
+- **Snapshots** (`engine/snapshots.rs`, `widgets/snapshots.rs`): every node's
+  inspector ends with a snapshot list, a named copy of its settings by param name
+  (modes in `non_promotable_params` are left out, plain numbers are kept). The
+  list is UI-owned (`NodeSharedState::snapshots`, saved as `SavedNode.snapshots`)
+  and pushed to the engine with `pending_snapshots`; a click goes through
+  `pending_recall`. The select and fade inputs are promoted entries of kind
+  `SnapshotSelect` / `SnapshotFade`, so they reuse the port and wire-remap
+  machinery. A `Player` in `PromotedInputs` runs recalls: a timed fade, or, with
+  a fade wire, the phase *is* the position (so it can run back). Floats and ints
+  blend, dropdowns and checkboxes switch at the halfway point. The engine
+  publishes the active snapshot and whether a fade runs (`snapshot_active`,
+  `snapshot_fading`); the list shows "modified" when the settings differ from
+  the active one. Only `params()` are stored, not state a node keeps in its
+  config (step sequencer steps, say).
 - **Hide unused ports** (`H`, or the node menu) is a per-node flag in
   `NodeSharedState::hide_unused_ports`, saved as `SavedNode.hide_unused_ports`.
   The graph turns it into `hidden_inputs`/`hidden_outputs` each frame

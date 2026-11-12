@@ -1,4 +1,5 @@
 pub use super::promoted::{PromotedKind, PromotedParam};
+pub use super::snapshots::SnapshotSet;
 use std::any::Any;
 use std::sync::{Arc, Mutex};
 
@@ -277,6 +278,15 @@ pub struct NodeSharedState {
     /// so a change can be turned into a port remap.
     pub promoted_applied: Vec<PromotedParam>,
     pub pending_promoted: Option<Vec<PromotedParam>>,
+    /// The node's snapshots (see `engine::snapshots`). UI-owned and saved with
+    /// the node; changes reach the engine through `pending_snapshots`.
+    pub snapshots: SnapshotSet,
+    pub pending_snapshots: Option<SnapshotSet>,
+    /// A click in the list: position of the snapshot to recall.
+    pub pending_recall: Option<usize>,
+    /// Written by the engine: the snapshot in effect, and whether a fade runs.
+    pub snapshot_active: Option<u64>,
+    pub snapshot_fading: bool,
     /// Param names the node refuses to have promoted (written by the engine).
     pub non_promotable: &'static [&'static str],
     /// Show only the ports that have a wire (plus the variadic "+" ports).
@@ -304,6 +314,11 @@ impl NodeSharedState {
             promoted: Vec::new(),
             promoted_applied: Vec::new(),
             pending_promoted: None,
+            snapshots: SnapshotSet::default(),
+            pending_snapshots: None,
+            pending_recall: None,
+            snapshot_active: None,
+            snapshot_fading: false,
             non_promotable: &[],
             hide_unused_ports: false,
             hidden_inputs: Vec::new(),

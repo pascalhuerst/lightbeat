@@ -7,6 +7,7 @@
 
 use serde::{Deserialize, Serialize};
 
+use super::snapshots::{Player, SnapshotSet};
 use super::types::{ParamDef, ParamValue, PortType, ProcessNode};
 
 /// What kind of value a promoted param takes, and so what its port carries.
@@ -16,6 +17,10 @@ pub enum PromotedKind {
     Int,
     Bool,
     Choice,
+    /// Not a setting: the input that picks a snapshot.
+    SnapshotSelect,
+    /// Not a setting: the phase input that fades to the picked snapshot.
+    SnapshotFade,
 }
 
 impl PromotedKind {
@@ -34,7 +39,8 @@ impl PromotedKind {
         match self {
             PromotedKind::Float | PromotedKind::Int => PortType::Untyped,
             PromotedKind::Bool => PortType::Logic,
-            PromotedKind::Choice => PortType::Phase,
+            PromotedKind::Choice | PromotedKind::SnapshotFade => PortType::Phase,
+            PromotedKind::SnapshotSelect => PortType::Untyped,
         }
     }
 }
@@ -79,7 +85,15 @@ impl Spec {
     }
 }
 
+#[derive(Clone, Copy, PartialEq)]
+enum Role {
+    Param,
+    SnapshotSelect,
+    SnapshotFade,
+}
+
 struct Entry {
+    role: Role,
     param_idx: usize,
     spec: Spec,
     /// Last value pushed, so `set_param` (which some nodes use to reset
@@ -95,6 +109,7 @@ pub struct PromotedInputs {
     /// `None` where the node no longer has a param of that name; its port
     /// still exists so wire indices stay put.
     entries: Vec<Option<Entry>>,
+    player: Player,
 }
 
 impl PromotedInputs {
@@ -109,8 +124,17 @@ impl PromotedInputs {
         self.entries = wanted
             .iter()
             .map(|w| {
+                let special = match w.kind {
+                    PromotedKind::SnapshotSelect => Some(Role::SnapshotSelect),
+                    PromotedKind::SnapshotFade => Some(Role::SnapshotFade),
+                    _ => None,
+                };
+                if let Some(role) = special {
+                    return Some(Entry { role, param_idx: 0, spec: Spec::Bool, last: None, was_wired: false });
+                }
                 let idx = params.iter().position(|p| p.name() == w.name)?;
                 Some(Entry {
+                    role: Role::Param,
                     param_idx: idx,
                     spec: Spec::of(&params[idx]),
                     last: None,
@@ -130,6 +154,11 @@ impl PromotedInputs {
                     e.last = None;
                 }
                 e.was_wired = w;
+                match e.role {
+                    Role::SnapshotSelect => self.player.select_wired = w,
+                    Role::SnapshotFade => self.player.fade_wired = w,
+                    Role::Param => {}
+                }
             }
         }
     }
@@ -137,6 +166,11 @@ impl PromotedInputs {
     /// Feed one tick's value for promoted port `slot`.
     pub fn apply(&mut self, node: &mut dyn ProcessNode, slot: usize, value: f32) {
         let Some(Some(entry)) = self.entries.get_mut(slot) else { return };
+        match entry.role {
+            Role::SnapshotSelect => return self.player.select_signal(value, node),
+            Role::SnapshotFade => return self.player.set_fade_phase(value),
+            Role::Param => {}
+        }
         let converted = entry.spec.convert(value);
         let unchanged = match (&entry.last, &converted) {
             (Some(ParamValue::Float(a)), ParamValue::Float(b)) => a == b,
@@ -151,6 +185,27 @@ impl PromotedInputs {
         }
     }
 
+    /// The UI's snapshot list, replacing ours.
+    pub fn adopt_snapshots(&mut self, set: SnapshotSet) {
+        self.player.adopt(set);
+    }
+
+    pub fn recall_snapshot(&mut self, index: usize, node: &mut dyn ProcessNode) {
+        self.player.recall(index, node);
+    }
+
+    /// Once per tick, after the wires have been delivered.
+    pub fn step_snapshots(&mut self, node: &mut dyn ProcessNode) {
+        if !self.player.is_idle() {
+            self.player.step(node);
+        }
+    }
+
+    /// (active snapshot, whether a fade is running) for the UI mirror.
+    pub fn snapshot_state(&self) -> (Option<u64>, bool) {
+        (self.player.active(), self.player.fading())
+    }
+
     /// Re-read ranges and indices, which can change with a node's mode.
     /// Called at UI sync rate rather than every tick since `params()` allocates.
     pub fn refresh(&mut self, node: &dyn ProcessNode) {
@@ -160,6 +215,7 @@ impl PromotedInputs {
         let params = node.params();
         for (entry, w) in self.entries.iter_mut().zip(&self.wanted) {
             if let Some(e) = entry
+                && e.role == Role::Param
                 && let Some(idx) = params.iter().position(|p| p.name() == w.name)
             {
                 e.param_idx = idx;
@@ -206,5 +262,35 @@ mod tests {
         // The top of the range must not run past the last option.
         assert_eq!(pick(1.0), 4);
         assert_eq!(pick(3.0), 4);
+    }
+
+    #[test]
+    fn snapshot_ports_recall_through_the_promoted_list() {
+        use crate::engine::nodes::math::scale_offset::ScaleOffsetProcessNode;
+        use crate::engine::snapshots::{SELECT_NAME, SnapshotSet, capture};
+        use crate::engine::types::NodeId;
+
+        let mut node = ScaleOffsetProcessNode::new(NodeId(1));
+        let mut set = SnapshotSet::default();
+        node.set_param(0, ParamValue::Float(1.0));
+        set.add(None, capture(&node.params(), node.non_promotable_params()));
+        node.set_param(0, ParamValue::Float(4.0));
+        set.add(None, capture(&node.params(), node.non_promotable_params()));
+
+        let mut p = PromotedInputs::default();
+        p.adopt(
+            &[PromotedParam { name: SELECT_NAME.into(), kind: PromotedKind::SnapshotSelect }],
+            &node,
+        );
+        p.adopt_snapshots(set);
+        p.apply(&mut node, 0, 0.0);
+        let scale = |n: &ScaleOffsetProcessNode| match n.params()[0] {
+            ParamDef::Float { value, .. } => value,
+            _ => unreachable!(),
+        };
+        assert_eq!(scale(&node), 1.0);
+        p.apply(&mut node, 0, 1.0);
+        assert_eq!(scale(&node), 4.0);
+        assert_eq!(PromotedKind::SnapshotSelect.port_type(), PortType::Untyped);
     }
 }

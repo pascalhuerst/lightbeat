@@ -2051,6 +2051,7 @@ impl LightBeatApp {
             disabled: false,
             promoted: Vec::new(),
             hide_unused_ports: false,
+            snapshots: Default::default(),
         };
 
         // Load this single node into the active level via the existing
