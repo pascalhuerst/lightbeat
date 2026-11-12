@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 
 use crate::engine::nodes::meta::subgraph::{BRIDGE_IN_NODE_ID, BRIDGE_OUT_NODE_ID, SubgraphPortDef};
-use crate::engine::types::{NodeId, ParamDef, ParamValue, PortDir, PortId, PromotedParam};
+use crate::engine::types::{NodeId, ParamDef, ParamValue, PortDir, PortId, PromotedParam, SnapshotSet};
 use crate::widgets::nodes::display::led_display::LedDisplayWidget;
 use crate::widgets::nodes::display::value_display::ValueDisplayWidget;
 use crate::widgets::nodes::io::audio_input::AudioInputWidget;
@@ -123,6 +123,9 @@ pub struct SavedNode {
     /// Show only the wired ports.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub hide_unused_ports: bool,
+    /// Named sets of the node's settings (see `engine::snapshots`).
+    #[serde(default, skip_serializing_if = "SnapshotSet::is_empty")]
+    pub snapshots: SnapshotSet,
 }
 
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
@@ -227,6 +230,8 @@ pub fn save_level(level: &GraphLevel, graph: &NodeGraph) -> ProjectFile {
         let disabled = shared.disabled;
         let promoted = shared.promoted.clone();
         let hide_unused_ports = shared.hide_unused_ports;
+        let mut snapshots = shared.snapshots.clone();
+        snapshots.active = shared.snapshot_active.or(snapshots.active);
         drop(shared);
 
         // For Subgraph nodes, recursively save the inner level.
@@ -249,6 +254,7 @@ pub fn save_level(level: &GraphLevel, graph: &NodeGraph) -> ProjectFile {
             disabled,
             promoted,
             hide_unused_ports,
+            snapshots,
         });
     }
 
@@ -402,6 +408,10 @@ pub fn load_graph(graph: &mut NodeGraph, project: &ProjectFile) -> Vec<usize> {
                 shared.promoted_applied = saved.promoted.clone();
                 if !saved.promoted.is_empty() {
                     shared.pending_promoted = Some(saved.promoted.clone());
+                }
+                if !saved.snapshots.is_empty() {
+                    shared.snapshots = saved.snapshots.clone();
+                    shared.pending_snapshots = Some(saved.snapshots.clone());
                 }
             }
 
@@ -910,6 +920,7 @@ mod tests {
             inner_graph: None,
             disabled: false,
             promoted: Vec::new(),
+            snapshots: Default::default(),
             hide_unused_ports: false,
         }
     }

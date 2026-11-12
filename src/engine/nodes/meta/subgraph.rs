@@ -193,13 +193,15 @@ impl InnerGraph {
         // connection scan because `load_data` can rebuild a node's ports.
         self.disabled_mask.clear();
         for (i, node) in self.nodes.iter_mut().enumerate() {
-            let (disabled, pending, config_update, promoted_update) = {
+            let (disabled, pending, config_update, promoted_update, snapshots_update, recall) = {
                 let mut shared = self.shared_states[i].lock().unwrap();
                 (
                     shared.disabled,
                     std::mem::take(&mut shared.pending_params),
                     shared.pending_config.take(),
                     shared.pending_promoted.take(),
+                    shared.pending_snapshots.take(),
+                    shared.pending_recall.take(),
                 )
             };
             self.disabled_mask.push(disabled);
@@ -209,11 +211,17 @@ impl InnerGraph {
             if let Some(list) = promoted_update {
                 self.promoted[i].adopt(&list, node.as_ref());
             }
+            if let Some(set) = snapshots_update {
+                self.promoted[i].adopt_snapshots(set);
+            }
             for (idx, val) in pending {
                 node.set_param(idx, val);
             }
             if let Some(config) = config_update {
                 node.load_data(&config);
+            }
+            if let Some(index) = recall {
+                self.promoted[i].recall_snapshot(index, node.as_mut());
             }
         }
 
@@ -260,6 +268,9 @@ impl InnerGraph {
             &self.bridge_in,
             &mut self.bridge_out,
         );
+        for (i, node) in self.nodes.iter_mut().enumerate() {
+            self.promoted[i].step_snapshots(node.as_mut());
+        }
         clock.lap("[inner] 3 propagate");
 
         // 4. Mirror state for the UI at roughly frame rate. `params()`,
@@ -301,6 +312,10 @@ impl InnerGraph {
         }
         for (i, node) in self.nodes.iter().enumerate() {
             self.promoted[i].refresh(node.as_ref());
+            let (active, fading) = self.promoted[i].snapshot_state();
+            let mut shared = self.shared_states[i].lock().unwrap();
+            shared.snapshot_active = active;
+            shared.snapshot_fading = fading;
         }
     }
 }

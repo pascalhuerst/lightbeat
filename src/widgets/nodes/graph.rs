@@ -245,6 +245,7 @@ struct ClipboardNode {
     size: Option<Vec2>,
     params: Vec<(usize, ParamValue)>,
     promoted: Vec<PromotedParam>,
+    snapshots: crate::engine::types::SnapshotSet,
     hide_unused_ports: bool,
     data: Option<serde_json::Value>,
     /// Offset from the first copied node's position.
@@ -2312,6 +2313,8 @@ impl NodeGraph {
 
             let data = shared.save_data.clone();
             let promoted = shared.promoted.clone();
+            let mut snapshots = shared.snapshots.clone();
+            snapshots.active = shared.snapshot_active.or(snapshots.active);
             let hide_unused_ports = shared.hide_unused_ports;
             drop(shared);
 
@@ -2330,6 +2333,7 @@ impl NodeGraph {
                 size: state.size_override,
                 params,
                 promoted,
+                snapshots,
                 hide_unused_ports,
                 data,
                 offset: state.pos - origin,
@@ -2406,6 +2410,10 @@ impl NodeGraph {
                     }
                     state.promoted = cn.promoted.clone();
                     state.promoted_applied = cn.promoted.clone();
+                    if !cn.snapshots.is_empty() {
+                        state.snapshots = cn.snapshots.clone();
+                        state.pending_snapshots = Some(cn.snapshots.clone());
+                    }
                     state.hide_unused_ports = cn.hide_unused_ports;
                 }
 

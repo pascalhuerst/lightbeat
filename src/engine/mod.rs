@@ -4,6 +4,7 @@ pub mod nodes;
 pub mod probe;
 pub mod promoted;
 pub mod routing;
+pub mod snapshots;
 pub mod sync_hint;
 pub mod types;
 
