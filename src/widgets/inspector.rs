@@ -151,10 +151,30 @@ impl PromoteCtx {
     }
 }
 
+/// A dropdown that picks what the node is. It reshapes the node, so a wire may
+/// not drive it and changing it drops the inputs the user had added.
+fn is_mode(param: &ParamDef) -> bool {
+    matches!(param, ParamDef::Choice { name, .. } if name == "Mode")
+}
+
+/// Changing a mode leaves the exposed settings meaningless (a name can mean
+/// another thing in the next mode), so they go, with their wires. The snapshot
+/// inputs are not settings and stay.
+fn drop_exposed_inputs(node: &dyn NodeWidget) {
+    let mut shared = node.shared_state().lock().unwrap();
+    let keep = |p: &PromotedParam| {
+        matches!(p.kind, PromotedKind::SnapshotSelect | PromotedKind::SnapshotFade)
+    };
+    if shared.promoted.iter().any(|p| !keep(p)) {
+        shared.promoted.retain(keep);
+        shared.pending_promoted = Some(shared.promoted.clone());
+    }
+}
+
 /// Checkbox that turns a param into an input port and back.
 fn promote_checkbox(ui: &mut Ui, node: &dyn NodeWidget, promo: &PromoteCtx, param: &ParamDef) {
     let name = param.name();
-    if promo.non_promotable.contains(&name) {
+    if promo.non_promotable.contains(&name) || is_mode(param) {
         return;
     }
     let mut on = promo.slot(name).is_some();
@@ -348,6 +368,9 @@ pub fn show_inspector(ui: &mut Ui, node: &mut dyn NodeWidget) {
                                     for (oi, opt) in options.iter().enumerate() {
                                         if ui.selectable_value(&mut v, oi, opt).changed() {
                                             push_param(node, i, ParamValue::Choice(v));
+                                            if is_mode(param) || promo.non_promotable.contains(&param.name()) {
+                                                drop_exposed_inputs(node);
+                                            }
                                         }
                                     }
                                 });
