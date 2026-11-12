@@ -1981,10 +1981,11 @@ impl NodeGraph {
         let mut any_peer_pulsing = false;
         for i in 0..level.nodes.len() {
             let selected = self.selected_nodes.contains(&i);
-            let portal_peer = !selected
-                && level.nodes[i].link_key()
-                    .map(|k| highlighted_link_keys.contains(&k))
-                    .unwrap_or(false);
+            // Every member of the group pulses, the selected one too: seeing
+            // all of them at once is the point.
+            let portal_peer = level.nodes[i].link_key()
+                .map(|k| highlighted_link_keys.contains(&k))
+                .unwrap_or(false);
             if portal_peer { any_peer_pulsing = true; }
             let inputs = level.nodes[i].ui_inputs_full();
             let outputs = level.nodes[i].ui_outputs();
@@ -4327,19 +4328,21 @@ fn draw_node_chrome(
         painter.rect_filled(shadow_rect, NODE_CORNER_RADIUS, Color32::from_black_alpha(60));
     }
 
-    // Portal-peer halo: when a portal is the peer of a currently-selected
-    // portal, paint an amber halo so the linked pair is easy to find.
-    // Pulses slowly so a user glancing at a busy graph can still catch it.
+    // Link halo: every node in the same linked group as a selected node (a
+    // portal's peers, an effect stack's effects) pulses amber.
     // Suppressed when disabled so "off" reads as pure grayscale.
     if !disabled && portal_peer {
-        // 0.5 Hz breathing envelope (one full cycle every 2 s), amplitude
-        // 0.4 around a base level of 0.6 — so alpha rides 0.2..1.0 of the
-        // halo's normal strength.
-        let phase = (time * std::f64::consts::TAU * 0.5).sin() as f32;
-        let env = 0.6 + 0.4 * phase;
-        let halo_color = theme::SEM_WARNING_HALO.linear_multiply(env.clamp(0.1, 1.0));
-        let halo = rect.expand(3.0);
-        painter.rect_filled(halo, NODE_CORNER_RADIUS + 3.0, halo_color);
+        // 1 Hz pulse from 0 to 1, strong enough to find a node in a busy
+        // graph: a glow that swells and a ring around it.
+        let env = 0.5 + 0.5 * (time * std::f64::consts::TAU).sin() as f32;
+        let halo = rect.expand(4.0 + 6.0 * env);
+        painter.rect_filled(halo, NODE_CORNER_RADIUS + 6.0, theme::SEM_WARNING.linear_multiply(0.10 + 0.25 * env));
+        painter.rect_stroke(
+            halo,
+            NODE_CORNER_RADIUS + 6.0,
+            Stroke::new(2.0_f32, theme::SEM_WARNING.linear_multiply(0.35 + 0.65 * env)),
+            egui::StrokeKind::Outside,
+        );
     }
 
     // Body — darker flat gray when disabled so the overlay later looks
