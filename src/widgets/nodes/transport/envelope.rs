@@ -114,11 +114,12 @@ impl NodeWidget for EnvelopeWidget {
             (d.kind, d.stage, d.envelope_value, Times {
                 attack: d.attack, decay: d.decay, sustain: d.sustain, release: d.release,
                 attack_curve: d.attack_curve, decay_curve: d.decay_curve, release_curve: d.release_curve,
+                progress: d.progress,
             })
         } else {
             (self.kind, 0, 0.0, Times {
                 attack: 0.02, decay: 0.08, sustain: 0.6, release: 0.15,
-                attack_curve: 0.0, decay_curve: 0.0, release_curve: 0.0,
+                attack_curve: 0.0, decay_curve: 0.0, release_curve: 0.0, progress: 0.0,
             })
         };
         drop(shared);
@@ -184,6 +185,7 @@ impl NodeWidget for EnvelopeWidget {
 struct Times {
     attack: f32, decay: f32, sustain: f32, release: f32,
     attack_curve: f32, decay_curve: f32, release_curve: f32,
+    progress: f32,
 }
 
 #[derive(Clone, Copy)]
@@ -411,12 +413,14 @@ impl EnvelopeWidget {
         }
     }
 
-    /// Where the running dot sits on the drawn curve for the current stage.
+    /// Where the running dot sits: along the running segment by how far the
+    /// engine is through it, at the envelope's real height. (Placing it on the
+    /// drawn curve by height alone parks it at the bottom of a release that
+    /// began early, as a short trigger does, where it hardly moves.)
     fn indicator(&self, kind: EnvelopeKind, geo: &Geo, stage: u8, env: f32, t: Times) -> Option<(f32, f32)> {
-        let (seg, from, to) = match (kind, stage) {
-            (_, 1) => (0, 0.0, 1.0),
-            (EnvelopeKind::Adsr, 2) => (1, 1.0, t.sustain),
-            (EnvelopeKind::Ad, 2) => (1, 1.0, 0.0),
+        let seg = match (kind, stage) {
+            (_, 1) => 0,
+            (EnvelopeKind::Adsr | EnvelopeKind::Ad, 2) => 1,
             (EnvelopeKind::Adsr, 3) => {
                 let (a, b) = (geo.pts[2], geo.pts[3]);
                 return Some((0.5 * (a.x + b.x), a.y));
@@ -425,16 +429,15 @@ impl EnvelopeWidget {
                 let (a, b) = (geo.pts[1], geo.pts[2]);
                 return Some((0.5 * (a.x + b.x), a.y));
             }
-            (EnvelopeKind::Adsr, 4) => (3, t.sustain, 0.0),
-            (EnvelopeKind::Ar, 4) => (2, 1.0, 0.0),
+            (EnvelopeKind::Adsr, 4) => 3,
+            (EnvelopeKind::Ar, 4) => 2,
             _ => return None,
         };
         let s = geo.segs[seg];
-        let span = to - from;
-        let f = if span.abs() < 1e-4 { 1.0 } else { ((env - from) / span).clamp(0.0, 1.0) };
-        let tt = unshape(f, s.curve);
         let (pa, pb) = (geo.pts[s.a], geo.pts[s.b]);
-        Some((pa.x + (pb.x - pa.x) * tt, pa.y + (pb.y - pa.y) * f))
+        let x = pa.x + (pb.x - pa.x) * t.progress.clamp(0.0, 1.0);
+        let y = geo.y_bot - env.clamp(0.0, 1.0) * (geo.y_bot - geo.y_top);
+        Some((x, y))
     }
 
     fn apply_drag(&self, kind: EnvelopeKind, geo: &Geo, grab: Grab, pos: Pos2, rect: egui::Rect) {

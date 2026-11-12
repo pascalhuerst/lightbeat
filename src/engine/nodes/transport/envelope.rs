@@ -80,6 +80,8 @@ pub struct EnvelopeDisplay {
     pub attack_curve: f32,
     pub decay_curve: f32,
     pub release_curve: f32,
+    /// How far along the running segment the envelope is, 0..1.
+    pub progress: f32,
 }
 
 pub struct EnvelopeProcessNode {
@@ -316,6 +318,7 @@ impl ProcessNode for EnvelopeProcessNode {
             attack_curve: self.attack_curve,
             decay_curve: self.decay_curve,
             release_curve: self.release_curve,
+            progress: self.seg_pos.clamp(0.0, 1.0),
         }));
     }
 }
