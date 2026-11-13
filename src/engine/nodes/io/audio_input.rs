@@ -44,14 +44,23 @@ pub struct AudioInputProcessNode {
     cached_kinds: Vec<AnalyzerKind>,
     /// Per-analyzer onset-count cache (same order as `cached_kinds`).
     caches: Vec<AnalyzerCache>,
-    display_outputs: Vec<(String, PortType, f32)>,
-    display_name: String,
-    display_params: Vec<ParamDef>,
-    display_analyzer_results: Vec<(AnalyzerKind, Vec<f32>)>,
+    /// Output count of each cached kind; `AnalyzerKind::outputs` builds a
+    /// Vec of named ports, too much to do per tick.
+    widths: Vec<usize>,
+    /// Whether the last tick had an analyzer frame; without one the
+    /// per-analyzer results are not shown.
+    has_frame: bool,
     audio: SharedAudioInputs,
 }
 
 impl AudioInputProcessNode {
+    /// The bound input's analyzer settings, read when asked for (the UI sync
+    /// and saving) instead of copied on every tick.
+    fn analyzer_params(&self) -> Vec<ParamDef> {
+        let state = self.audio.lock().unwrap();
+        state.iter().find(|c| c.id == self.input_id).map(|c| c.analyzer_param_defs()).unwrap_or_default()
+    }
+
     pub fn new(id: NodeId, audio: SharedAudioInputs) -> Self {
         Self {
             id,
@@ -60,10 +69,8 @@ impl AudioInputProcessNode {
             output_values: Vec::new(),
             cached_kinds: Vec::new(),
             caches: Vec::new(),
-            display_outputs: Vec::new(),
-            display_name: String::new(),
-            display_params: Vec::new(),
-            display_analyzer_results: Vec::new(),
+            widths: Vec::new(),
+            has_frame: false,
             audio,
         }
     }
@@ -84,18 +91,16 @@ impl ProcessNode for AudioInputProcessNode {
     }
 
     fn process(&mut self) {
+        self.has_frame = false;
         let state = self.audio.lock().unwrap();
         let input = state.iter().find(|c| c.id == self.input_id);
         let Some(input) = input else {
             for v in &mut self.output_values {
                 *v = 0.0;
             }
-            self.display_outputs.clear();
-            self.display_name.clear();
-            self.display_params.clear();
-            self.display_analyzer_results.clear();
             self.outputs.clear();
             self.cached_kinds.clear();
+            self.widths.clear();
             self.caches.clear();
             return;
         };
@@ -104,14 +109,14 @@ impl ProcessNode for AudioInputProcessNode {
         // not the live handles. This means disabling the audio input (which
         // clears the live handles/frame) leaves the port list intact, so
         // wires in the graph survive a disable → enable toggle.
-        let kinds: Vec<AnalyzerKind> = input.analyzer_kinds.clone();
         // True only while a stream is actually open; an input that is
         // disabled or whose device is missing reports false.
         let connected = input.status == ConnectionStatus::Connected;
-        if kinds != self.cached_kinds || self.outputs.is_empty() {
+        if input.analyzer_kinds != self.cached_kinds || self.outputs.is_empty() {
+            let kinds = &input.analyzer_kinds;
             let mut expected: Vec<PortDef> = Vec::new();
             for (i, k) in kinds.iter().enumerate() {
-                let prefix = crate::audio::analyzers::port_prefix(&kinds, i);
+                let prefix = crate::audio::analyzers::port_prefix(kinds, i);
                 for p in k.outputs() {
                     expected.push(PortDef::new(format!("{}{}", prefix, p.name), p.port_type));
                 }
@@ -119,6 +124,7 @@ impl ProcessNode for AudioInputProcessNode {
             self.outputs = with_status_port(expected);
             self.output_values = vec![0.0; self.outputs.len()];
             self.caches = vec![AnalyzerCache::default(); kinds.len()];
+            self.widths = kinds.iter().map(|k| k.outputs().len()).collect();
             self.cached_kinds = kinds.clone();
         }
 
@@ -131,18 +137,13 @@ impl ProcessNode for AudioInputProcessNode {
             // onset_counter back at 0) doesn't edge-detect against our
             // pre-disable cache value and fire a spurious pulse.
             for c in self.caches.iter_mut() { *c = AnalyzerCache::default(); }
-            self.display_name = input.name.clone();
-            self.display_params = input.analyzer_param_defs();
-            self.display_outputs = self.outputs.iter().enumerate()
-                .map(|(i, p)| (p.name.clone(), p.port_type, self.output_values[i]))
-                .collect();
-            self.display_analyzer_results.clear();
             return;
         };
         // Drop the state lock before touching the frame mutex so the audio
         // worker and the engine tick can't deadlock each other.
         drop(state);
-        let frame = frame_arc.lock().clone();
+        let frame = frame_arc.lock();
+        self.has_frame = true;
 
         // Slot analyzer values into the output buffer. Trigger outputs are
         // edge-detected from the monotonic counters emitted by the worker.
@@ -151,15 +152,15 @@ impl ProcessNode for AudioInputProcessNode {
         let mut slot = 1;
         let mut frame_slot = 0;
         for (ai, k) in self.cached_kinds.iter().enumerate() {
-            let n = k.outputs().len();
+            let n = self.widths[ai];
             let triggers = k.trigger_outputs();
-            let counts = frame.onset_counts.get(ai).cloned().unwrap_or_default();
-            let prev = self.caches[ai].last_counts.replace(counts.clone());
+            let counts: &[u64] = frame.onset_counts.get(ai).map(|v| v.as_slice()).unwrap_or(&[]);
+            let cache = &mut self.caches[ai];
             for j in 0..n {
                 let out = match triggers.iter().position(|&t| t == j) {
                     Some(ti) => {
                         let cur = counts.get(ti).copied().unwrap_or(0);
-                        match &prev {
+                        match &cache.last_counts {
                             Some(p) if p.get(ti).copied().unwrap_or(0) != cur => 1.0,
                             _ => 0.0,
                         }
@@ -170,34 +171,15 @@ impl ProcessNode for AudioInputProcessNode {
                     *s = out;
                 }
             }
+            match &mut cache.last_counts {
+                Some(last) => {
+                    last.clear();
+                    last.extend_from_slice(counts);
+                }
+                None => cache.last_counts = Some(counts.to_vec()),
+            }
             slot += n;
             frame_slot += n;
-        }
-
-        // Snapshot for display (re-lock briefly to read name + params).
-        let state = self.audio.lock().unwrap();
-        let input = state.iter().find(|c| c.id == self.input_id);
-        if let Some(input) = input {
-            self.display_name = input.name.clone();
-            self.display_params = input.analyzer_param_defs();
-        }
-        drop(state);
-
-        self.display_outputs = self
-            .outputs
-            .iter()
-            .enumerate()
-            .map(|(i, p)| (p.name.clone(), p.port_type, self.output_values[i]))
-            .collect();
-        self.display_analyzer_results.clear();
-        let mut o = 1;
-        for k in &self.cached_kinds {
-            let n = k.outputs().len();
-            let vals: Vec<f32> = (o..o + n)
-                .map(|i| self.output_values.get(i).copied().unwrap_or(0.0))
-                .collect();
-            self.display_analyzer_results.push((*k, vals));
-            o += n;
         }
     }
 
@@ -209,7 +191,7 @@ impl ProcessNode for AudioInputProcessNode {
         // Persist analyzer params by name (e.g. "a0.threshold") so the saved
         // values survive analyzer add/remove that shifts global indices.
         let mut params = serde_json::Map::new();
-        for def in &self.display_params {
+        for def in &self.analyzer_params() {
             let value = match def {
                 ParamDef::Float { value, .. } => serde_json::json!(value),
                 ParamDef::Int { value, .. } => serde_json::json!(value),
@@ -233,9 +215,8 @@ impl ProcessNode for AudioInputProcessNode {
             self.cached_kinds.clear();
         }
 
-        // Apply saved param values by name. Looks up the analyzer params on
-        // the bound audio input so we don't depend on `self.display_params`
-        // (which may not be populated yet — process() hasn't run).
+        // Apply saved param values by name, looked up on the bound audio
+        // input.
         if let Some(saved) = data.get("params").and_then(|v| v.as_object()) {
             let state = self.audio.lock().unwrap();
             if let Some(input) = state.iter().find(|c| c.id == self.input_id) {
@@ -251,7 +232,7 @@ impl ProcessNode for AudioInputProcessNode {
     }
 
     fn params(&self) -> Vec<ParamDef> {
-        self.display_params.clone()
+        self.analyzer_params()
     }
 
     fn set_param(&mut self, index: usize, value: ParamValue) {
@@ -262,11 +243,27 @@ impl ProcessNode for AudioInputProcessNode {
     }
 
     fn update_display(&self, shared: &mut NodeSharedState) {
+        let name = {
+            let state = self.audio.lock().unwrap();
+            state.iter().find(|c| c.id == self.input_id).map(|c| c.name.clone()).unwrap_or_default()
+        };
+        let outputs = self.outputs.iter().enumerate()
+            .map(|(i, p)| (p.name.clone(), p.port_type, self.output_values.get(i).copied().unwrap_or(0.0)))
+            .collect();
+        let mut analyzer_results = Vec::new();
+        if self.has_frame {
+            let mut o = 1;
+            for (k, n) in self.cached_kinds.iter().zip(&self.widths) {
+                let vals = (o..o + n).map(|i| self.output_values.get(i).copied().unwrap_or(0.0)).collect();
+                analyzer_results.push((*k, vals));
+                o += n;
+            }
+        }
         shared.display = Some(Box::new(AudioInputDisplay {
             input_id: self.input_id,
-            input_name: self.display_name.clone(),
-            outputs: self.display_outputs.clone(),
-            analyzer_results: self.display_analyzer_results.clone(),
+            input_name: name,
+            outputs,
+            analyzer_results,
         }));
     }
 }
@@ -326,6 +323,24 @@ mod tests {
         assert_eq!(out[6], 128.0, "bpm is in beats per minute, not the next value over");
         assert_eq!(out[7], 0.9, "confidence");
         assert_eq!(&out[8..11], &[0.8, 0.3, 0.6]);
+    }
+
+    #[test]
+    fn the_display_lists_outputs_and_per_analyzer_results() {
+        let n = node(input_with(
+            &[AnalyzerKind::PeakLevel, AnalyzerKind::Envelope],
+            vec![0.8, 0.3, 0.6],
+            vec![vec![], vec![]],
+        ));
+        let mut shared = NodeSharedState::new(0, n.outputs().len());
+        n.update_display(&mut shared);
+        let d = shared.display.as_ref().unwrap().downcast_ref::<AudioInputDisplay>().unwrap();
+        assert_eq!(d.input_name, "in");
+        assert_eq!(d.outputs.len(), n.outputs().len());
+        assert_eq!(d.outputs[0].2, 1.0);
+        assert_eq!(d.analyzer_results.len(), 2);
+        assert_eq!(d.analyzer_results[0].0, AnalyzerKind::PeakLevel);
+        assert_eq!(d.analyzer_results[0].1[0], 0.8);
     }
 
     #[test]
