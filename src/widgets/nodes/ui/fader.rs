@@ -8,7 +8,7 @@ use crate::engine::types::*;
 use crate::theme;
 use crate::widgets::setup_ui;
 use crate::widgets::fader::{self, highlight_alpha, FaderStyle};
-use crate::widgets::nodes::node::{NodeLayout, NodeWidget};
+use crate::widgets::nodes::node::{param_usize, NodeLayout, NodeWidget};
 use crate::widgets::nodes::types::UiPortDef;
 
 const HIGHLIGHT_DURATION: f64 = 0.5;
@@ -84,10 +84,6 @@ impl FaderWidget {
         let mut shared = self.shared.lock().unwrap();
         let mut cfg = serde_json::json!({
             "name": self.name,
-            "orientation": self.orientation.as_str(),
-            "inputs_enabled": self.inputs_enabled,
-            "mouse_override": self.mouse_override.as_str(),
-            "bipolar": self.bipolar,
         });
         if let Some(v) = mouse_value {
             cfg["mouse_value"] = serde_json::json!(v);
@@ -109,11 +105,12 @@ impl FaderWidget {
 impl NodeWidget for FaderWidget {
     /// Restore port-affecting state directly from save_data. See
     /// `FaderGroupWidget::restore_from_save` for rationale.
-    fn restore_from_save(&mut self, data: Option<&serde_json::Value>, _params: &[(usize, crate::engine::types::ParamValue)]) {
-        let Some(data) = data else { return };
-        if let Some(b) = data.get("inputs_enabled").and_then(|v| v.as_bool()) {
-            self.inputs_enabled = b;
-        }
+    fn restore_from_save(&mut self, data: Option<&serde_json::Value>, params: &[(usize, crate::engine::types::ParamValue)]) {
+        // Files from before the settings were params keep it in the config.
+        self.inputs_enabled = match param_usize(params, 1) {
+            Some(v) => v != 0,
+            None => data.and_then(|d| d.get("inputs_enabled")).and_then(|v| v.as_bool()).unwrap_or(false),
+        };
     }
 
     fn node_id(&self) -> NodeId { self.id }
@@ -256,29 +253,23 @@ impl NodeWidget for FaderWidget {
             }
         });
         ui.separator();
-        if setup_ui::choice_combo(ui, ("fader_orientation", self.id.0), "Orientation", &mut self.orientation, &[
-            (FaderOrientation::Vertical, "Vertical", ""),
-            (FaderOrientation::Horizontal, "Horizontal", ""),
-        ]) {
-            changed = true;
+        setup_ui::section(ui, "State");
+        if self.inputs_enabled {
+            ui.horizontal(|ui| {
+                ui.label("Input");
+                ui.colored_label(theme::TEXT_MUTED, format!("{:.3}", self.input_value));
+            });
         }
-
-        ui.separator();
-        setup_ui::section(ui, "Output");
-        if cell_inspector_section(
-            ui,
-            self.id.0,
-            None,
-            &mut self.inputs_enabled,
-            &mut self.mouse_override,
-            &mut self.bipolar,
-            self.input_value,
-            self.override_active,
-            self.override_value,
-            self.output_value,
-        ) {
-            changed = true;
+        if self.override_active {
+            ui.horizontal(|ui| {
+                ui.label("Override");
+                ui.colored_label(theme::SEM_WARNING, format!("{:.3}", self.override_value));
+            });
         }
+        ui.horizontal(|ui| {
+            ui.label("Output");
+            ui.colored_label(theme::TEXT, format!("{:.3}", self.output_value));
+        });
 
         if changed { self.push_settings(); }
     }
@@ -286,65 +277,21 @@ impl NodeWidget for FaderWidget {
     fn as_any_mut(&mut self) -> &mut dyn Any { self }
 }
 
-/// Render one combined per-cell control block in the inspector.
-/// Returns true if any setting changed.
-pub fn cell_inspector_section(
-    ui: &mut Ui,
-    salt: u64,
-    label: Option<&str>,
-    inputs_enabled: &mut bool,
-    mouse_override: &mut MouseOverrideMode,
-    bipolar: &mut bool,
-    input_value: f32,
-    override_active: bool,
-    override_value: f32,
-    output_value: f32,
-) -> bool {
-    let mut changed = false;
-    egui::Frame::group(ui.style()).show(ui, |ui| {
-        if let Some(l) = label {
-            setup_ui::section(ui, l);
-        }
-        if ui.checkbox(inputs_enabled, "Input enabled").changed() {
-            changed = true;
-        }
-        if *inputs_enabled {
-            ui.horizontal(|ui| {
-                ui.label("Input");
-                ui.colored_label(theme::TEXT_MUTED, format!("{:.3}", input_value));
-            });
-        }
-        ui.horizontal(|ui| {
-            ui.label("Mouse override");
-            egui::ComboBox::from_id_salt(("mo", salt))
-                .selected_text(mouse_override.label())
-                .show_ui(ui, |ui| {
-                    for m in [
-                        MouseOverrideMode::No,
-                        MouseOverrideMode::ClearOnReset,
-                        MouseOverrideMode::PickupDecrease,
-                        MouseOverrideMode::PickupIncrease,
-                    ] {
-                        if ui.selectable_label(*mouse_override == m, m.label()).clicked() {
-                            *mouse_override = m;
-                            changed = true;
-                        }
-                    }
-                });
-        });
-        if override_active {
-            ui.horizontal(|ui| {
-                ui.label("Override");
-                ui.colored_label(theme::SEM_WARNING, format!("{:.3}", override_value));
-            });
-        }
-        ui.horizontal(|ui| {
-            ui.label("Output");
-            ui.colored_label(theme::TEXT, format!("{:.3}", output_value));
-        });
-        if ui.checkbox(bipolar, "Bipolar").changed() {
-            changed = true;
-        }
-    });
-    changed
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_input_port_comes_back_from_either_form_of_a_saved_fader() {
+        let old = serde_json::json!({ "inputs_enabled": true });
+        let mut f = FaderWidget::new(NodeId(1), new_shared_state(1, 1));
+        f.restore_from_save(Some(&old), &[]);
+        assert_eq!(f.ui_inputs().len(), 1);
+        let mut f = FaderWidget::new(NodeId(1), new_shared_state(1, 1));
+        f.restore_from_save(None, &[(1, ParamValue::Bool(true))]);
+        assert_eq!(f.ui_inputs().len(), 1);
+        let mut f = FaderWidget::new(NodeId(1), new_shared_state(1, 1));
+        f.restore_from_save(None, &[]);
+        assert!(f.ui_inputs().is_empty());
+    }
 }
