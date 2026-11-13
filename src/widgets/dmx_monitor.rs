@@ -1,17 +1,19 @@
 use egui::{self, Color32, Rect, Sense, Stroke, StrokeKind, Ui, Vec2};
 
 use crate::dmx_io::{SharedDmxState, UniverseKey};
+use crate::theme;
+use crate::widgets::setup_ui::{self, Status};
 use crate::widgets::fader::{self, Orientation};
 
 const COLS: usize = 32;
 const ROWS: usize = 16;
 const CHANNEL_COUNT: usize = 512;
 
-const CELL_BG: Color32 = Color32::from_rgb(30, 30, 34);
-const CELL_BORDER: Color32 = Color32::from_rgb(50, 50, 56);
-const LABEL_COLOR: Color32 = Color32::from_rgb(160, 160, 170);
-const VALUE_COLOR: Color32 = Color32::from_rgb(200, 200, 210);
-const OVERRIDE_COLOR: Color32 = Color32::from_rgb(240, 160, 40);
+const CELL_BG: Color32 = theme::DMX_CELL_BG;
+const CELL_BORDER: Color32 = theme::DMX_CELL_BORDER;
+const LABEL_COLOR: Color32 = theme::DMX_LABEL;
+const VALUE_COLOR: Color32 = theme::DMX_VALUE;
+const OVERRIDE_COLOR: Color32 = theme::DMX_OVERRIDE;
 
 pub struct DmxMonitor {
     hovered_channel: Option<usize>,
@@ -71,48 +73,45 @@ impl DmxMonitor {
             let cur_iface_name = self.selected_key.map(|k| {
                 interface_names.iter().find(|(id, _)| *id == k.interface_id)
                     .map(|(_, n)| n.clone())
-                    .unwrap_or_else(|| "???".into())
-            }).unwrap_or_else(|| "No interface".into());
+                    .unwrap_or_else(|| setup_ui::MISSING.into())
+            }).unwrap_or_else(|| "(none)".into());
 
-            ui.label("Interface:");
+            ui.label("Interface");
             egui::ComboBox::from_id_salt("dmx_monitor_iface")
                 .selected_text(&cur_iface_name)
                 .show_ui(ui, |ui| {
                     if interface_names.is_empty() {
-                        ui.label("No interfaces configured");
+                        setup_ui::empty_state(ui, "No interfaces yet");
                     }
                     for (id, name) in interface_names {
                         let is_selected = self.selected_key.map(|k| k.interface_id) == Some(*id);
                         if ui.selectable_label(is_selected, name).clicked() {
-                            // Switching interface — keep universe number, reset net/subnet.
-                            let uni = self.selected_key.map(|k| k.universe).unwrap_or(0);
-                            self.selected_key = Some(UniverseKey {
-                                interface_id: *id, net: 0, subnet: 0, universe: uni,
+                            // Switching interface keeps the address being looked at.
+                            let k = self.selected_key.unwrap_or(UniverseKey {
+                                interface_id: *id, net: 0, subnet: 0, universe: 0,
                             });
+                            self.selected_key = Some(UniverseKey { interface_id: *id, ..k });
                         }
                     }
                 });
 
-            // Universe number picker (0..15).
-            ui.label("Universe:");
-            let mut uni_num: i32 = self.selected_key.map(|k| k.universe as i32).unwrap_or(0);
-            if ui.add(egui::DragValue::new(&mut uni_num).range(0..=15)).changed()
-                && let Some(k) = self.selected_key.as_mut() {
-                    k.universe = uni_num as u8;
-                }
+            ui.label("Address");
+            if let Some(k) = self.selected_key.as_mut() {
+                setup_ui::dmx_address(ui, &mut k.net, &mut k.subnet, &mut k.universe);
+            }
 
-            // Marker if this universe currently has live data (objects writing to it).
+            // Whether objects write to this universe or it only exists for testing.
             if let Some(key) = self.selected_key {
                 if available_keys.contains(&key) {
-                    ui.colored_label(Color32::from_rgb(80, 200, 120), "● live");
+                    setup_ui::status_badge(ui, Status::Connected).on_hover_text("Objects write to this universe");
                 } else {
-                    ui.colored_label(Color32::from_gray(120), "○ test");
+                    setup_ui::status_badge(ui, Status::NoMapping).on_hover_text("Test universe: no object writes to it");
                 }
             }
 
             ui.separator();
 
-            if ui.small_button("Clear Overrides").clicked()
+            if ui.small_button("Clear overrides").clicked()
                 && let Some(key) = &self.selected_key {
                     let mut state = shared.lock().unwrap();
                     if let Some(uni) = state.universes.get_mut(key) {
@@ -138,6 +137,7 @@ impl DmxMonitor {
             }
         });
 
+        ui.colored_label(theme::TEXT_DIM, "Ctrl+drag a cell to override, Ctrl+double-click to clear, Shift for fine steps");
         ui.separator();
 
         // Grid.
@@ -221,7 +221,7 @@ impl DmxMonitor {
             let hovered = mouse_pos.map(|p| cell_rect.contains(p)).unwrap_or(false);
             if hovered { self.hovered_channel = Some(i); }
 
-            let bg = if hovered { Color32::from_rgb(45, 45, 52) } else { CELL_BG };
+            let bg = if hovered { theme::DMX_CELL_HOVER } else { CELL_BG };
             painter.rect_filled(cell_rect, 1.0, bg);
 
             if value > 0 {
