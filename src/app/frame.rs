@@ -32,6 +32,7 @@ impl LightBeatApp {
         self.update_check_tick();
         self.show_update_ui(ctx);
         self.show_shortcuts_window(ctx);
+        self.show_preferences_window(ctx);
 
         self.show_setup_window(ctx);
 
@@ -340,6 +341,11 @@ impl LightBeatApp {
                         ui.close_menu();
                         self.pending_undo_action = redo_action;
                     }
+                    ui.separator();
+                    if ui.button("Preferences...").clicked() {
+                        ui.close_menu();
+                        self.show_preferences = true;
+                    }
                 });
                 ui.menu_button("View", |ui| {
                     if ui.checkbox(&mut self.show_add_nodes, "Add Nodes").changed() {
@@ -349,6 +355,10 @@ impl LightBeatApp {
                         ui.close_menu();
                     }
                     if ui.checkbox(&mut self.show_dmx_monitor, "DMX Monitor").changed() {
+                        ui.close_menu();
+                    }
+                    if ui.checkbox(&mut self.config.snap_to_grid, "Snap to grid").changed() {
+                        self.config.save();
                         ui.close_menu();
                     }
                     ui.separator();

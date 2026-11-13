@@ -91,6 +91,7 @@ struct LightBeatApp {
     show_update_window: bool,
     show_about: bool,
     show_shortcuts: bool,
+    show_preferences: bool,
     /// Serialized form (JSON) of the project at the moment it was last saved
     /// (or loaded). Comparing the current serialized project against this
     /// tells us whether there are unsaved changes.
@@ -218,6 +219,7 @@ impl LightBeatApp {
             show_update_window: false,
             show_about: false,
             show_shortcuts: false,
+            show_preferences: false,
             last_saved_project_json: None,
             last_autosave_time: 0.0,
             unsaved_prompt: None,
