@@ -1,10 +1,9 @@
-use std::any::Any;
 use egui::{self, Ui};
 
 use crate::engine::nodes::transport::clock_divider::{ports_for, ClockDividerDisplay, MAX_EXTRA_OUTPUTS};
 use crate::engine::types::*;
 use crate::theme;
-use crate::widgets::nodes::node::NodeWidget;
+use crate::widgets::nodes::node::{NodeWidget, node_identity, with_display};
 use crate::widgets::nodes::types::UiPortDef;
 
 pub struct ClockDividerWidget {
@@ -43,8 +42,7 @@ impl NodeWidget for ClockDividerWidget {
         }
     }
 
-    fn node_id(&self) -> NodeId { self.id }
-    fn type_name(&self) -> &'static str { "Clock Divider" }
+    node_identity!("Clock Divider");
     fn description(&self) -> &'static str {
         "Emits one trigger for every N input triggers. Press + to add more outputs, each with its own N."
     }
@@ -66,19 +64,9 @@ impl NodeWidget for ClockDividerWidget {
     fn min_width(&self) -> f32 { 110.0 }
     fn min_content_height(&self) -> f32 { 20.0 }
 
-    fn shared_state(&self) -> &SharedState { &self.shared }
 
     fn show_content(&mut self, ui: &mut Ui, _zoom: f32) {
-        let shared = self.shared.lock().unwrap();
-        let display = shared.display.as_ref()
-            .and_then(|d| d.downcast_ref::<ClockDividerDisplay>());
-
-        let (divisor, count) = if let Some(d) = display {
-            (d.divisor, d.count)
-        } else {
-            (2, 0)
-        };
-        drop(shared);
+        let (divisor, count) = with_display::<ClockDividerDisplay, _>(&self.shared, |d| (d.divisor, d.count)).unwrap_or((2, 0));
 
         ui.horizontal(|ui| {
             ui.label(format!("1/{}", divisor));
@@ -114,8 +102,6 @@ impl NodeWidget for ClockDividerWidget {
             self.push_extra();
         }
     }
-
-    fn as_any_mut(&mut self) -> &mut dyn Any { self }
 }
 
 #[cfg(test)]

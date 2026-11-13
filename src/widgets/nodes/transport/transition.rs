@@ -1,11 +1,10 @@
-use std::any::Any;
 use egui::{self, Pos2, Sense, Stroke, Ui, Vec2};
 
 use crate::engine::nodes::transport::easing::EasingCurve;
 use crate::engine::nodes::transport::transition::{ports_for, TransitionDisplay, TransitionMode};
 use crate::engine::types::*;
 use crate::theme;
-use crate::widgets::nodes::node::{NodeWidget, param_usize};
+use crate::widgets::nodes::node::{NodeWidget, param_usize, node_identity};
 use crate::widgets::nodes::types::UiPortDef;
 
 pub struct TransitionWidget {
@@ -44,8 +43,7 @@ impl NodeWidget for TransitionWidget {
         self.mode = param_usize(params, 0).map(TransitionMode::from_index).unwrap_or(TransitionMode::Neutral);
     }
 
-    fn node_id(&self) -> NodeId { self.id }
-    fn type_name(&self) -> &'static str { "Transition" }
+    node_identity!("Transition");
     fn description(&self) -> &'static str { "Smoothly interpolates between values using an easing curve when triggered; the phase input moves it along. With Type set to Phase out there is no value: the output is the eased phase itself, a curve shaper that a trigger starts. For a time instead of a phase, drive it with Time to Phase." }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> { UiPortDef::from_defs(&ports_for(self.mode).0) }
@@ -55,7 +53,6 @@ impl NodeWidget for TransitionWidget {
     fn min_content_height(&self) -> f32 { 50.0 }
     fn resizable(&self) -> bool { true }
 
-    fn shared_state(&self) -> &SharedState { &self.shared }
 
     fn on_ui_connect(&mut self, input_port: usize, source_type: PortType) {
         // Only the `value` port (index 0) determines mode.
@@ -117,6 +114,4 @@ impl NodeWidget for TransitionWidget {
             painter.circle_filled(Pos2::new(x, y), 4.0, theme::TEXT_BRIGHT);
         }
     }
-
-    fn as_any_mut(&mut self) -> &mut dyn Any { self }
 }

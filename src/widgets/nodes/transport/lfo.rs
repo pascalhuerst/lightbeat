@@ -1,11 +1,9 @@
-use std::any::Any;
-
 use egui::{self, Sense, Stroke, Ui, Vec2};
 
 use crate::engine::nodes::transport::lfo::{ports_for, LfoDisplay};
 use crate::engine::types::*;
 use crate::theme;
-use crate::widgets::nodes::node::NodeWidget;
+use crate::widgets::nodes::node::{NodeWidget, node_identity, with_display};
 use crate::widgets::nodes::types::UiPortDef;
 
 /// The index of the "Phase input" parameter.
@@ -34,8 +32,7 @@ impl LfoWidget {
 }
 
 impl NodeWidget for LfoWidget {
-    fn node_id(&self) -> NodeId { self.id }
-    fn type_name(&self) -> &'static str { "LFO" }
+    node_identity!("LFO");
     fn description(&self) -> &'static str {
         "Low-frequency oscillator: sine, triangle, saw, square, or random; rate in Hz. \
          With Phase input on (inspector) it follows a phase wire instead of running on its own."
@@ -50,18 +47,9 @@ impl NodeWidget for LfoWidget {
 
     fn min_width(&self) -> f32 { 130.0 }
     fn min_content_height(&self) -> f32 { 40.0 }
-    fn shared_state(&self) -> &SharedState { &self.shared }
 
     fn show_content(&mut self, ui: &mut Ui, zoom: f32) {
-        let shared = self.shared.lock().unwrap();
-        let display = shared.display.as_ref()
-            .and_then(|d| d.downcast_ref::<LfoDisplay>());
-        let (rate_hz, phase, value) = if let Some(d) = display {
-            (d.rate_hz, d.phase, d.value)
-        } else {
-            (1.0, 0.0, 0.0)
-        };
-        drop(shared);
+        let (rate_hz, phase, value) = with_display::<LfoDisplay, _>(&self.shared, |d| (d.rate_hz, d.phase, d.value)).unwrap_or((1.0, 0.0, 0.0));
 
         // Rate label.
         ui.colored_label(
@@ -97,6 +85,4 @@ impl NodeWidget for LfoWidget {
         let py = cy - value_norm * (rect.height() * 0.45);
         painter.circle_filled(egui::pos2(px, py), 3.0, theme::TYPE_LOGIC);
     }
-
-    fn as_any_mut(&mut self) -> &mut dyn Any { self }
 }

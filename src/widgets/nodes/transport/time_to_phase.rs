@@ -1,10 +1,8 @@
-use std::any::Any;
-
 use egui::{self, Sense, Ui, Vec2};
 
 use crate::engine::types::*;
 use crate::theme;
-use crate::widgets::nodes::node::NodeWidget;
+use crate::widgets::nodes::node::{NodeWidget, node_identity};
 use crate::widgets::nodes::types::UiPortDef;
 
 pub struct TimeToPhaseWidget {
@@ -19,8 +17,7 @@ impl TimeToPhaseWidget {
 }
 
 impl NodeWidget for TimeToPhaseWidget {
-    fn node_id(&self) -> NodeId { self.id }
-    fn type_name(&self) -> &'static str { "Time to Phase" }
+    node_identity!("Time to Phase");
     fn description(&self) -> &'static str {
         "Makes a phase from a time: a trigger starts one run from 0 to 1 over the set time and it \
          stays at 1; with Run continuously it repeats without end (a trigger restarts it). Wire \
@@ -32,7 +29,6 @@ impl NodeWidget for TimeToPhaseWidget {
 
     fn min_width(&self) -> f32 { 110.0 }
     fn min_content_height(&self) -> f32 { 18.0 }
-    fn shared_state(&self) -> &SharedState { &self.shared }
 
     fn show_content(&mut self, ui: &mut Ui, _zoom: f32) {
         let (phase, running) = {
@@ -45,6 +41,4 @@ impl NodeWidget for TimeToPhaseWidget {
         let fill = egui::Rect::from_min_max(r.min, egui::pos2(r.min.x + r.width() * phase.clamp(0.0, 1.0), r.max.y));
         painter.rect_filled(fill, 2.0, if running { theme::SEM_PRIMARY } else { theme::TEXT_DIM });
     }
-
-    fn as_any_mut(&mut self) -> &mut dyn Any { self }
 }

@@ -1,11 +1,9 @@
-use std::any::Any;
-
 use egui::{self, Ui};
 
 use crate::engine::nodes::transport::latch::ports_for;
 use crate::engine::types::*;
 use crate::theme;
-use crate::widgets::nodes::node::NodeWidget;
+use crate::widgets::nodes::node::{NodeWidget, node_identity};
 use crate::widgets::nodes::transport::signal_type::SignalTypeSetting;
 use crate::widgets::nodes::types::UiPortDef;
 
@@ -26,8 +24,7 @@ impl NodeWidget for LatchWidget {
         self.value_type.restore(params);
     }
 
-    fn node_id(&self) -> NodeId { self.id }
-    fn type_name(&self) -> &'static str { "Tick Delay" }
+    node_identity!("Tick Delay");
     fn description(&self) -> &'static str {
         "Adds one tick of delay. Useful for explicit feedback paths."
     }
@@ -41,7 +38,6 @@ impl NodeWidget for LatchWidget {
 
     fn min_width(&self) -> f32 { 90.0 }
     fn min_content_height(&self) -> f32 { 18.0 }
-    fn shared_state(&self) -> &SharedState { &self.shared }
 
     fn on_ui_connect(&mut self, input_port: usize, source_type: PortType) {
         if input_port == 0 { self.value_type.adopt(&self.shared, source_type); }
@@ -58,6 +54,4 @@ impl NodeWidget for LatchWidget {
         };
         ui.colored_label(theme::TEXT_MUTED, self.value_type.summary(v));
     }
-
-    fn as_any_mut(&mut self) -> &mut dyn Any { self }
 }
