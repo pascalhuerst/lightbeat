@@ -64,7 +64,13 @@ Updated as items are implemented. Items not listed here are open.
 | 5.1 | done | ad9061b: nodes are registered under the 14 quick-add groups; the panel, the menus and quick add agree |
 | 5.2 | done | 164310f: Pan Tilt to Position, Position to Pan Tilt, Tick Delay, SR Flip-Flop, Link Clock, Range to Unit, Bar. Old names load through `RENAMED_NODES` in `project.rs` (temporary). Fill and Bar are still kind "Loop" internally |
 | 5.4 | done | e990688 |
-| 5.3, 6.x, 7 (ports, params), 7.1 - 7.4 | open | in progress |
+| 6.1 | done | 090f1bc: the Port Hub also starts on Auto now |
+| 6.2 | done | c0142b4: Sample & Hold, Tick Delay and Smoothing take any type; Transition has Position and Gradient. Nodes saved before load as Number through the connect hooks |
+| 6.3 | done | ecf4ea8: "Type" and "Number". Transition's setting is "Type" too and keeps "Phase out" as an option; colour models, Envelope, stack and Step Sequencer keep "Mode" |
+| 6.4 | done | 617f1d4: "Select by" Index / Phase on Counter, Multiplexer, Demultiplexer, Palette Select, Lookup Table (its promoted "Input" is carried over by `RENAMED_SETTINGS`, temporary). Step Sequencer and LFO mean something else and stay |
+| 6.5 | convention | no code change: new nodes use promotion only |
+| 6.6 | done | 2fa60ac: Trigger Hold picks its duration input by being wired (a wired 0 is 1 tick). A project that already promotes one of the two keeps it and can switch it off |
+| 5.3, 7 (ports, params), 7.1 - 7.4 | open | in progress |
 
 ---
 
