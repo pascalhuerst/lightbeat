@@ -129,7 +129,7 @@ impl NodeWidget for X1Widget {
         };
 
         ui.horizontal(|ui| {
-            ui.label("X1:");
+            ui.label("X1");
             let current = controllers.iter()
                 .find(|(id, _)| *id == self.controller_id)
                 .map(|(_, n)| n.clone())

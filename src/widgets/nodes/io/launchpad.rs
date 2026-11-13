@@ -148,7 +148,7 @@ impl NodeWidget for LaunchpadWidget {
         };
 
         ui.horizontal(|ui| {
-            ui.label("Launchpad:");
+            ui.label("Launchpad");
             let current = controllers.iter()
                 .find(|(id, _)| *id == self.controller_id)
                 .map(|(_, n)| n.clone())

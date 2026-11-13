@@ -95,13 +95,13 @@ impl NodeWidget for ColorMixerWidget {
 
     fn show_inspector(&mut self, ui: &mut Ui) {
         ui.horizontal(|ui| {
-            ui.label("Name:");
+            ui.label("Name");
             if ui.text_edit_singleline(&mut self.name).changed() {
                 self.push_config();
             }
         });
         ui.horizontal(|ui| {
-            ui.label("Mode:");
+            ui.label("Mode");
             let mut mode = self.mode;
             egui::ComboBox::from_id_salt(("mixer_mode", self.id))
                 .selected_text(MIXER_MODE_NAMES[mode.to_index()])

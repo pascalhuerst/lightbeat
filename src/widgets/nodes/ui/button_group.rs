@@ -263,21 +263,21 @@ impl NodeWidget for ButtonGroupWidget {
     fn show_inspector(&mut self, ui: &mut Ui) {
         let mut changed = false;
         ui.horizontal(|ui| {
-            ui.label("Name:");
+            ui.label("Name");
             if ui.text_edit_singleline(&mut self.name).changed() {
                 changed = true;
             }
         });
         ui.separator();
         ui.horizontal(|ui| {
-            ui.label("Rows:");
+            ui.label("Rows");
             let mut r = self.rows as i32;
             if ui.add(egui::DragValue::new(&mut r).range(1..=16)).changed() {
                 self.rows = r as usize;
                 self.resize();
                 changed = true;
             }
-            ui.label("Cols:");
+            ui.label("Cols");
             let mut c = self.cols as i32;
             if ui.add(egui::DragValue::new(&mut c).range(1..=16)).changed() {
                 self.cols = c as usize;
@@ -286,7 +286,7 @@ impl NodeWidget for ButtonGroupWidget {
             }
         });
         ui.horizontal(|ui| {
-            ui.label("Mode:");
+            ui.label("Mode");
             if ui.radio_value(&mut self.mode, ButtonMode::Trigger, "Trigger").clicked() {
                 changed = true;
             }
@@ -294,7 +294,7 @@ impl NodeWidget for ButtonGroupWidget {
                 changed = true;
             }
         });
-        if ui.checkbox(&mut self.inputs_enabled, "Enable inputs").changed() {
+        if ui.checkbox(&mut self.inputs_enabled, "Inputs enabled").changed() {
             changed = true;
         }
         if self.inputs_enabled && self.mode == ButtonMode::Toggle {
@@ -304,7 +304,7 @@ impl NodeWidget for ButtonGroupWidget {
                 }
                 if self.override_enabled {
                     ui.horizontal(|ui| {
-                        ui.label("Reset:");
+                        ui.label("Reset");
                         egui::ComboBox::from_id_salt(("bg_reset", self.id))
                             .selected_text(self.reset_mode.label())
                             .show_ui(ui, |ui| {

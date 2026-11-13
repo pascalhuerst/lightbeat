@@ -124,7 +124,7 @@ impl NodeWidget for PortalSendWidget {
     fn show_inspector(&mut self, ui: &mut Ui) {
         let mut changed = false;
         ui.horizontal(|ui| {
-            ui.label("Name:");
+            ui.label("Name");
             if ui.text_edit_singleline(&mut self.name).changed() { changed = true; }
         });
         if self.name.is_empty() {
@@ -267,7 +267,7 @@ impl NodeWidget for PortalReceiveWidget {
     fn show_inspector(&mut self, ui: &mut Ui) {
         let names = available_portal_names(&self.registry);
         ui.horizontal(|ui| {
-            ui.label("Portal Send:");
+            ui.label("Portal Send");
             let current = if self.bound_name.is_empty() { "(none)".to_string() } else { self.bound_name.clone() };
             egui::ComboBox::from_id_salt(("portal_receive_bind", self.id.0))
                 .selected_text(current)

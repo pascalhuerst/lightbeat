@@ -175,14 +175,14 @@ impl NodeWidget for PeakMeterWidget {
     fn show_inspector(&mut self, ui: &mut Ui) {
         let mut changed = false;
         ui.horizontal(|ui| {
-            ui.label("Name:");
+            ui.label("Name");
             if ui.text_edit_singleline(&mut self.name).changed() {
                 changed = true;
             }
         });
         ui.separator();
         ui.horizontal(|ui| {
-            ui.label("Orientation:");
+            ui.label("Orientation");
             if ui.radio_value(&mut self.orientation, PeakMeterOrientation::Vertical, "Vertical").clicked() {
                 changed = true;
             }
@@ -191,11 +191,11 @@ impl NodeWidget for PeakMeterWidget {
             }
         });
         ui.horizontal(|ui| {
-            ui.label("Peak:");
+            ui.label("Peak");
             ui.colored_label(theme::TEXT, format!("{:.3} ({:+.1} dB)", self.peak, level_to_db(self.peak)));
         });
         ui.horizontal(|ui| {
-            ui.label("RMS:");
+            ui.label("RMS");
             ui.colored_label(theme::TEXT, format!("{:.3} ({:+.1} dB)", self.rms, level_to_db(self.rms)));
         });
         ui.horizontal(|ui| {

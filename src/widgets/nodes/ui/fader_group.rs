@@ -326,20 +326,20 @@ impl NodeWidget for FaderGroupWidget {
     fn show_inspector(&mut self, ui: &mut Ui) {
         let mut changed = false;
         ui.horizontal(|ui| {
-            ui.label("Name:");
+            ui.label("Name");
             if ui.text_edit_singleline(&mut self.name).changed() {
                 changed = true;
             }
         });
         ui.horizontal(|ui| {
-            ui.label("Rows:");
+            ui.label("Rows");
             let mut r = self.rows as i32;
             if ui.add(egui::DragValue::new(&mut r).range(1..=16)).changed() {
                 self.rows = r as usize;
                 self.resize();
                 changed = true;
             }
-            ui.label("Cols:");
+            ui.label("Cols");
             let mut c = self.cols as i32;
             if ui.add(egui::DragValue::new(&mut c).range(1..=16)).changed() {
                 self.cols = c as usize;

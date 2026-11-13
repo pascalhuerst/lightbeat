@@ -216,7 +216,7 @@ impl NodeWidget for SubgraphWidget {
         // you can't without unlocking via the context menu's "Embed" action).
         if self.locked {
             ui.horizontal(|ui| {
-                ui.label("Name:");
+                ui.label("Name");
                 ui.colored_label(theme::TEXT, &self.name);
             });
             ui.separator();
@@ -238,7 +238,7 @@ impl NodeWidget for SubgraphWidget {
 
         // Name.
         ui.horizontal(|ui| {
-            ui.label("Name:");
+            ui.label("Name");
             if ui.text_edit_singleline(&mut self.name).changed() {
                 self.push_config();
             }

@@ -70,7 +70,7 @@ impl NodeWidget for FormulaWidget {
 
     fn show_inspector(&mut self, ui: &mut Ui) {
         self.sync_from_display();
-        ui.label("Formula:");
+        ui.label("Formula");
         let edit = egui::TextEdit::singleline(&mut self.formula)
             .font(egui::TextStyle::Monospace)
             .desired_width(f32::INFINITY)

@@ -218,14 +218,14 @@ impl NodeWidget for ButtonWidget {
     fn show_inspector(&mut self, ui: &mut Ui) {
         let mut changed = false;
         ui.horizontal(|ui| {
-            ui.label("Label:");
+            ui.label("Name");
             if ui.text_edit_singleline(&mut self.label).changed() {
                 changed = true;
             }
         });
 
         ui.horizontal(|ui| {
-            ui.label("Mode:");
+            ui.label("Mode");
             if ui.radio_value(&mut self.mode, ButtonMode::Trigger, "Trigger").clicked() {
                 changed = true;
             }
@@ -234,7 +234,7 @@ impl NodeWidget for ButtonWidget {
             }
         });
 
-        if ui.checkbox(&mut self.inputs_enabled, "Enable input").changed() {
+        if ui.checkbox(&mut self.inputs_enabled, "Input enabled").changed() {
             changed = true;
         }
         if self.inputs_enabled && self.mode == ButtonMode::Toggle {
@@ -244,7 +244,7 @@ impl NodeWidget for ButtonWidget {
                 }
                 if self.override_enabled {
                     ui.horizontal(|ui| {
-                        ui.label("Reset:");
+                        ui.label("Reset");
                         egui::ComboBox::from_id_salt(("btn_reset", self.id))
                             .selected_text(self.reset_mode.label())
                             .show_ui(ui, |ui| {

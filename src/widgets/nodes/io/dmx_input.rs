@@ -320,7 +320,7 @@ impl NodeWidget for DmxInputWidget {
 
         let choices = self.hub.input_choices();
         ui.horizontal(|ui| {
-            ui.label("Input:");
+            ui.label("Input");
             let current = choices.iter().find(|(id, _)| *id == self.config.input).map(|(_, n)| n.clone()).unwrap_or_else(|| "(none)".into());
             egui::ComboBox::from_id_salt(("dmx_in_pick", self.id.0)).selected_text(current).show_ui(ui, |ui| {
                 if ui.selectable_label(self.config.input == 0, "(none)").clicked() && self.config.input != 0 {

@@ -150,7 +150,7 @@ impl NodeWidget for InputControllerWidget {
         };
 
         ui.horizontal(|ui| {
-            ui.label("Controller:");
+            ui.label("Controller");
             let current_label = controllers.iter()
                 .find(|(id, _)| *id == self.controller_id)
                 .map(|(_, n)| n.clone())

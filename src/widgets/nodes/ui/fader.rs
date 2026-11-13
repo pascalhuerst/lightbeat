@@ -250,14 +250,14 @@ impl NodeWidget for FaderWidget {
     fn show_inspector(&mut self, ui: &mut Ui) {
         let mut changed = false;
         ui.horizontal(|ui| {
-            ui.label("Name:");
+            ui.label("Name");
             if ui.text_edit_singleline(&mut self.name).changed() {
                 changed = true;
             }
         });
         ui.separator();
         ui.horizontal(|ui| {
-            ui.label("Orientation:");
+            ui.label("Orientation");
             if ui.radio_value(&mut self.orientation, FaderOrientation::Vertical, "Vertical").clicked() {
                 changed = true;
             }
@@ -313,12 +313,12 @@ pub fn cell_inspector_section(
         }
         if *inputs_enabled {
             ui.horizontal(|ui| {
-                ui.label("Input:");
+                ui.label("Input");
                 ui.colored_label(theme::TEXT_MUTED, format!("{:.3}", input_value));
             });
         }
         ui.horizontal(|ui| {
-            ui.label("Mouse override:");
+            ui.label("Mouse override");
             egui::ComboBox::from_id_salt(("mo", salt))
                 .selected_text(mouse_override.label())
                 .show_ui(ui, |ui| {
@@ -337,12 +337,12 @@ pub fn cell_inspector_section(
         });
         if override_active {
             ui.horizontal(|ui| {
-                ui.label("Override:");
+                ui.label("Override");
                 ui.colored_label(theme::SEM_WARNING, format!("{:.3}", override_value));
             });
         }
         ui.horizontal(|ui| {
-            ui.label("Output:");
+            ui.label("Output");
             ui.colored_label(theme::TEXT, format!("{:.3}", output_value));
         });
         if ui.checkbox(bipolar, "Bipolar").changed() {

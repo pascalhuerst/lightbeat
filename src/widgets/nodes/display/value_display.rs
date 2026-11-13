@@ -96,7 +96,7 @@ impl NodeWidget for ValueDisplayWidget {
 
     fn show_inspector(&mut self, ui: &mut Ui) {
         ui.horizontal(|ui| {
-            ui.label("Name:");
+            ui.label("Name");
             if ui.text_edit_singleline(&mut self.name).changed() {
                 self.push_config();
             }

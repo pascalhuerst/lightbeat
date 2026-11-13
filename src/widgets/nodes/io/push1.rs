@@ -142,7 +142,7 @@ impl NodeWidget for Push1Widget {
         };
 
         ui.horizontal(|ui| {
-            ui.label("Push 1:");
+            ui.label("Push 1");
             let current = controllers.iter()
                 .find(|(id, _)| *id == self.controller_id)
                 .map(|(_, n)| n.clone())

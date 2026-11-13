@@ -208,7 +208,7 @@ impl NodeWidget for EffectWidget {
 
     fn show_inspector(&mut self, ui: &mut Ui) {
         ui.horizontal(|ui| {
-            ui.label("Stack:");
+            ui.label("Stack");
             let names = self.names.lock().unwrap().names.clone();
             let current = if self.stack.is_empty() { "(none)".to_string() } else { self.stack.clone() };
             let mut picked: Option<String> = None;

@@ -385,7 +385,7 @@ impl NodeWidget for AudioInputWidget {
         };
 
         ui.horizontal(|ui| {
-            ui.label("Audio input:");
+            ui.label("Audio input");
             let current = inputs
                 .iter()
                 .find(|(id, _, _)| *id == self.input_id)

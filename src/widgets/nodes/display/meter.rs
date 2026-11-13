@@ -245,13 +245,13 @@ impl NodeWidget for MeterWidget {
     fn show_inspector(&mut self, ui: &mut Ui) {
         self.data();
         ui.horizontal(|ui| {
-            ui.label("Name:");
+            ui.label("Name");
             if ui.text_edit_singleline(&mut self.name).changed() {
                 self.push_config();
             }
         });
         ui.horizontal(|ui| {
-            ui.label("Unit:");
+            ui.label("Unit");
             if ui.text_edit_singleline(&mut self.unit).changed() {
                 self.push_config();
             }
