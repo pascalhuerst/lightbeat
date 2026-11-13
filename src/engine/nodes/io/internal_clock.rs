@@ -179,6 +179,9 @@ impl ProcessNode for InternalClockProcessNode {
         }
     }
 
+    // The `bpm` input port (set on a `set bpm` edge) is the wired way to this.
+    fn non_promotable_params(&self) -> &'static [&'static str] { &["BPM"] }
+
     fn params(&self) -> Vec<ParamDef> {
         vec![ParamDef::Float {
             name: "BPM".into(),

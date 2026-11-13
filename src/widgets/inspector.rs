@@ -194,10 +194,12 @@ fn drop_exposed_inputs(node: &dyn NodeWidget) {
 /// Checkbox that turns a param into an input port and back.
 fn promote_checkbox(ui: &mut Ui, node: &dyn NodeWidget, promo: &PromoteCtx, param: &ParamDef) {
     let name = param.name();
-    if promo.non_promotable.contains(&name) || is_mode(param) {
+    let mut on = promo.slot(name).is_some();
+    // A project saved before the setting became non-promotable may still have
+    // it exposed; the box stays so it can be switched off.
+    if (promo.non_promotable.contains(&name) && !on) || is_mode(param) {
         return;
     }
-    let mut on = promo.slot(name).is_some();
     let hint = "Expose this setting as an input port. While a wire is connected it controls the value.";
     if ui.checkbox(&mut on, "in").on_hover_text(hint).changed() {
         let mut shared = node.shared_state().lock().unwrap();
