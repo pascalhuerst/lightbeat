@@ -196,6 +196,16 @@ impl NodeGraph {
             if all_hidden { "Show all ports" } else { "Hide unused ports" }
         };
         let mut toggle_hide = false;
+        // Compact nodes have no enable switch in their header, so the menu is
+        // the one place every node can be frozen from.
+        let all_disabled = {
+            let level = self.active();
+            self.selected_nodes
+                .iter()
+                .filter_map(|&i| level.nodes.get(i))
+                .all(|n| n.shared_state().lock().unwrap().disabled)
+        };
+        let mut toggle_enabled = false;
         let mut move_to_sub = false;
         let mut do_auto_connect = false;
         let mut do_save_macro: Option<NodeId> = None;
@@ -220,6 +230,12 @@ impl NodeGraph {
                     }
                     if ui.button(hide_label).on_hover_text("Show only the ports that have a wire (H)").clicked() {
                         toggle_hide = true;
+                    }
+                    if ui.button(if all_disabled { "Enable" } else { "Disable" })
+                        .on_hover_text("A disabled node keeps its last output")
+                        .clicked()
+                    {
+                        toggle_enabled = true;
                     }
                     if ui.button("Move to Subgraph").clicked() {
                         move_to_sub = true;
@@ -248,6 +264,14 @@ impl NodeGraph {
                     let to = PortId { node: dst_id, index: i, dir: PortDir::Input };
                     self.add_connection(from, to);
                 }
+            }
+            self.context_menu_pos = None;
+            return;
+        }
+        if toggle_enabled {
+            let level = self.active();
+            for n in self.selected_nodes.iter().filter_map(|&i| level.nodes.get(i)) {
+                n.shared_state().lock().unwrap().disabled = !all_disabled;
             }
             self.context_menu_pos = None;
             return;
