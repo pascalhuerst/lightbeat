@@ -23,7 +23,7 @@ impl NodeWidget for TriggerHoldWidget {
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { "Trigger Hold" }
     fn description(&self) -> &'static str {
-        "Holds a trigger high for N ticks after each rising edge. Duration via input or param."
+        "Holds a trigger high for a number of milliseconds after each rising edge. Duration via input or param."
     }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> {
@@ -45,20 +45,20 @@ impl NodeWidget for TriggerHoldWidget {
             let shared = self.shared.lock().unwrap();
             shared.display.as_ref()
                 .and_then(|d| d.downcast_ref::<TriggerHoldDisplay>())
-                .map(|d| (d.remaining_ticks, d.effective_duration))
-                .unwrap_or((0, 0))
+                .map(|d| (d.remaining_ms, d.effective_duration_ms))
+                .unwrap_or((0.0, 0))
         };
 
         ui.horizontal(|ui| {
-            if remaining > 0 {
+            if remaining > 0.0 {
                 ui.colored_label(
                     theme::SEM_SUCCESS,
-                    format!("HIGH {}/{}", remaining, dur),
+                    format!("HIGH {:.0}/{} ms", remaining, dur),
                 );
             } else {
                 ui.colored_label(
                     theme::TEXT_DIM,
-                    format!("idle ({})", dur),
+                    format!("idle ({} ms)", dur),
                 );
             }
         });

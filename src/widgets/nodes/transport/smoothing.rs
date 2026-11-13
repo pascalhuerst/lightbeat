@@ -29,7 +29,7 @@ impl NodeWidget for SmoothingWidget {
         "Low-pass smoothing for noisy control signals. Modes: Exponential \
          (one-pole IIR, α derived from window length), Moving Average \
          (arithmetic mean of the window), Median (picks the middle value — \
-         rejects spikes). Window is in engine ticks (~1 ms each)."
+         rejects spikes). Window is in milliseconds."
     }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> {

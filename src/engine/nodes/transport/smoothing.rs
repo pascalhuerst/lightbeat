@@ -27,15 +27,19 @@ impl SmoothingMode {
     }
 }
 
+/// A guard for the sample buffers when the loop runs far faster than 1 kHz.
+const MAX_HISTORY: usize = 4000;
+
 pub struct SmoothingProcessNode {
     id: NodeId,
     port_type: PortType,
     value_in: [f32; MAX_CHANNELS],
     value_out: [f32; MAX_CHANNELS],
     mode: SmoothingMode,
-    /// Window length in samples (engine ticks ≈ 1 kHz, so window = ms).
-    /// Also controls the exponential time constant: α = 1 - exp(-1/window).
-    window: usize,
+    /// Window length in milliseconds. It sets the exponential time constant
+    /// and, divided by the measured tick length, the number of samples the
+    /// averaging modes keep.
+    window: f32,
     /// Ring buffer of the last `window` samples of each channel. Only
     /// populated when mode needs history (MovingAverage / Median).
     history: Vec<VecDeque<f32>>,
@@ -71,7 +75,7 @@ impl SmoothingProcessNode {
             value_in: [0.0; MAX_CHANNELS],
             value_out: [0.0; MAX_CHANNELS],
             mode: SmoothingMode::Exponential,
-            window: 32,
+            window: 32.0,
             history: vec![VecDeque::new(); MAX_CHANNELS],
             sum: vec![0.0; MAX_CHANNELS],
             scratch: Vec::new(),
@@ -102,10 +106,13 @@ impl ProcessNode for SmoothingProcessNode {
     }
 
     fn process(&mut self) {
-        let win = self.window.max(1);
+        // The history is a count of ticks, so it follows the real tick length:
+        // a late loop then still averages over the same stretch of time.
+        let tick_ms = crate::engine::time::dt() * 1000.0;
+        let win = ((self.window / tick_ms).round() as usize).clamp(1, MAX_HISTORY);
         // One-pole IIR: y += α (x - y). α derived from `window` so the
-        // 63 %-rise time matches the window length in ticks.
-        let alpha = if win <= 1 { 1.0 } else { 1.0 - (-1.0 / win as f32).exp() };
+        // 63 %-rise time matches the window length.
+        let alpha = if win <= 1 { 1.0 } else { 1.0 - (-tick_ms / self.window).exp() };
         for c in 0..self.width() {
             let x = self.value_in[c];
             match self.mode {
@@ -160,11 +167,13 @@ impl ProcessNode for SmoothingProcessNode {
                     "Median".into(),
                 ],
             },
-            ParamDef::Int {
+            ParamDef::Float {
                 name: "Window".into(),
-                value: self.window as i64,
-                min: 1,
-                max: 2000,
+                value: self.window,
+                min: 1.0,
+                max: 2000.0,
+                step: 1.0,
+                unit: "ms",
             },
             // Last, because saved settings go by position.
             type_param(self.port_type),
@@ -181,7 +190,7 @@ impl ProcessNode for SmoothingProcessNode {
                 }
             }
             1 => {
-                let new_win = value.as_i64().clamp(1, 2000) as usize;
+                let new_win = value.as_f32().round().clamp(1.0, 2000.0);
                 if new_win != self.window {
                     self.window = new_win;
                     self.reset_history();
@@ -229,7 +238,7 @@ mod tests {
     fn the_node_outputs_the_median_of_its_window() {
         let mut n = SmoothingProcessNode::new(NodeId(1));
         n.set_param(0, ParamValue::Choice(2));
-        n.set_param(1, ParamValue::Int(3));
+        n.set_param(1, ParamValue::Float(3.0));
         let mut out = Vec::new();
         for v in [1.0, 9.0, 2.0, 8.0] {
             n.write_input(0, v);
@@ -244,7 +253,7 @@ mod tests {
         let mut n = SmoothingProcessNode::new(NodeId(1));
         n.set_param(2, ParamValue::Choice(4));
         n.set_param(0, ParamValue::Choice(1));
-        n.set_param(1, ParamValue::Int(2));
+        n.set_param(1, ParamValue::Float(2.0));
         assert_eq!(n.inputs()[0].port_type, PortType::Color);
         for (r, g) in [(1.0, 0.0), (0.0, 1.0)] {
             n.write_input(0, r);
@@ -253,5 +262,21 @@ mod tests {
             n.process();
         }
         assert_eq!([n.read_output(0), n.read_output(1), n.read_output(2)], [0.5, 0.5, 0.5]);
+    }
+
+    #[test]
+    fn the_window_is_milliseconds_whatever_the_tick_length() {
+        let mut n = SmoothingProcessNode::new(NodeId(1));
+        n.set_param(0, ParamValue::Choice(1));
+        n.set_param(1, ParamValue::Float(4.0));
+        crate::engine::time::set_dt(0.002);
+        let mut out = Vec::new();
+        for v in [1.0, 0.0, 0.0] {
+            n.write_input(0, v);
+            n.process();
+            out.push(n.read_output(0));
+        }
+        crate::engine::time::set_dt(crate::engine::time::NOMINAL_DT);
+        assert_eq!(out, vec![1.0, 0.5, 0.0], "4 ms at 2 ms a tick is two samples");
     }
 }
