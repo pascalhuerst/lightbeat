@@ -25,6 +25,8 @@ impl ClockWidget {
                 PortDef::new("beat", PortType::Logic),
                 PortDef::new("play", PortType::Logic),
                 PortDef::new("phase", PortType::Phase),
+                PortDef::new("bpm", PortType::Untyped),
+                PortDef::new("peers", PortType::Untyped),
             ],
         }
     }
