@@ -13,6 +13,23 @@ changed.
   dependencies are used, no theme constant is unused, and every registered node
   has an engine arm and the reverse.
 
+## Status
+
+Updated as items are implemented. Items not listed here are open.
+
+| Item | State | Commit / note |
+|---|---|---|
+| R1 | done | 8f0d27c: a setup that failed to load is never saved over and is kept as `setup.json.bad` |
+| R2 | done | 8f0d27c: file errors are shown in a "File problems" window (settings save still silent) |
+
+Checked against your own files on 2026-11-13: `setup.json` uses the new pixel
+format only (M3 can go), no saved Fader or Fader Group uses the old keys (M4,
+M5 can go), `settings.json` does not use the old alias (M6 can go). Three test
+projects have no `version` and one still has an "ADSR", so M1 and M2 stay until
+those are re-saved or retired.
+
+---
+
 ## The five to do first
 
 | # | What | Why | Effort |
