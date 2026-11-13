@@ -32,16 +32,9 @@ fn duplicate_input(mgr: &mut AudioInputManager, id: u32) {
     }
 }
 
-pub fn show(ui: &mut Ui, mgr: &mut AudioInputManager) {
-    ui.horizontal(|ui| {
-        if ui
-            .button(format!("{} Rescan", egui_phosphor::regular::ARROWS_CLOCKWISE))
-            .on_hover_text("Look for audio devices again")
-            .clicked()
-        {
-            mgr.force_rescan();
-        }
-    });
+/// Returns true when the user asked to rescan; the app rescans everything.
+pub fn show(ui: &mut Ui, mgr: &mut AudioInputManager, missing: &[String]) -> bool {
+    let rescan = setup_ui::hardware_bar(ui, missing);
     ui.separator();
 
     // Snapshot device lists for each backend before the shared-state lock so
@@ -220,6 +213,7 @@ pub fn show(ui: &mut Ui, mgr: &mut AudioInputManager) {
     for (id, idx) in remove_analyzer { mgr.remove_analyzer(id, idx); }
     if let Some(id) = duplicate { duplicate_input(mgr, id); }
     if let Some(id) = remove_input { mgr.remove_input(id); }
+    rescan
 }
 
 #[cfg(test)]

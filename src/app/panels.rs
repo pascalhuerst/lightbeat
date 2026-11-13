@@ -225,11 +225,16 @@ impl LightBeatApp {
             }
         });
         ui.separator();
+        let mut rescan = false;
         egui::ScrollArea::both().auto_shrink([false, false]).show(ui, |ui| {
             match self.setup_active_tab {
-                SetupTab::Interfaces => self.interface_manager.show(ui),
+                SetupTab::Interfaces => {
+                    let refs: Vec<u32> = self.object_manager.objects.iter().map(|o| o.interface_id).collect();
+                    self.interface_manager.show(ui, &refs);
+                }
                 SetupTab::FixtureTemplates => {
-                    self.fixture_manager.show(ui);
+                    let refs: Vec<u32> = self.object_manager.objects.iter().map(|o| o.fixture_id).collect();
+                    self.fixture_manager.show(ui, &refs);
                     // Objects own a copy of their template's channels, so template edits must be pushed down.
                     let fixtures = &self.fixture_manager.fixtures;
                     for obj in &mut self.object_manager.objects {
@@ -244,25 +249,49 @@ impl LightBeatApp {
                 SetupTab::Objects => {
                     let interface_names: Vec<(u32, String)> = self.interface_manager.interfaces
                         .iter().map(|e| (e.id, e.name.clone())).collect();
-                    self.object_manager.show(ui, &self.fixture_manager.fixtures, &interface_names);
+                    let group_refs: Vec<u32> = self.group_manager.groups.iter().flat_map(|g| g.object_ids.iter().copied()).collect();
+                    self.object_manager.show(ui, &self.fixture_manager.fixtures, &interface_names, &group_refs);
                 }
                 SetupTab::Groups => {
                     self.group_manager.show(ui, &self.object_manager.objects);
                 }
-                SetupTab::ColorPalettes => self.color_palette_manager.show(ui),
+                SetupTab::ColorPalettes => {
+                    let refs: Vec<u32> = self.color_palette_group_manager.groups.iter().flat_map(|g| g.palette_ids.iter().copied()).collect();
+                    self.color_palette_manager.show(ui, &refs);
+                }
                 SetupTab::ColorPaletteGroups => {
                     self.color_palette_group_manager.show(ui, &self.color_palette_manager.palettes);
                 }
                 SetupTab::Gradients => self.gradient_preset_manager.show(ui),
                 SetupTab::AudioInputs => {
-                    widgets::audio_input_list::show(ui, &mut self.audio_inputs);
+                    let missing = self.missing_hardware();
+                    rescan |= widgets::audio_input_list::show(ui, &mut self.audio_inputs, &missing);
                 }
                 SetupTab::InputControllers => {
-                    widgets::input_controller_list::show(ui, &mut self.input_controllers);
+                    let missing = self.missing_hardware();
+                    rescan |= widgets::input_controller_list::show(ui, &mut self.input_controllers, &missing);
                 }
                 SetupTab::DmxInputs => widgets::dmx_input_list::show(ui, &self.dmx_inputs),
             }
         });
+        if rescan {
+            self.rescan_hardware();
+        }
+    }
+
+    /// Everything set up but not present: controllers, audio inputs, MIDI devices.
+    pub(crate) fn missing_hardware(&self) -> Vec<String> {
+        let mut missing = self.input_controllers.missing_controllers();
+        missing.extend(self.audio_inputs.missing_inputs());
+        missing.extend(self.midi_hub.missing_devices());
+        missing
+    }
+
+    /// The one Rescan: the status bar and both hardware tabs call this.
+    pub(crate) fn rescan_hardware(&mut self) {
+        self.input_controllers.rescan();
+        self.audio_inputs.force_rescan();
+        self.midi_hub.rescan();
     }
 }
 

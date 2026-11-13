@@ -21,7 +21,8 @@ impl FixtureManager {
         Self { fixtures, next_id }
     }
 
-    pub fn show(&mut self, ui: &mut Ui) {
+    /// `object_fixture_ids`: the template id of every object, to say what uses a template.
+    pub fn show(&mut self, ui: &mut Ui, object_fixture_ids: &[u32]) {
         if self.fixtures.is_empty() {
             setup_ui::empty_state(ui, "No templates yet. Add one below.");
         }
@@ -32,7 +33,8 @@ impl FixtureManager {
 
         for fixture in &mut self.fixtures {
             let title = fixture.name.clone();
-            let mut header = ItemHeader::new(&title, "Delete template");
+            let delete_hover = setup_ui::delete_hover("Delete template", setup_ui::use_count(fixture.id, object_fixture_ids), "object");
+            let mut header = ItemHeader::new(&title, &delete_hover);
             header.duplicate = Some("Duplicate template");
             let actions = setup_ui::item_header(ui, fixture.id, open, header, |ui| {
                 setup_ui::name_field(ui, &mut fixture.name);

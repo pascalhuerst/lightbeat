@@ -104,6 +104,10 @@ struct LightBeatApp {
     after_save_as: Option<PendingAction>,
     /// File errors (project, setup, macros, autosave) shown until dismissed.
     notices: Vec<String>,
+    engine_stop_reported: bool,
+    /// A failed settings write waits here for `report_settings_failure`.
+    settings_save_error: Option<String>,
+    settings_failure_reported: bool,
     /// Set when the setup file existed but could not be read: every setup save
     /// is refused for the session so the empty setup never replaces it.
     setup_save_blocked: bool,
@@ -225,6 +229,9 @@ impl LightBeatApp {
             unsaved_prompt: None,
             after_save_as: None,
             notices: Vec::new(),
+            engine_stop_reported: false,
+            settings_save_error: None,
+            settings_failure_reported: false,
             setup_save_blocked: false,
             setup_baseline: setup::SetupFile::default(),
             setup_changed_at: None,
@@ -329,11 +336,16 @@ impl LightBeatApp {
     /// widgets into the manager, assigning fresh ids, then re-sync the mirror
     /// so all Gradient Sources see the new preset in their dropdowns.
     fn drain_pending_gradient_saves(&mut self) {
-        let pending: Vec<widgets::nodes::math::gradient_source::PendingPresetSave> = {
+        let (pending, updates) = {
             let mut lib = self.gradient_library.lock().unwrap();
-            std::mem::take(&mut lib.pending_saves)
+            (std::mem::take(&mut lib.pending_saves), std::mem::take(&mut lib.pending_updates))
         };
-        if pending.is_empty() { return; }
+        if pending.is_empty() && updates.is_empty() { return; }
+        for up in updates {
+            if let Some(p) = self.gradient_preset_manager.presets.iter_mut().find(|p| p.id == up.id) {
+                p.stops = up.stops;
+            }
+        }
         for req in pending {
             let id = self.gradient_preset_manager.next_id();
             self.gradient_preset_manager.presets.push(
@@ -470,7 +482,7 @@ impl eframe::App for LightBeatApp {
         // decision; if the user closed without prompting (clean no-op),
         // there are no unsaved changes so the autosave is stale anyway.
         self.delete_autosave_for(self.project_path.as_deref());
-        self.config.save();
+        self.save_settings();
     }
 }
 

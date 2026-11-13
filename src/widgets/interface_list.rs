@@ -71,7 +71,8 @@ impl InterfaceManager {
         self.needs_sync = true;
     }
 
-    pub fn show(&mut self, ui: &mut Ui) {
+    /// `object_interface_ids`: the interface id of every object, to say what uses an interface.
+    pub fn show(&mut self, ui: &mut Ui, object_interface_ids: &[u32]) {
         if self.interfaces.is_empty() {
             setup_ui::empty_state(ui, "No interfaces yet. Add one below.");
         } else {
@@ -120,7 +121,8 @@ impl InterfaceManager {
                                     if setup_ui::duplicate_button(ui, "Duplicate interface") {
                                         duplicate_id = Some(entry.id);
                                     }
-                                    if setup_ui::delete_button(ui, "Delete interface") {
+                                    let hover = setup_ui::delete_hover("Delete interface", setup_ui::use_count(entry.id, object_interface_ids), "object");
+                                    if setup_ui::delete_button(ui, &hover) {
                                         remove_id = Some(entry.id);
                                     }
                                 });

@@ -66,7 +66,7 @@ impl LightBeatApp {
                 });
             });
         if changed {
-            self.config.save();
+            self.save_settings();
         }
         self.show_preferences = open;
     }

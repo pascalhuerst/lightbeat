@@ -24,12 +24,21 @@ pub struct PendingPresetSave {
     pub stops: Vec<GradientStop>,
 }
 
+/// An "overwrite this preset with the current stops" request, for a node that
+/// loaded the preset. Drained like `PendingPresetSave`.
+#[derive(Clone)]
+pub struct PendingPresetUpdate {
+    pub id: u32,
+    pub stops: Vec<GradientStop>,
+}
+
 /// Read-only mirror of the gradient preset library plus a write-back queue
 /// for "Save current as preset" requests from any Gradient Source widget.
 #[derive(Default)]
 pub struct GradientLibraryContext {
     pub presets: Vec<GradientPreset>,
     pub pending_saves: Vec<PendingPresetSave>,
+    pub pending_updates: Vec<PendingPresetUpdate>,
 }
 
 pub type SharedGradientLibrary = Arc<Mutex<GradientLibraryContext>>;
@@ -54,6 +63,10 @@ pub struct GradientSourceWidget {
     preview_stops: Vec<(f32, egui::Color32, f32)>,
     /// Buffer for the inline "Save preset" name field.
     save_name_buf: String,
+    /// The preset this node's stops were last loaded from, for "Update
+    /// preset". Presets are copies, so this is only a convenience and is not
+    /// saved: after a reload the button is gone until a preset is loaded again.
+    loaded_preset: Option<u32>,
 }
 
 #[derive(Clone, Copy)]
@@ -82,6 +95,7 @@ impl GradientSourceWidget {
             id, shared, library, stops,
             preview_stops: Vec::new(),
             save_name_buf: String::new(),
+            loaded_preset: None,
         }
     }
 
@@ -356,19 +370,20 @@ impl NodeWidget for GradientSourceWidget {
             ui.label("Load");
             let combo = egui::ComboBox::from_id_salt(("grad_preset_load", self.id.0))
                 .selected_text("(pick…)");
-            let mut load_stops: Option<Vec<GradientStop>> = None;
+            let mut load_stops: Option<(u32, Vec<GradientStop>)> = None;
             combo.show_ui(ui, |ui| {
                 if presets.is_empty() {
                     ui.colored_label(theme::TEXT_DIM, "No presets yet");
                 }
-                for (_id, name, stops) in &presets {
+                for (id, name, stops) in &presets {
                     if ui.selectable_label(false, name).clicked() {
-                        load_stops = Some(stops.clone());
+                        load_stops = Some((*id, stops.clone()));
                     }
                 }
             });
-            if let Some(stops) = load_stops {
+            if let Some((id, stops)) = load_stops {
                 self.load_from_stops(&stops);
+                self.loaded_preset = Some(id);
             }
         });
         ui.horizontal(|ui| {
@@ -389,6 +404,16 @@ impl NodeWidget for GradientSourceWidget {
                 self.save_name_buf.clear();
             }
         });
+        if let Some(id) = self.loaded_preset
+            && let Some((_, name, _)) = presets.iter().find(|(pid, _, _)| *pid == id)
+            && ui
+                .button("Update preset")
+                .on_hover_text(format!("Overwrite the preset \"{name}\" with these stops"))
+                .clicked()
+        {
+            let stops = self.current_stops();
+            self.library.lock().unwrap().pending_updates.push(PendingPresetUpdate { id, stops });
+        }
 
         ui.separator();
         setup_ui::section(ui, "Stops");

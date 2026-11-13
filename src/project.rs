@@ -57,13 +57,9 @@ pub struct ProjectFile {
 /// Only meaningful at the root level. Add fields here as more toggles
 /// graduate from "session-only" to "remember per project".
 #[derive(Clone, PartialEq, Serialize, Deserialize, Default)]
-pub struct ProjectViewState {
-    /// Whether the macro library side panel is visible.
-    #[serde(default = "default_show_library")]
-    pub show_library: bool,
-}
-
-fn default_show_library() -> bool { true }
+/// Empty for now. Old files carry a `show_library` flag here; serde ignores
+/// unknown fields, so they still load.
+pub struct ProjectViewState {}
 
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct SavedFrame {
@@ -523,7 +519,7 @@ pub fn save_to_file(
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
-    std::fs::write(path, json).map_err(|e| e.to_string())
+    crate::paths::write_atomic(path, json).map_err(|e| e.to_string())
 }
 
 pub fn load_from_file(path: &PathBuf) -> Result<ProjectFile, String> {
@@ -534,6 +530,13 @@ pub fn load_from_file(path: &PathBuf) -> Result<ProjectFile, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn old_view_state_with_show_library_still_loads() {
+        let json = r#"{"version":1,"nodes":[],"connections":[],"view":{"show_library":false}}"#;
+        let p: ProjectFile = serde_json::from_str(json).expect("old project loads");
+        assert!(p.view.is_some());
+    }
 
     fn node(id: u64, type_name: &str) -> SavedNode {
         SavedNode {

@@ -61,7 +61,8 @@ impl ObjectManager {
         self.needs_sync = true;
     }
 
-    pub fn show(&mut self, ui: &mut Ui, fixtures: &[Fixture], interface_names: &[(u32, String)]) {
+    /// `group_object_ids`: the member ids of every group, to say what uses an object.
+    pub fn show(&mut self, ui: &mut Ui, fixtures: &[Fixture], interface_names: &[(u32, String)], group_object_ids: &[u32]) {
         if self.objects.is_empty() {
             setup_ui::empty_state(ui, "No objects yet. Add some from a template below.");
         } else {
@@ -151,7 +152,8 @@ impl ObjectManager {
                                     if setup_ui::duplicate_button(ui, "Duplicate object") {
                                         duplicate_id = Some(obj.id);
                                     }
-                                    if setup_ui::delete_button(ui, "Delete object") {
+                                    let hover = setup_ui::delete_hover("Delete object", setup_ui::use_count(obj.id, group_object_ids), "group");
+                                    if setup_ui::delete_button(ui, &hover) {
                                         remove_id = Some(obj.id);
                                     }
                                 });

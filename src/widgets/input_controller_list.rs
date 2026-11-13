@@ -39,20 +39,10 @@ fn duplicate_controller(mgr: &mut InputControllerManager, id: u32) {
     mgr.rescan();
 }
 
-pub fn show(ui: &mut Ui, mgr: &mut InputControllerManager) {
-    let missing = mgr.missing_controllers();
-    if !missing.is_empty() {
-        ui.horizontal(|ui| {
-            ui.colored_label(
-                crate::theme::SEM_WARNING,
-                format!("Hardware not found: {}", missing.join(", ")),
-            );
-            if ui.button(format!("{} Rescan", egui_phosphor::regular::ARROWS_CLOCKWISE)).on_hover_text("Look for the hardware again").clicked() {
-                mgr.rescan();
-            }
-        });
-        ui.separator();
-    }
+/// Returns true when the user asked to rescan; the app rescans everything.
+pub fn show(ui: &mut Ui, mgr: &mut InputControllerManager, missing: &[String]) -> bool {
+    let rescan = setup_ui::hardware_bar(ui, missing);
+    ui.separator();
 
     // Refresh available MIDI ports each frame (cheap on macOS/Linux/Windows;
     // midir just enumerates the system).
@@ -209,7 +199,6 @@ pub fn show(ui: &mut Ui, mgr: &mut InputControllerManager) {
                     show_inputs_table(
                         ui,
                         c,
-                        is_factory_kind,
                         &mut rename_input,
                         &mut set_mode,
                         &mut set_feedback_disabled,
@@ -314,6 +303,7 @@ pub fn show(ui: &mut Ui, mgr: &mut InputControllerManager) {
     }
     if let Some(id) = duplicate { duplicate_controller(mgr, id); }
     if let Some(id) = remove_controller { mgr.remove_controller(id); }
+    rescan
 }
 
 fn lerp_color(a: Color32, b: Color32, t: f32) -> Color32 {
@@ -330,7 +320,6 @@ fn lerp_color(a: Color32, b: Color32, t: f32) -> Color32 {
 fn show_inputs_table(
     ui: &mut Ui,
     c: &crate::input_controller::ControllerRuntime,
-    _is_factory_kind: bool,
     rename_input: &mut Vec<(u32, u32, String)>,
     set_mode: &mut Vec<(u32, u32, InputBindingMode)>,
     set_feedback_disabled: &mut Vec<(u32, u32, bool)>,

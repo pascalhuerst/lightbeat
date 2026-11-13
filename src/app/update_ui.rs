@@ -105,7 +105,7 @@ impl LightBeatApp {
                 let mut auto = self.config.check_for_updates;
                 if ui.checkbox(&mut auto, "Check automatically").changed() {
                     self.config.check_for_updates = auto;
-                    self.config.save();
+                    self.save_settings();
                 }
                 egui::ComboBox::from_id_salt("update_channel")
                     .selected_text(self.config.update_channel.label())
@@ -113,7 +113,7 @@ impl LightBeatApp {
                         for channel in update::Channel::ALL {
                             if ui.selectable_label(self.config.update_channel == channel, channel.label()).clicked() {
                                 self.config.update_channel = channel;
-                                self.config.save();
+                                self.save_settings();
                                 self.updater.check(channel);
                             }
                         }
