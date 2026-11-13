@@ -23,6 +23,59 @@ const IDLE_WAKE_EARLY_SECS: f32 = 0.003;
 
 impl LightBeatApp {
     pub(crate) fn update_frame(&mut self, ctx: &egui::Context) {
+        self.frame_bookkeeping(ctx);
+
+        self.show_menu_bar(ctx);
+
+        self.update_check_tick();
+        self.show_update_ui(ctx);
+
+        let setup_hovered = self.show_setup_window(ctx);
+
+        self.input_controllers.reap_lost_sessions();
+
+        // "Add Nodes" side panel (left) — unified node-registry + macro library.
+        if self.show_library {
+            egui::SidePanel::left("add_nodes_panel")
+                .default_width(220.0)
+                .show(ctx, |ui| {
+                    self.show_add_nodes_panel(ui);
+                });
+        }
+
+        // Pump pending macro requests from the graph (right-click actions).
+        if let Some(req) = self.graph.take_macro_request() {
+            self.handle_macro_request(req);
+        }
+
+        self.show_save_macro_dialog(ctx);
+
+        self.show_inspector_panel(ctx);
+
+        // DMX Monitor (floating window, toggled via View menu).
+        if self.show_dmx_monitor {
+            egui::Window::new("DMX Monitor")
+                .open(&mut self.show_dmx_monitor)
+                .default_size([600.0, 200.0])
+                .show(ctx, |ui| {
+                    let iface_names: Vec<(u32, String)> = self.interface_manager.interfaces
+                        .iter()
+                        .map(|e| (e.id, e.name.clone()))
+                        .collect();
+                    self.dmx_monitor.show(ui, &self.dmx_shared, &iface_names);
+                });
+        }
+
+        self.show_status_bar(ctx);
+
+        self.show_canvas(ctx);
+
+        self.handle_shortcuts(ctx, setup_hovered);
+
+        self.handle_close_and_dialogs(ctx);
+    }
+
+    fn frame_bookkeeping(&mut self, ctx: &egui::Context) {
         // Full rate while the user is working, a slower one when a show runs
         // unattended: the canvas is expensive to redraw and a hardware
         // controller changes things without touching the window.
@@ -151,7 +204,9 @@ impl LightBeatApp {
             self.write_autosave();
             self.last_autosave_time = now;
         }
+    }
 
+    fn show_menu_bar(&mut self, ctx: &egui::Context) {
         let (can_undo_proj, can_redo_proj) = (self.can_undo_proj, self.can_redo_proj);
         let (can_undo_setup, can_redo_setup) = (self.can_undo_setup, self.can_redo_setup);
 
@@ -318,10 +373,9 @@ impl LightBeatApp {
                 });
             });
         });
+    }
 
-        self.update_check_tick();
-        self.show_update_ui(ctx);
-
+    fn show_setup_window(&mut self, ctx: &egui::Context) -> bool {
         // Consolidated Setup window — embedded `egui::Window` inside the
         // main viewport. All setup managers (interfaces, fixtures, objects,
         // groups, palettes, gradients, audio inputs, input controllers)
@@ -343,23 +397,10 @@ impl LightBeatApp {
             if let Some(ir) = r
                 && ir.response.contains_pointer() { setup_hovered = true; }
         }
+        setup_hovered
+    }
 
-        self.input_controllers.reap_lost_sessions();
-
-        // "Add Nodes" side panel (left) — unified node-registry + macro library.
-        if self.show_library {
-            egui::SidePanel::left("add_nodes_panel")
-                .default_width(220.0)
-                .show(ctx, |ui| {
-                    self.show_add_nodes_panel(ui);
-                });
-        }
-
-        // Pump pending macro requests from the graph (right-click actions).
-        if let Some(req) = self.graph.take_macro_request() {
-            self.handle_macro_request(req);
-        }
-
+    fn show_save_macro_dialog(&mut self, ctx: &egui::Context) {
         // Save-as-macro modal dialog.
         let mut close_dialog = false;
         let mut save_action: Option<()> = None;
@@ -457,7 +498,9 @@ impl LightBeatApp {
             }
         }
         if close_dialog { self.save_macro_dialog = None; }
+    }
 
+    fn show_inspector_panel(&mut self, ctx: &egui::Context) {
         // Inspector panel — visibility gated by InspectorMode.
         let frame_selected_count = self.graph.selected_frame_ids().count();
         let has_selection = !self.graph.selected_nodes_mut().is_empty()
@@ -521,21 +564,9 @@ impl LightBeatApp {
                         });
                 });
         }
+    }
 
-        // DMX Monitor (floating window, toggled via View menu).
-        if self.show_dmx_monitor {
-            egui::Window::new("DMX Monitor")
-                .open(&mut self.show_dmx_monitor)
-                .default_size([600.0, 200.0])
-                .show(ctx, |ui| {
-                    let iface_names: Vec<(u32, String)> = self.interface_manager.interfaces
-                        .iter()
-                        .map(|e| (e.id, e.name.clone()))
-                        .collect();
-                    self.dmx_monitor.show(ui, &self.dmx_shared, &iface_names);
-                });
-        }
-
+    fn show_status_bar(&mut self, ctx: &egui::Context) {
         // Status bar.
         egui::TopBottomPanel::bottom("status_bar")
             .exact_height(28.0)
@@ -694,7 +725,9 @@ impl LightBeatApp {
                     });
                 });
             });
+    }
 
+    fn show_canvas(&mut self, ctx: &egui::Context) {
         // Node graph.
         let graph_started = std::time::Instant::now();
         egui::CentralPanel::default().show(ctx, |ui| {
@@ -758,7 +791,9 @@ impl LightBeatApp {
         for cmd in self.graph.drain_engine_commands() {
             self.engine.send(cmd);
         }
+    }
 
+    fn handle_shortcuts(&mut self, ctx: &egui::Context, setup_hovered: bool) {
         // Keyboard shortcuts. `command` is Ctrl on Linux and Cmd on macOS. While a
         // text field has focus the keys belong to it (Ctrl+Z undoes its text),
         // except Ctrl+S, which saving does not conflict with.
@@ -802,7 +837,9 @@ impl LightBeatApp {
         if let Some(action) = self.pending_undo_action.take() {
             self.run_undo_action(action);
         }
+    }
 
+    fn handle_close_and_dialogs(&mut self, ctx: &egui::Context) {
         // Intercept the OS window close button: if the project has unsaved
         // changes, cancel the close and open the confirm modal instead.
         if !self.close_discarded
