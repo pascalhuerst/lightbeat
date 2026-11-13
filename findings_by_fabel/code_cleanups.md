@@ -37,6 +37,13 @@ Updated as items are implemented. Items not listed here are open.
 | R4 | done | 323f744 |
 | R3 | partly | 31d200d: setup and settings are written atomically. Open: project and autosave writes |
 | R7 | done | 31d200d |
+| S6 | done | merge 4799001: `main.rs` is 469 lines, the rest is `src/app/` (registry, files, update_ui, macros, panels, frame), move-only |
+| E1, D10 | done | da0c2e4 |
+| E3 | done | 9aaf900 |
+| E4 | done | 8a34c1d |
+| E2 | done | 52ed3c3 |
+| E10 | done | bddb4e1 (the stacks still refresh their group targets every frame, which the audit had missed) |
+| D11 | partly | 8f0c476: graph module. Open: Gradient Source description, `project.rs` comment, `is_newer` doc comment |
 
 Checked against your own files on 2026-11-13: `setup.json` uses the new pixel
 format only (M3 can go), no saved Fader or Fader Group uses the old keys (M4,

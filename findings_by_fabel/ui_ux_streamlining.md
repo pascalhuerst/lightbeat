@@ -27,7 +27,7 @@ Updated as items are implemented. Items not listed here are open.
 | Item | State | Commit / note |
 |---|---|---|
 | 1.1 - 1.9 | done | 8f0d27c |
-| 1.10 | partly | 8f0d27c: outer wires of Subgraph ports, Portal Send ports, Lookup columns. Open: wires inside the subgraph on the bridges; wires on Portal Receive nodes |
+| 1.10 | done | 8f0d27c (outer wires), 8f6b1fc (wires on the bridges inside a subgraph and on Portal Receives) |
 
 ---
 
