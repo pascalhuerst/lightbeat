@@ -75,20 +75,27 @@ impl ProcessNode for GainProcessNode {
         }
     }
 
-    fn save_data(&self) -> Option<serde_json::Value> {
-        Some(serde_json::json!({ "gain": self.gain }))
-    }
-
-    fn load_data(&mut self, data: &serde_json::Value) {
-        if let Some(v) = data.get("gain").and_then(|v| v.as_f64()) {
-            self.gain = (v as f32).clamp(0.0, 1.0);
-        }
-    }
-
     fn update_display(&self, shared: &mut NodeSharedState) {
         shared.display = Some(Box::new(GainDisplay {
             gain: self.gain,
             output: self.output,
         }));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_gain_is_restored_by_its_param_alone() {
+        let mut n = GainProcessNode::new(NodeId(1));
+        assert!(n.save_data().is_none(), "the param already holds the gain");
+        n.set_param(0, ParamValue::Float(0.4));
+        n.write_input(0, 0.5);
+        n.process();
+        assert_eq!(n.read_output(0), 0.2);
+        n.set_param(0, ParamValue::Float(7.0));
+        assert!(matches!(n.params()[0], ParamDef::Float { value, .. } if value == 1.0));
     }
 }

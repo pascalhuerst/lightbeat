@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 use egui::{self, Color32, Pos2, Sense, Stroke, StrokeKind, Ui, Vec2};
 
 use crate::color::{GradientStop, Rgb};
-use crate::engine::nodes::math::gradient_source::GradientSourceDisplay;
+use crate::engine::nodes::math::gradient_source::{GradientConfig, GradientSourceDisplay, StopConfig};
 use crate::engine::types::*;
 use crate::objects::gradient_preset::GradientPreset;
 use crate::theme;
@@ -137,35 +137,22 @@ impl GradientSourceWidget {
     }
 
     fn push_config(&self) {
-        let stops: Vec<serde_json::Value> = self.stops.iter().map(|s| {
-            serde_json::json!({
-                "used": s.used,
-                "position": s.position,
-                "r": s.r, "g": s.g, "b": s.b,
-                "alpha": s.alpha,
-            })
-        }).collect();
+        let stops = self.stops.iter()
+            .map(|s| StopConfig::full(s.used, s.position, s.r, s.g, s.b, s.alpha))
+            .collect();
         let mut shared = self.shared.lock().unwrap();
-        shared.pending_config = Some(serde_json::json!({ "stops": stops }));
+        shared.pending_config = Some(GradientConfig::new(stops).to_value());
     }
 }
 
 impl NodeWidget for GradientSourceWidget {
     fn restore_from_save(&mut self, data: Option<&serde_json::Value>, _params: &[(usize, crate::engine::types::ParamValue)]) {
         let Some(data) = data else { return };
-        if let Some(arr) = data.get("stops").and_then(|v| v.as_array()) {
-            for (i, entry) in arr.iter().take(MAX_STOPS).enumerate() {
-                let used = entry.get("used").and_then(|v| v.as_bool()).unwrap_or(false);
-                if !used { self.stops[i] = StopEdit::default(); continue; }
-                self.stops[i] = StopEdit {
-                    used: true,
-                    position: entry.get("position").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32,
-                    r: entry.get("r").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32,
-                    g: entry.get("g").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32,
-                    b: entry.get("b").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32,
-                    alpha: entry.get("alpha").and_then(|v| v.as_f64()).unwrap_or(1.0) as f32,
-                };
-            }
+        let Some(stops) = GradientConfig::from_value(data).stops else { return };
+        for (i, entry) in stops.iter().take(MAX_STOPS).enumerate() {
+            if !entry.used { self.stops[i] = StopEdit::default(); continue; }
+            let (position, r, g, b, alpha) = entry.values();
+            self.stops[i] = StopEdit { used: true, position, r, g, b, alpha };
         }
     }
 

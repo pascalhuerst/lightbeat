@@ -9,6 +9,8 @@
 //!   column's `port_type.channel_count()`. Row r, column c's first channel
 //!   is at `data[r * stride + column_channel_offset(c)]`.
 
+use serde::{Deserialize, Serialize};
+
 use crate::engine::types::*;
 
 /// What the index input means.
@@ -224,35 +226,19 @@ impl ProcessNode for LookupProcessNode {
     }
 
     fn save_data(&self) -> Option<serde_json::Value> {
-        Some(serde_json::json!({
-            "columns": self.columns.iter().map(|c| serde_json::json!({
-                "name": c.name,
-                "type": port_type_to_str(c.port_type),
-            })).collect::<Vec<_>>(),
-            "row_count": self.row_count,
-            "data": self.data,
-        }))
+        Some(LookupConfig::of(&self.columns, self.row_count, &self.data).to_value())
     }
 
     fn load_data(&mut self, data: &serde_json::Value) {
-        // Columns.
-        if let Some(arr) = data.get("columns").and_then(|v| v.as_array()) {
-            let mut cols = Vec::with_capacity(arr.len());
-            for entry in arr {
-                let name = entry.get("name").and_then(|v| v.as_str()).unwrap_or("col").to_string();
-                let port_type = entry.get("type")
-                    .and_then(|v| v.as_str())
-                    .and_then(port_type_from_str)
-                    .unwrap_or(PortType::Untyped);
-                cols.push(LookupColumn { name, port_type });
-            }
+        let cfg = LookupConfig::from_value(data);
+        if let Some(cols) = cfg.columns() {
             self.columns = cols;
         }
-        if let Some(n) = data.get("row_count").and_then(|v| v.as_u64()) {
-            self.row_count = n as usize;
+        if let Some(n) = cfg.row_count {
+            self.row_count = n;
         }
-        if let Some(arr) = data.get("data").and_then(|v| v.as_array()) {
-            self.data = arr.iter().filter_map(|v| v.as_f64().map(|f| f as f32)).collect();
+        if let Some(d) = cfg.data {
+            self.data = d;
         }
         self.rebuild_ports();
     }
@@ -261,6 +247,58 @@ impl ProcessNode for LookupProcessNode {
         shared.display = Some(Box::new(LookupDisplay {
             current_row: self.current_row,
         }));
+    }
+}
+
+/// The table as saved and as the widget pushes it through `pending_config`.
+/// Every key is optional so that a partial update only touches what it names.
+#[derive(Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct LookupConfig {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    columns: Option<Vec<ColumnConfig>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub row_count: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub data: Option<Vec<f32>>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct ColumnConfig {
+    #[serde(default = "default_column_name")]
+    name: String,
+    #[serde(rename = "type", default)]
+    port_type: Option<String>,
+}
+
+fn default_column_name() -> String { "col".to_string() }
+
+impl LookupConfig {
+    pub fn of(columns: &[LookupColumn], row_count: usize, data: &[f32]) -> Self {
+        Self {
+            columns: Some(columns.iter().map(|c| ColumnConfig {
+                name: c.name.clone(),
+                port_type: Some(port_type_to_str(c.port_type).to_string()),
+            }).collect()),
+            row_count: Some(row_count),
+            data: Some(data.to_vec()),
+        }
+    }
+
+    /// Malformed data loads as an empty update, which changes nothing.
+    pub fn from_value(v: &serde_json::Value) -> Self {
+        serde_json::from_value(v.clone()).unwrap_or_default()
+    }
+
+    pub fn to_value(&self) -> serde_json::Value {
+        serde_json::to_value(self).unwrap_or(serde_json::Value::Null)
+    }
+
+    pub fn columns(&self) -> Option<Vec<LookupColumn>> {
+        self.columns.as_ref().map(|cols| cols.iter().map(|c| LookupColumn {
+            name: c.name.clone(),
+            port_type: c.port_type.as_deref().and_then(port_type_from_str).unwrap_or(PortType::Untyped),
+        }).collect())
     }
 }
 
@@ -350,5 +388,29 @@ mod tests {
         n.set_param(1, ParamValue::Choice(1));
         n.set_param(0, ParamValue::Choice(1));
         assert_eq!(out(&mut n, 1.0), 1000.0);
+    }
+
+    #[test]
+    fn the_hand_written_save_shape_still_loads_and_saves() {
+        let saved = serde_json::json!({
+            "columns": [{"name": "a", "type": "phase"}, {"name": "b", "type": "color"}],
+            "row_count": 2,
+            "data": [0.0, 0.5, 1.0, 0.25, 0.0, 0.0, 1.0, 0.5],
+        });
+        let mut n = LookupProcessNode::new(NodeId(1));
+        n.load_data(&saved);
+        assert_eq!(n.columns.len(), 2);
+        assert_eq!(n.columns[1].port_type, PortType::Color);
+        assert_eq!(n.row_count, 2);
+        assert_eq!(n.data.len(), 8);
+        assert_eq!(n.save_data(), Some(saved));
+    }
+
+    #[test]
+    fn a_column_without_a_name_or_a_known_type_gets_the_defaults() {
+        let mut n = LookupProcessNode::new(NodeId(1));
+        n.load_data(&serde_json::json!({"columns": [{"type": "nonsense"}]}));
+        assert_eq!(n.columns[0].name, "col");
+        assert_eq!(n.columns[0].port_type, PortType::Untyped);
     }
 }

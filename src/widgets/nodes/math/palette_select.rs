@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 use egui::{self, Color32, Sense, Ui, Vec2};
 
 use crate::engine::nodes::math::multiplex::SelectMode;
-use crate::engine::nodes::math::palette_select::{ports_for, PaletteSelectDisplay};
+use crate::engine::nodes::math::palette_select::{ports_for, GroupConfig, PaletteSelectConfig, PaletteSelectDisplay};
 use crate::engine::types::*;
 use crate::theme;
 use crate::objects::color_palette::{ColorPalette, ColorPaletteGroup, PALETTE_SIZE};
@@ -61,23 +61,17 @@ impl PaletteSelectWidget {
 
     fn push_data_to_engine(&self) {
         let ctx = self.palette_ctx.lock().unwrap();
-        let groups_data: Vec<serde_json::Value> = self.selected_group_ids.iter().filter_map(|gid| {
+        let groups: Vec<GroupConfig> = self.selected_group_ids.iter().filter_map(|gid| {
             let group = ctx.groups.iter().find(|g| g.id == *gid)?;
-            let palettes: Vec<&ColorPalette> = group.palette_ids.iter()
-                .filter_map(|pid| ctx.palettes.iter().find(|s| s.id == *pid))
+            let palettes = group.palette_ids.iter()
+                .filter_map(|pid| ctx.palettes.iter().find(|s| s.id == *pid).cloned())
                 .collect();
-            Some(serde_json::json!({
-                "name": group.name,
-                "palettes": palettes,
-            }))
+            Some(GroupConfig { name: group.name.clone(), palettes })
         }).collect();
         drop(ctx);
 
         let mut shared = self.shared.lock().unwrap();
-        shared.pending_config = Some(serde_json::json!({
-            "group_ids": self.selected_group_ids,
-            "groups": groups_data,
-        }));
+        shared.pending_config = Some(PaletteSelectConfig::new(self.selected_group_ids.clone(), groups).to_value());
     }
 }
 

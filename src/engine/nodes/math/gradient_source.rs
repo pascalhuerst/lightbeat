@@ -3,10 +3,73 @@
 //! slider + alpha slider per stop) and packed into the 40-channel flat
 //! representation `Gradient::to_channels` expects.
 
+use serde::{Deserialize, Serialize};
+
 use crate::color::{Gradient, GradientStop, Rgb};
 use crate::engine::types::*;
 
 const MAX_STOPS: usize = GRADIENT_STOP_COUNT; // 8
+
+/// The stops as saved and as the widget pushes them through `pending_config`.
+/// A slot that is not used is saved as `{"used": false}` alone.
+#[derive(Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct GradientConfig {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stops: Option<Vec<StopConfig>>,
+}
+
+#[derive(Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct StopConfig {
+    pub used: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    position: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    r: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    g: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    b: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    alpha: Option<f32>,
+}
+
+impl StopConfig {
+    pub fn unused() -> Self {
+        Self::default()
+    }
+
+    pub fn full(used: bool, position: f32, r: f32, g: f32, b: f32, alpha: f32) -> Self {
+        Self { used, position: Some(position), r: Some(r), g: Some(g), b: Some(b), alpha: Some(alpha) }
+    }
+
+    /// `(position, r, g, b, alpha)`, with the defaults a missing key has always had.
+    pub fn values(&self) -> (f32, f32, f32, f32, f32) {
+        (
+            self.position.unwrap_or(0.0),
+            self.r.unwrap_or(0.0),
+            self.g.unwrap_or(0.0),
+            self.b.unwrap_or(0.0),
+            self.alpha.unwrap_or(1.0),
+        )
+    }
+}
+
+impl GradientConfig {
+    pub fn new(stops: Vec<StopConfig>) -> Self {
+        Self { stops: Some(stops) }
+    }
+
+    /// Malformed data loads as an empty update, which changes nothing.
+    pub fn from_value(v: &serde_json::Value) -> Self {
+        serde_json::from_value(v.clone()).unwrap_or_default()
+    }
+
+    pub fn to_value(&self) -> serde_json::Value {
+        serde_json::to_value(self).unwrap_or(serde_json::Value::Null)
+    }
+}
 
 pub struct GradientSourceDisplay {
     pub stops: Vec<(f32, Rgb, f32)>, // (position, color, alpha) — only active stops
@@ -74,44 +137,31 @@ impl ProcessNode for GradientSourceProcessNode {
     }
 
     fn save_data(&self) -> Option<serde_json::Value> {
-        let stops: Vec<serde_json::Value> = (0..MAX_STOPS)
+        let stops = (0..MAX_STOPS)
             .map(|i| {
                 if !self.used[i] {
-                    return serde_json::json!({ "used": false });
+                    return StopConfig::unused();
                 }
                 let s = &self.stops[i];
-                serde_json::json!({
-                    "used": true,
-                    "position": s.position,
-                    "r": s.color.r,
-                    "g": s.color.g,
-                    "b": s.color.b,
-                    "alpha": s.alpha,
-                })
+                StopConfig::full(true, s.position, s.color.r, s.color.g, s.color.b, s.alpha)
             })
             .collect();
-        Some(serde_json::json!({ "stops": stops }))
+        Some(GradientConfig::new(stops).to_value())
     }
 
     fn load_data(&mut self, data: &serde_json::Value) {
-        if let Some(arr) = data.get("stops").and_then(|v| v.as_array()) {
-            for (i, entry) in arr.iter().take(MAX_STOPS).enumerate() {
-                let used = entry.get("used").and_then(|v| v.as_bool()).unwrap_or(false);
-                self.used[i] = used;
-                if !used { continue; }
-                let position = entry.get("position").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32;
-                let r = entry.get("r").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32;
-                let g = entry.get("g").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32;
-                let b = entry.get("b").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32;
-                let alpha = entry.get("alpha").and_then(|v| v.as_f64()).unwrap_or(1.0) as f32;
-                self.stops[i] = GradientStop {
-                    position: position.clamp(0.0, 1.0),
-                    color: Rgb::new(r.clamp(0.0, 1.0), g.clamp(0.0, 1.0), b.clamp(0.0, 1.0)),
-                    alpha: alpha.clamp(0.0, 1.0),
-                };
-            }
-            self.recompute_channels();
+        let Some(stops) = GradientConfig::from_value(data).stops else { return };
+        for (i, entry) in stops.iter().take(MAX_STOPS).enumerate() {
+            self.used[i] = entry.used;
+            if !entry.used { continue; }
+            let (position, r, g, b, alpha) = entry.values();
+            self.stops[i] = GradientStop {
+                position: position.clamp(0.0, 1.0),
+                color: Rgb::new(r.clamp(0.0, 1.0), g.clamp(0.0, 1.0), b.clamp(0.0, 1.0)),
+                alpha: alpha.clamp(0.0, 1.0),
+            };
         }
+        self.recompute_channels();
     }
 
     fn update_display(&self, shared: &mut NodeSharedState) {
@@ -123,5 +173,34 @@ impl ProcessNode for GradientSourceProcessNode {
             })
             .collect();
         shared.display = Some(Box::new(GradientSourceDisplay { stops: active }));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_hand_written_save_shape_loads_and_saves_unchanged() {
+        let mut stops = vec![
+            serde_json::json!({"used": true, "position": 0.25, "r": 1.0, "g": 0.5, "b": 0.0, "alpha": 0.75}),
+            serde_json::json!({"used": true, "position": 1.0, "r": 0.0, "g": 0.0, "b": 1.0, "alpha": 1.0}),
+        ];
+        stops.resize(MAX_STOPS, serde_json::json!({"used": false}));
+        let saved = serde_json::json!({ "stops": stops });
+        let mut n = GradientSourceProcessNode::new(NodeId(1));
+        n.load_data(&saved);
+        assert_eq!(n.stops[0].position, 0.25);
+        assert_eq!(n.stops[0].color.g, 0.5);
+        assert_eq!(n.stops[0].alpha, 0.75);
+        assert!(!n.used[2]);
+        assert_eq!(n.save_data(), Some(saved));
+    }
+
+    #[test]
+    fn a_used_stop_with_missing_keys_gets_the_old_defaults() {
+        let mut n = GradientSourceProcessNode::new(NodeId(1));
+        n.load_data(&serde_json::json!({"stops": [{"used": true}]}));
+        assert_eq!((n.stops[0].position, n.stops[0].alpha), (0.0, 1.0));
     }
 }
