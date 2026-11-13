@@ -22,7 +22,8 @@ impl ColorPaletteManager {
         Self { palettes, next_id, needs_refresh: false }
     }
 
-    pub fn show(&mut self, ui: &mut Ui) {
+    /// `group_palette_ids`: the members of every palette group, to say what uses a palette.
+    pub fn show(&mut self, ui: &mut Ui, group_palette_ids: &[u32]) {
         if self.palettes.is_empty() {
             setup_ui::empty_state(ui, "No palettes yet. Add one below.");
         } else {
@@ -74,7 +75,8 @@ impl ColorPaletteManager {
                                     if setup_ui::duplicate_button(ui, "Duplicate palette") {
                                         duplicate_id = Some(palette.id);
                                     }
-                                    if setup_ui::delete_button(ui, "Delete palette") {
+                                    let hover = setup_ui::delete_hover("Delete palette", setup_ui::use_count(palette.id, group_palette_ids), "palette group");
+                                    if setup_ui::delete_button(ui, &hover) {
                                         remove_id = Some(palette.id);
                                     }
                                 });

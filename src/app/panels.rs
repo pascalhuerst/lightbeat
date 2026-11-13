@@ -228,9 +228,13 @@ impl LightBeatApp {
         let mut rescan = false;
         egui::ScrollArea::both().auto_shrink([false, false]).show(ui, |ui| {
             match self.setup_active_tab {
-                SetupTab::Interfaces => self.interface_manager.show(ui),
+                SetupTab::Interfaces => {
+                    let refs: Vec<u32> = self.object_manager.objects.iter().map(|o| o.interface_id).collect();
+                    self.interface_manager.show(ui, &refs);
+                }
                 SetupTab::FixtureTemplates => {
-                    self.fixture_manager.show(ui);
+                    let refs: Vec<u32> = self.object_manager.objects.iter().map(|o| o.fixture_id).collect();
+                    self.fixture_manager.show(ui, &refs);
                     // Objects own a copy of their template's channels, so template edits must be pushed down.
                     let fixtures = &self.fixture_manager.fixtures;
                     for obj in &mut self.object_manager.objects {
@@ -245,12 +249,16 @@ impl LightBeatApp {
                 SetupTab::Objects => {
                     let interface_names: Vec<(u32, String)> = self.interface_manager.interfaces
                         .iter().map(|e| (e.id, e.name.clone())).collect();
-                    self.object_manager.show(ui, &self.fixture_manager.fixtures, &interface_names);
+                    let group_refs: Vec<u32> = self.group_manager.groups.iter().flat_map(|g| g.object_ids.iter().copied()).collect();
+                    self.object_manager.show(ui, &self.fixture_manager.fixtures, &interface_names, &group_refs);
                 }
                 SetupTab::Groups => {
                     self.group_manager.show(ui, &self.object_manager.objects);
                 }
-                SetupTab::ColorPalettes => self.color_palette_manager.show(ui),
+                SetupTab::ColorPalettes => {
+                    let refs: Vec<u32> = self.color_palette_group_manager.groups.iter().flat_map(|g| g.palette_ids.iter().copied()).collect();
+                    self.color_palette_manager.show(ui, &refs);
+                }
                 SetupTab::ColorPaletteGroups => {
                     self.color_palette_group_manager.show(ui, &self.color_palette_manager.palettes);
                 }

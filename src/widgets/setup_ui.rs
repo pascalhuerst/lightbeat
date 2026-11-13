@@ -141,6 +141,22 @@ pub fn info_row(ui: &mut Ui, label: &str, value: &str) {
 /// What a reference to something deleted shows instead of its name.
 pub const MISSING: &str = "(missing)";
 
+/// How many entries of `refs` point at `id`. A panel is handed the ids that
+/// the things using it refer to (every object's template id, say).
+pub fn use_count(id: u32, refs: &[u32]) -> usize {
+    refs.iter().filter(|r| **r == id).count()
+}
+
+/// Hover text of a delete button that says what still uses the thing, e.g.
+/// "Delete template (used by 3 objects)". `noun` is the singular of the user.
+pub fn delete_hover(base: &str, uses: usize, noun: &str) -> String {
+    match uses {
+        0 => base.to_string(),
+        1 => format!("{base} (used by 1 {noun})"),
+        n => format!("{base} (used by {n} {noun}s)"),
+    }
+}
+
 /// The name a duplicate gets.
 pub fn copy_name(name: &str) -> String {
     format!("{} copy", name)
@@ -360,6 +376,20 @@ mod tests {
         assert_eq!(not_found_text(&[]), None);
         let m = vec!["X1".to_string(), "Mic".to_string()];
         assert_eq!(not_found_text(&m).as_deref(), Some("Not found: X1, Mic"));
+    }
+
+    #[test]
+    fn counts_only_matching_references() {
+        assert_eq!(use_count(2, &[1, 2, 2, 3]), 2);
+        assert_eq!(use_count(9, &[1, 2]), 0);
+        assert_eq!(use_count(1, &[]), 0);
+    }
+
+    #[test]
+    fn delete_hover_names_the_users() {
+        assert_eq!(delete_hover("Delete template", 0, "object"), "Delete template");
+        assert_eq!(delete_hover("Delete template", 1, "object"), "Delete template (used by 1 object)");
+        assert_eq!(delete_hover("Delete template", 3, "object"), "Delete template (used by 3 objects)");
     }
 
     #[test]
