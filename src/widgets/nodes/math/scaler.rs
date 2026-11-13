@@ -21,16 +21,8 @@ impl NodeWidget for ScalerWidget {
     fn type_name(&self) -> &'static str { "Range to Unit" }
     fn description(&self) -> &'static str { "Maps the range from in min to in max onto 0..1, clamped. The range comes from the settings or from wires." }
 
-    fn ui_inputs(&self) -> Vec<UiPortDef> {
-        vec![
-            UiPortDef::from_def(&PortDef::new("in", PortType::Any)),
-            UiPortDef::from_def(&PortDef::new("in min", PortType::Untyped)),
-            UiPortDef::from_def(&PortDef::new("in max", PortType::Untyped)),
-        ]
-    }
-    fn ui_outputs(&self) -> Vec<UiPortDef> {
-        vec![UiPortDef::from_def(&PortDef::new("out", PortType::Untyped))]
-    }
+    fn ui_inputs(&self) -> Vec<UiPortDef> { UiPortDef::from_defs(&crate::engine::nodes::math::scaler::ports().0) }
+    fn ui_outputs(&self) -> Vec<UiPortDef> { UiPortDef::from_defs(&crate::engine::nodes::math::scaler::ports().1) }
 
     fn overridden_param_indices(&self) -> Vec<usize> {
         // "In Min" = param 0, wired from port 1. "In Max" = param 1, wired from port 2.

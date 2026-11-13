@@ -24,8 +24,24 @@ pub struct PaletteToGradientProcessNode {
     outputs: Vec<PortDef>,
 }
 
+/// The ports, stated once: the widget builds its own from this, so the two
+/// halves cannot disagree.
+pub fn ports() -> (Vec<PortDef>, Vec<PortDef>) {
+    (
+        vec![
+            PortDef::new("palette", PortType::Palette),
+            PortDef::new("pos1", PortType::Untyped),
+            PortDef::new("pos2", PortType::Untyped),
+            PortDef::new("pos3", PortType::Untyped),
+            PortDef::new("pos4", PortType::Untyped),
+        ],
+        vec![PortDef::new("gradient", PortType::Gradient)],
+    )
+}
+
 impl PaletteToGradientProcessNode {
     pub fn new(id: NodeId) -> Self {
+        let (inputs, outputs) = ports();
         Self {
             id,
             palette_in: [0.0; 12],
@@ -34,14 +50,8 @@ impl PaletteToGradientProcessNode {
             pos_param: [0.0, 1.0 / 3.0, 2.0 / 3.0, 1.0],
             pos_connected: [false; N],
             channels: [0.0; GRADIENT_STOP_COUNT * GRADIENT_STOP_FLOATS],
-            inputs: vec![
-                PortDef::new("palette", PortType::Palette),
-                PortDef::new("pos1", PortType::Untyped),
-                PortDef::new("pos2", PortType::Untyped),
-                PortDef::new("pos3", PortType::Untyped),
-                PortDef::new("pos4", PortType::Untyped),
-            ],
-            outputs: vec![PortDef::new("gradient", PortType::Gradient)],
+            inputs,
+            outputs,
         }
     }
 

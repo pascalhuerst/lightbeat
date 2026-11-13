@@ -21,18 +21,8 @@ impl NodeWidget for ChangeDetectWidget {
     fn type_name(&self) -> &'static str { "Change Detect" }
     fn description(&self) -> &'static str { "Fires a logic pulse whenever the input value changes." }
 
-    fn ui_inputs(&self) -> Vec<UiPortDef> {
-        vec![
-            UiPortDef::from_def(&PortDef::new("in", PortType::Any)),
-            UiPortDef::from_def(&PortDef::new("trigger", PortType::Logic)),
-        ]
-    }
-    fn ui_outputs(&self) -> Vec<UiPortDef> {
-        vec![
-            UiPortDef::from_def(&PortDef::new("changed", PortType::Logic)),
-            UiPortDef::from_def(&PortDef::new("trigger", PortType::Logic)),
-        ]
-    }
+    fn ui_inputs(&self) -> Vec<UiPortDef> { UiPortDef::from_defs(&crate::engine::nodes::math::change_detect::ports().0) }
+    fn ui_outputs(&self) -> Vec<UiPortDef> { UiPortDef::from_defs(&crate::engine::nodes::math::change_detect::ports().1) }
 
     fn min_width(&self) -> f32 { 100.0 }
     fn min_content_height(&self) -> f32 { 15.0 }

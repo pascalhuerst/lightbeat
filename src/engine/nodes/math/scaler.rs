@@ -18,8 +18,22 @@ pub struct ScalerProcessNode {
     outputs: Vec<PortDef>,
 }
 
+/// The ports, stated once: the widget builds its own from this, so the two
+/// halves cannot disagree.
+pub fn ports() -> (Vec<PortDef>, Vec<PortDef>) {
+    (
+        vec![
+            PortDef::new("in", PortType::Any),
+            PortDef::new("in min", PortType::Untyped),
+            PortDef::new("in max", PortType::Untyped),
+        ],
+        vec![PortDef::new("out", PortType::Untyped)],
+    )
+}
+
 impl ScalerProcessNode {
     pub fn new(id: NodeId) -> Self {
+        let (inputs, outputs) = ports();
         Self {
             id,
             in_min: 0.0,
@@ -30,12 +44,8 @@ impl ScalerProcessNode {
             min_connected: false,
             max_connected: false,
             value_out: 0.0,
-            inputs: vec![
-                PortDef::new("in", PortType::Any),
-                PortDef::new("in min", PortType::Untyped),
-                PortDef::new("in max", PortType::Untyped),
-            ],
-            outputs: vec![PortDef::new("out", PortType::Untyped)],
+            inputs,
+            outputs,
         }
     }
 

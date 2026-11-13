@@ -29,18 +29,8 @@ impl NodeWidget for PaletteToGradientWidget {
          Wire `pos1..pos4` to drive stop positions from the graph, or set them in the inspector."
     }
 
-    fn ui_inputs(&self) -> Vec<UiPortDef> {
-        vec![
-            UiPortDef::from_def(&PortDef::new("palette", PortType::Palette)),
-            UiPortDef::from_def(&PortDef::new("pos1", PortType::Untyped)),
-            UiPortDef::from_def(&PortDef::new("pos2", PortType::Untyped)),
-            UiPortDef::from_def(&PortDef::new("pos3", PortType::Untyped)),
-            UiPortDef::from_def(&PortDef::new("pos4", PortType::Untyped)),
-        ]
-    }
-    fn ui_outputs(&self) -> Vec<UiPortDef> {
-        vec![UiPortDef::from_def(&PortDef::new("gradient", PortType::Gradient))]
-    }
+    fn ui_inputs(&self) -> Vec<UiPortDef> { UiPortDef::from_defs(&crate::engine::nodes::math::palette_to_gradient::ports().0) }
+    fn ui_outputs(&self) -> Vec<UiPortDef> { UiPortDef::from_defs(&crate::engine::nodes::math::palette_to_gradient::ports().1) }
 
     fn min_width(&self) -> f32 { 150.0 }
     fn min_content_height(&self) -> f32 { 40.0 }

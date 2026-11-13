@@ -25,12 +25,8 @@ impl NodeWidget for RandomWidget {
         "Picks a new random value between min and max on each rising edge of the trigger and holds it. With steps it picks one of that many evenly spaced values; glide slides to the new value."
     }
 
-    fn ui_inputs(&self) -> Vec<UiPortDef> {
-        vec![UiPortDef::from_def(&PortDef::new("trigger", PortType::Logic))]
-    }
-    fn ui_outputs(&self) -> Vec<UiPortDef> {
-        vec![UiPortDef::from_def(&PortDef::new("out", PortType::Untyped))]
-    }
+    fn ui_inputs(&self) -> Vec<UiPortDef> { UiPortDef::from_defs(&crate::engine::nodes::math::random::ports().0) }
+    fn ui_outputs(&self) -> Vec<UiPortDef> { UiPortDef::from_defs(&crate::engine::nodes::math::random::ports().1) }
 
     fn min_width(&self) -> f32 { 100.0 }
     fn min_content_height(&self) -> f32 { 20.0 }

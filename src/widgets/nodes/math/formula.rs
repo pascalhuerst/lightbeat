@@ -51,12 +51,8 @@ impl NodeWidget for FormulaWidget {
          https://docs.rs/meval/latest/meval/#supported-expressions"
     }
 
-    fn ui_inputs(&self) -> Vec<UiPortDef> {
-        vec![UiPortDef::from_def(&PortDef::new("in", PortType::Untyped))]
-    }
-    fn ui_outputs(&self) -> Vec<UiPortDef> {
-        vec![UiPortDef::from_def(&PortDef::new("out", PortType::Untyped))]
-    }
+    fn ui_inputs(&self) -> Vec<UiPortDef> { UiPortDef::from_defs(&crate::engine::nodes::math::formula::ports().0) }
+    fn ui_outputs(&self) -> Vec<UiPortDef> { UiPortDef::from_defs(&crate::engine::nodes::math::formula::ports().1) }
 
     fn min_width(&self) -> f32 { 130.0 }
     fn min_content_height(&self) -> f32 { 20.0 }

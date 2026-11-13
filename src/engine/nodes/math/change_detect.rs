@@ -24,8 +24,24 @@ pub struct ChangeDetectProcessNode {
     outputs: Vec<PortDef>,
 }
 
+/// The ports, stated once: the widget builds its own from this, so the two
+/// halves cannot disagree.
+pub fn ports() -> (Vec<PortDef>, Vec<PortDef>) {
+    (
+        vec![
+            PortDef::new("in", PortType::Any),
+            PortDef::new("trigger", PortType::Logic),
+        ],
+        vec![
+            PortDef::new("changed", PortType::Logic),
+            PortDef::new("trigger", PortType::Logic),
+        ],
+    )
+}
+
 impl ChangeDetectProcessNode {
     pub fn new(id: NodeId) -> Self {
+        let (inputs, outputs) = ports();
         Self {
             id,
             trigger_in: 0.0,
@@ -36,14 +52,8 @@ impl ChangeDetectProcessNode {
             output: 0.0,
             trigger_out: 0.0,
             threshold: 0.001,
-            inputs: vec![
-                PortDef::new("in", PortType::Any),
-                PortDef::new("trigger", PortType::Logic),
-            ],
-            outputs: vec![
-                PortDef::new("changed", PortType::Logic),
-                PortDef::new("trigger", PortType::Logic),
-            ],
+            inputs,
+            outputs,
         }
     }
 }

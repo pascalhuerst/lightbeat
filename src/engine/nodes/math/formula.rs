@@ -41,6 +41,15 @@ enum Expr {
     Min(Vec<Expr>),
 }
 
+/// The ports, stated once: the widget builds its own from this, so the two
+/// halves cannot disagree.
+pub fn ports() -> (Vec<PortDef>, Vec<PortDef>) {
+    (
+        vec![PortDef::new("in", PortType::Untyped)],
+        vec![PortDef::new("out", PortType::Untyped)],
+    )
+}
+
 impl Expr {
     fn eval(&self, input: f64) -> f64 {
         match self {
@@ -178,14 +187,15 @@ pub struct FormulaProcessNode {
 impl FormulaProcessNode {
     pub fn new(id: NodeId) -> Self {
         let formula = "x".to_string();
+        let (inputs, outputs) = ports();
         Self {
             id,
             compiled: compile(&formula),
             formula,
             input: 0.0,
             out: 0.0,
-            inputs: vec![PortDef::new("in", PortType::Untyped)],
-            outputs: vec![PortDef::new("out", PortType::Untyped)],
+            inputs,
+            outputs,
         }
     }
 

@@ -25,16 +25,8 @@ impl NodeWidget for BipolarWidget {
          Formula: out = (in - 0.5) * range + center. Defaults (range=1, center=0) give -0.5..+0.5."
     }
 
-    fn ui_inputs(&self) -> Vec<UiPortDef> {
-        vec![
-            UiPortDef::from_def(&PortDef::new("in", PortType::Untyped)),
-            UiPortDef::from_def(&PortDef::new("range", PortType::Untyped)),
-            UiPortDef::from_def(&PortDef::new("center", PortType::Untyped)),
-        ]
-    }
-    fn ui_outputs(&self) -> Vec<UiPortDef> {
-        vec![UiPortDef::from_def(&PortDef::new("out", PortType::Untyped))]
-    }
+    fn ui_inputs(&self) -> Vec<UiPortDef> { UiPortDef::from_defs(&crate::engine::nodes::math::bipolar::ports().0) }
+    fn ui_outputs(&self) -> Vec<UiPortDef> { UiPortDef::from_defs(&crate::engine::nodes::math::bipolar::ports().1) }
 
     fn min_width(&self) -> f32 { 90.0 }
     fn min_content_height(&self) -> f32 { 15.0 }
