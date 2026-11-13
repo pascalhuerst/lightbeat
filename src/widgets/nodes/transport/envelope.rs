@@ -313,7 +313,6 @@ fn dist_to_segment(p: Pos2, a: Pos2, b: Pos2) -> f32 {
 }
 
 impl EnvelopeWidget {
-    #[allow(clippy::too_many_arguments)]
     fn curve_editor(
         &mut self, ui: &Ui, painter: &egui::Painter, resp: &egui::Response, rect: egui::Rect,
         zoom: f32, kind: EnvelopeKind, stage: u8, env_val: f32, times: Times,

@@ -158,7 +158,6 @@ pub struct GraphLevel {
     /// Rendered behind nodes, draggable/resizable, with title and notes.
     /// No engine semantics; nodes "in" a frame are just nodes whose rect
     /// overlaps the frame's rect.
-    #[allow(dead_code)]
     pub frames: Vec<GraphFrame>,
 }
 
@@ -198,7 +197,6 @@ pub enum MacroRequest {
 }
 
 /// A copied node snapshot for clipboard operations.
-#[allow(dead_code)]
 struct ClipboardNode {
     type_name: String,
     size: Option<Vec2>,
@@ -524,7 +522,6 @@ impl NodeGraph {
         (level.nodes[index].as_ref(), &level.states[index])
     }
 
-    #[allow(dead_code)]
     pub fn set_node_size(&mut self, index: usize, size: egui::Vec2) {
         self.active_mut().states[index].size_override = Some(size);
     }
@@ -776,7 +773,7 @@ impl NodeGraph {
                     egui::Align2::LEFT_CENTER,
                     &frame.title,
                     egui::FontId::proportional(13.0 * z),
-                    Color32::from_gray(230),
+                    theme::TEXT,
                 );
             }
 
@@ -792,7 +789,7 @@ impl NodeGraph {
                     egui::Align2::LEFT_TOP,
                     &frame.notes,
                     egui::FontId::proportional(11.0 * z),
-                    Color32::from_gray(180),
+                    theme::TEXT_MUTED,
                 );
             }
 
@@ -853,13 +850,13 @@ impl NodeGraph {
                 let badge_pos = dc.to_pos + Vec2::new(14.0, -14.0);
                 let label = format!("×{}", dc.bundle_size);
                 let font = egui::FontId::proportional(13.0);
-                let galley = painter.layout_no_wrap(label, font.clone(), Color32::WHITE);
+                let galley = painter.layout_no_wrap(label, font.clone(), theme::TEXT_BRIGHT);
                 let pad = Vec2::new(6.0, 2.0);
                 let bg_rect = egui::Rect::from_center_size(
                     badge_pos,
                     galley.size() + pad * 2.0,
                 );
-                painter.rect_filled(bg_rect, 4.0, Color32::from_rgba_unmultiplied(0, 0, 0, 200));
+                painter.rect_filled(bg_rect, 4.0, theme::OVERLAY_BG);
                 painter.rect_stroke(
                     bg_rect, 4.0,
                     egui::Stroke::new(1.0_f32, dc.from_type.color()),
@@ -870,7 +867,7 @@ impl NodeGraph {
                     egui::Align2::CENTER_CENTER,
                     format!("×{}", dc.bundle_size),
                     font,
-                    Color32::WHITE,
+                    theme::TEXT_BRIGHT,
                 );
             }
         }

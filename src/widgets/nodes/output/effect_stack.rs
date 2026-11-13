@@ -389,7 +389,7 @@ impl NodeWidget for EffectStackWidget {
 
                 let (_, dropped) = ui.dnd_drop_zone::<usize, _>(egui::Frame::new(), |ui| {
                     egui::Frame::new()
-                        .fill(if selected { theme::BG_HIGH } else { Color32::TRANSPARENT })
+                        .fill(if selected { theme::BG_HIGH } else { theme::CLEAR })
                         .inner_margin(egui::Margin::symmetric(2, 1))
                         .show(ui, |ui| {
                             ui.horizontal(|ui| {
@@ -403,7 +403,7 @@ impl NodeWidget for EffectStackWidget {
                                 if ui.small_button(mute_text).on_hover_text("Mute").clicked() {
                                     mute_toggle = Some(i);
                                 }
-                                let solo_btn = egui::Button::new("S").fill(if layer.solo { theme::SEM_WARNING } else { Color32::TRANSPARENT });
+                                let solo_btn = egui::Button::new("S").fill(if layer.solo { theme::SEM_WARNING } else { theme::CLEAR });
                                 if ui.add(solo_btn).on_hover_text("Solo").clicked() {
                                     solo_toggle = Some(i);
                                 }

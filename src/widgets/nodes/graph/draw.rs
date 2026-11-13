@@ -85,7 +85,6 @@ pub(super) fn title_toggle_rect(node_rect: Rect, title_height: f32, zoom: f32) -
     Rect::from_center_size(Pos2::new(cx, cy), Vec2::splat(btn_size))
 }
 
-#[allow(clippy::too_many_arguments)]
 pub(super) fn draw_node_chrome(
     painter: &Painter,
     title: &str,
@@ -112,7 +111,7 @@ pub(super) fn draw_node_chrome(
     // Shadow
     if !layout.bare {
         let shadow_rect = rect.translate(Vec2::new(3.0, 3.0));
-        painter.rect_filled(shadow_rect, NODE_CORNER_RADIUS, Color32::from_black_alpha(60));
+        painter.rect_filled(shadow_rect, NODE_CORNER_RADIUS, theme::SHADOW);
     }
 
     // Link halo: every node in the same linked group as a selected node (a
@@ -187,7 +186,7 @@ pub(super) fn draw_node_chrome(
         let (fg, stroke_col) = if disabled {
             (theme::STROKE, theme::TEXT_DIM)
         } else {
-            (theme::SEM_SUCCESS, Color32::from_rgb(200, 240, 220))
+            (theme::SEM_SUCCESS, theme::SWITCH_ON_RING)
         };
         // Outer ring.
         painter.circle_stroke(toggle.center(), toggle.width() * 0.4,
@@ -264,7 +263,7 @@ pub(super) fn draw_node_chrome(
     if resizable {
         let s = RESIZE_HANDLE_SIZE;
         let br = rect.max;
-        let handle_color = Color32::from_gray(80);
+        let handle_color = theme::STROKE;
         painter.line_segment(
             [Pos2::new(br.x - s, br.y), Pos2::new(br.x, br.y - s)],
             Stroke::new(1.0_f32, handle_color),
@@ -374,7 +373,7 @@ pub(super) fn draw_position_preview(ui: &mut Ui, pan: f32, tilt: f32) {
         rect.min.y + tilt.clamp(0.0, 1.0) * rect.height(),
     );
     painter.circle_filled(dot, 4.0, theme::SEM_SUCCESS);
-    painter.circle_stroke(dot, 4.0, Stroke::new(1.0_f32, Color32::from_gray(20)));
+    painter.circle_stroke(dot, 4.0, Stroke::new(1.0_f32, theme::BG_DEEP));
 }
 
 /// Mini scope for the port-hover tooltip. Plots the samples on a dark
@@ -459,7 +458,7 @@ fn draw_port(
             egui::Align2::CENTER_CENTER,
             glyph,
             egui::FontId::proportional(11.0 * zoom),
-            Color32::BLACK,
+            theme::ON_LIGHT,
         );
     }
 }

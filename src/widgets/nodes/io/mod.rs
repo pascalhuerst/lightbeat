@@ -1,5 +1,6 @@
 pub mod audio_input;
 pub mod clock;
+pub mod controller_binding;
 pub mod dmx_input;
 pub mod input_controller;
 pub mod internal_clock;

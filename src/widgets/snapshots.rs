@@ -173,7 +173,7 @@ pub fn show(ui: &mut Ui, node: &dyn NodeWidget) {
                         } else if i % 2 == 1 {
                             theme::ROW_STRIPE
                         } else {
-                            egui::Color32::TRANSPARENT
+                            theme::CLEAR
                         };
                         egui::Frame::NONE.fill(row_fill).inner_margin(egui::Margin::symmetric(4, 2)).show(ui, |ui| {
                             ui.set_width(ui.available_width());

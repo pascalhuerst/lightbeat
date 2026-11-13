@@ -1,6 +1,6 @@
 use std::any::Any;
 
-use egui::{self, Color32, Ui};
+use egui::{self, Ui};
 
 use crate::engine::nodes::ui::button::{ButtonDisplay, ButtonMode};
 use crate::engine::nodes::ui::common::MouseOverrideMode;
@@ -147,7 +147,7 @@ impl NodeWidget for ButtonWidget {
         } else {
             theme::OFF_GREY
         };
-        let text_color = if pressed { Color32::BLACK } else { theme::TEXT_BRIGHT };
+        let text_color = if pressed { theme::ON_LIGHT } else { theme::TEXT_BRIGHT };
 
         let avail = ui.available_size();
         if avail.x <= 0.0 || avail.y <= 0.0 { return; }

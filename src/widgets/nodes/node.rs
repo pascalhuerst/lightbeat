@@ -26,7 +26,6 @@ pub struct StackMember {
 
 /// Trait for the UI side of a node. Handles rendering only.
 /// Processing logic lives in the engine's ProcessNode.
-#[allow(dead_code)]
 pub trait NodeWidget: Any {
     fn node_id(&self) -> NodeId;
     fn type_name(&self) -> &'static str;

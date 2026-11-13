@@ -20,7 +20,6 @@ impl LogicOp {
 }
 
 /// Display state for the widget.
-#[allow(dead_code)]
 pub struct LogicDisplay {
     pub input_count: usize,
 }

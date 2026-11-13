@@ -26,6 +26,18 @@ pub const BG_HIGH: Color32 = Color32::from_gray(55);
 pub const BG: Color32 = Color32::from_gray(40);
 pub const BG_GRID: Color32 = Color32::from_gray(30);
 pub const BG_DEEP: Color32 = Color32::from_gray(22);
+/// "No fill": a button or cell that should show what is behind it.
+pub const CLEAR: Color32 = Color32::TRANSPARENT;
+/// Text and glyphs on light or saturated fills (a pressed button, a lit port).
+pub const ON_LIGHT: Color32 = Color32::BLACK;
+/// Drop shadow under a node.
+pub const SHADOW: Color32 = Color32::from_black_alpha(60);
+/// Dark plate behind small labels drawn over the canvas.
+pub const OVERLAY_BG: Color32 = Color32::from_black_alpha(200);
+/// Ring of the on/off switch in a node's title bar while the node is enabled.
+pub const SWITCH_ON_RING: Color32 = Color32::from_rgb(200, 240, 220);
+/// Colour a new canvas frame starts with.
+pub const FRAME_DEFAULT: Color32 = Color32::from_rgb(200, 160, 80);
 
 // ---------------------------------------------------------------------------
 // Semantic states

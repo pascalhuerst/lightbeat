@@ -144,7 +144,6 @@ pub struct Connection {
 
 /// Describes one editable parameter on a node.
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub enum ParamDef {
     Float {
         name: String,
@@ -194,7 +193,6 @@ impl ParamDef {
 
 /// A value written back to a node parameter.
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub enum ParamValue {
     Float(f32),
     Int(i64),
@@ -340,7 +338,6 @@ pub fn new_shared_state(num_inputs: usize, num_outputs: usize) -> SharedState {
 // ---------------------------------------------------------------------------
 
 /// Commands sent from the UI thread to the engine thread.
-#[allow(dead_code)]
 pub enum EngineCommand {
     AddNode {
         node: Box<dyn ProcessNode>,
@@ -403,7 +400,6 @@ pub enum SubgraphInnerCmd {
 // ---------------------------------------------------------------------------
 
 /// Trait for the engine-side processing of a node. Runs on the engine thread.
-#[allow(dead_code)]
 pub trait ProcessNode: Send {
     fn node_id(&self) -> NodeId;
     fn type_name(&self) -> &'static str;
