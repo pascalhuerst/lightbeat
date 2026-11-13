@@ -129,7 +129,7 @@ impl MultiplexerProcessNode {
         let pt = self.port_type;
         let mut ins = vec![PortDef::new("select", self.select_mode.select_port_type())];
         for i in 0..self.slots {
-            ins.push(PortDef::new(format!("in{}", i), pt));
+            ins.push(PortDef::new(format!("in {}", i + 1), pt));
         }
         self.inputs = ins;
         self.outputs = vec![PortDef::new("out", pt)];
@@ -277,7 +277,7 @@ impl DemultiplexerProcessNode {
             PortDef::new("in", pt),
         ];
         self.outputs = (0..self.slots)
-            .map(|i| PortDef::new(format!("out{}", i), pt))
+            .map(|i| PortDef::new(format!("out {}", i + 1), pt))
             .collect();
         for v in self.input_values.iter_mut() { *v = 0.0; }
         for v in self.output_values.iter_mut() { *v = 0.0; }

@@ -71,13 +71,13 @@ impl ButtonGroupProcessNode {
         let n = self.cell_count();
         self.outputs = (0..self.rows)
             .flat_map(|r| (0..self.cols).map(move |c| PortDef::new(
-                format!("{},{}", r, c), PortType::Logic,
+                format!("{},{}", r + 1, c + 1), PortType::Logic,
             )))
             .collect();
         self.inputs = if self.inputs_enabled {
             (0..self.rows)
                 .flat_map(|r| (0..self.cols).map(move |c| PortDef::new(
-                    format!("{},{}", r, c), PortType::Logic,
+                    format!("{},{}", r + 1, c + 1), PortType::Logic,
                 )))
                 .collect()
         } else {

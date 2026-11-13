@@ -141,7 +141,7 @@ impl NodeGraph {
                 let pt = port_type_for(&level.nodes, &level.states, *src_port)
                     .unwrap_or(PortType::Untyped);
                 SubgraphPortDef {
-                    name: format!("in {}", i),
+                    name: format!("in {}", i + 1),
                     port_type_idx: port_type_to_idx(pt),
                 }
             }).collect();
@@ -165,7 +165,7 @@ impl NodeGraph {
                 let pt = port_type_for(&level.nodes, &level.states, *src_port)
                     .unwrap_or(PortType::Untyped);
                 SubgraphPortDef {
-                    name: format!("out {}", i),
+                    name: format!("out {}", i + 1),
                     port_type_idx: port_type_to_idx(pt),
                 }
             }).collect();

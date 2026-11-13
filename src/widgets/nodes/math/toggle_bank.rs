@@ -47,7 +47,7 @@ impl NodeWidget for ToggleBankWidget {
     }
     fn ui_outputs(&self) -> Vec<UiPortDef> {
         (0..self.n)
-            .map(|i| UiPortDef::from_def(&PortDef::new(format!("O{}", i + 1), PortType::Untyped)))
+            .map(|i| UiPortDef::from_def(&PortDef::new(format!("out {}", i + 1), PortType::Untyped)))
             .collect()
     }
 

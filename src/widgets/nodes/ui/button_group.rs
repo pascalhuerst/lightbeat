@@ -130,12 +130,12 @@ impl NodeWidget for ButtonGroupWidget {
     fn ui_inputs(&self) -> Vec<UiPortDef> {
         if !self.inputs_enabled { return vec![]; }
         (0..self.rows).flat_map(|r| (0..self.cols).map(move |c| {
-            UiPortDef::from_def(&PortDef::new(format!("{},{}", r, c), PortType::Logic))
+            UiPortDef::from_def(&PortDef::new(format!("{},{}", r + 1, c + 1), PortType::Logic))
         })).collect()
     }
     fn ui_outputs(&self) -> Vec<UiPortDef> {
         (0..self.rows).flat_map(|r| (0..self.cols).map(move |c| {
-            UiPortDef::from_def(&PortDef::new(format!("{},{}", r, c), PortType::Logic))
+            UiPortDef::from_def(&PortDef::new(format!("{},{}", r + 1, c + 1), PortType::Logic))
         })).collect()
     }
 
@@ -242,7 +242,7 @@ impl NodeWidget for ButtonGroupWidget {
                 painter.text(
                     inner.center(),
                     egui::Align2::CENTER_CENTER,
-                    format!("{},{}", r, c),
+                    format!("{},{}", r + 1, c + 1),
                     egui::FontId::proportional(11.0 * zoom),
                     text_color,
                 );

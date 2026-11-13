@@ -94,7 +94,7 @@ impl FaderGroupProcessNode {
         self.outputs = if self.any_output_enabled() {
             (0..self.rows)
                 .flat_map(|r| (0..self.cols).map(move |c| PortDef::new(
-                    format!("{},{}", r, c), PortType::Untyped,
+                    format!("{},{}", r + 1, c + 1), PortType::Untyped,
                 )))
                 .collect()
         } else {
@@ -103,7 +103,7 @@ impl FaderGroupProcessNode {
         self.inputs = if self.any_input_enabled() {
             (0..self.rows)
                 .flat_map(|r| (0..self.cols).map(move |c| PortDef::new(
-                    format!("{},{}", r, c), PortType::Untyped,
+                    format!("{},{}", r + 1, c + 1), PortType::Untyped,
                 )))
                 .collect()
         } else {

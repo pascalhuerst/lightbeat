@@ -48,7 +48,7 @@ impl NodeWidget for TriggerBankWidget {
 
     fn ui_inputs(&self) -> Vec<UiPortDef> {
         (0..self.n)
-            .map(|i| UiPortDef::from_def(&PortDef::new(format!("In {}", i + 1), PortType::Untyped)))
+            .map(|i| UiPortDef::from_def(&PortDef::new(format!("in {}", i + 1), PortType::Untyped)))
             .collect()
     }
     fn ui_outputs(&self) -> Vec<UiPortDef> {

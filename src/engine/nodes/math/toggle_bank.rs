@@ -49,7 +49,7 @@ impl ToggleBankProcessNode {
             .map(|i| PortDef::new(format!("trigger {}", i + 1), PortType::Logic))
             .collect();
         self.outputs = (0..self.n)
-            .map(|i| PortDef::new(format!("O{}", i + 1), PortType::Untyped))
+            .map(|i| PortDef::new(format!("out {}", i + 1), PortType::Untyped))
             .collect();
         self.in_vals.resize(self.n, 0.0);
         self.prev_in.resize(self.n, 0.0);

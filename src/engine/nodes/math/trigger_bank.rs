@@ -49,7 +49,7 @@ impl TriggerBankProcessNode {
 
     fn rebuild_ports(&mut self) {
         self.inputs = (0..self.n)
-            .map(|i| PortDef::new(format!("In {}", i + 1), PortType::Untyped))
+            .map(|i| PortDef::new(format!("in {}", i + 1), PortType::Untyped))
             .collect();
         self.outputs = (0..self.n)
             .map(|i| PortDef::new(format!("trigger {}", i + 1), PortType::Logic))

@@ -277,7 +277,7 @@ impl NodeWidget for SubgraphWidget {
         }
         if setup_ui::add_button(ui, "Add input") {
             self.input_defs.push(SubgraphPortDef {
-                name: format!("in {}", self.input_defs.len()),
+                name: format!("in {}", self.input_defs.len() + 1),
                 port_type_idx: 2,
             });
             input_changed = true;
@@ -318,7 +318,7 @@ impl NodeWidget for SubgraphWidget {
         }
         if setup_ui::add_button(ui, "Add output") {
             self.output_defs.push(SubgraphPortDef {
-                name: format!("out {}", self.output_defs.len()),
+                name: format!("out {}", self.output_defs.len() + 1),
                 port_type_idx: 2,
             });
             output_changed = true;
