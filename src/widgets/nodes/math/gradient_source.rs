@@ -176,10 +176,8 @@ impl NodeWidget for GradientSourceWidget {
         "Authors an 8-stop gradient (color + alpha + position per stop). Wire it into an effect or any other node that takes a gradient."
     }
 
-    fn ui_inputs(&self) -> Vec<UiPortDef> { vec![] }
-    fn ui_outputs(&self) -> Vec<UiPortDef> {
-        vec![UiPortDef::from_def(&PortDef::new("gradient", PortType::Gradient))]
-    }
+    fn ui_inputs(&self) -> Vec<UiPortDef> { UiPortDef::from_defs(&crate::engine::nodes::math::gradient_source::ports().0) }
+    fn ui_outputs(&self) -> Vec<UiPortDef> { UiPortDef::from_defs(&crate::engine::nodes::math::gradient_source::ports().1) }
 
     fn min_width(&self) -> f32 { 140.0 }
     fn min_content_height(&self) -> f32 { 40.0 }

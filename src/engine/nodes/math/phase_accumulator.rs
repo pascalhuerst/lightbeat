@@ -28,8 +28,21 @@ pub struct PhaseAccumulatorProcessNode {
     outputs: Vec<PortDef>,
 }
 
+/// The ports, stated once: the widget builds its own from this, so the two
+/// halves cannot disagree.
+pub fn ports() -> (Vec<PortDef>, Vec<PortDef>) {
+    (
+        vec![
+            PortDef::new("in", PortType::Untyped),
+            PortDef::new("reset", PortType::Logic),
+        ],
+        vec![PortDef::new("out", PortType::Untyped)],
+    )
+}
+
 impl PhaseAccumulatorProcessNode {
     pub fn new(id: NodeId) -> Self {
+        let (inputs, outputs) = ports();
         Self {
             id,
             in_value: 0.0,
@@ -41,11 +54,8 @@ impl PhaseAccumulatorProcessNode {
             max: 5.0,
             scale: 24.0,
             initialized: false,
-            inputs: vec![
-                PortDef::new("in", PortType::Untyped),
-                PortDef::new("reset", PortType::Logic),
-            ],
-            outputs: vec![PortDef::new("out", PortType::Untyped)],
+            inputs,
+            outputs,
         }
     }
 }

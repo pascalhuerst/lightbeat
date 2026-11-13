@@ -1,7 +1,7 @@
 use std::any::Any;
 use egui::Ui;
 
-use crate::engine::nodes::math::counter::CounterDisplay;
+use crate::engine::nodes::math::counter::{ports_for, CounterDisplay};
 use crate::engine::nodes::math::multiplex::SelectMode;
 use crate::engine::types::*;
 use crate::widgets::nodes::node::{NodeWidget, param_usize};
@@ -42,15 +42,7 @@ impl NodeWidget for CounterWidget {
     }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> {
-        let port0 = match self.select_mode {
-            SelectMode::Index => PortDef::new("trigger", PortType::Logic),
-            SelectMode::Phase => PortDef::new("phase", PortType::Phase),
-        };
-        vec![
-            UiPortDef::from_def(&port0),
-            UiPortDef::from_def(&PortDef::new("reset", PortType::Logic)),
-            UiPortDef::from_def(&PortDef::new("max", PortType::Untyped)),
-        ]
+        UiPortDef::from_defs(&ports_for(self.select_mode).0)
     }
 
     fn overridden_param_indices(&self) -> Vec<usize> {
@@ -64,10 +56,7 @@ impl NodeWidget for CounterWidget {
         }
     }
     fn ui_outputs(&self) -> Vec<UiPortDef> {
-        vec![
-            UiPortDef::from_def(&PortDef::new("count", PortType::Untyped)),
-            UiPortDef::from_def(&PortDef::new("wrap", PortType::Logic)),
-        ]
+        UiPortDef::from_defs(&ports_for(self.select_mode).1)
     }
 
     fn min_width(&self) -> f32 { 80.0 }

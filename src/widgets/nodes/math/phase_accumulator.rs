@@ -27,15 +27,8 @@ impl NodeWidget for PhaseAccumulatorWidget {
          click moves the output by 1."
     }
 
-    fn ui_inputs(&self) -> Vec<UiPortDef> {
-        vec![
-            UiPortDef::from_def(&PortDef::new("in", PortType::Untyped)),
-            UiPortDef::from_def(&PortDef::new("reset", PortType::Logic)),
-        ]
-    }
-    fn ui_outputs(&self) -> Vec<UiPortDef> {
-        vec![UiPortDef::from_def(&PortDef::new("value", PortType::Untyped))]
-    }
+    fn ui_inputs(&self) -> Vec<UiPortDef> { UiPortDef::from_defs(&crate::engine::nodes::math::phase_accumulator::ports().0) }
+    fn ui_outputs(&self) -> Vec<UiPortDef> { UiPortDef::from_defs(&crate::engine::nodes::math::phase_accumulator::ports().1) }
 
     fn min_width(&self) -> f32 { 120.0 }
     fn min_content_height(&self) -> f32 { 15.0 }

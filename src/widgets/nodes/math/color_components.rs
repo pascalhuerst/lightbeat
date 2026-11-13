@@ -1,7 +1,7 @@
 use std::any::Any;
 use egui::{self, Color32, Ui, Vec2, Sense};
 
-use crate::engine::nodes::math::color_components::{ColorMode, ColorOpsDisplay};
+use crate::engine::nodes::math::color_components::{color_port, component_ports, ColorMode, ColorOpsDisplay};
 use crate::engine::types::*;
 use crate::theme;
 use crate::widgets::nodes::node::NodeWidget;
@@ -18,23 +18,6 @@ fn show_color_swatch(ui: &mut Ui, rgb: [f32; 3]) {
         Sense::hover(),
     );
     painter.rect_filled(resp.rect, 2.0, color);
-}
-
-/// The ports on the component side (inputs for Components to Color, outputs
-/// for Color to Components).
-fn component_ports(mode: ColorMode) -> Vec<PortDef> {
-    match mode {
-        ColorMode::Neutral => vec![PortDef::new("?", PortType::Any)],
-        _ => mode.channel_names().iter().map(|n| PortDef::new(*n, PortType::Untyped)).collect(),
-    }
-}
-
-/// The single port on the colour side.
-fn color_port(mode: ColorMode) -> Vec<PortDef> {
-    match mode {
-        ColorMode::Neutral => vec![PortDef::new("?", PortType::Any)],
-        _ => vec![PortDef::new("color", PortType::Color)],
-    }
 }
 
 /// Push a mode change to the engine via the standard param channel.
@@ -97,10 +80,10 @@ impl NodeWidget for ComponentsToColorWidget {
     }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> {
-        component_ports(self.mode).iter().map(UiPortDef::from_def).collect()
+        UiPortDef::from_defs(&component_ports(self.mode))
     }
     fn ui_outputs(&self) -> Vec<UiPortDef> {
-        color_port(self.mode).iter().map(UiPortDef::from_def).collect()
+        UiPortDef::from_defs(&color_port(self.mode))
     }
 
     fn min_width(&self) -> f32 { 100.0 }
@@ -153,10 +136,10 @@ impl NodeWidget for ColorToComponentsWidget {
     }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> {
-        color_port(self.mode).iter().map(UiPortDef::from_def).collect()
+        UiPortDef::from_defs(&color_port(self.mode))
     }
     fn ui_outputs(&self) -> Vec<UiPortDef> {
-        component_ports(self.mode).iter().map(UiPortDef::from_def).collect()
+        UiPortDef::from_defs(&component_ports(self.mode))
     }
 
     fn min_width(&self) -> f32 { 100.0 }

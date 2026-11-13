@@ -46,6 +46,17 @@ fn input_label(i: usize) -> String {
     }
 }
 
+/// The ports, stated once: the widget builds its own from this, so the two
+/// halves cannot disagree.
+pub fn ports_for(op: LogicOp, n: usize) -> (Vec<PortDef>, Vec<PortDef>) {
+    let inputs = if op == LogicOp::Not {
+        vec![PortDef::new("in", PortType::Logic)]
+    } else {
+        (0..n.max(1)).map(|i| PortDef::new(input_label(i), PortType::Logic)).collect()
+    };
+    (inputs, vec![PortDef::new("out", PortType::Logic)])
+}
+
 impl LogicGateProcessNode {
     pub fn new(id: NodeId, op: LogicOp) -> Self {
         let mut node = Self {
@@ -53,7 +64,7 @@ impl LogicGateProcessNode {
             values: Vec::new(),
             out: 0.0,
             inputs: Vec::new(),
-            outputs: vec![PortDef::new("out", PortType::Logic)],
+            outputs: ports_for(op, 1).1,
         };
         let init = if op == LogicOp::Not { 1 } else { 2 };
         node.set_input_count(init);
@@ -62,11 +73,10 @@ impl LogicGateProcessNode {
 
     fn set_input_count(&mut self, n: usize) {
         let n = n.max(1);
+        self.inputs = ports_for(self.op, n).0;
         if self.op == LogicOp::Not {
-            self.inputs = vec![PortDef::new("in", PortType::Logic)];
             self.values = vec![0.0];
         } else {
-            self.inputs = (0..n).map(|i| PortDef::new(input_label(i), PortType::Logic)).collect();
             self.values.resize(n, 0.0);
         }
     }

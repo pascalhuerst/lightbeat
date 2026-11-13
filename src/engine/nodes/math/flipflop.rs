@@ -15,21 +15,31 @@ pub struct FlipFlopProcessNode {
     outputs: Vec<PortDef>,
 }
 
+/// The ports, stated once: the widget builds its own from this, so the two
+/// halves cannot disagree.
+pub fn sr_ports() -> (Vec<PortDef>, Vec<PortDef>) {
+    (
+        vec![
+            PortDef::new("S", PortType::Logic),
+            PortDef::new("R", PortType::Logic),
+        ],
+        vec![
+            PortDef::new("Q", PortType::Logic),
+            PortDef::new("!Q", PortType::Logic),
+        ],
+    )
+}
+
 impl FlipFlopProcessNode {
     pub fn new(id: NodeId) -> Self {
+        let (inputs, outputs) = sr_ports();
         Self {
             id,
             s_in: 0.0,
             r_in: 0.0,
             state: false,
-            inputs: vec![
-                PortDef::new("S", PortType::Logic),
-                PortDef::new("R", PortType::Logic),
-            ],
-            outputs: vec![
-                PortDef::new("Q", PortType::Logic),
-                PortDef::new("!Q", PortType::Logic),
-            ],
+            inputs,
+            outputs,
         }
     }
 }
@@ -92,8 +102,25 @@ pub struct JkFlipFlopProcessNode {
     outputs: Vec<PortDef>,
 }
 
+/// The ports, stated once: the widget builds its own from this, so the two
+/// halves cannot disagree.
+pub fn jk_ports() -> (Vec<PortDef>, Vec<PortDef>) {
+    (
+        vec![
+            PortDef::new("J", PortType::Logic),
+            PortDef::new("K", PortType::Logic),
+            PortDef::new("trigger", PortType::Logic),
+        ],
+        vec![
+            PortDef::new("Q", PortType::Logic),
+            PortDef::new("!Q", PortType::Logic),
+        ],
+    )
+}
+
 impl JkFlipFlopProcessNode {
     pub fn new(id: NodeId) -> Self {
+        let (inputs, outputs) = jk_ports();
         Self {
             id,
             j_in: 0.0,
@@ -101,15 +128,8 @@ impl JkFlipFlopProcessNode {
             clk_in: 0.0,
             prev_clk: 0.0,
             state: false,
-            inputs: vec![
-                PortDef::new("J", PortType::Logic),
-                PortDef::new("K", PortType::Logic),
-                PortDef::new("trigger", PortType::Logic),
-            ],
-            outputs: vec![
-                PortDef::new("Q", PortType::Logic),
-                PortDef::new("!Q", PortType::Logic),
-            ],
+            inputs,
+            outputs,
         }
     }
 }

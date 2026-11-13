@@ -3,7 +3,7 @@ use std::any::Any;
 use egui::{self, Ui};
 
 use crate::engine::nodes::math::color_modifier::{
-    ColorModifierDisplay, MODIFIER_OP_NAMES, ModifierOp,
+    ports_for, ColorModifierDisplay, MODIFIER_OP_NAMES, ModifierOp,
 };
 use crate::engine::types::*;
 use crate::theme;
@@ -48,25 +48,8 @@ impl NodeWidget for ColorModifierWidget {
         "Applies a HSV / brightness / alpha operation to a Color or Gradient signal. For gradients the op is applied to every active stop. Amount is 1.0 = identity for scale ops, 0.0 = identity for Hue Shift."
     }
 
-    fn ui_inputs(&self) -> Vec<UiPortDef> {
-        let main_name = match self.port_type {
-            PortType::Color => "color",
-            PortType::Gradient => "gradient",
-            _ => "?",
-        };
-        vec![
-            UiPortDef::from_def(&PortDef::new(main_name, self.port_type)),
-            UiPortDef::from_def(&PortDef::new("amount", PortType::Untyped)),
-        ]
-    }
-    fn ui_outputs(&self) -> Vec<UiPortDef> {
-        let main_name = match self.port_type {
-            PortType::Color => "color",
-            PortType::Gradient => "gradient",
-            _ => "?",
-        };
-        vec![UiPortDef::from_def(&PortDef::new(main_name, self.port_type))]
-    }
+    fn ui_inputs(&self) -> Vec<UiPortDef> { UiPortDef::from_defs(&ports_for(self.port_type).0) }
+    fn ui_outputs(&self) -> Vec<UiPortDef> { UiPortDef::from_defs(&ports_for(self.port_type).1) }
 
     fn min_width(&self) -> f32 { 120.0 }
     fn min_content_height(&self) -> f32 { 25.0 }

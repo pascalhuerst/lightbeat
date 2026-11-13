@@ -1,7 +1,7 @@
 use std::any::Any;
 use egui::{Color32, Ui};
 
-use crate::engine::nodes::math::logic_gate::{LogicDisplay, LogicOp};
+use crate::engine::nodes::math::logic_gate::{ports_for, LogicDisplay, LogicOp};
 use crate::engine::types::*;
 use crate::theme;
 use crate::widgets::nodes::node::{current_choice, NodeWidget};
@@ -15,14 +15,6 @@ pub struct LogicGateWidget {
     shared: SharedState,
     /// Number of "real" inputs. NOT is fixed at 1.
     input_count: usize,
-}
-
-fn input_label(i: usize) -> String {
-    if i < 26 {
-        ((b'a' + i as u8) as char).to_string()
-    } else {
-        format!("in {}", i + 1)
-    }
 }
 
 impl LogicGateWidget {
@@ -54,12 +46,10 @@ impl NodeWidget for LogicGateWidget {
     }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> {
+        let mut ports = UiPortDef::from_defs(&ports_for(self.op, self.input_count).0);
         if self.op == LogicOp::Not {
-            return vec![UiPortDef::from_def(&PortDef::new("in", PortType::Logic))];
+            return ports;
         }
-        let mut ports: Vec<UiPortDef> = (0..self.input_count).map(|i| {
-            UiPortDef::from_def(&PortDef::new(input_label(i), PortType::Logic))
-        }).collect();
         ports.push(
             UiPortDef::from_def(&PortDef::new("+", PortType::Logic))
                 .with_fill(ADD_PORT_FILL)
@@ -68,7 +58,7 @@ impl NodeWidget for LogicGateWidget {
         ports
     }
     fn ui_outputs(&self) -> Vec<UiPortDef> {
-        vec![UiPortDef::from_def(&PortDef::new("out", PortType::Logic))]
+        UiPortDef::from_defs(&ports_for(self.op, self.input_count).1)
     }
     fn min_width(&self) -> f32 { 80.0 }
     fn min_content_height(&self) -> f32 { 15.0 }

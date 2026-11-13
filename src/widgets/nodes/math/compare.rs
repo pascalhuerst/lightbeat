@@ -10,19 +10,12 @@ pub struct CompareWidget {
     id: NodeId,
     op: CompareOp,
     shared: SharedState,
-    inputs: Vec<PortDef>,
-    outputs: Vec<PortDef>,
 }
 
 impl CompareWidget {
     pub fn new(id: NodeId, op: CompareOp, shared: SharedState) -> Self {
         Self {
             id, op, shared,
-            inputs: vec![
-                PortDef::new("a", PortType::Untyped),
-                PortDef::new("b", PortType::Untyped),
-            ],
-            outputs: vec![PortDef::new("out", PortType::Logic)],
         }
     }
 }
@@ -37,8 +30,8 @@ impl NodeWidget for CompareWidget {
     fn type_name(&self) -> &'static str { self.op.label() }
     fn title(&self) -> &str { self.op.label() }
     fn description(&self) -> &'static str { "Compares two values (>=, <=, ==, !=) and outputs a logic signal." }
-    fn ui_inputs(&self) -> Vec<UiPortDef> { self.inputs.iter().map(UiPortDef::from_def).collect() }
-    fn ui_outputs(&self) -> Vec<UiPortDef> { self.outputs.iter().map(UiPortDef::from_def).collect() }
+    fn ui_inputs(&self) -> Vec<UiPortDef> { UiPortDef::from_defs(&crate::engine::nodes::math::compare::ports().0) }
+    fn ui_outputs(&self) -> Vec<UiPortDef> { UiPortDef::from_defs(&crate::engine::nodes::math::compare::ports().1) }
     fn min_width(&self) -> f32 { 80.0 }
     fn min_content_height(&self) -> f32 { 15.0 }
     fn shared_state(&self) -> &SharedState { &self.shared }

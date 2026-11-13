@@ -3,7 +3,7 @@ use std::any::Any;
 use egui::{self, Ui};
 
 use crate::engine::nodes::math::toggle_bank::{
-    MAX_CHANNELS, MIN_CHANNELS, ToggleBankDisplay,
+    ports_for, MAX_CHANNELS, MIN_CHANNELS, ToggleBankDisplay,
 };
 use crate::engine::types::*;
 use crate::theme;
@@ -41,14 +41,10 @@ impl NodeWidget for ToggleBankWidget {
     }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> {
-        (0..self.n)
-            .map(|i| UiPortDef::from_def(&PortDef::new(format!("trigger {}", i + 1), PortType::Logic)))
-            .collect()
+        UiPortDef::from_defs(&ports_for(self.n).0)
     }
     fn ui_outputs(&self) -> Vec<UiPortDef> {
-        (0..self.n)
-            .map(|i| UiPortDef::from_def(&PortDef::new(format!("out {}", i + 1), PortType::Untyped)))
-            .collect()
+        UiPortDef::from_defs(&ports_for(self.n).1)
     }
 
     fn min_width(&self) -> f32 { 120.0 }

@@ -8,6 +8,18 @@ pub enum CompareOp {
     Neq,
 }
 
+/// The ports, stated once: the widget builds its own from this, so the two
+/// halves cannot disagree.
+pub fn ports() -> (Vec<PortDef>, Vec<PortDef>) {
+    (
+        vec![
+            PortDef::new("a", PortType::Untyped),
+            PortDef::new("b", PortType::Untyped),
+        ],
+        vec![PortDef::new("out", PortType::Logic)],
+    )
+}
+
 impl CompareOp {
     pub const ALL: [CompareOp; 4] = [CompareOp::Gte, CompareOp::Lte, CompareOp::Eq, CompareOp::Neq];
 
@@ -46,14 +58,12 @@ pub struct CompareProcessNode {
 
 impl CompareProcessNode {
     pub fn new(id: NodeId, op: CompareOp) -> Self {
+        let (inputs, outputs) = ports();
         Self {
             id, op,
             a: 0.0, b: 0.0, out: 0.0,
-            inputs: vec![
-                PortDef::new("a", PortType::Untyped),
-                PortDef::new("b", PortType::Untyped),
-            ],
-            outputs: vec![PortDef::new("out", PortType::Logic)],
+            inputs,
+            outputs,
         }
     }
 }

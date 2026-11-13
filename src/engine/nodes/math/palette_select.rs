@@ -29,6 +29,18 @@ pub struct PaletteSelectProcessNode {
     outputs: Vec<PortDef>,
 }
 
+/// The ports, stated once: the widget builds its own from this, so the two
+/// halves cannot disagree.
+pub fn ports_for(select_type: PortType) -> (Vec<PortDef>, Vec<PortDef>) {
+    (
+        vec![
+            PortDef::new("group", select_type),
+            PortDef::new("palette", select_type),
+        ],
+        vec![PortDef::new("palette", PortType::Palette)],
+    )
+}
+
 impl PaletteSelectProcessNode {
     pub fn new(id: NodeId) -> Self {
         let mut node = Self {
@@ -42,7 +54,7 @@ impl PaletteSelectProcessNode {
             current_palette: 0,
             current_colors: [Rgb::BLACK; PALETTE_SIZE],
             inputs: Vec::new(),
-            outputs: vec![PortDef::new("palette", PortType::Palette)],
+            outputs: ports_for(PortType::Any).1,
         };
         node.rebuild_ports();
         node
@@ -50,10 +62,7 @@ impl PaletteSelectProcessNode {
 
     fn rebuild_ports(&mut self) {
         let pt = self.select_mode.select_port_type();
-        self.inputs = vec![
-            PortDef::new("group", pt),
-            PortDef::new("palette", pt),
-        ];
+        self.inputs = ports_for(pt).0;
     }
 }
 

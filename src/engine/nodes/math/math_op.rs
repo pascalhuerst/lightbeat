@@ -51,7 +51,7 @@ pub struct MathProcessNode {
     connected_types: Vec<Option<PortType>>,
 }
 
-fn port_name(i: usize) -> String {
+pub fn port_name(i: usize) -> String {
     // a, b, c, ... z, then in27, in28, ...
     if i < 26 {
         ((b'a' + i as u8) as char).to_string()

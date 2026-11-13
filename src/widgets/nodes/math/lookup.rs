@@ -11,7 +11,7 @@ use egui::{self, Color32, Pos2, Ui, Vec2, Sense, Stroke, StrokeKind};
 use egui_extras::{Column, TableBuilder};
 
 use crate::color::{Gradient, GradientStop};
-use crate::engine::nodes::math::lookup::{LookupColumn, LookupDisplay, port_type_to_str};
+use crate::engine::nodes::math::lookup::{ports_for, LookupColumn, LookupDisplay, port_type_to_str};
 use crate::engine::types::*;
 use crate::widgets::setup_ui;
 use crate::theme;
@@ -223,7 +223,7 @@ impl NodeWidget for LookupWidget {
     }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> {
-        vec![UiPortDef::from_def(&PortDef::new("index", PortType::Untyped))]
+        UiPortDef::from_defs(&ports_for(&self.columns).0)
     }
     fn take_removed_port(&mut self) -> Option<(PortDir, usize)> {
         // Output 0 is "rows", so column i is port i + 1.
@@ -231,12 +231,7 @@ impl NodeWidget for LookupWidget {
     }
 
     fn ui_outputs(&self) -> Vec<UiPortDef> {
-        // "rows" is always at index 0 so its position is stable when columns
-        // are added/removed — wires from it survive schema edits.
-        std::iter::once(UiPortDef::from_def(&PortDef::new("rows", PortType::Untyped)))
-            .chain(self.columns.iter()
-                .map(|c| UiPortDef::from_def(&PortDef::new(c.name.clone(), c.port_type))))
-            .collect()
+        UiPortDef::from_defs(&ports_for(&self.columns).1)
     }
 
     fn min_width(&self) -> f32 { 120.0 }

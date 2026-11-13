@@ -31,6 +31,15 @@ pub struct TriggerBankProcessNode {
     outputs: Vec<PortDef>,
 }
 
+/// The ports, stated once: the widget builds its own from this, so the two
+/// halves cannot disagree.
+pub fn ports_for(n: usize) -> (Vec<PortDef>, Vec<PortDef>) {
+    (
+        (0..n).map(|i| PortDef::new(format!("in {}", i + 1), PortType::Untyped)).collect(),
+        (0..n).map(|i| PortDef::new(format!("trigger {}", i + 1), PortType::Logic)).collect(),
+    )
+}
+
 impl TriggerBankProcessNode {
     pub fn new(id: NodeId) -> Self {
         let n = 4;
@@ -48,12 +57,7 @@ impl TriggerBankProcessNode {
     }
 
     fn rebuild_ports(&mut self) {
-        self.inputs = (0..self.n)
-            .map(|i| PortDef::new(format!("in {}", i + 1), PortType::Untyped))
-            .collect();
-        self.outputs = (0..self.n)
-            .map(|i| PortDef::new(format!("trigger {}", i + 1), PortType::Logic))
-            .collect();
+        (self.inputs, self.outputs) = ports_for(self.n);
         self.in_vals.resize(self.n, 0.0);
         self.prev_in.resize(self.n, 0.0);
         self.out_pulses.resize(self.n, false);

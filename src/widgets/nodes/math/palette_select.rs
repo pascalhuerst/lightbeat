@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex};
 use egui::{self, Color32, Sense, Ui, Vec2};
 
 use crate::engine::nodes::math::multiplex::SelectMode;
-use crate::engine::nodes::math::palette_select::PaletteSelectDisplay;
+use crate::engine::nodes::math::palette_select::{ports_for, PaletteSelectDisplay};
 use crate::engine::types::*;
 use crate::theme;
 use crate::objects::color_palette::{ColorPalette, ColorPaletteGroup, PALETTE_SIZE};
@@ -92,14 +92,10 @@ impl NodeWidget for PaletteSelectWidget {
     fn description(&self) -> &'static str { "Picks a palette (a set of 4 colors) from a palette group, indexed by group and palette index." }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> {
-        let pt = self.select_mode.select_port_type();
-        vec![
-            UiPortDef::from_def(&PortDef::new("group", pt)),
-            UiPortDef::from_def(&PortDef::new("palette", pt)),
-        ]
+        UiPortDef::from_defs(&ports_for(self.select_mode.select_port_type()).0)
     }
     fn ui_outputs(&self) -> Vec<UiPortDef> {
-        vec![UiPortDef::from_def(&PortDef::new("palette", PortType::Palette))]
+        UiPortDef::from_defs(&ports_for(self.select_mode.select_port_type()).1)
     }
 
     fn min_width(&self) -> f32 { 140.0 }

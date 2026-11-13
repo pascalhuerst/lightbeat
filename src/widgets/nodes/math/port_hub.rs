@@ -3,7 +3,7 @@ use std::any::Any;
 use egui::{self, Ui};
 
 use crate::engine::nodes::math::multiplex::{MUX_TYPE_NAMES, clamp_slots, type_from_index, type_to_index};
-use crate::engine::nodes::math::port_hub::{HUB_DEFAULT_SLOTS, PortHubDisplay};
+use crate::engine::nodes::math::port_hub::{ports_for, HUB_DEFAULT_SLOTS, PortHubDisplay};
 use crate::engine::types::*;
 use crate::theme;
 use crate::widgets::nodes::node::{NodeLayout, NodeWidget, labelled_layout, param_usize};
@@ -59,14 +59,10 @@ impl NodeWidget for PortHubWidget {
     }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> {
-        (0..self.slots)
-            .map(|i| UiPortDef::from_def(&PortDef::new(format!("in {}", i + 1), self.port_type)))
-            .collect()
+        UiPortDef::from_defs(&ports_for(self.slots, self.port_type).0)
     }
     fn ui_outputs(&self) -> Vec<UiPortDef> {
-        (0..self.slots)
-            .map(|i| UiPortDef::from_def(&PortDef::new(format!("out {}", i + 1), self.port_type)))
-            .collect()
+        UiPortDef::from_defs(&ports_for(self.slots, self.port_type).1)
     }
 
     fn show_port_labels(&self) -> bool { true }

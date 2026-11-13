@@ -20,6 +20,13 @@ impl FlipFlopWidget {
     pub fn new(id: NodeId, shared: SharedState, kind: FlipFlopKind) -> Self {
         Self { id, shared, kind }
     }
+
+    fn ports(&self) -> (Vec<PortDef>, Vec<PortDef>) {
+        match self.kind {
+            FlipFlopKind::Sr => crate::engine::nodes::math::flipflop::sr_ports(),
+            FlipFlopKind::Jk => crate::engine::nodes::math::flipflop::jk_ports(),
+        }
+    }
 }
 
 impl NodeWidget for FlipFlopWidget {
@@ -45,25 +52,8 @@ impl NodeWidget for FlipFlopWidget {
         }
     }
 
-    fn ui_inputs(&self) -> Vec<UiPortDef> {
-        match self.kind {
-            FlipFlopKind::Sr => vec![
-                UiPortDef::from_def(&PortDef::new("S", PortType::Logic)),
-                UiPortDef::from_def(&PortDef::new("R", PortType::Logic)),
-            ],
-            FlipFlopKind::Jk => vec![
-                UiPortDef::from_def(&PortDef::new("J", PortType::Logic)),
-                UiPortDef::from_def(&PortDef::new("K", PortType::Logic)),
-                UiPortDef::from_def(&PortDef::new("trigger", PortType::Logic)),
-            ],
-        }
-    }
-    fn ui_outputs(&self) -> Vec<UiPortDef> {
-        vec![
-            UiPortDef::from_def(&PortDef::new("Q", PortType::Logic)),
-            UiPortDef::from_def(&PortDef::new("!Q", PortType::Logic)),
-        ]
-    }
+    fn ui_inputs(&self) -> Vec<UiPortDef> { UiPortDef::from_defs(&self.ports().0) }
+    fn ui_outputs(&self) -> Vec<UiPortDef> { UiPortDef::from_defs(&self.ports().1) }
 
     fn min_width(&self) -> f32 { 80.0 }
     fn min_content_height(&self) -> f32 { 18.0 }

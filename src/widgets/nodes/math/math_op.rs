@@ -2,7 +2,7 @@ use std::any::Any;
 
 use egui::{Color32, Ui};
 
-use crate::engine::nodes::math::math_op::{MathDisplay, MathOp};
+use crate::engine::nodes::math::math_op::{port_name, MathDisplay, MathOp};
 use crate::engine::types::*;
 use crate::theme;
 use crate::widgets::nodes::node::{current_choice, NodeWidget};
@@ -19,14 +19,6 @@ pub struct MathWidget {
     input_count: usize,
     /// One per real input; None = unconnected (Any).
     real_input_types: Vec<Option<PortType>>,
-}
-
-fn input_label(i: usize) -> String {
-    if i < 26 {
-        ((b'a' + i as u8) as char).to_string()
-    } else {
-        format!("in {}", i + 1)
-    }
 }
 
 impl MathWidget {
@@ -72,7 +64,7 @@ impl NodeWidget for MathWidget {
     fn ui_inputs(&self) -> Vec<UiPortDef> {
         let mut ports: Vec<UiPortDef> = (0..self.input_count).map(|i| {
             let ty = self.real_input_types.get(i).copied().flatten().unwrap_or(PortType::Any);
-            UiPortDef::from_def(&PortDef::new(input_label(i), ty))
+            UiPortDef::from_def(&PortDef::new(port_name(i), ty))
         }).collect();
         // The "+" add port is always last.
         ports.push(

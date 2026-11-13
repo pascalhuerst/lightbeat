@@ -70,6 +70,25 @@ pub struct ComponentsToColorProcessNode {
     outputs: Vec<PortDef>,
 }
 
+/// The ports, stated once: the widget builds its own from this, so the two
+/// halves cannot disagree.
+/// The ports on the component side (inputs for Components to Color, outputs
+/// for Color to Components).
+pub fn component_ports(mode: ColorMode) -> Vec<PortDef> {
+    match mode {
+        ColorMode::Neutral => vec![PortDef::new("?", PortType::Any)],
+        _ => mode.channel_names().iter().map(|n| PortDef::new(*n, PortType::Untyped)).collect(),
+    }
+}
+
+/// The single port on the colour side.
+pub fn color_port(mode: ColorMode) -> Vec<PortDef> {
+    match mode {
+        ColorMode::Neutral => vec![PortDef::new("?", PortType::Any)],
+        _ => vec![PortDef::new("color", PortType::Color)],
+    }
+}
+
 impl ComponentsToColorProcessNode {
     pub fn new(id: NodeId) -> Self {
         let mode = ColorMode::Neutral;
@@ -78,22 +97,8 @@ impl ComponentsToColorProcessNode {
             mode,
             channels: [0.0; 4],
             rgb_out: [0.0; 3],
-            inputs: Self::make_inputs(mode),
-            outputs: Self::make_outputs(mode),
-        }
-    }
-
-    fn make_inputs(mode: ColorMode) -> Vec<PortDef> {
-        match mode {
-            ColorMode::Neutral => vec![PortDef::new("?", PortType::Any)],
-            _ => mode.channel_names().iter().map(|n| PortDef::new(*n, PortType::Untyped)).collect(),
-        }
-    }
-
-    fn make_outputs(mode: ColorMode) -> Vec<PortDef> {
-        match mode {
-            ColorMode::Neutral => vec![PortDef::new("?", PortType::Any)],
-            _ => vec![PortDef::new("color", PortType::Color)],
+            inputs: component_ports(mode),
+            outputs: color_port(mode),
         }
     }
 
@@ -163,8 +168,8 @@ impl ProcessNode for ComponentsToColorProcessNode {
             let new_mode = ColorMode::from_index(value.as_usize());
             if new_mode != self.mode {
                 self.mode = new_mode;
-                self.inputs = Self::make_inputs(new_mode);
-                self.outputs = Self::make_outputs(new_mode);
+                self.inputs = component_ports(new_mode);
+                self.outputs = color_port(new_mode);
             }
         }
     }
@@ -198,22 +203,8 @@ impl ColorToComponentsProcessNode {
             mode,
             channels: [0.0; 4],
             components_out: [0.0; 4],
-            inputs: Self::make_inputs(mode),
-            outputs: Self::make_outputs(mode),
-        }
-    }
-
-    fn make_inputs(mode: ColorMode) -> Vec<PortDef> {
-        match mode {
-            ColorMode::Neutral => vec![PortDef::new("?", PortType::Any)],
-            _ => vec![PortDef::new("color", PortType::Color)],
-        }
-    }
-
-    fn make_outputs(mode: ColorMode) -> Vec<PortDef> {
-        match mode {
-            ColorMode::Neutral => vec![PortDef::new("?", PortType::Any)],
-            _ => mode.channel_names().iter().map(|n| PortDef::new(*n, PortType::Untyped)).collect(),
+            inputs: color_port(mode),
+            outputs: component_ports(mode),
         }
     }
 
@@ -282,8 +273,8 @@ impl ProcessNode for ColorToComponentsProcessNode {
             let new_mode = ColorMode::from_index(value.as_usize());
             if new_mode != self.mode {
                 self.mode = new_mode;
-                self.inputs = Self::make_inputs(new_mode);
-                self.outputs = Self::make_outputs(new_mode);
+                self.inputs = color_port(new_mode);
+                self.outputs = component_ports(new_mode);
             }
         }
     }

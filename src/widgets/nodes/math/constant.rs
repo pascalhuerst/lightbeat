@@ -2,7 +2,7 @@ use std::any::Any;
 
 use egui::{self, Ui};
 
-use crate::engine::nodes::math::constant::ConstantProcessNode;
+use crate::engine::nodes::math::constant::{ports_for, ConstantProcessNode};
 use crate::engine::types::*;
 use crate::widgets::nodes::node::{current_choice, NodeWidget};
 use crate::widgets::nodes::types::UiPortDef;
@@ -11,7 +11,6 @@ pub struct ConstantWidget {
     id: NodeId,
     port_type: PortType,
     shared: SharedState,
-    outputs: Vec<PortDef>,
     /// The value being edited; the engine's copy is only mirrored every few
     /// ticks, so it would fight a drag.
     value: f32,
@@ -26,7 +25,6 @@ impl ConstantWidget {
             id,
             port_type,
             shared,
-            outputs: vec![PortDef::new("out", port_type)],
             value: 0.0,
             last_edit: f64::NEG_INFINITY,
             fresh: false,
@@ -44,7 +42,6 @@ impl NodeWidget for ConstantWidget {
         let Some(kind) = current_choice(&self.shared, 1).and_then(|i| ConstantProcessNode::KINDS.get(i)) else { return };
         if *kind != self.port_type {
             self.port_type = *kind;
-            self.outputs = vec![PortDef::new("out", *kind)];
         }
     }
     fn param_display(&self, name: &str) -> (Option<String>, String) {
@@ -58,10 +55,8 @@ impl NodeWidget for ConstantWidget {
     }
     fn description(&self) -> &'static str { "Constant value source: a number, a logic level (click to toggle) or a phase (0..1), edited in the node itself." }
 
-    fn ui_inputs(&self) -> Vec<UiPortDef> { vec![] }
-    fn ui_outputs(&self) -> Vec<UiPortDef> {
-        self.outputs.iter().map(UiPortDef::from_def).collect()
-    }
+    fn ui_inputs(&self) -> Vec<UiPortDef> { UiPortDef::from_defs(&ports_for(self.port_type).0) }
+    fn ui_outputs(&self) -> Vec<UiPortDef> { UiPortDef::from_defs(&ports_for(self.port_type).1) }
 
     fn min_width(&self) -> f32 { 90.0 }
     fn min_content_height(&self) -> f32 { 15.0 }

@@ -7,14 +7,19 @@ pub struct ConstantProcessNode {
     outputs: Vec<PortDef>,
 }
 
+/// The ports, stated once: the widget builds its own from this, so the two
+/// halves cannot disagree.
+pub fn ports_for(port_type: PortType) -> (Vec<PortDef>, Vec<PortDef>) {
+    (vec![], vec![PortDef::new("out", port_type)])
+}
+
 impl ConstantProcessNode {
     pub fn new(id: NodeId, port_type: PortType, default: f32) -> Self {
-        let name = "out";
         Self {
             id,
             value: default,
             port_type,
-            outputs: vec![PortDef::new(name, port_type)],
+            outputs: ports_for(port_type).1,
         }
     }
 
@@ -83,7 +88,7 @@ impl ProcessNode for ConstantProcessNode {
                 let kind = Self::KINDS.get(value.as_usize()).copied().unwrap_or(PortType::Untyped);
                 if kind != self.port_type {
                     self.port_type = kind;
-                    self.outputs = vec![PortDef::new("out", kind)];
+                    self.outputs = ports_for(kind).1;
                     let (min, max, _) = Self::value_range(kind);
                     self.value = self.value.clamp(min, max);
                 }

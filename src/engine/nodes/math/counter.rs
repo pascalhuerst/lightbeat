@@ -35,6 +35,26 @@ pub struct CounterProcessNode {
     outputs: Vec<PortDef>,
 }
 
+/// The ports, stated once: the widget builds its own from this, so the two
+/// halves cannot disagree.
+pub fn ports_for(select_mode: SelectMode) -> (Vec<PortDef>, Vec<PortDef>) {
+    let port0 = match select_mode {
+        SelectMode::Index => PortDef::new("trigger", PortType::Logic),
+        SelectMode::Phase => PortDef::new("phase", PortType::Phase),
+    };
+    (
+        vec![
+            port0,
+            PortDef::new("reset", PortType::Logic),
+            PortDef::new("max", PortType::Untyped),
+        ],
+        vec![
+            PortDef::new("count", PortType::Untyped),
+            PortDef::new("wrap", PortType::Logic),
+        ],
+    )
+}
+
 impl CounterProcessNode {
     pub fn new(id: NodeId) -> Self {
         let mut node = Self {
@@ -53,25 +73,14 @@ impl CounterProcessNode {
             prev_phase: 0.0,
             phase_initialized: false,
             inputs: Vec::new(),
-            outputs: vec![
-                PortDef::new("count", PortType::Untyped),
-                PortDef::new("wrap", PortType::Logic),
-            ],
+            outputs: Vec::new(),
         };
         node.rebuild_ports();
         node
     }
 
     fn rebuild_ports(&mut self) {
-        let port0 = match self.select_mode {
-            SelectMode::Index => PortDef::new("trigger", PortType::Logic),
-            SelectMode::Phase => PortDef::new("phase", PortType::Phase),
-        };
-        self.inputs = vec![
-            port0,
-            PortDef::new("reset", PortType::Logic),
-            PortDef::new("max", PortType::Untyped),
-        ];
+        (self.inputs, self.outputs) = ports_for(self.select_mode);
     }
 
     fn effective_max(&self) -> i64 {

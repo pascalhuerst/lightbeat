@@ -20,15 +20,8 @@ impl NodeWidget for PositionMergeWidget {
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { "Pan Tilt to Position" }
     fn description(&self) -> &'static str { "Combines pan and tilt values into a single position output." }
-    fn ui_inputs(&self) -> Vec<UiPortDef> {
-        vec![
-            UiPortDef::from_def(&PortDef::new("pan", PortType::Untyped)),
-            UiPortDef::from_def(&PortDef::new("tilt", PortType::Untyped)),
-        ]
-    }
-    fn ui_outputs(&self) -> Vec<UiPortDef> {
-        vec![UiPortDef::from_def(&PortDef::new("position", PortType::Position))]
-    }
+    fn ui_inputs(&self) -> Vec<UiPortDef> { UiPortDef::from_defs(&crate::engine::nodes::math::position_ops::merge_ports().0) }
+    fn ui_outputs(&self) -> Vec<UiPortDef> { UiPortDef::from_defs(&crate::engine::nodes::math::position_ops::merge_ports().1) }
     fn min_width(&self) -> f32 { 90.0 }
     fn min_content_height(&self) -> f32 { 10.0 }
     fn shared_state(&self) -> &SharedState { &self.shared }
@@ -51,15 +44,8 @@ impl NodeWidget for PositionSplitWidget {
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { "Position to Pan Tilt" }
     fn description(&self) -> &'static str { "Splits a position into separate pan and tilt component outputs." }
-    fn ui_inputs(&self) -> Vec<UiPortDef> {
-        vec![UiPortDef::from_def(&PortDef::new("position", PortType::Position))]
-    }
-    fn ui_outputs(&self) -> Vec<UiPortDef> {
-        vec![
-            UiPortDef::from_def(&PortDef::new("pan", PortType::Untyped)),
-            UiPortDef::from_def(&PortDef::new("tilt", PortType::Untyped)),
-        ]
-    }
+    fn ui_inputs(&self) -> Vec<UiPortDef> { UiPortDef::from_defs(&crate::engine::nodes::math::position_ops::split_ports().0) }
+    fn ui_outputs(&self) -> Vec<UiPortDef> { UiPortDef::from_defs(&crate::engine::nodes::math::position_ops::split_ports().1) }
     fn min_width(&self) -> f32 { 90.0 }
     fn min_content_height(&self) -> f32 { 10.0 }
     fn shared_state(&self) -> &SharedState { &self.shared }
