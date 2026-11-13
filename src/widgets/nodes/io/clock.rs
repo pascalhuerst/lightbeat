@@ -1,6 +1,6 @@
 use std::any::Any;
 
-use egui::{self, Color32, Ui};
+use egui::{self, Ui};
 
 use crate::engine::nodes::io::clock::ClockDisplay;
 use crate::engine::types::*;
@@ -63,9 +63,9 @@ impl NodeWidget for ClockWidget {
 
         ui.horizontal(|ui| {
             let link_color = if num_peers > 0 {
-                Color32::from_rgb(80, 240, 120)
+                theme::PLAY_GREEN
             } else {
-                Color32::from_gray(100)
+                theme::TEXT_DIM
             };
             ui.colored_label(link_color, "LINK");
             ui.colored_label(theme::TEXT_DIM, format!("{} peers", num_peers));
@@ -79,7 +79,7 @@ impl NodeWidget for ClockWidget {
                 egui::RichText::new(format!("{:.1}", tempo)).monospace().size(20.0 * zoom),
             );
             ui.colored_label(
-                Color32::from_gray(100),
+                theme::TEXT_DIM,
                 egui::RichText::new("BPM").monospace().size(9.0 * zoom),
             );
         });
@@ -96,7 +96,7 @@ impl NodeWidget for ClockWidget {
         let led_r = (row_h * 0.4).max(2.0);
 
         // Play LED (left).
-        let play_color = if playing { Color32::from_rgb(80, 240, 120) } else { Color32::from_gray(60) };
+        let play_color = if playing { theme::PLAY_GREEN } else { theme::OFF_GREY };
         let play_center = egui::pos2(row_rect.min.x + led_r + 2.0, row_rect.center().y);
         row_painter.circle_filled(play_center, led_r, play_color);
 
@@ -112,7 +112,7 @@ impl NodeWidget for ClockWidget {
 
         // Beat LED (right).
         let beat_color = if beat_on {
-            if is_downbeat { Color32::from_rgb(255, 255, 255) }
+            if is_downbeat { theme::TEXT_BRIGHT }
             else { theme::TYPE_LOGIC }
         } else {
             theme::BG

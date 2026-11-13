@@ -14,7 +14,7 @@ use crate::widgets::nodes::ui::fader::draw_override_indicator;
 
 const HIGHLIGHT_DURATION: f64 = 0.5;
 const OVERRIDE_OVERLAY_COLOR: Color32 = theme::SEM_WARNING_FILL;
-const CENTER_LINE_COLOR: Color32 = Color32::from_gray(110);
+const CENTER_LINE_COLOR: Color32 = theme::CENTER_LINE;
 
 pub struct FaderGroupWidget {
     id: NodeId,

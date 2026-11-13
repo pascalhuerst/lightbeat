@@ -24,7 +24,7 @@ const PEAK_HOLD_FALLBACK_RATE: f32 = 0.4;
 const CLIP_DISPLAY_DURATION: f64 = 1.5;
 
 const BG_COLOR: Color32 = theme::BG_DEEP;
-const BORDER_COLOR: Color32 = Color32::from_gray(60);
+const BORDER_COLOR: Color32 = theme::PLOT_BORDER;
 const GREEN_COLOR: Color32 = theme::SEM_SUCCESS;
 const YELLOW_COLOR: Color32 = theme::TYPE_LOGIC;
 const RED_COLOR: Color32 = theme::SEM_DANGER;
@@ -32,7 +32,7 @@ const HOLD_COLOR: Color32 = theme::TEXT;
 const RMS_COLOR: Color32 = theme::RMS_WASH;
 const CLIP_OFF_COLOR: Color32 = theme::BG;
 const SCALE_LABEL_COLOR: Color32 = theme::TEXT_DIM;
-const SCALE_TICK_COLOR: Color32 = Color32::from_gray(70);
+const SCALE_TICK_COLOR: Color32 = theme::PLOT_GRID;
 
 const DB_TICKS: &[i32] = &[0, -3, -6, -12, -18, -24, -36, -48, -60];
 
@@ -278,7 +278,7 @@ fn draw_vertical(
         egui::Align2::CENTER_CENTER,
         "CLIP",
         egui::FontId::proportional(9.0),
-        if clipping { Color32::BLACK } else { Color32::from_gray(120) },
+        if clipping { Color32::BLACK } else { theme::TEXT_DIM },
     );
 
     // Bar background + border.
@@ -384,7 +384,7 @@ pub fn draw_horizontal(
         egui::Align2::CENTER_CENTER,
         "C",
         egui::FontId::proportional(9.0),
-        if clipping { Color32::BLACK } else { Color32::from_gray(120) },
+        if clipping { Color32::BLACK } else { theme::TEXT_DIM },
     );
 
     // Background.

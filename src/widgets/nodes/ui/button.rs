@@ -144,7 +144,7 @@ impl NodeWidget for ButtonWidget {
         let fill = if pressed {
             theme::SEM_PRIMARY
         } else {
-            Color32::from_gray(60)
+            theme::OFF_GREY
         };
         let text_color = if pressed { Color32::BLACK } else { theme::TEXT_BRIGHT };
 
@@ -166,7 +166,7 @@ impl NodeWidget for ButtonWidget {
         } else if resp.hovered() {
             theme::TEXT_DIM
         } else {
-            Color32::from_gray(90)
+            theme::PLOT_FRAME
         };
         let border_width = if self.override_active { 2.0 } else { 1.0_f32 };
         painter.rect_stroke(

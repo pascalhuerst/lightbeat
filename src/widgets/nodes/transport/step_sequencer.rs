@@ -1,9 +1,10 @@
 use std::any::Any;
 
-use egui::{self, Color32, Rect, Sense, StrokeKind, Ui, Vec2};
+use egui::{self, Rect, Sense, StrokeKind, Ui, Vec2};
 
 use crate::engine::nodes::transport::step_sequencer::{StepMode, StepSequencerDisplay};
 use crate::engine::types::*;
+use crate::theme;
 use crate::widgets::fader::{self, FaderStyle, Orientation};
 use crate::widgets::nodes::node::NodeWidget;
 use crate::widgets::nodes::types::UiPortDef;
@@ -85,7 +86,7 @@ impl NodeWidget for StepSequencerWidget {
             ..FaderStyle::default()
         };
         let active_fill = style.fill_active;
-        let line_color = Color32::from_gray(90);
+        let line_color = theme::PLOT_FRAME;
 
         // Use rounded pixel-aligned x boundaries so separator lines render
         // crisply for any step count (sub-pixel `line_segment` lines were

@@ -1,8 +1,9 @@
 use std::any::Any;
-use egui::{self, Color32, Ui};
+use egui::{self, Ui};
 
 use crate::engine::nodes::transport::clock_divider::{ClockDividerDisplay, MAX_EXTRA_OUTPUTS};
 use crate::engine::types::*;
+use crate::theme;
 use crate::widgets::nodes::node::NodeWidget;
 use crate::widgets::nodes::types::UiPortDef;
 
@@ -80,7 +81,7 @@ impl NodeWidget for ClockDividerWidget {
             ui.label(format!("1/{}", divisor));
             // Show progress dots.
             let progress = format!("{}/{}", count + 1, divisor);
-            ui.colored_label(Color32::from_gray(120), progress);
+            ui.colored_label(theme::TEXT_DIM, progress);
         });
 
         let mut changed = false;

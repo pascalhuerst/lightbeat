@@ -6,6 +6,7 @@ use egui::{self, Color32, Sense, Ui, Vec2};
 use crate::engine::nodes::math::multiplex::SelectMode;
 use crate::engine::nodes::math::palette_select::PaletteSelectDisplay;
 use crate::engine::types::*;
+use crate::theme;
 use crate::objects::color_palette::{ColorPalette, ColorPaletteGroup, PALETTE_SIZE};
 use crate::widgets::setup_ui;
 use crate::widgets::nodes::node::NodeWidget;
@@ -138,7 +139,7 @@ impl NodeWidget for PaletteSelectWidget {
         }
 
         if group_count == 0 {
-            ui.colored_label(Color32::from_gray(120), "No groups");
+            ui.colored_label(theme::TEXT_DIM, "No groups");
             return;
         }
 
@@ -159,7 +160,7 @@ impl NodeWidget for PaletteSelectWidget {
             );
             painter.rect_filled(rect, 1.0, color);
         }
-        ui.colored_label(Color32::from_gray(120),
+        ui.colored_label(theme::TEXT_DIM,
             format!("G:{}/{} P:{}/{}", group_idx + 1, group_count, palette_idx + 1, palette_count));
     }
 

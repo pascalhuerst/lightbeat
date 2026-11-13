@@ -222,11 +222,11 @@ impl NodeWidget for AudioInputWidget {
         }
 
         if self.input_id == 0 {
-            ui.colored_label(Color32::from_gray(120), "No input selected");
+            ui.colored_label(theme::TEXT_DIM, "No input selected");
             return;
         }
         if self.analyzer_results.is_empty() {
-            ui.colored_label(Color32::from_gray(120), "No analyzers");
+            ui.colored_label(theme::TEXT_DIM, "No analyzers");
             return;
         }
 
@@ -289,7 +289,7 @@ impl NodeWidget for AudioInputWidget {
                     self.meter_state[i].tick(peak, now);
                     let state = self.meter_state[i];
                     ui.horizontal(|ui| {
-                        ui.colored_label(Color32::from_gray(120), format!("a{}", i));
+                        ui.colored_label(theme::TEXT_DIM, format!("a{}", i));
                         let avail = ui.available_size();
                         let bar_size = egui::Vec2::new(avail.x.max(60.0), 12.0);
                         let (resp, painter) = ui.allocate_painter(bar_size, egui::Sense::hover());
@@ -336,7 +336,7 @@ impl NodeWidget for AudioInputWidget {
                         _ => vals,
                     };
                     ui.horizontal(|ui| {
-                        ui.colored_label(Color32::from_gray(120), format!("a{}", i));
+                        ui.colored_label(theme::TEXT_DIM, format!("a{}", i));
                         let width = (ui.available_width() - PLOT_RIGHT_GAP).max(60.0);
                         let (resp, painter) =
                             ui.allocate_painter(egui::Vec2::new(width, SPECTRUM_HEIGHT), egui::Sense::hover());
@@ -355,7 +355,7 @@ impl NodeWidget for AudioInputWidget {
                     }
 
                     ui.horizontal(|ui| {
-                        ui.colored_label(Color32::from_gray(120), format!("a{}", i));
+                        ui.colored_label(theme::TEXT_DIM, format!("a{}", i));
                         let avail = ui.available_size();
                         // Match peak-meter width: leave a gap on the right
                         // (where the peak meter places its clip indicator).
@@ -452,9 +452,9 @@ fn draw_spectrum_bars(painter: &egui::Painter, rect: egui::Rect, levels: &[f32])
     }
 }
 
-const ENV_BG: Color32 = Color32::from_gray(20);
-const ENV_BORDER: Color32 = Color32::from_gray(60);
-const ENV_LINE: Color32 = Color32::from_rgb(80, 200, 160);
+const ENV_BG: Color32 = theme::PLOT_BG;
+const ENV_BORDER: Color32 = theme::PLOT_BORDER;
+const ENV_LINE: Color32 = theme::CURVE;
 
 /// Plot the rolling envelope buffer across `rect`. Samples are drawn evenly
 /// spaced with index 0 at the left and the latest sample at the right edge

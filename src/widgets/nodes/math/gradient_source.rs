@@ -199,7 +199,7 @@ impl NodeWidget for GradientSourceWidget {
         let bar_rect = egui::Rect::from_min_size(resp.rect.min, Vec2::new(resp.rect.width(), bar_h));
 
         // Checkerboard so alpha is visible.
-        draw_checker(&painter, bar_rect);
+        theme::draw_checkerboard(&painter, bar_rect, 6.0);
 
         // Sample the gradient at many points across width.
         let samples = (bar_rect.width() as usize).max(16).min(512);
@@ -305,7 +305,7 @@ impl NodeWidget for GradientSourceWidget {
             let stroke = if h_resp.hovered() || h_resp.dragged() {
                 Stroke::new(1.5_f32, theme::TEXT_BRIGHT)
             } else {
-                Stroke::new(1.0_f32, Color32::from_gray(120))
+                Stroke::new(1.0_f32, theme::TEXT_DIM)
             };
             // Tick connecting handle to its position on the bar.
             painter.line_segment(
@@ -358,7 +358,7 @@ impl NodeWidget for GradientSourceWidget {
             let mut load_stops: Option<Vec<GradientStop>> = None;
             combo.show_ui(ui, |ui| {
                 if presets.is_empty() {
-                    ui.colored_label(Color32::from_gray(120), "No presets yet");
+                    ui.colored_label(theme::TEXT_DIM, "No presets yet");
                 }
                 for (_id, name, stops) in &presets {
                     if ui.selectable_label(false, name).clicked() {
@@ -449,23 +449,6 @@ impl NodeWidget for GradientSourceWidget {
     fn as_any_mut(&mut self) -> &mut dyn Any { self }
 }
 
-fn draw_checker(painter: &egui::Painter, rect: egui::Rect) {
-    let cell = 6.0;
-    let cols = (rect.width() / cell).ceil() as i32;
-    let rows = (rect.height() / cell).ceil() as i32;
-    let c1 = theme::BG;
-    let c2 = Color32::from_gray(70);
-    for y in 0..rows {
-        for x in 0..cols {
-            let color = if (x + y) % 2 == 0 { c1 } else { c2 };
-            let cell_rect = egui::Rect::from_min_size(
-                Pos2::new(rect.min.x + x as f32 * cell, rect.min.y + y as f32 * cell),
-                Vec2::splat(cell),
-            ).intersect(rect);
-            painter.rect_filled(cell_rect, 0.0, color);
-        }
-    }
-}
 
 /// Minimal preview-side sampler: linear interpolation in sRGB+alpha.
 fn sample_preview(stops: &[(f32, Color32, f32)], t: f32) -> Color32 {

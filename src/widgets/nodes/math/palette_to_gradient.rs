@@ -1,6 +1,6 @@
 use std::any::Any;
 
-use egui::{self, Color32, Pos2, Sense, Stroke, StrokeKind, Ui, Vec2};
+use egui::{self, Color32, Pos2, Sense, Stroke, StrokeKind, Ui};
 
 use crate::color::Gradient;
 use crate::engine::types::*;
@@ -74,7 +74,7 @@ impl NodeWidget for PaletteToGradientWidget {
 
         // Checkerboard for alpha (palette-to-gradient stops are alpha=1 but
         // keep the same visual vocabulary as other gradient previews).
-        draw_checker(&painter, rect, 5.0);
+        theme::draw_checkerboard(&painter, rect, 5.0);
 
         let g = Gradient::from_channels(&chans);
         if !g.stops().is_empty() {
@@ -103,19 +103,3 @@ impl NodeWidget for PaletteToGradientWidget {
     fn as_any_mut(&mut self) -> &mut dyn Any { self }
 }
 
-fn draw_checker(painter: &egui::Painter, rect: egui::Rect, cell: f32) {
-    let cols = (rect.width() / cell).ceil() as i32;
-    let rows = (rect.height() / cell).ceil() as i32;
-    let c1 = theme::BG;
-    let c2 = Color32::from_gray(70);
-    for y in 0..rows {
-        for x in 0..cols {
-            let color = if (x + y) % 2 == 0 { c1 } else { c2 };
-            let cell_rect = egui::Rect::from_min_size(
-                Pos2::new(rect.min.x + x as f32 * cell, rect.min.y + y as f32 * cell),
-                Vec2::splat(cell),
-            ).intersect(rect);
-            painter.rect_filled(cell_rect, 0.0, color);
-        }
-    }
-}

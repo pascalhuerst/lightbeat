@@ -1,6 +1,6 @@
 use std::any::Any;
 
-use egui::{self, Color32, Pos2, Sense, Stroke, StrokeKind, Ui, Vec2};
+use egui::{self, Pos2, Sense, Stroke, StrokeKind, Ui, Vec2};
 
 use crate::engine::nodes::display::scope::{SCOPE_INPUTS, ScopeDisplay};
 use crate::engine::types::*;
@@ -132,11 +132,11 @@ fn draw_scope(
     let (response, painter) = ui.allocate_painter(size, Sense::hover());
     let rect = response.rect;
 
-    let bg = Color32::from_gray(20);
+    let bg = theme::PLOT_BG;
     let grid_color = theme::BG;
 
     painter.rect_filled(rect, 2.0, bg);
-    painter.rect_stroke(rect, 2.0, Stroke::new(1.0_f32, Color32::from_gray(50)), StrokeKind::Inside);
+    painter.rect_stroke(rect, 2.0, Stroke::new(1.0_f32, theme::PLOT_BORDER), StrokeKind::Inside);
 
     let range = range_max - range_min;
     if range.abs() < 1e-6 { return; }

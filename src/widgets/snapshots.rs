@@ -171,7 +171,7 @@ pub fn show(ui: &mut Ui, node: &dyn NodeWidget) {
                         let row_fill = if is_active {
                             theme::SEM_PRIMARY_FILL
                         } else if i % 2 == 1 {
-                            egui::Color32::from_white_alpha(6)
+                            theme::ROW_STRIPE
                         } else {
                             egui::Color32::TRANSPARENT
                         };

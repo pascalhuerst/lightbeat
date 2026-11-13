@@ -1,6 +1,6 @@
 use std::any::Any;
 
-use egui::{self, Color32, Sense, Stroke, Ui, Vec2};
+use egui::{self, Sense, Stroke, Ui, Vec2};
 
 use crate::engine::nodes::transport::lfo::LfoDisplay;
 use crate::engine::types::*;
@@ -100,7 +100,7 @@ impl NodeWidget for LfoWidget {
         let cy = rect.center().y;
         painter.line_segment(
             [egui::pos2(rect.min.x, cy), egui::pos2(rect.max.x, cy)],
-            Stroke::new(0.5_f32, Color32::from_gray(60)),
+            Stroke::new(0.5_f32, theme::PLOT_BORDER),
         );
         // Phase position (vertical bar)
         let px = rect.min.x + rect.width() * phase;

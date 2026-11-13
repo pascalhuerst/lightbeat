@@ -186,12 +186,12 @@ impl NodeWidget for SubgraphWidget {
         ui.horizontal(|ui| {
             if self.locked {
                 ui.colored_label(
-                    Color32::from_rgb(180, 160, 220),
+                    theme::MACRO_LOCK,
                     egui_phosphor::regular::LOCK,
                 )
                 .on_hover_text("Macro (locked). Right-click → Embed to edit.");
             }
-            ui.colored_label(Color32::from_gray(100), format!("{} nodes", inner_count));
+            ui.colored_label(theme::TEXT_DIM, format!("{} nodes", inner_count));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 // Open button is hidden when locked — match navigation gating.
                 if !self.locked
@@ -416,7 +416,7 @@ fn draw_inner_display_row(ui: &mut Ui, d: &InnerValueDisplay) {
         } else {
             d.name.as_str()
         };
-        ui.colored_label(Color32::from_gray(160), label);
+        ui.colored_label(theme::TEXT_MUTED, label);
         ui.with_layout(
             egui::Layout::right_to_left(egui::Align::Center),
             |ui| match d.mode {

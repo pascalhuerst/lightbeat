@@ -378,7 +378,7 @@ impl NodeWidget for LookupWidget {
                     header.col(|ui| {
                         ui.strong(
                             egui::RichText::new(name)
-                                .color(Color32::from_gray(200))
+                                .color(theme::TEXT)
                                 .size(11.0),
                         );
                     });
@@ -397,7 +397,7 @@ impl NodeWidget for LookupWidget {
                             if is_current {
                                 ui.painter().rect_filled(
                                     rect, 2.0,
-                                    Color32::from_rgba_unmultiplied(80, 200, 240, 60),
+                                    theme::HIGHLIGHT.gamma_multiply(0.24),
                                 );
                             }
                             let txt = egui::RichText::new(format!("{:>3}", r))
@@ -416,7 +416,7 @@ impl NodeWidget for LookupWidget {
                                     let rect = ui.available_rect_before_wrap();
                                     ui.painter().rect_filled(
                                         rect, 2.0,
-                                        Color32::from_rgba_unmultiplied(80, 200, 240, 30),
+                                        theme::HIGHLIGHT.gamma_multiply(0.12),
                                     );
                                 }
                                 let off = self.column_channel_offset(ci);
@@ -530,7 +530,7 @@ fn edit_cell(
                     Sense::click(),
                 );
                 let rect = resp.rect;
-                draw_checker(&painter, rect, 4.0);
+                theme::draw_checkerboard(&painter, rect, 4.0);
                 let g = Gradient::from_channels(
                     data.get(base..base + span).unwrap_or(&[]),
                 );
@@ -591,7 +591,7 @@ fn edit_cell(
                                     Vec2::new(80.0, 14.0), Sense::hover(),
                                 );
                                 let painter = ui.painter();
-                                draw_checker(painter, bar.rect, 3.0);
+                                theme::draw_checkerboard(painter, bar.rect, 3.0);
                                 let g = Gradient::new(stops.clone());
                                 let samples = 64usize;
                                 for i in 0..samples {
@@ -711,19 +711,3 @@ fn edit_cell(
     changed
 }
 
-fn draw_checker(painter: &egui::Painter, rect: egui::Rect, cell: f32) {
-    let cols = (rect.width() / cell).ceil() as i32;
-    let rows = (rect.height() / cell).ceil() as i32;
-    let c1 = theme::BG;
-    let c2 = Color32::from_gray(70);
-    for y in 0..rows {
-        for x in 0..cols {
-            let color = if (x + y) % 2 == 0 { c1 } else { c2 };
-            let cell_rect = egui::Rect::from_min_size(
-                Pos2::new(rect.min.x + x as f32 * cell, rect.min.y + y as f32 * cell),
-                Vec2::splat(cell),
-            ).intersect(rect);
-            painter.rect_filled(cell_rect, 0.0, color);
-        }
-    }
-}

@@ -1,8 +1,9 @@
 use std::any::Any;
 
-use egui::{self, Color32, Ui};
+use egui::{self, Ui};
 
 use crate::engine::types::*;
+use crate::theme;
 use crate::widgets::nodes::node::NodeWidget;
 use crate::widgets::nodes::types::UiPortDef;
 
@@ -43,7 +44,7 @@ impl NodeWidget for SampleHoldWidget {
             let shared = self.shared.lock().unwrap();
             shared.outputs.first().copied().unwrap_or(0.0)
         };
-        ui.colored_label(Color32::from_gray(200), format!("held {:.3}", held));
+        ui.colored_label(theme::TEXT, format!("held {:.3}", held));
     }
 
     fn as_any_mut(&mut self) -> &mut dyn Any { self }

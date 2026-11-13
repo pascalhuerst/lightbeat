@@ -14,7 +14,7 @@ use crate::widgets::nodes::types::UiPortDef;
 const HIGHLIGHT_DURATION: f64 = 0.5;
 const OVERRIDE_OVERLAY_COLOR: Color32 = theme::SEM_WARNING_FILL;
 const OVERRIDE_ICON_COLOR: Color32 = theme::SEM_WARNING_BRIGHT;
-const CENTER_LINE_COLOR: Color32 = Color32::from_gray(110);
+const CENTER_LINE_COLOR: Color32 = theme::CENTER_LINE;
 
 /// Icon string indicating how the override clears for the given mode.
 pub fn override_mode_icon(mode: MouseOverrideMode) -> &'static str {

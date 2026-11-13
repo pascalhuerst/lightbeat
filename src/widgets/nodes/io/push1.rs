@@ -1,7 +1,7 @@
 use crate::engine::nodes::io::status::status_port;
 use std::any::Any;
 
-use egui::{self, Color32, Ui};
+use egui::{self, Ui};
 
 use crate::engine::nodes::io::push1::Push1Display;
 use crate::engine::types::*;
@@ -125,7 +125,7 @@ impl NodeWidget for Push1Widget {
         }
 
         if self.controller_id == 0 {
-            ui.colored_label(Color32::from_gray(120), "No Push 1 bound");
+            ui.colored_label(theme::TEXT_DIM, "No Push 1 bound");
         } else if self.connected {
             ui.colored_label(theme::SEM_SUCCESS, &self.controller_name);
         } else {

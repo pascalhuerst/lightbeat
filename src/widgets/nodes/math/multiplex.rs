@@ -1,6 +1,6 @@
 use std::any::Any;
 
-use egui::{self, Color32, Ui};
+use egui::{self, Ui};
 
 use crate::engine::nodes::math::multiplex::{
     MUX_DEFAULT_SLOTS, MuxDisplay, SelectMode, clamp_slots, type_to_index,
@@ -105,7 +105,7 @@ impl NodeWidget for MultiplexerWidget {
             .map(|d| d.selected).unwrap_or(0);
         drop(shared);
         if self.port_type == PortType::Any {
-            ui.colored_label(Color32::from_gray(120), "Connect to set type");
+            ui.colored_label(theme::TEXT_DIM, "Connect to set type");
         } else {
             ui.colored_label(theme::TEXT_DIM, format!("in{} → out", sel));
         }
@@ -199,7 +199,7 @@ impl NodeWidget for DemultiplexerWidget {
             .map(|d| d.selected).unwrap_or(0);
         drop(shared);
         if self.port_type == PortType::Any {
-            ui.colored_label(Color32::from_gray(120), "Connect to set type");
+            ui.colored_label(theme::TEXT_DIM, "Connect to set type");
         } else {
             ui.colored_label(theme::TEXT_DIM, format!("in → out{}", sel));
         }

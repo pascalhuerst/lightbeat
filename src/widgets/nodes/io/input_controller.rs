@@ -1,6 +1,6 @@
 use std::any::Any;
 
-use egui::{self, Color32, Ui};
+use egui::{self, Ui};
 
 use crate::engine::nodes::io::input_controller::InputControllerDisplay;
 use crate::engine::types::*;
@@ -125,9 +125,9 @@ impl NodeWidget for InputControllerWidget {
         }
 
         if self.controller_id == 0 {
-            ui.colored_label(Color32::from_gray(120), "No controller selected");
+            ui.colored_label(theme::TEXT_DIM, "No controller selected");
         } else if self.outputs.is_empty() {
-            ui.colored_label(Color32::from_gray(120), "Controller has no inputs");
+            ui.colored_label(theme::TEXT_DIM, "Controller has no inputs");
         } else {
             ui.colored_label(
                 theme::TEXT_DIM,
