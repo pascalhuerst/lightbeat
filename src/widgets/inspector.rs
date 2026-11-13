@@ -218,8 +218,20 @@ fn promote_checkbox(ui: &mut Ui, node: &dyn NodeWidget, promo: &PromoteCtx, para
 /// A change of this setting reshapes the node (a mode, a type, a slot count),
 /// so the settings exposed as inputs no longer mean what they did.
 fn reshapes(node: &dyn NodeWidget, param: &ParamDef) -> bool {
+    // Switching a node into its sibling (Add to Sub) leaves its other
+    // settings what they were.
+    if param.name() == OPERATION_PARAM {
+        return false;
+    }
     is_mode(param) || node.shared_state().lock().unwrap().non_promotable.contains(&param.name())
 }
+
+/// Button and Fader: the checkbox that gives the node an input port.
+const INPUT_SWITCH_PARAM: &str = "Input enabled";
+
+/// The setting that turns a node into another of its family (Add, Sub, Mul,
+/// Div; the compares; the gates; the constants).
+const OPERATION_PARAM: &str = "Operation";
 
 /// One setting as a row. Every selected node gets the change, so the single
 /// and the multi-selection inspector draw their settings the same way; only
@@ -266,6 +278,13 @@ fn param_row(
                 let response = ui.checkbox(&mut v, label);
                 if response.changed() {
                     set_all(nodes, name, ParamValue::Bool(v));
+                    // The checkbox that adds or removes the node's own input
+                    // moves the ports of the exposed settings behind it.
+                    if name == INPUT_SWITCH_PARAM {
+                        for node in nodes {
+                            drop_exposed_inputs(*node);
+                        }
+                    }
                 }
                 if can_reset {
                     response.clone().on_hover_text("Double-click to reset");

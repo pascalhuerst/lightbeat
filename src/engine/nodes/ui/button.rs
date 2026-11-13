@@ -192,7 +192,9 @@ impl ProcessNode for ButtonProcessNode {
     fn params(&self) -> Vec<ParamDef> {
         vec![
             ParamDef::Choice {
-                name: "Mode".into(),
+                // Not "Mode": a setting of that name counts as reshaping the
+                // node, and the button's mode can be driven by a wire.
+                name: "Button mode".into(),
                 value: if self.mode == ButtonMode::Toggle { 1 } else { 0 },
                 options: vec!["Trigger".into(), "Toggle".into()],
             },

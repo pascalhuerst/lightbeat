@@ -82,6 +82,10 @@ impl NodeWidget for ButtonWidget {
         };
     }
 
+    fn param_display(&self, name: &str) -> (Option<String>, String) {
+        (None, if name == "Button mode" { "Mode".to_string() } else { name.to_string() })
+    }
+
     /// The mouse override only exists on a toggle that has an input, and its
     /// reset only when the override is allowed.
     fn overridden_param_indices(&self) -> Vec<usize> {
