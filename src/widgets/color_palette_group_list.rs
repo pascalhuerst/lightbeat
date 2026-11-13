@@ -52,8 +52,7 @@ impl ColorPaletteGroupManager {
                             mv = Some((i, m));
                         }
                         if let Some(palette) = palette {
-                            for i in 0..PALETTE_SIZE {
-                                let c = palette.colors[i];
+                            for &c in palette.colors.iter().take(PALETTE_SIZE) {
                                 let color = egui::Color32::from_rgb(
                                     (c.r.clamp(0.0, 1.0) * 255.0) as u8,
                                     (c.g.clamp(0.0, 1.0) * 255.0) as u8,

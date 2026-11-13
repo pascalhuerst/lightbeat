@@ -86,8 +86,8 @@ impl ProcessNode for PaletteToGradientProcessNode {
 
     fn set_input_connections(&mut self, connected: &[bool]) {
         // Port 0 = palette; ports 1..=4 = pos1..pos4.
-        for i in 0..N {
-            self.pos_connected[i] = connected.get(1 + i).copied().unwrap_or(false);
+        for (i, wired) in self.pos_connected.iter_mut().enumerate() {
+            *wired = connected.get(1 + i).copied().unwrap_or(false);
         }
     }
 

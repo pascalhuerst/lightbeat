@@ -192,8 +192,8 @@ mod tests {
         }
         scope.process();
         scope.process();
-        for ch in 0..SCOPE_INPUTS {
-            assert_eq!(scope.buffers[ch].back().copied(), Some(ch as f32 * 0.1), "channel {ch}");
+        for (ch, buffer) in scope.buffers.iter().enumerate().take(SCOPE_INPUTS) {
+            assert_eq!(buffer.back().copied(), Some(ch as f32 * 0.1), "channel {ch}");
         }
     }
 

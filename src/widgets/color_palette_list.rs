@@ -57,15 +57,11 @@ impl ColorPaletteManager {
                                 );
                                 if r.changed() { self.needs_refresh = true; }
                             });
-                            for i in 0..PALETTE_SIZE {
+                            for slot in palette.colors.iter_mut().take(PALETTE_SIZE) {
                                 row.col(|ui| {
-                                    let mut color = [
-                                        palette.colors[i].r,
-                                        palette.colors[i].g,
-                                        palette.colors[i].b,
-                                    ];
+                                    let mut color = [slot.r, slot.g, slot.b];
                                     if ui.color_edit_button_rgb(&mut color).changed() {
-                                        palette.colors[i] = Rgb::new(color[0], color[1], color[2]);
+                                        *slot = Rgb::new(color[0], color[1], color[2]);
                                         self.needs_refresh = true;
                                     }
                                 });

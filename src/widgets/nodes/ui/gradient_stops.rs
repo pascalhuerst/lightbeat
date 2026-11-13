@@ -124,8 +124,8 @@ impl NodeWidget for GradientStopsWidget {
         if resp.drag_started()
             && let Some(p) = ptr {
                 let mut best: Option<(usize, f32)> = None;
-                for i in 0..4 {
-                    let hx = rect.min.x + self.positions[i].clamp(0.0, 1.0) * rect.width();
+                for (i, pos) in self.positions.iter().enumerate().take(4) {
+                    let hx = rect.min.x + pos.clamp(0.0, 1.0) * rect.width();
                     let d = (p.x - hx).abs();
                     let within_y = p.y >= handle_rect.min.y && p.y <= strip_rect.max.y;
                     if within_y && d < HANDLE_HIT_RADIUS
