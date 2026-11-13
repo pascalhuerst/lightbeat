@@ -577,7 +577,7 @@ pub fn autosave_path_for(project_path: Option<&std::path::Path>) -> PathBuf {
 pub fn save_to_file(
     graph: &NodeGraph,
     view: ProjectViewState,
-    path: &PathBuf,
+    path: &std::path::Path,
 ) -> Result<(), String> {
     let mut project = save_graph(graph);
     project.view = Some(view);
@@ -588,7 +588,7 @@ pub fn save_to_file(
     crate::paths::write_atomic(path, json).map_err(|e| e.to_string())
 }
 
-pub fn load_from_file(path: &PathBuf) -> Result<ProjectFile, String> {
+pub fn load_from_file(path: &std::path::Path) -> Result<ProjectFile, String> {
     let json = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
     serde_json::from_str(&json).map_err(|e| e.to_string())
 }

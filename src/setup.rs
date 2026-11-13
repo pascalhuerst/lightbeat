@@ -253,13 +253,15 @@ mod tests {
     }
 
     fn mac() -> Machine {
-        let mut m = Machine::default();
-        m.audio_backends = vec![AudioBackendKind::Cpal];
-        m.audio_devices.insert(AudioBackendKind::Cpal, vec!["(system default input)".into(), "MacBook Pro Microphone".into()]);
-        m.midi_inputs = vec!["BCF2000 Port 1".into()];
-        m.midi_outputs = vec!["BCF2000 Port 1".into()];
-        m.network_addresses = vec!["192.168.1.20".into()];
-        m
+        let mut audio_devices = std::collections::HashMap::new();
+        audio_devices.insert(AudioBackendKind::Cpal, vec!["(system default input)".into(), "MacBook Pro Microphone".into()]);
+        Machine {
+            audio_backends: vec![AudioBackendKind::Cpal],
+            audio_devices,
+            midi_inputs: vec!["BCF2000 Port 1".into()],
+            midi_outputs: vec!["BCF2000 Port 1".into()],
+            network_addresses: vec!["192.168.1.20".into()],
+        }
     }
 
     fn audio(name: &str, backend: AudioBackendKind, device: &str) -> AudioInputConfig {
@@ -271,17 +273,19 @@ mod tests {
 
     #[test]
     fn a_setup_from_linux_lands_on_the_defaults_of_a_mac() {
-        let mut setup = SetupFile::default();
-        setup.audio_inputs = vec![
+        let mut setup = SetupFile {
+            audio_inputs: vec![
             audio("Master", AudioBackendKind::Cpal, "alsa_input.usb-Focusrite"),
             audio("Jack", AudioBackendKind::Jack, "system:capture_1"),
             audio("Here", AudioBackendKind::Cpal, "MacBook Pro Microphone"),
             audio("None", AudioBackendKind::Cpal, ""),
-        ];
-        setup.input_controllers = vec![
+            ],
+            input_controllers: vec![
             InputController { id: 1, name: "Faders".into(), kind: InputControllerKind::Bcf2000 { hw_input_port: "BCF2000:BCF2000 MIDI 1 28:0".into(), hw_output_port: "BCF2000:BCF2000 MIDI 1 28:0".into() }, inputs: vec![] },
             InputController { id: 2, name: "Pad".into(), kind: InputControllerKind::LaunchpadS { hw_input_port: "Launchpad S:Launchpad S MIDI 1 20:0".into(), hw_output_port: String::new() }, inputs: vec![] },
-        ];
+            ],
+            ..Default::default()
+        };
         let notes = adapt_to_machine(&mut setup, &mac());
         assert_eq!(setup.audio_inputs[0].device_name, "(system default input)");
         assert_eq!(setup.audio_inputs[1].backend, AudioBackendKind::Cpal);
@@ -310,8 +314,7 @@ mod tests {
 
     #[test]
     fn an_exported_setup_imports_unchanged() {
-        let mut setup = SetupFile::default();
-        setup.audio_inputs = vec![audio("Master", AudioBackendKind::Cpal, "x")];
+        let setup = SetupFile { audio_inputs: vec![audio("Master", AudioBackendKind::Cpal, "x")], ..Default::default() };
         let dir = std::env::temp_dir().join(format!("lightbeat-setup-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("setup-export.json");

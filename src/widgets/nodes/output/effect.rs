@@ -242,8 +242,10 @@ impl NodeWidget for EffectWidget {
 mod tests {
     #[test]
     fn the_stack_tree_lists_roots_first_with_what_is_sent_to_each() {
-        let mut reg = StackRegistry::default();
-        reg.names = ["Main", "Scenes", "Pulse", "Solo"].iter().map(|s| s.to_string()).collect();
+        let mut reg = StackRegistry {
+            names: ["Main", "Scenes", "Pulse", "Solo"].iter().map(|s| s.to_string()).collect(),
+            ..Default::default()
+        };
         reg.parent_of.insert("Scenes".into(), "Main".into());
         reg.parent_of.insert("Pulse".into(), "Scenes".into());
         let tree = reg.tree();

@@ -941,7 +941,7 @@ impl NodeGraph {
         // Every node's ui starts from the same style, so scale it once.
         let zoomed_style: Option<std::sync::Arc<egui::Style>> = ((z - 1.0).abs() > 0.01).then(|| {
             let mut style = (**ui.style()).clone();
-            for (_, font_id) in style.text_styles.iter_mut() {
+            for font_id in style.text_styles.values_mut() {
                 font_id.size *= z;
             }
             style.spacing.item_spacing *= z;

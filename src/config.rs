@@ -178,12 +178,14 @@ mod tests {
 
     #[test]
     fn panel_state_survives_a_round_trip() {
-        let mut c = AppConfig::default();
-        c.show_add_nodes = false;
-        c.show_setup = true;
-        c.show_dmx_monitor = true;
-        c.setup_tab = crate::app::panels::SetupTab::AudioInputs;
-        c.msaa_samples = 4;
+        let c = AppConfig {
+            show_add_nodes: false,
+            show_setup: true,
+            show_dmx_monitor: true,
+            setup_tab: crate::app::panels::SetupTab::AudioInputs,
+            msaa_samples: 4,
+            ..Default::default()
+        };
         let back: AppConfig = serde_json::from_str(&serde_json::to_string(&c).unwrap()).unwrap();
         assert!(!back.show_add_nodes && back.show_setup && back.show_dmx_monitor);
         assert_eq!(back.setup_tab, crate::app::panels::SetupTab::AudioInputs);
