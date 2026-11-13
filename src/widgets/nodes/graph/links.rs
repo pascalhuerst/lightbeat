@@ -1,5 +1,13 @@
 use super::*;
 
+/// What the last full run of `reconcile_effect_stacks` saw, and who it told.
+pub(super) struct StackSig {
+    hash: u64,
+    registry_set: bool,
+    /// (level, node index, members) of every stack that was told.
+    members: Vec<(usize, usize, Vec<crate::widgets::nodes::node::StackMember>)>,
+}
+
 impl NodeGraph {
     /// Names of the Portal Sends anywhere in the graph.
     fn portal_send_names(&self) -> Vec<String> {
@@ -67,15 +75,35 @@ impl NodeGraph {
         }
     }
 
-    // -----------------------------------------------------------------------
-    // Main draw
-    // -----------------------------------------------------------------------
-
-    /// Remove connections whose endpoints no longer exist (index out of range)
-    /// or whose port types have become incompatible (e.g. a node's mode changed
-    /// and a previously-matching wire is now of the wrong type).
     pub fn set_stack_names(&mut self, names: crate::widgets::nodes::output::effect::SharedStackNames) {
         self.stack_names = Some(names);
+    }
+
+    /// A hash of everything `reconcile_effect_stacks` reads: who is a stack,
+    /// where it is sent, which node links to it, how effects are labelled and
+    /// which groups a root writes to.
+    fn stack_links_hash(&self) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        for level in &self.levels {
+            level.nodes.len().hash(&mut h);
+            for node in &level.nodes {
+                node.node_id().hash(&mut h);
+                let stack = node.stack_name();
+                let link = node.linked_stack();
+                if stack.is_none() && link.is_none() {
+                    continue;
+                }
+                stack.hash(&mut h);
+                link.hash(&mut h);
+                node.display_title().hash(&mut h);
+                node.effect_kind().hash(&mut h);
+                if stack.is_some() && link.is_none() {
+                    node.root_groups().hash(&mut h);
+                }
+            }
+        }
+        h.finish()
     }
 
     /// Effects belong to a stack by name, and the stack lists them. Every
@@ -97,6 +125,21 @@ impl NodeGraph {
                 for node in level.nodes.iter_mut() {
                     node.rename_linked_stack(from, to);
                 }
+            }
+        }
+
+        let hash = self.stack_links_hash();
+        let registry_set = self.stack_names.is_some();
+        if let Some(prev) = self.stack_sig.take() {
+            if prev.hash == hash && prev.registry_set == registry_set {
+                // Nothing that links or lists changed. A stack still gets its
+                // members again: that call also notices edits to the groups it
+                // writes to, which are not part of the signature.
+                for (li, ni, members) in &prev.members {
+                    self.levels[*li].nodes[*ni].set_stack_members(members.clone());
+                }
+                self.stack_sig = Some(prev);
+                return;
             }
         }
 
@@ -178,19 +221,29 @@ impl NodeGraph {
             }
         }
 
+        // A loop was just broken, so the next frame must look again.
+        let remember = looping.is_empty();
         if stacks.is_empty() && effects.is_empty() {
             if let Some(reg) = &self.stack_names {
                 *reg.lock().unwrap() = Default::default();
             }
+            if remember {
+                self.stack_sig = Some(StackSig { hash, registry_set, members: Vec::new() });
+            }
             return;
         }
-        for level in self.levels.iter_mut() {
-            for node in level.nodes.iter_mut() {
+        let mut told = Vec::new();
+        for (li, level) in self.levels.iter_mut().enumerate() {
+            for (ni, node) in level.nodes.iter_mut().enumerate() {
                 if let Some(name) = node.stack_name() {
-                    let members = effects.iter().filter(|(l, _, _)| *l == name).map(|(_, m, _)| m.clone()).collect();
+                    let members: Vec<StackMember> = effects.iter().filter(|(l, _, _)| *l == name).map(|(_, m, _)| m.clone()).collect();
+                    told.push((li, ni, members.clone()));
                     node.set_stack_members(members);
                 }
             }
+        }
+        if remember {
+            self.stack_sig = Some(StackSig { hash, registry_set, members: told });
         }
         stacks.sort();
         stacks.dedup();
@@ -290,5 +343,20 @@ mod stack_tree_tests {
         g.reconcile_effect_stacks();
         let w = g.node_mut(child).as_any_mut().downcast_mut::<EffectStackWidget>().unwrap();
         assert_eq!(w.config().parent, "Shelf");
+    }
+
+    #[test]
+    fn a_rename_is_still_followed_after_an_unchanged_frame() {
+        let (mut g, names) = graph();
+        let master = add(&mut g, 1, "Master", "", &[1]);
+        let child = add(&mut g, 2, "Colour", "Master", &[]);
+        g.reconcile_effect_stacks();
+        g.reconcile_effect_stacks();
+        assert!(g.stack_sig.is_some(), "the second frame had nothing to do");
+        g.node_mut(master).as_any_mut().downcast_mut::<EffectStackWidget>().unwrap().rename("Shelf");
+        g.reconcile_effect_stacks();
+        let w = g.node_mut(child).as_any_mut().downcast_mut::<EffectStackWidget>().unwrap();
+        assert_eq!(w.config().parent, "Shelf");
+        assert_eq!(names.lock().unwrap().parent_of.get("Colour").map(String::as_str), Some("Shelf"));
     }
 }

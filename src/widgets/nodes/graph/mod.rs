@@ -261,6 +261,8 @@ pub struct NodeGraph {
     /// notice a mode switch (which reshapes the ports) and let go of the
     /// selected wires of that node.
     port_signatures: std::collections::HashMap<NodeId, u64>,
+    /// Last full run of `reconcile_effect_stacks`; dropped when nodes come or go.
+    stack_sig: Option<links::StackSig>,
     /// Port currently under the cursor, and a rolling sample buffer of its
     /// scalar value. Cleared when hover moves to a different port or off
     /// any port. Populated every frame so the tooltip scope has history.
@@ -337,6 +339,7 @@ impl NodeGraph {
             selected_frames: std::collections::HashSet::new(),
             selected_connections: std::collections::HashSet::new(),
             port_signatures: std::collections::HashMap::new(),
+            stack_sig: None,
             hover_port: None,
             hover_samples: std::collections::VecDeque::with_capacity(128),
             frame_drag: None,
@@ -469,6 +472,7 @@ impl NodeGraph {
         if id.0 >= self.next_id {
             self.next_id = id.0 + 1;
         }
+        self.stack_sig = None;
         let level = self.active_mut();
         level.states.push(NodeState::new(id, pos));
         level.nodes.push(node);
@@ -654,9 +658,8 @@ impl NodeGraph {
         self.reconcile_effect_stacks();
         self.remap_promoted_connections();
         self.remap_removed_ports();
-        self.refresh_hidden_ports();
-        // Clean up stale connections (ports removed by dynamic nodes like Group Output).
-        self.cleanup_stale_connections();
+        // Hidden ports, then stale connections (ports removed by dynamic nodes).
+        self.tidy_ports();
 
         let (response, painter) =
             ui.allocate_painter(ui.available_size(), Sense::click_and_drag());
@@ -804,12 +807,26 @@ impl NodeGraph {
             ));
         }
 
+        // -- Compute node rects (with zoom) --
+        let node_rects: Vec<Rect> = (0..level.nodes.len())
+            .map(|i| {
+                let size = node_size(level.nodes[i].as_ref(), level.states[i].size_override);
+                let pos = Pos2::new(
+                    level.states[i].pos.x * z,
+                    level.states[i].pos.y * z,
+                ) + origin;
+                Rect::from_min_size(pos, size * z)
+            })
+            .collect();
+
+        let ports = PortCache::build(level);
+
         // -- Draw connections --
         for conn in &level.connections {
             if let (Some(from_pos), Some(from_type), Some(to_pos)) = (
-                port_screen_pos(&level.nodes, &level.states, conn.from, origin, z),
-                port_type_for(&level.nodes, &level.states, conn.from),
-                port_screen_pos(&level.nodes, &level.states, conn.to, origin, z),
+                ports.port_pos(&node_rects, conn.from, z),
+                ports.port_type(conn.from),
+                ports.port_pos(&node_rects, conn.to, z),
             ) {
                 let selected = self.selected_connections.contains(conn);
                 if selected {
@@ -858,19 +875,6 @@ impl NodeGraph {
             }
         }
 
-        // -- Compute node rects (with zoom) --
-        let level = self.active();
-        let node_rects: Vec<Rect> = (0..level.nodes.len())
-            .map(|i| {
-                let size = node_size(level.nodes[i].as_ref(), level.states[i].size_override);
-                let pos = Pos2::new(
-                    level.states[i].pos.x * z,
-                    level.states[i].pos.y * z,
-                ) + origin;
-                Rect::from_min_size(pos, size * z)
-            })
-            .collect();
-
         // Figure out which portal keys are currently selected so we can
         // outline their peers — the "wireless cable" hint.
         let highlighted_link_keys: std::collections::HashSet<String> = self
@@ -890,6 +894,9 @@ impl NodeGraph {
                 .map(|k| highlighted_link_keys.contains(&k))
                 .unwrap_or(false);
             if portal_peer { any_peer_pulsing = true; }
+            // The margin covers what is drawn outside the rect: port dots, the
+            // selection outline and the pulse of a linked node.
+            if !canvas_rect.intersects(node_rects[i].expand(12.0 + 12.0 * z)) { continue; }
             let inputs = level.nodes[i].ui_inputs_full();
             let outputs = level.nodes[i].ui_outputs();
             let out_highlights: Vec<f32> = (0..outputs.len())
@@ -929,6 +936,23 @@ impl NodeGraph {
 
         // -- Draw node content (needs &mut node) --
         let canvas_clip = canvas_rect;
+        // Every node's ui starts from the same style, so scale it once.
+        let zoomed_style: Option<std::sync::Arc<egui::Style>> = ((z - 1.0).abs() > 0.01).then(|| {
+            let mut style = (**ui.style()).clone();
+            for (_, font_id) in style.text_styles.iter_mut() {
+                font_id.size *= z;
+            }
+            style.spacing.item_spacing *= z;
+            style.spacing.button_padding *= z;
+            style.spacing.interact_size *= z;
+            style.spacing.icon_width *= z;
+            style.spacing.icon_width_inner *= z;
+            style.spacing.icon_spacing *= z;
+            style.spacing.slider_width *= z;
+            style.spacing.combo_width *= z;
+            style.spacing.text_edit_width *= z;
+            std::sync::Arc::new(style)
+        });
         let level = self.active_mut();
         for i in 0..level.nodes.len() {
             let rect = node_rects[i];
@@ -945,21 +969,8 @@ impl NodeGraph {
                 );
                 content_ui.set_clip_rect(clip_rect);
                 // Scale text and spacing for zoom.
-                if (z - 1.0).abs() > 0.01 {
-                    let mut style = (**content_ui.style()).clone();
-                    for (_, font_id) in style.text_styles.iter_mut() {
-                        font_id.size *= z;
-                    }
-                    style.spacing.item_spacing *= z;
-                    style.spacing.button_padding *= z;
-                    style.spacing.interact_size *= z;
-                    style.spacing.icon_width *= z;
-                    style.spacing.icon_width_inner *= z;
-                    style.spacing.icon_spacing *= z;
-                    style.spacing.slider_width *= z;
-                    style.spacing.combo_width *= z;
-                    style.spacing.text_edit_width *= z;
-                    content_ui.set_style(style);
+                if let Some(style) = &zoomed_style {
+                    content_ui.set_style(style.clone());
                 }
 
                 level.nodes[i].show_content(&mut content_ui, z);
