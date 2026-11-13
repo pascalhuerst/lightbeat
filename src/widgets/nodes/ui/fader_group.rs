@@ -184,8 +184,6 @@ impl NodeWidget for FaderGroupWidget {
         highlight_alpha(last, now, HIGHLIGHT_DURATION)
     }
 
-    fn inspector_hides_default_ports(&self) -> bool { true }
-
     fn show_content(&mut self, ui: &mut Ui, _zoom: f32) {
         // Sync from engine display.
         let snapshot = {
