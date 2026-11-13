@@ -26,7 +26,6 @@ pub struct AppConfig {
     /// the project (for crash recovery) while there are unsaved changes. The
     /// autosave is never written over the user's project file — explicit
     /// Save / Save As is the only way to modify that.
-    #[serde(alias = "autosave_on_close")]
     pub autosave_enabled: bool,
     pub autoload_on_open: bool,
     pub snap_to_grid: bool,
