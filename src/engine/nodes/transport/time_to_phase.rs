@@ -91,7 +91,7 @@ impl ProcessNode for TimeToPhaseProcessNode {
     fn read_output(&self, pi: usize) -> f32 {
         match pi {
             0 => self.phase,
-            1 => if self.running { 1.0 } else { 0.0 },
+            1 if self.running => 1.0,
             _ => 0.0,
         }
     }
