@@ -523,7 +523,7 @@ pub fn save_to_file(
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
-    std::fs::write(path, json).map_err(|e| e.to_string())
+    crate::paths::write_atomic(path, json).map_err(|e| e.to_string())
 }
 
 pub fn load_from_file(path: &PathBuf) -> Result<ProjectFile, String> {
