@@ -208,7 +208,6 @@ pub struct ActivityLogEntry {
     pub decoded: Option<(InputSource, f32)>,
     /// Index into `inputs` of the learned input this matched, if any.
     pub matched_input_idx: Option<usize>,
-    pub instant: std::time::Instant,
 }
 
 /// Per-controller live state. Shared between midir callback, engine, and UI.
@@ -333,30 +332,29 @@ pub fn bcf2000_preset1_inputs() -> Vec<LearnedInput> {
     let mut inputs = Vec::with_capacity(44);
     let mut id: u32 = 1;
 
-    let push_cc = |inputs: &mut Vec<LearnedInput>, id: &mut u32, name: &str, cc: u8, binary: bool| {
+    let push_cc = |inputs: &mut Vec<LearnedInput>, id: &mut u32, name: &str, cc: u8| {
         inputs.push(LearnedInput {
             id: *id,
             name: name.to_string(),
             source: InputSource::Midi(MidiSource::Cc { channel: ch, controller: cc }),
-            mode: if binary { InputBindingMode::Value } else { InputBindingMode::Value },
+            mode: InputBindingMode::Value,
             disable_feedback: false,
         });
         *id += 1;
-        let _ = binary;
     };
 
     // 8 faders → CC 81..88 (continuous).
-    for i in 0..8 { push_cc(&mut inputs, &mut id, &format!("Fader {}", i + 1), 81 + i as u8, false); }
+    for i in 0..8 { push_cc(&mut inputs, &mut id, &format!("Fader {}", i + 1), 81 + i as u8); }
     // 8 encoder rotations → CC 1..8 (continuous).
-    for i in 0..8 { push_cc(&mut inputs, &mut id, &format!("Enc {}", i + 1), 1 + i as u8, false); }
+    for i in 0..8 { push_cc(&mut inputs, &mut id, &format!("Enc {}", i + 1), 1 + i as u8); }
     // 8 encoder pushes → CC 33..40 (binary).
-    for i in 0..8 { push_cc(&mut inputs, &mut id, &format!("Enc {} Push", i + 1), 33 + i as u8, true); }
+    for i in 0..8 { push_cc(&mut inputs, &mut id, &format!("Enc {} Push", i + 1), 33 + i as u8); }
     // Top row buttons → CC 65..72 (binary).
-    for i in 0..8 { push_cc(&mut inputs, &mut id, &format!("Btn Top {}", i + 1), 65 + i as u8, true); }
+    for i in 0..8 { push_cc(&mut inputs, &mut id, &format!("Btn Top {}", i + 1), 65 + i as u8); }
     // Bottom row buttons → CC 73..80 (binary).
-    for i in 0..8 { push_cc(&mut inputs, &mut id, &format!("Btn Bot {}", i + 1), 73 + i as u8, true); }
+    for i in 0..8 { push_cc(&mut inputs, &mut id, &format!("Btn Bot {}", i + 1), 73 + i as u8); }
     // 4 free buttons → CC 89..92 (binary).
-    for i in 0..4 { push_cc(&mut inputs, &mut id, &format!("Btn Free {}", i + 1), 89 + i as u8, true); }
+    for i in 0..4 { push_cc(&mut inputs, &mut id, &format!("Btn Free {}", i + 1), 89 + i as u8); }
 
     inputs
 }
@@ -908,12 +906,7 @@ impl InputControllerManager {
         let new_id = self.next_input_id;
         self.next_input_id += 1;
         let name = source.label();
-        let mode = if source.is_binary() {
-            InputBindingMode::Value
-        } else {
-            InputBindingMode::Value
-        };
-        let input = LearnedInput { id: new_id, name, source, mode, disable_feedback: false };
+        let input = LearnedInput { id: new_id, name, source, mode: InputBindingMode::Value, disable_feedback: false };
 
         let mut state = self.shared.lock().unwrap();
         if let Some(c) = state.iter_mut().find(|c| c.id == id) {

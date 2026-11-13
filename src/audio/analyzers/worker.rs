@@ -37,7 +37,6 @@ pub type SharedAnalyzerFrame = Arc<Mutex<AnalyzerFrame>>;
 pub struct AnalyzerWorker {
     pub frame: SharedAnalyzerFrame,
     pub handles: Vec<AnalyzerHandle>,
-    pub sample_rate: u32,
     _join: Option<thread::JoinHandle<()>>,
 }
 
@@ -70,7 +69,7 @@ impl AnalyzerWorker {
             .spawn(move || run(rx, procs, frame_thread))
             .expect("spawn analyzer worker thread");
 
-        Self { frame, handles, sample_rate, _join: Some(join) }
+        Self { frame, handles, _join: Some(join) }
     }
 }
 

@@ -39,8 +39,26 @@ pub struct SmoothingProcessNode {
     history: VecDeque<f32>,
     /// Running sum for MovingAverage — avoids re-summing the window each tick.
     sum: f64,
+    /// Reused by the median so it does not allocate every tick.
+    scratch: Vec<f32>,
     inputs: Vec<PortDef>,
     outputs: Vec<PortDef>,
+}
+
+/// Median of `buf` (reordered in the process); the mean of the two middle
+/// values for an even length. A selection, not a sort, since this runs every tick.
+fn median_in_place(buf: &mut [f32]) -> f32 {
+    let cmp = |a: &f32, b: &f32| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal);
+    let len = buf.len();
+    let mid = len / 2;
+    let (lower, upper, _) = buf.select_nth_unstable_by(mid, cmp);
+    let upper = *upper;
+    if len % 2 == 1 {
+        upper
+    } else {
+        let below = lower.iter().copied().max_by(cmp).unwrap_or(upper);
+        0.5 * (below + upper)
+    }
 }
 
 impl SmoothingProcessNode {
@@ -53,6 +71,7 @@ impl SmoothingProcessNode {
             window: 32,
             history: VecDeque::new(),
             sum: 0.0,
+            scratch: Vec::new(),
             inputs: vec![PortDef::new("in", PortType::Untyped)],
             outputs: vec![PortDef::new("out", PortType::Untyped)],
         }
@@ -106,14 +125,9 @@ impl ProcessNode for SmoothingProcessNode {
                 while self.history.len() > win {
                     self.history.pop_front();
                 }
-                let mut buf: Vec<f32> = self.history.iter().copied().collect();
-                buf.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-                let mid = buf.len() / 2;
-                self.value_out = if buf.len() % 2 == 1 {
-                    buf[mid]
-                } else {
-                    0.5 * (buf[mid - 1] + buf[mid])
-                };
+                self.scratch.clear();
+                self.scratch.extend(self.history.iter().copied());
+                self.value_out = median_in_place(&mut self.scratch);
             }
         }
     }
@@ -160,5 +174,42 @@ impl ProcessNode for SmoothingProcessNode {
             }
             _ => {}
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn by_sorting(values: &[f32]) -> f32 {
+        let mut buf = values.to_vec();
+        buf.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        let mid = buf.len() / 2;
+        if buf.len() % 2 == 1 { buf[mid] } else { 0.5 * (buf[mid - 1] + buf[mid]) }
+    }
+
+    #[test]
+    fn the_median_is_the_middle_value_for_odd_and_even_windows() {
+        let data = [0.9, 0.1, 0.5, 0.5, -0.3, 0.7, 0.2, 0.2, 1.0, 0.0];
+        for len in 1..=data.len() {
+            let mut buf = data[..len].to_vec();
+            assert_eq!(median_in_place(&mut buf), by_sorting(&data[..len]), "window of {len}");
+        }
+        assert_eq!(median_in_place(&mut [3.0, 1.0, 2.0]), 2.0);
+        assert_eq!(median_in_place(&mut [4.0, 1.0, 3.0, 2.0]), 2.5);
+    }
+
+    #[test]
+    fn the_node_outputs_the_median_of_its_window() {
+        let mut n = SmoothingProcessNode::new(NodeId(1));
+        n.set_param(0, ParamValue::Choice(2));
+        n.set_param(1, ParamValue::Int(3));
+        let mut out = Vec::new();
+        for v in [1.0, 9.0, 2.0, 8.0] {
+            n.write_input(0, v);
+            n.process();
+            out.push(n.read_output(0));
+        }
+        assert_eq!(out, vec![1.0, 5.0, 2.0, 8.0]);
     }
 }

@@ -469,8 +469,8 @@ impl ProcessNode for SubgraphProcessNode {
         }));
     }
 
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self
+    fn as_any_mut(&mut self) -> Option<&mut dyn Any> {
+        Some(self)
     }
     fn as_any(&self) -> &dyn Any {
         self
@@ -491,7 +491,7 @@ impl SubgraphProcessNode {
         let Some(node) = self.inner.nodes.iter_mut().find(|n| n.node_id() == next_id) else {
             return;
         };
-        let Some(sg) = node.as_any_mut().downcast_mut::<SubgraphProcessNode>() else {
+        let Some(sg) = node.as_any_mut().and_then(|a| a.downcast_mut::<SubgraphProcessNode>()) else {
             return;
         };
         sg.apply_inner_cmd_at_path(&path[1..], cmd);

@@ -227,7 +227,6 @@ fn handle_midi_message(controller_id: u32, msg: &[u8], shared: &SharedController
         raw: Some(msg.to_vec()),
         decoded: parsed.as_ref().map(|(s, v)| (InputSource::Midi(s.clone()), *v)),
         matched_input_idx: None, // filled in below once we know the match
-        instant: std::time::Instant::now(),
     };
     c.activity_log.push_back(log_entry);
     while c.activity_log.len() > ACTIVITY_LOG_CAPACITY {
@@ -392,8 +391,6 @@ fn run_feedback_worker(
     // Source-by-index snapshot so we don't touch the shared state while
     // serializing MIDI bytes.
     let mut sources: Vec<InputSource> = Vec::new();
-    // Per-input flag: when true, skip sending MIDI feedback for this mapping.
-    let mut disabled: Vec<bool> = Vec::new();
 
     while !stop.load(Ordering::Relaxed) {
         thread::sleep(POLL_INTERVAL);
@@ -422,7 +419,8 @@ fn run_feedback_worker(
             sources = src;
             last_sent.resize(sources.len(), None);
         }
-        disabled = dis;
+        // Per-input flag: when true, skip sending MIDI feedback for this mapping.
+        let disabled = dis;
         if last_sent.len() != out_values.len() {
             last_sent.resize(out_values.len(), None);
         }

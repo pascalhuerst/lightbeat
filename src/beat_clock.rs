@@ -86,11 +86,10 @@ impl BeatClock {
 
             loop {
                 for event in link.events() {
-                    if let crate::link_controller::LinkEvent::PlayStateChanged(playing) = event {
-                        let subs = subs.lock().unwrap();
-                        for sub in subs.iter() {
-                            sub.listener.lock().unwrap().on_transport_change(playing);
-                        }
+                    let crate::link_controller::LinkEvent::PlayStateChanged(playing) = event;
+                    let subs = subs.lock().unwrap();
+                    for sub in subs.iter() {
+                        sub.listener.lock().unwrap().on_transport_change(playing);
                     }
                 }
 

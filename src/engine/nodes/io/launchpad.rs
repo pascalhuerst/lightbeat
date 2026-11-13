@@ -109,7 +109,9 @@ impl ProcessNode for LaunchpadProcessNode {
             for v in &mut self.out_values { *v = 0.0; }
             return;
         }
-        self.controller_name = c.name.clone();
+        if self.controller_name != c.name {
+            self.controller_name = c.name.clone();
+        }
         self.connected = c.status == ConnectionStatus::Connected;
 
         if self.cached_for != self.controller_id

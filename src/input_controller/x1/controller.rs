@@ -14,19 +14,6 @@ pub enum ButtonEventKind {
     Released,
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct Modifiers {
-    pub shift: bool,
-}
-
-impl Modifiers {
-    fn from_state(state: &X1State) -> Self {
-        Self {
-            shift: state.button_shift,
-        }
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ButtonId {
     Deck1On,
@@ -90,27 +77,21 @@ pub enum PotId {
 pub struct ButtonEvent {
     pub id: ButtonId,
     pub kind: ButtonEventKind,
-    pub modifiers: Modifiers,
 }
 
 /// Information about an encoder value change.
-#[allow(dead_code)]
 #[derive(Debug, Clone, Copy)]
 pub struct EncoderEvent {
     pub id: EncoderId,
     pub value: u8,
     pub previous: u8,
-    pub modifiers: Modifiers,
 }
 
 /// Information about a potentiometer value change.
-#[allow(dead_code)]
 #[derive(Debug, Clone, Copy)]
 pub struct PotEvent {
     pub id: PotId,
     pub value: u16,
-    pub previous: u16,
-    pub modifiers: Modifiers,
 }
 
 /// High-level interface for working with the X1 controller.
@@ -127,37 +108,11 @@ pub struct X1Controller {
     last_state: X1State,
     initialized: bool,
     button_callback:
-        Option<Box<dyn FnMut(&X1State, ButtonEvent, Timestamp, &mut LedHandle) + Send + 'static>>,
+        Option<Box<dyn FnMut(&X1State, ButtonEvent, Timestamp) + Send + 'static>>,
     encoder_callback:
-        Option<Box<dyn FnMut(&X1State, EncoderEvent, Timestamp, &mut LedHandle) + Send + 'static>>,
+        Option<Box<dyn FnMut(&X1State, EncoderEvent, Timestamp) + Send + 'static>>,
     pot_callback:
-        Option<Box<dyn FnMut(&X1State, PotEvent, Timestamp, &mut LedHandle) + Send + 'static>>,
-}
-
-#[allow(dead_code)]
-pub struct LedHandle<'a> {
-    leds: &'a mut [u8; 32],
-    dirty: &'a mut bool,
-}
-
-impl<'a> LedHandle<'a> {
-    fn new(leds: &'a mut [u8; 32], dirty: &'a mut bool) -> Self {
-        Self { leds, dirty }
-    }
-
-    #[allow(dead_code)]
-    pub fn set_raw(&mut self, idx: usize, value: u8) {
-        if let Some(slot) = self.leds.get_mut(idx) {
-            *slot = value;
-            *self.dirty = true;
-        }
-    }
-
-    #[allow(dead_code)]
-    pub fn set_pressed(&mut self, idx: usize, pressed: bool) {
-        let value = if pressed { LED_BRIGHT } else { LED_DIM };
-        self.set_raw(idx, value);
-    }
+        Option<Box<dyn FnMut(&X1State, PotEvent, Timestamp) + Send + 'static>>,
 }
 
 /// What an error from opening the X1 means and what to do about it.
@@ -221,14 +176,6 @@ impl X1Controller {
         })
     }
 
-    /// Enter the controller's polling loop. This blocks until an error occurs.
-    #[allow(dead_code)]
-    pub fn run(mut self) -> rusb::Result<()> {
-        loop {
-            self.poll_once()?;
-        }
-    }
-
     /// Perform a single USB poll, firing callbacks as needed.
     pub fn poll_once(&mut self) -> rusb::Result<()> {
         match self
@@ -264,34 +211,24 @@ impl X1Controller {
     /// Install a callback to be notified about button state transitions.
     pub fn set_button_callback<F>(&mut self, callback: F)
     where
-        F: FnMut(&X1State, ButtonEvent, Timestamp, &mut LedHandle) + Send + 'static,
+        F: FnMut(&X1State, ButtonEvent, Timestamp) + Send + 'static,
     {
         self.button_callback = Some(Box::new(callback));
     }
 
     /// Install a callback to be notified about encoder value changes.
-    #[allow(dead_code)]
     pub fn set_encoder_callback<F>(&mut self, callback: F)
     where
-        F: FnMut(&X1State, EncoderEvent, Timestamp, &mut LedHandle) + Send + 'static,
+        F: FnMut(&X1State, EncoderEvent, Timestamp) + Send + 'static,
     {
         self.encoder_callback = Some(Box::new(callback));
     }
 
-    #[allow(dead_code)]
     pub fn set_pot_callback<F>(&mut self, callback: F)
     where
-        F: FnMut(&X1State, PotEvent, Timestamp, &mut LedHandle) + Send + 'static,
+        F: FnMut(&X1State, PotEvent, Timestamp) + Send + 'static,
     {
         self.pot_callback = Some(Box::new(callback));
-    }
-
-    /// Remove all registered callbacks.
-    #[allow(dead_code)]
-    pub fn clear_callbacks(&mut self) {
-        self.button_callback = None;
-        self.encoder_callback = None;
-        self.pot_callback = None;
     }
 
     pub fn set_led_raw(&mut self, idx: usize, value: u8) {
@@ -299,17 +236,6 @@ impl X1Controller {
             *slot = value;
             self.leds_dirty = true;
         }
-    }
-
-    #[allow(dead_code)]
-    pub fn set_led_pressed(&mut self, idx: usize, pressed: bool) {
-        let value = if pressed { LED_BRIGHT } else { LED_DIM };
-        self.set_led_raw(idx, value);
-    }
-
-    #[allow(dead_code)]
-    pub fn last_state(&self) -> &X1State {
-        &self.last_state
     }
 
     fn handle_button_changes(&mut self, state: &X1State, now: Instant) {
@@ -653,17 +579,10 @@ impl X1Controller {
             } else {
                 ButtonEventKind::Released
             };
-            let modifiers = Modifiers::from_state(state);
-            let mut handle = LedHandle::new(&mut self.leds, &mut self.leds_dirty);
             cb(
                 state,
-                ButtonEvent {
-                    id,
-                    kind,
-                    modifiers,
-                },
+                ButtonEvent { id, kind },
                 now,
-                &mut handle,
             );
             self.button_callback = Some(cb);
         }
@@ -674,18 +593,14 @@ impl X1Controller {
             return;
         }
         if let Some(mut cb) = self.encoder_callback.take() {
-            let modifiers = Modifiers::from_state(state);
-            let mut handle = LedHandle::new(&mut self.leds, &mut self.leds_dirty);
             cb(
                 state,
                 EncoderEvent {
                     id,
                     value: new,
                     previous: old,
-                    modifiers,
                 },
                 now,
-                &mut handle,
             );
             self.encoder_callback = Some(cb);
         }
@@ -696,18 +611,13 @@ impl X1Controller {
             return;
         }
         if let Some(mut cb) = self.pot_callback.take() {
-            let modifiers = Modifiers::from_state(state);
-            let mut handle = LedHandle::new(&mut self.leds, &mut self.leds_dirty);
             cb(
                 state,
                 PotEvent {
                     id,
                     value: new,
-                    previous: old,
-                    modifiers,
                 },
                 now,
-                &mut handle,
             );
             self.pot_callback = Some(cb);
         }

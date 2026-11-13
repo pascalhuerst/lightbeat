@@ -43,10 +43,6 @@ pub struct LookupColumn {
 
 /// Display state the widget reads each frame.
 pub struct LookupDisplay {
-    pub columns: Vec<(String, PortType)>,
-    /// Flat row-major data (same stride as the engine).
-    pub data: Vec<f32>,
-    pub row_count: usize,
     pub current_row: usize,
 }
 
@@ -253,9 +249,6 @@ impl ProcessNode for LookupProcessNode {
 
     fn update_display(&self, shared: &mut NodeSharedState) {
         shared.display = Some(Box::new(LookupDisplay {
-            columns: self.columns.iter().map(|c| (c.name.clone(), c.port_type)).collect(),
-            data: self.data.clone(),
-            row_count: self.row_count,
             current_row: self.current_row,
         }));
     }

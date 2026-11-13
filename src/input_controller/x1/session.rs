@@ -7,7 +7,7 @@ use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
 use super::controller::{
-    ButtonEventKind, LedHandle, X1Controller, LED_BRIGHT, LED_DIM,
+    ButtonEventKind, X1Controller, LED_BRIGHT, LED_DIM,
 };
 use super::ids;
 use super::{InputSource, X1Source};
@@ -70,7 +70,7 @@ fn install_callbacks(
     shared: SharedControllers,
 ) {
     let s = shared.clone();
-    controller.set_button_callback(move |_state, ev, _ts, _led| {
+    controller.set_button_callback(move |_state, ev, _ts| {
         let src = InputSource::X1(X1Source::Button(ids::button_from_controller(ev.id)));
         let v = match ev.kind {
             ButtonEventKind::Pressed => 1.0,
@@ -90,7 +90,7 @@ fn install_callbacks(
     let enc_state: Arc<Mutex<HashMap<super::X1EncoderId, f32>>> =
         Arc::new(Mutex::new(HashMap::new()));
     let s = shared.clone();
-    controller.set_encoder_callback(move |_state, ev, _ts, _led| {
+    controller.set_encoder_callback(move |_state, ev, _ts| {
         // Shortest-path signed delta mod 16 (-8..=7).
         let prev = ev.previous as i32 & 0x0F;
         let cur = ev.value as i32 & 0x0F;
@@ -120,7 +120,7 @@ fn install_callbacks(
     let pot_last: Arc<Mutex<HashMap<super::X1PotId, u16>>> =
         Arc::new(Mutex::new(HashMap::new()));
     let s = shared.clone();
-    controller.set_pot_callback(move |_state, ev, _ts, _led| {
+    controller.set_pot_callback(move |_state, ev, _ts| {
         let pot_id = ids::pot_from_controller(ev.id);
         let raw = ev.value & POT_MASK;
         let quant = raw >> POT_SHIFT;
@@ -153,7 +153,6 @@ fn write_input_value(
         raw: None,
         decoded: Some((src.clone(), value)),
         matched_input_idx: idx,
-        instant: std::time::Instant::now(),
     };
     c.activity_log.push_back(entry);
     while c.activity_log.len() > ACTIVITY_LOG_CAPACITY {
@@ -244,10 +243,3 @@ fn run(
         thread::sleep(Duration::from_millis(1));
     }
 }
-
-/// Compile-time use to keep `LedHandle` in-scope (the controller exposes it
-/// but our callbacks don't touch it — we flush LEDs from the main loop
-/// instead so feedback stays driven by `out_values` rather than by input
-/// events).
-#[allow(dead_code)]
-fn _keep_led_handle_referenced(_h: LedHandle) {}

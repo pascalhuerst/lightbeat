@@ -327,13 +327,11 @@ impl ProcessNode for Push1ProcessNode {
         // Phase 1: hold the lock only long enough to read diffs and write
         // feedback. Everything else happens after the lock is released so we
         // can call &mut self helpers freely.
-        let mut found = true;
         {
             let mut state = self.controllers.lock().unwrap();
             let c = match state.iter_mut().find(|c| c.id == self.controller_id) {
                 Some(c) => c,
                 None => {
-                    found = false;
                     // Fall through; post-lock cleanup will reset outputs.
                     // Can't early-return from inside this scope and still
                     // use the lock data afterwards.
@@ -350,7 +348,9 @@ impl ProcessNode for Push1ProcessNode {
                 self.reset_outputs();
                 return;
             }
-            self.controller_name = c.name.clone();
+            if self.controller_name != c.name {
+                self.controller_name = c.name.clone();
+            }
             self.connected = c.status == ConnectionStatus::Connected;
 
             // Lazy index rebuild.
@@ -441,8 +441,6 @@ impl ProcessNode for Push1ProcessNode {
                 }
             }
         }
-        if !found { return; }
-
         // Phase 2: emit one event per group per tick. `&mut self` methods
         // can run now that the MutexGuard is out of scope.
         self.emit_pad_event();

@@ -201,15 +201,6 @@ impl DmxInputHub {
         self.lock().inputs.clone()
     }
 
-    /// Edit the inputs in place. `edit` says whether it changed anything.
-    pub fn edit(&self, edit: impl FnOnce(&mut Vec<DmxInputConfig>) -> bool) {
-        let mut s = self.lock();
-        if edit(&mut s.inputs) {
-            s.prune_universes();
-            s.announce = true;
-        }
-    }
-
     pub fn input_name(&self, id: u32) -> Option<String> {
         self.lock().inputs.iter().find(|i| i.id == id).map(|i| i.name.clone())
     }
@@ -388,10 +379,14 @@ mod tests {
 
     fn hub_with(universes: &[u16]) -> DmxInputHub {
         let hub = DmxInputHub::idle();
+        hub.set_inputs(&[hub_input(universes)]);
+        hub
+    }
+
+    fn hub_input(universes: &[u16]) -> DmxInputConfig {
         let mut input = DmxInputConfig::new_art_net(1, "Desk");
         input.kind = DmxInputKind::ArtNet { universes: universes.to_vec(), interface: String::new() };
-        hub.set_inputs(&[input]);
-        hub
+        input
     }
 
     #[test]
@@ -444,10 +439,7 @@ mod tests {
         let hub = hub_with(&[0, 1]);
         hub.apply_dmx(1, &[7], DESK);
         assert!(hub.input_live(1));
-        hub.edit(|inputs| {
-            inputs[0].kind = DmxInputKind::ArtNet { universes: vec![0], interface: String::new() };
-            true
-        });
+        hub.set_inputs(&[hub_input(&[0])]);
         let mut out = Vec::new();
         hub.read_channels(&[(1, 0, 1)], &mut out);
         assert_eq!(out, vec![0]);

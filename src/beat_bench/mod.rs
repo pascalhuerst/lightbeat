@@ -260,7 +260,6 @@ mod tests {
 
     #[test]
     fn beat_clock_analyzer_counts_beats_and_reports_tempo() {
-        use crate::audio::analyzers::AnalyzerProc;
         let g = scenario("house_124");
         let (_handle, mut proc) = crate::audio::analyzers::beat_clock::create(g.truth.sample_rate);
         for chunk in g.audio.chunks(512) {
