@@ -95,9 +95,7 @@ impl ProcessNode for AudioInputProcessNode {
         let state = self.audio.lock();
         let input = state.iter().find(|c| c.id == self.input_id);
         let Some(input) = input else {
-            for v in &mut self.output_values {
-                *v = 0.0;
-            }
+            self.output_values.fill(0.0);
             self.outputs.clear();
             self.cached_kinds.clear();
             self.widths.clear();

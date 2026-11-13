@@ -99,7 +99,7 @@ impl ProcessNode for LaunchpadProcessNode {
 
     fn process(&mut self) {
         if self.controller_id == 0 {
-            for v in &mut self.out_values { *v = 0.0; }
+            self.out_values.fill(0.0);
             self.connected = false;
             return;
         }
@@ -110,7 +110,7 @@ impl ProcessNode for LaunchpadProcessNode {
             |k| matches!(k, InputControllerKind::LaunchpadS { .. }),
             &mut self.controller_name, &mut self.connected,
         ) else {
-            for v in &mut self.out_values { *v = 0.0; }
+            self.out_values.fill(0.0);
             return;
         };
 
