@@ -122,15 +122,6 @@ impl ProcessNode for TriggerHoldProcessNode {
         }
     }
 
-    fn save_data(&self) -> Option<serde_json::Value> {
-        Some(serde_json::json!({ "default_duration": self.default_duration }))
-    }
-    fn load_data(&mut self, data: &serde_json::Value) {
-        if let Some(d) = data.get("default_duration").and_then(|v| v.as_u64()) {
-            self.default_duration = d.min(100_000) as u32;
-        }
-    }
-
     fn update_display(&self, shared: &mut NodeSharedState) {
         shared.display = Some(Box::new(TriggerHoldDisplay {
             remaining_ms: self.remaining.max(0.0),
