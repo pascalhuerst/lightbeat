@@ -130,6 +130,17 @@ pub fn name_field(ui: &mut Ui, name: &mut String) -> bool {
     .inner
 }
 
+/// A dim "label value" line, for facts the user cannot edit.
+pub fn info_row(ui: &mut Ui, label: &str, value: &str) {
+    ui.horizontal(|ui| {
+        ui.colored_label(theme::TEXT_DIM, label);
+        ui.label(value);
+    });
+}
+
+/// What a reference to something deleted shows instead of its name.
+pub const MISSING: &str = "(missing)";
+
 /// The name a duplicate gets.
 pub fn copy_name(name: &str) -> String {
     format!("{} copy", name)

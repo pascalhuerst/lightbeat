@@ -36,10 +36,7 @@ impl FixtureManager {
             header.duplicate = Some("Duplicate template");
             let actions = setup_ui::item_header(ui, fixture.id, open, header, |ui| {
                 setup_ui::name_field(ui, &mut fixture.name);
-                ui.colored_label(
-                    theme::TEXT_DIM,
-                    format!("Footprint: {} DMX channels", fixture.dmx_footprint()),
-                );
+                setup_ui::info_row(ui, "Footprint", &format!("{} DMX channels", fixture.dmx_footprint()));
 
                 ui.add_space(4.0);
                 setup_ui::section(ui, "Channels");
