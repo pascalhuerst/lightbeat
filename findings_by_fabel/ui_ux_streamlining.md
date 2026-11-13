@@ -70,7 +70,9 @@ Updated as items are implemented. Items not listed here are open.
 | 6.4 | done | 617f1d4: "Select by" Index / Phase on Counter, Multiplexer, Demultiplexer, Palette Select, Lookup Table (its promoted "Input" is carried over by `RENAMED_SETTINGS`, temporary). Step Sequencer and LFO mean something else and stay |
 | 6.5 | convention | no code change: new nodes use promotion only |
 | 6.6 | done | 2fa60ac: Trigger Hold picks its duration input by being wired (a wired 0 is 1 tick). A project that already promotes one of the two keeps it and can switch it off |
-| 5.3, 7 (ports, params), 7.1 - 7.4 | open | in progress |
+| 7 (ports, params) | done | f295d56 trigger, 84bdebf in / out, 582b2de gradient, 5578f75 amount, cf4e9cb Lifetime, 981369a numbered from 1, 0d9a2c3 Trigger Hold and Smoothing in real ms (same numbers as the ticks before). Promoted or snapshot settings follow through `RENAMED_SETTINGS` (temporary). Kept: Gain, the Oscillator's amp, stack opacity, XY Pad x / y, Scope's Time/Div |
+| 7.3 | done | edf6362: `bpm` and `peers` appended to the Link Clock |
+| 5.3, 7.1, 7.2, 7.4 | open | in progress |
 
 ---
 
