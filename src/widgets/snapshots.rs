@@ -52,7 +52,7 @@ fn clock(ui: &mut Ui, active: bool, modified: bool, fading: bool, progress: f32)
     if active && !fading && !modified {
         painter.circle_filled(c, r, color);
     } else {
-        painter.circle_stroke(c, r, egui::Stroke::new(1.5, color));
+        painter.circle_stroke(c, r, egui::Stroke::new(1.5_f32, color));
         let sweep = if fading { progress.clamp(0.0, 1.0) } else if active { 0.5 } else { 0.0 };
         if sweep > 0.0 {
             let steps = ((sweep * 32.0).ceil() as usize).max(1);

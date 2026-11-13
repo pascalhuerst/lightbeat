@@ -142,7 +142,7 @@ fn draw_gauge(painter: &egui::Painter, rect: Rect, data: &MeterData, frac: f32) 
         let inner = outer - if major { radius * 0.12 } else { radius * 0.06 };
         painter.line_segment(
             [gauge_point(center, inner, f), gauge_point(center, outer, f)],
-            Stroke::new(if major { 1.5 } else { 1.0 }, theme::TEXT_DIM),
+            Stroke::new(if major { 1.5_f32 } else { 1.0 }, theme::TEXT_DIM),
         );
         if major {
             let value = data.min + (data.max - data.min) * f;

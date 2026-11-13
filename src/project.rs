@@ -319,7 +319,8 @@ fn connections_for_current_layout(project: &ProjectFile) -> Vec<SavedConnection>
     if project.version < 3 {
         for c in &mut connections {
             let Some(node) = project.nodes.iter().find(|n| n.id == c.to_node) else { continue };
-            match node.type_name.as_str() {
+            // A file this old may still call the Envelope "ADSR".
+            match current_type_name(&node.type_name) {
                 // Was (gate, in).
                 "Envelope" if c.to_port < 2 => c.to_port = 1 - c.to_port,
                 // Was (trigger, phase, in); Phase out has no `in` and kept (trigger, phase).
@@ -684,6 +685,7 @@ mod tests {
         assert_eq!(to_ports(&with_wires_to("Envelope", 2, &[0, 1], Some(3))), vec![1, 0]);
         // No version at all is the oldest, and is remapped once.
         assert_eq!(to_ports(&with_wires_to("Envelope", 0, &[0], None)), vec![1]);
+        assert_eq!(to_ports(&with_wires_to("ADSR", 0, &[0], None)), vec![1]);
         assert_eq!(to_ports(&with_wires_to("Envelope", PROJECT_VERSION, &[0, 1], Some(0))), vec![0, 1]);
     }
 
