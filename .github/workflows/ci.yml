@@ -42,3 +42,27 @@ jobs:
 
       - name: Test
         run: cargo test --locked --features vendored-usb
+
+  clippy:
+    # Lints do not depend on the platform, so Linux alone is enough.
+    name: Clippy
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Linux packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            pkg-config cmake clang libclang-dev \
+            libasound2-dev libjack-jackd2-dev libudev-dev \
+            libxkbcommon-dev libwayland-dev libx11-dev libxcursor-dev \
+            libxrandr-dev libxi-dev libgl1-mesa-dev
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Clippy
+        run: cargo clippy --all-targets --locked --features vendored-usb -- -D warnings
