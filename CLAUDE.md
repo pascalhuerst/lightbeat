@@ -35,13 +35,22 @@ by `port_base_index()` and `total_channels()` from `engine::types`.
 
 ```
 src/
-├── main.rs                       # App, window setup, node factory registration,
-│                                 # wire_new_nodes (engine side spawn for each
-│                                 # widget), file-dialog plumbing, save/load.
+├── main.rs                       # main(), the LightBeatApp struct and its
+│                                 # constructor, the eframe App impl.
+├── app/                          # The rest of LightBeatApp, by concern:
+│   ├── registry.rs               # node registration (widget + engine side).
+│   ├── files.rs                  # project/setup load and save, autosave,
+│   │                             # file dialogs, unsaved-changes logic.
+│   ├── frame.rs                  # update_frame: menu bar, status bar,
+│   │                             # inspector panel, canvas, shortcuts, dialogs.
+│   ├── panels.rs                 # Add Nodes panel, Setup window, frame inspector.
+│   ├── macros.rs                 # macro library actions and dialogs.
+│   └── update_ui.rs              # Software update and About windows.
 ├── engine/
 │   ├── mod.rs                    # EngineHandle, ringbuf wiring, thread spawn.
-│   ├── graph.rs                  # EngineGraph: tick(), apply_command(),
-│   │                             # SubgraphInnerCommand routing.
+│   ├── graph.rs                  # EngineGraph: the root; owns an InnerGraph
+│   │                             # core, adds probe, effect flatten, DMX, the
+│   │                             # run loop. time.rs: the tick's dt.
 │   ├── types.rs                  # NodeId, PortDef, PortType, ParamDef,
 │   │                             # ParamValue, ProcessNode trait, EngineCommand,
 │   │                             # NodeSharedState, port_base_index,
@@ -79,6 +88,10 @@ src/
 │   ├── snapshots.rs              # Snapshot list at the bottom of the inspector.
 │   ├── fader.rs                  # The shared fader control (drag, Shift = fine,
 │   │                             # double-click = reset).
+│   ├── setup_ui.rs               # Shared building blocks of the Setup tabs and
+│   │                             # node inspectors: add/delete/duplicate/move
+│   │                             # buttons, item_header, status_badge,
+│   │                             # empty_state, dmx_address. USE THESE.
 │   ├── dmx_monitor.rs            # Per-universe channel grid w/ test universes.
 │   ├── fixture_list.rs           # Fixture template editor (channels incl. LedStrip).
 │   ├── object_list.rs            # Fixture instances (address, interface).
@@ -93,12 +106,13 @@ src/
 │   ├── dmx_input_list.rs         # DMX inputs (Art-Net universes from a desk).
 │   ├── interface_list.rs         # ArtNet/sACN interface config.
 │   └── nodes/
-│       ├── graph.rs              # NodeGraph: levels, navigation, interactions,
-│       │                         # connections, clipboard, menus, quick add,
-│       │                         # frames, minimap, portal prompt, effect-stack
-│       │                         # reconcile, move-to-subgraph/unpack, drawing.
-│       │                         # 5400 lines; cleanup_stale_connections drops
-│       │                         # wires whose types are no longer compatible.
+│       ├── graph/                # NodeGraph, split by concern: mod.rs (struct,
+│       │                         # levels, `show`), interact.rs, connections.rs
+│       │                         # (wires, remaps, hidden ports, stale-wire
+│       │                         # cleanup), clipboard.rs, menus.rs, quick_add.rs,
+│       │                         # frames.rs (+ minimap), links.rs (effect
+│       │                         # stacks, portals), subgraph_ops.rs, draw.rs
+│       │                         # (drawing + the per-frame PortCache).
 │       ├── node.rs               # NodeWidget trait + layout helpers.
 │       ├── paths.rs              # Quick-add addresses (group/name) per node.
 │       ├── types.rs              # UI port colors, UiPortDef.
@@ -170,8 +184,8 @@ node is selected. Bottom: the status bar (Blackout, Bypass, missing hardware +
 Rescan, Latency, update notice, perf gauges, zoom). Floating windows: **Setup**
 (Window menu; tabs Interfaces, Fixture Templates, Objects, Groups, Color
 Palettes, Palette Groups, Gradients, Audio Inputs, Input Controllers, DMX
-Inputs) and **DMX Monitor** (View menu). All of this is in `main.rs`
-(`update_frame`). The setup is written to `setup.json` on exit, on Ctrl+S and on
+Inputs) and **DMX Monitor** (View menu). All of this is in `app/frame.rs`
+(`update_frame`) and `app/panels.rs`. The setup is written to `setup.json` on exit, on Ctrl+S and on
 import; the project only when saved.
 
 ---
@@ -472,7 +486,7 @@ import; the project only when saved.
 
 ## 3b. Engine tick and performance
 
-- `EngineGraph::tick` order: take pending params/config (one lock per node) ->
+- Tick order (`InnerGraph::tick_with`, then the root's part): take pending params/config (one lock per node) ->
   rebuild the routing plan if dirty -> `process()` all nodes -> run the plan
   (propagate connections) -> mirror state to UI **every 16th tick**
   (`UI_SYNC_EVERY_N_TICKS`) -> DMX manager tick (runs on the send cadence).
@@ -490,9 +504,20 @@ import; the project only when saved.
   `main.rs`) and every ~128 ticks otherwise. It is only read by save, copy,
   move-between-levels, macros and undo snapshots, so don't read it for live
   display; use `update_display`.
-- `InnerGraph::tick` (subgraphs) must mirror `EngineGraph::tick`. It once
-  lagged behind and was 98.6% of the profile (1740 -> 181 us/tick on the
-  371-node reference project after fixing). Change both together.
+- **One graph core.** `EngineGraph` owns an `InnerGraph` (the same type every
+  subgraph runs, here with empty bridges). The tick steps (take pending, plan,
+  process, propagate, UI mirror: `InnerGraph::tick_with`), the plan rebuild,
+  the UI sync and the structural commands exist once, in
+  `engine/nodes/meta/subgraph.rs`. The root (`engine/graph.rs`) adds only the
+  hover probe, effect flattening and the DMX tick. (They used to be two copies;
+  the inner one once lagged behind and was 98.6% of the profile.)
+- **Time step.** The loop runs against absolute 1 ms deadlines and hands nodes
+  the measured length of the tick through `engine::time::dt()` (clamped to
+  0.1-10 ms, 0.001 in tests). A node that integrates time reads it and never
+  assumes 1 ms (Envelope, Time to Phase, snapshot fades do). Trigger Hold and
+  Smoothing still count ticks.
+- A panic inside a tick is caught, logged once and stops the engine;
+  `EngineHandle::is_running()` and `dropped_commands()` report it.
 - Because UI state is only fresh every 16 ticks, never rely on `shared.*`
   being current within a tick; engine logic must use the node's own fields.
 - Undo snapshots run only within 2 s of real user input, at most 10 Hz.

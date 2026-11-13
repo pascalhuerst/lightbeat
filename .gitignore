@@ -2,3 +2,7 @@
 things.txt
 .claude/
 beat_bench_data/
+settings.json
+setup.json
+project.json
+*.bad
