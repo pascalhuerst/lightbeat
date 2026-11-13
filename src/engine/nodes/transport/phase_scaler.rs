@@ -165,10 +165,13 @@ impl ProcessNode for PhaseScalerProcessNode {
         ]
     }
 
+    fn unclamped_input_params(&self) -> &'static [&'static str] { &["Offset"] }
+
     fn set_param(&mut self, index: usize, value: ParamValue) {
         match index {
             0 => self.exponent = EXPONENT.apply(&value) as i32,
-            1 => self.offset = OFFSET.apply(&value),
+            // A wired offset may run past 1 (a phase plus something); it wraps.
+            1 => self.offset = OFFSET.apply(&value).rem_euclid(1.0),
             _ => {}
         }
     }

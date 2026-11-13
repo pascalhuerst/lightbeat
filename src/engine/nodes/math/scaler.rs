@@ -3,8 +3,8 @@ use crate::engine::types::*;
 
 
 // Wide because the old input ports passed any value through (BPM, DMX values, counts).
-const IN_MIN: FloatParam = FloatParam::new("In Min", -10000.0, 10000.0, 0.1, "");
-const IN_MAX: FloatParam = FloatParam::new("In Max", -10000.0, 10000.0, 0.1, "");
+const IN_MIN: FloatParam = FloatParam::new("In Min", -100.0, 100.0, 0.1, "");
+const IN_MAX: FloatParam = FloatParam::new("In Max", -100.0, 100.0, 0.1, "");
 
 /// Maps an input from [in_min, in_max] to [0, 1]. A new node has both ends
 /// exposed as inputs (see `ScalerWidget::default_promoted`).
@@ -75,6 +75,8 @@ impl ProcessNode for ScalerProcessNode {
     fn params(&self) -> Vec<ParamDef> {
         vec![IN_MIN.def(self.in_min), IN_MAX.def(self.in_max)]
     }
+
+    fn unclamped_input_params(&self) -> &'static [&'static str] { &["In Min", "In Max"] }
 
     fn set_param(&mut self, index: usize, value: ParamValue) {
         match index {

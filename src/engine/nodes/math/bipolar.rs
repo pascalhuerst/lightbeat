@@ -79,6 +79,8 @@ impl ProcessNode for BipolarProcessNode {
         vec![RANGE.def(self.range), CENTER.def(self.center)]
     }
 
+    fn unclamped_input_params(&self) -> &'static [&'static str] { &["Range", "Center"] }
+
     fn set_param(&mut self, index: usize, value: ParamValue) {
         match index {
             0 => self.range = RANGE.apply(&value),

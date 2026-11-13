@@ -433,6 +433,12 @@ pub trait ProcessNode: Send {
     /// native input port.
     fn non_promotable_params(&self) -> &'static [&'static str] { &[] }
 
+    /// Float params, by name, whose input port passes any value through
+    /// instead of clamping it to the slider's range: the slider is for the
+    /// hand, a wire may carry a BPM or a DMX value. The node must cope with
+    /// whatever arrives.
+    fn unclamped_input_params(&self) -> &'static [&'static str] { &[] }
+
     fn save_data(&self) -> Option<serde_json::Value> { None }
     fn load_data(&mut self, _data: &serde_json::Value) {}
 

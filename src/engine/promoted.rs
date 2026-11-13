@@ -63,8 +63,11 @@ enum Spec {
 }
 
 impl Spec {
-    fn of(def: &ParamDef) -> Self {
+    fn of(def: &ParamDef, unclamped: &[&str]) -> Self {
         match def {
+            ParamDef::Float { name, .. } if unclamped.contains(&name.as_ref()) => {
+                Spec::Float { min: f32::NEG_INFINITY, max: f32::INFINITY }
+            }
             ParamDef::Float { min, max, .. } => Spec::Float { min: *min, max: *max },
             ParamDef::Int { min, max, .. } => Spec::Int { min: *min, max: *max },
             ParamDef::Bool { .. } => Spec::Bool,
@@ -109,6 +112,8 @@ pub struct PromotedInputs {
     /// `None` where the node no longer has a param of that name; its port
     /// still exists so wire indices stay put.
     entries: Vec<Option<Entry>>,
+    /// The node's `unclamped_input_params`, kept for `refresh`.
+    unclamped: &'static [&'static str],
     player: Player,
 }
 
@@ -120,6 +125,8 @@ impl PromotedInputs {
     /// Adopt the UI's list, looking each name up in the node's current params.
     pub fn adopt(&mut self, wanted: &[PromotedParam], node: &dyn ProcessNode) {
         let params = node.params();
+        self.unclamped = node.unclamped_input_params();
+        let unclamped = self.unclamped;
         self.wanted = wanted.to_vec();
         self.entries = wanted
             .iter()
@@ -136,7 +143,7 @@ impl PromotedInputs {
                 Some(Entry {
                     role: Role::Param,
                     param_idx: idx,
-                    spec: Spec::of(&params[idx]),
+                    spec: Spec::of(&params[idx], unclamped),
                     last: None,
                     was_wired: false,
                 })
@@ -215,13 +222,14 @@ impl PromotedInputs {
     /// Re-read ranges and indices, which can change with a node's mode.
     /// Called at UI sync rate rather than every tick since `params()` allocates.
     pub fn refresh(&mut self, params: &[ParamDef]) {
+        let unclamped = self.unclamped;
         for (entry, w) in self.entries.iter_mut().zip(&self.wanted) {
             if let Some(e) = entry
                 && e.role == Role::Param
                 && let Some(idx) = params.iter().position(|p| p.name() == w.name)
             {
                 e.param_idx = idx;
-                e.spec = Spec::of(&params[idx]);
+                e.spec = Spec::of(&params[idx], unclamped);
             }
         }
     }
@@ -236,6 +244,13 @@ mod tests {
         let spec = Spec::Float { min: 0.0, max: 2.0 };
         assert!(matches!(spec.convert(5.0), ParamValue::Float(v) if v == 2.0));
         assert!(matches!(spec.convert(-1.0), ParamValue::Float(v) if v == 0.0));
+    }
+
+    #[test]
+    fn a_float_the_node_lists_as_unclamped_passes_any_value() {
+        let def = ParamDef::Float { name: "Scale".into(), value: 1.0, min: -10.0, max: 10.0, step: 0.01, unit: "" };
+        assert!(matches!(Spec::of(&def, &["Scale"]).convert(255.0), ParamValue::Float(v) if v == 255.0));
+        assert!(matches!(Spec::of(&def, &[]).convert(255.0), ParamValue::Float(v) if v == 10.0));
     }
 
     #[test]

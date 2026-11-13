@@ -72,6 +72,8 @@ impl ProcessNode for ScaleOffsetProcessNode {
         vec![SCALE.def(self.scale), OFFSET.def(self.offset)]
     }
 
+    fn unclamped_input_params(&self) -> &'static [&'static str] { &["Scale", "Offset"] }
+
     fn set_param(&mut self, index: usize, value: ParamValue) {
         match index {
             0 => self.scale = SCALE.apply(&value),
