@@ -376,26 +376,12 @@ impl LightBeatApp {
                         self.show_shortcuts = true;
                     }
                     ui.separator();
-                    if ui.button("Check for Updates").clicked() {
+                    if ui.button("Check for updates...").clicked() {
                         ui.close_menu();
                         self.show_update_window = true;
                         self.updater.check(self.config.update_channel);
                         self.last_update_check = Some(std::time::Instant::now());
                     }
-                    let mut auto = self.config.check_for_updates;
-                    if ui.checkbox(&mut auto, "Check automatically").changed() {
-                        self.config.check_for_updates = auto;
-                        self.config.save();
-                    }
-                    ui.menu_button(format!("Update channel: {}", self.config.update_channel.label()), |ui| {
-                        for channel in update::Channel::ALL {
-                            if ui.selectable_label(self.config.update_channel == channel, channel.label()).clicked() {
-                                self.config.update_channel = channel;
-                                self.config.save();
-                                ui.close_menu();
-                            }
-                        }
-                    });
                 });
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     ui.colored_label(theme::TEXT_DIM, format!("LightBeat {}", version::version()));
