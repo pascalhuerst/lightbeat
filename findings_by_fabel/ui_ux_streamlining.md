@@ -28,6 +28,13 @@ Updated as items are implemented. Items not listed here are open.
 |---|---|---|
 | 1.1 - 1.9 | done | 8f0d27c |
 | 1.10 | done | 8f0d27c (outer wires), 8f6b1fc (wires on the bridges inside a subgraph and on Portal Receives) |
+| 2.2 | partly | merge "feature/setup-panels": "(missing)" placeholders everywhere. Open: "used by N" next to delete |
+| 2.3 | done | c53ff0e |
+| 3.1 - 3.9, 3.11, 3.13, 3.14 | done | merge "feature/setup-panels" (one commit per tab: ea4255e .. 41af053). Input controllers have no Enabled flag in the model, none was added |
+| 3.10 | partly | Audio Inputs' button is "Rescan". Open: status-bar Rescan, one banner text |
+| 3.12 | open | needs the gradient editor in the tab |
+| 4.7 | done | 6f62bfd |
+| 10.1 - 10.3, 10.6 | partly | done inside the Setup tabs and the DMX monitor |
 
 ---
 

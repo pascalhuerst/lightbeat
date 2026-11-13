@@ -44,6 +44,15 @@ Updated as items are implemented. Items not listed here are open.
 | E2 | done | 52ed3c3 |
 | E10 | done | bddb4e1 (the stacks still refresh their group targets every frame, which the audit had missed) |
 | D11 | partly | 8f0c476: graph module. Open: Gradient Source description, `project.rs` comment, `is_newer` doc comment |
+| R6 | done | 128cbaf: absolute deadlines, nodes read the measured step from `engine::time::dt()` |
+| S3 | done | 5254b9c, 4ec8ddd: the root graph owns an `InnerGraph` core |
+| S4 | done | CLAUDE.md corrected |
+| E8 | partly | fe5aacb: one lock and one `params()` per node per sync. Open: `ParamDef` names still allocate |
+| R5 | partly | f57f705: a tick panic is caught and stops the engine, `EngineHandle::is_running()`. Open: nothing in the UI shows it yet |
+| R8 | partly | bc0eb19: dropped commands are counted. Open: the UI does not react yet |
+| T2 | done | the three personal JSON files are no longer tracked |
+| T4 | done | CLAUDE.md updated (again after each restructuring) |
+| U1 | skipped | saves a few lines per manager at the risk of the constructors `main.rs` calls |
 
 Checked against your own files on 2026-11-13: `setup.json` uses the new pixel
 format only (M3 can go), no saved Fader or Fader Group uses the old keys (M4,
