@@ -1,9 +1,7 @@
-use std::any::Any;
-
 use egui::Ui;
 
 use crate::engine::types::*;
-use crate::widgets::nodes::node::NodeWidget;
+use crate::widgets::nodes::node::{NodeWidget, node_identity};
 use crate::widgets::nodes::types::UiPortDef;
 
 pub struct BipolarWidget {
@@ -18,8 +16,7 @@ impl BipolarWidget {
 }
 
 impl NodeWidget for BipolarWidget {
-    fn node_id(&self) -> NodeId { self.id }
-    fn type_name(&self) -> &'static str { "Bipolar" }
+    node_identity!("Bipolar");
     fn description(&self) -> &'static str {
         "Maps a unipolar input (0..1) to a bipolar signal centered on `center` with ±range/2 swing. \
          Formula: out = (in - 0.5) * range + center. Defaults (range=1, center=0) give -0.5..+0.5."
@@ -30,7 +27,6 @@ impl NodeWidget for BipolarWidget {
 
     fn min_width(&self) -> f32 { 90.0 }
     fn min_content_height(&self) -> f32 { 15.0 }
-    fn shared_state(&self) -> &SharedState { &self.shared }
 
     fn overridden_param_indices(&self) -> Vec<usize> {
         // Range = param 0, wired from port 1. Center = param 1, wired from port 2.
@@ -47,6 +43,4 @@ impl NodeWidget for BipolarWidget {
         drop(s);
         ui.label(format!("{:+.2}", out));
     }
-
-    fn as_any_mut(&mut self) -> &mut dyn Any { self }
 }

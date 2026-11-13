@@ -1,5 +1,3 @@
-use std::any::Any;
-
 use egui::{self, Color32, Ui};
 
 use crate::engine::nodes::math::trigger_bank::{
@@ -7,7 +5,7 @@ use crate::engine::nodes::math::trigger_bank::{
 };
 use crate::engine::types::*;
 use crate::theme;
-use crate::widgets::nodes::node::NodeWidget;
+use crate::widgets::nodes::node::{NodeWidget, node_identity, with_display};
 use crate::widgets::nodes::types::UiPortDef;
 
 /// How long the per-channel LED stays lit after a trigger fires, so pulses
@@ -37,8 +35,7 @@ impl NodeWidget for TriggerBankWidget {
         }
     }
 
-    fn node_id(&self) -> NodeId { self.id }
-    fn type_name(&self) -> &'static str { "Trigger Bank" }
+    node_identity!("Trigger Bank");
     fn description(&self) -> &'static str {
         "Bank of value-to-trigger converters. Each input watches a 0..1 \
          value; when it rises across 0.5, the matching output fires a \
@@ -56,29 +53,25 @@ impl NodeWidget for TriggerBankWidget {
     fn min_width(&self) -> f32 { 120.0 }
     fn min_content_height(&self) -> f32 { self.n.max(1) as f32 * 16.0 + 4.0 }
     fn resizable(&self) -> bool { true }
-    fn shared_state(&self) -> &SharedState { &self.shared }
 
     fn show_content(&mut self, ui: &mut Ui, zoom: f32) {
         let now = ui.ctx().input(|i| i.time);
 
         // Sync pulse state from engine; latch the pulse time for the
         // fading LED effect.
-        {
-            let shared = self.shared.lock().unwrap();
-            if let Some(d) = shared.display.as_ref().and_then(|d| d.downcast_ref::<TriggerBankDisplay>()) {
-                if d.n != self.n {
-                    self.n = d.n;
-                    self.last_pulse_time.resize(self.n, None);
-                }
-                for (i, &p) in d.pulses.iter().enumerate() {
-                    if p {
-                        if let Some(slot) = self.last_pulse_time.get_mut(i) {
-                            *slot = Some(now);
-                        }
+        with_display::<TriggerBankDisplay, _>(&self.shared, |d| {
+            if d.n != self.n {
+                self.n = d.n;
+                self.last_pulse_time.resize(self.n, None);
+            }
+            for (i, &p) in d.pulses.iter().enumerate() {
+                if p {
+                    if let Some(slot) = self.last_pulse_time.get_mut(i) {
+                        *slot = Some(now);
                     }
                 }
             }
-        }
+        });
 
         let avail = ui.available_size();
         if avail.x <= 0.0 || avail.y <= 0.0 { return; }
@@ -126,6 +119,4 @@ impl NodeWidget for TriggerBankWidget {
             ui.ctx().request_repaint_after(std::time::Duration::from_millis(16));
         }
     }
-
-    fn as_any_mut(&mut self) -> &mut dyn Any { self }
 }

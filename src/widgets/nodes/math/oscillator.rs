@@ -1,10 +1,8 @@
-use std::any::Any;
-
 use egui::Ui;
 
 use crate::engine::nodes::math::oscillator::OscFunc;
 use crate::engine::types::*;
-use crate::widgets::nodes::node::NodeWidget;
+use crate::widgets::nodes::node::{NodeWidget, node_identity};
 use crate::widgets::nodes::types::UiPortDef;
 
 pub struct OscillatorWidget {
@@ -24,8 +22,7 @@ impl OscillatorWidget {
 }
 
 impl NodeWidget for OscillatorWidget {
-    fn node_id(&self) -> NodeId { self.id }
-    fn type_name(&self) -> &'static str { self.func.label() }
+    node_identity!(by |w| w.func.label());
     fn title(&self) -> &str { self.func.label() }
     fn description(&self) -> &'static str { "Sine or cosine wave generator driven by phase, scaled by amplitude." }
 
@@ -35,7 +32,6 @@ impl NodeWidget for OscillatorWidget {
     fn min_width(&self) -> f32 { 80.0 }
     fn min_content_height(&self) -> f32 { 15.0 }
 
-    fn shared_state(&self) -> &SharedState { &self.shared }
 
     fn show_content(&mut self, ui: &mut Ui, _zoom: f32) {
         let shared = self.shared.lock().unwrap();
@@ -43,6 +39,4 @@ impl NodeWidget for OscillatorWidget {
         drop(shared);
         ui.label(format!("{:.2}", out));
     }
-
-    fn as_any_mut(&mut self) -> &mut dyn Any { self }
 }

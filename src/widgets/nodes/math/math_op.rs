@@ -1,11 +1,9 @@
-use std::any::Any;
-
 use egui::{Color32, Ui};
 
 use crate::engine::nodes::math::math_op::{port_name, MathDisplay, MathOp};
 use crate::engine::types::*;
 use crate::theme;
-use crate::widgets::nodes::node::{current_choice, NodeWidget};
+use crate::widgets::nodes::node::{current_choice, NodeWidget, node_identity};
 use crate::widgets::nodes::types::UiPortDef;
 
 const ADD_PORT_FILL: Color32 = theme::SEM_SUCCESS;
@@ -43,13 +41,12 @@ impl MathWidget {
 }
 
 impl NodeWidget for MathWidget {
-    fn node_id(&self) -> NodeId { self.id }
+    node_identity!(by |w| w.op.label());
     fn follow_params(&mut self) {
         if let Some(i) = current_choice(&self.shared, 0) {
             self.op = MathOp::from_index(i);
         }
     }
-    fn type_name(&self) -> &'static str { self.op.label() }
     fn title(&self) -> &str { self.op.label() }
     fn neutral_input_value(&self, _port: usize) -> f32 {
         match self.op {
@@ -82,7 +79,6 @@ impl NodeWidget for MathWidget {
     fn min_width(&self) -> f32 { 80.0 }
     fn min_content_height(&self) -> f32 { 15.0 }
 
-    fn shared_state(&self) -> &SharedState { &self.shared }
 
     fn on_ui_connect(&mut self, input_port: usize, source_type: PortType) {
         if input_port == self.input_count {
@@ -121,6 +117,4 @@ impl NodeWidget for MathWidget {
         drop(shared);
         ui.label(format!("{} {:.2}", self.op.symbol(), out));
     }
-
-    fn as_any_mut(&mut self) -> &mut dyn Any { self }
 }

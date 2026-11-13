@@ -1,5 +1,3 @@
-use std::any::Any;
-
 use egui::{self, Ui};
 
 use crate::engine::nodes::math::color_modifier::{
@@ -7,7 +5,7 @@ use crate::engine::nodes::math::color_modifier::{
 };
 use crate::engine::types::*;
 use crate::theme;
-use crate::widgets::nodes::node::NodeWidget;
+use crate::widgets::nodes::node::{NodeWidget, node_identity, with_display};
 use crate::widgets::nodes::types::UiPortDef;
 
 pub struct ColorModifierWidget {
@@ -33,17 +31,15 @@ impl ColorModifierWidget {
     }
 
     fn sync_from_display(&mut self) {
-        let shared = self.shared.lock().unwrap();
-        if let Some(d) = shared.display.as_ref().and_then(|d| d.downcast_ref::<ColorModifierDisplay>()) {
+        with_display::<ColorModifierDisplay, _>(&self.shared, |d| {
             if d.port_type != self.port_type { self.port_type = d.port_type; }
             if d.op != self.op { self.op = d.op; }
-        }
+        });
     }
 }
 
 impl NodeWidget for ColorModifierWidget {
-    fn node_id(&self) -> NodeId { self.id }
-    fn type_name(&self) -> &'static str { "Color Modifier" }
+    node_identity!("Color Modifier");
     fn description(&self) -> &'static str {
         "Applies a HSV / brightness / alpha operation to a Color or Gradient signal. For gradients the op is applied to every active stop. Amount is 1.0 = identity for scale ops, 0.0 = identity for Hue Shift."
     }
@@ -53,7 +49,6 @@ impl NodeWidget for ColorModifierWidget {
 
     fn min_width(&self) -> f32 { 120.0 }
     fn min_content_height(&self) -> f32 { 25.0 }
-    fn shared_state(&self) -> &SharedState { &self.shared }
 
     fn on_ui_connect(&mut self, input_port: usize, source_type: PortType) {
         // Only the main input (port 0) carries type info; amount is Untyped.
@@ -108,6 +103,4 @@ impl NodeWidget for ColorModifierWidget {
             ModifierOp::Alpha => "amount = alpha multiplier (Gradient stops only)",
         });
     }
-
-    fn as_any_mut(&mut self) -> &mut dyn Any { self }
 }

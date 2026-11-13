@@ -1,9 +1,7 @@
-use std::any::Any;
-
 use egui::Ui;
 
 use crate::engine::types::*;
-use crate::widgets::nodes::node::NodeWidget;
+use crate::widgets::nodes::node::{NodeWidget, node_identity};
 use crate::widgets::nodes::types::UiPortDef;
 
 pub struct ScaleOffsetWidget {
@@ -18,8 +16,7 @@ impl ScaleOffsetWidget {
 }
 
 impl NodeWidget for ScaleOffsetWidget {
-    fn node_id(&self) -> NodeId { self.id }
-    fn type_name(&self) -> &'static str { "Scale Offset" }
+    node_identity!("Scale Offset");
     fn description(&self) -> &'static str {
         "Multiplies the input by a scale and adds an offset: out = in * scale + offset. Wire scale or offset to drive them from a signal."
     }
@@ -29,7 +26,6 @@ impl NodeWidget for ScaleOffsetWidget {
 
     fn min_width(&self) -> f32 { 90.0 }
     fn min_content_height(&self) -> f32 { 15.0 }
-    fn shared_state(&self) -> &SharedState { &self.shared }
 
     fn overridden_param_indices(&self) -> Vec<usize> {
         // Scale = param 0, wired from port 1. Offset = param 1, wired from port 2.
@@ -46,6 +42,4 @@ impl NodeWidget for ScaleOffsetWidget {
         drop(s);
         ui.label(format!("{:+.2}", out));
     }
-
-    fn as_any_mut(&mut self) -> &mut dyn Any { self }
 }

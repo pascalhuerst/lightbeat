@@ -1,12 +1,10 @@
-use std::any::Any;
-
 use egui::{self, Ui};
 
 use crate::engine::nodes::math::multiplex::{MUX_TYPE_NAMES, clamp_slots, type_from_index, type_to_index};
 use crate::engine::nodes::math::port_hub::{ports_for, HUB_DEFAULT_SLOTS, PortHubDisplay};
 use crate::engine::types::*;
 use crate::theme;
-use crate::widgets::nodes::node::{NodeLayout, NodeWidget, labelled_layout, param_usize};
+use crate::widgets::nodes::node::{NodeLayout, NodeWidget, labelled_layout, param_usize, node_identity, with_display};
 use crate::widgets::nodes::types::UiPortDef;
 
 pub struct PortHubWidget {
@@ -27,11 +25,10 @@ impl PortHubWidget {
     }
 
     fn sync_from_display(&mut self) {
-        let shared = self.shared.lock().unwrap();
-        if let Some(d) = shared.display.as_ref().and_then(|d| d.downcast_ref::<PortHubDisplay>()) {
+        with_display::<PortHubDisplay, _>(&self.shared, |d| {
             if d.port_type != self.port_type { self.port_type = d.port_type; }
             if d.slots != self.slots { self.slots = d.slots; }
-        }
+        });
     }
 
     /// Only the Auto setting adopts the first wire's type; every slot shares it.
@@ -49,8 +46,7 @@ impl NodeWidget for PortHubWidget {
         self.slots = clamp_slots(param_usize(params, 1).unwrap_or(HUB_DEFAULT_SLOTS));
     }
 
-    fn node_id(&self) -> NodeId { self.id }
-    fn type_name(&self) -> &'static str { "Port Hub" }
+    node_identity!("Port Hub");
     fn description(&self) -> &'static str {
         "Pass-through bundle: N input ports paired 1:1 with N outputs of \
          the same type. Does nothing to the values, exists only to tidy \
@@ -69,7 +65,6 @@ impl NodeWidget for PortHubWidget {
     fn layout(&self) -> NodeLayout { labelled_layout(&self.ui_inputs(), &self.ui_outputs()) }
     fn min_width(&self) -> f32 { 100.0 }
     fn min_content_height(&self) -> f32 { 14.0 }
-    fn shared_state(&self) -> &SharedState { &self.shared }
 
     fn on_ui_connect(&mut self, _input_port: usize, source_type: PortType) {
         self.adopt(source_type);
@@ -85,8 +80,6 @@ impl NodeWidget for PortHubWidget {
             format!("{} × {}", self.slots, MUX_TYPE_NAMES[type_to_index(self.port_type)]),
         );
     }
-
-    fn as_any_mut(&mut self) -> &mut dyn Any { self }
 }
 
 #[cfg(test)]

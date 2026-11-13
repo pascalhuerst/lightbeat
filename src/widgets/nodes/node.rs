@@ -21,6 +21,35 @@ pub fn current_choice(shared: &SharedState, index: usize) -> Option<usize> {
     }
 }
 
+/// Runs `f` on the engine's display data of type `T`, if the engine has
+/// published one yet. The lock is held only while `f` runs.
+pub fn with_display<T: 'static, R>(shared: &SharedState, f: impl FnOnce(&T) -> R) -> Option<R> {
+    let shared = shared.lock().unwrap();
+    shared.display.as_ref().and_then(|d| d.downcast_ref::<T>()).map(f)
+}
+
+/// The four identity methods of a widget that keeps its node id in `id` and its
+/// shared state in `shared`: `node_identity!("Gain")`, or, when the type name
+/// follows a setting, `node_identity!(by |w| w.op.label())`.
+macro_rules! node_identity {
+    ($name:literal) => {
+        fn node_id(&self) -> $crate::engine::types::NodeId { self.id }
+        fn type_name(&self) -> &'static str { $name }
+        fn shared_state(&self) -> &$crate::engine::types::SharedState { &self.shared }
+        fn as_any_mut(&mut self) -> &mut dyn ::std::any::Any { self }
+    };
+    (by $name:expr) => {
+        fn node_id(&self) -> $crate::engine::types::NodeId { self.id }
+        fn type_name(&self) -> &'static str {
+            let name: fn(&Self) -> &'static str = $name;
+            name(self)
+        }
+        fn shared_state(&self) -> &$crate::engine::types::SharedState { &self.shared }
+        fn as_any_mut(&mut self) -> &mut dyn ::std::any::Any { self }
+    };
+}
+pub(crate) use node_identity;
+
 /// An effect as its stack lists it.
 #[derive(Clone, Debug, PartialEq)]
 pub struct StackMember {

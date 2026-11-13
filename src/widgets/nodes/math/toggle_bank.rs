@@ -1,5 +1,3 @@
-use std::any::Any;
-
 use egui::{self, Ui};
 
 use crate::engine::nodes::math::toggle_bank::{
@@ -7,7 +5,7 @@ use crate::engine::nodes::math::toggle_bank::{
 };
 use crate::engine::types::*;
 use crate::theme;
-use crate::widgets::nodes::node::NodeWidget;
+use crate::widgets::nodes::node::{NodeWidget, node_identity, with_display};
 use crate::widgets::nodes::types::UiPortDef;
 
 pub struct ToggleBankWidget {
@@ -32,8 +30,7 @@ impl NodeWidget for ToggleBankWidget {
         }
     }
 
-    fn node_id(&self) -> NodeId { self.id }
-    fn type_name(&self) -> &'static str { "Toggle Bank" }
+    node_identity!("Toggle Bank");
     fn description(&self) -> &'static str {
         "Bank of independent toggle flip-flops. Each input is a rising-edge \
          trigger; each trigger flips its matching output between 0 and 1. \
@@ -50,17 +47,13 @@ impl NodeWidget for ToggleBankWidget {
     fn min_width(&self) -> f32 { 120.0 }
     fn min_content_height(&self) -> f32 { self.n.max(1) as f32 * 16.0 + 4.0 }
     fn resizable(&self) -> bool { true }
-    fn shared_state(&self) -> &SharedState { &self.shared }
 
     fn show_content(&mut self, ui: &mut Ui, zoom: f32) {
         // Pull the latest state from the engine.
-        {
-            let shared = self.shared.lock().unwrap();
-            if let Some(d) = shared.display.as_ref().and_then(|d| d.downcast_ref::<ToggleBankDisplay>()) {
-                self.n = d.n;
-                self.states = d.states.clone();
-            }
-        }
+        with_display::<ToggleBankDisplay, _>(&self.shared, |d| {
+            self.n = d.n;
+            self.states = d.states.clone();
+        });
 
         let avail = ui.available_size();
         if avail.x <= 0.0 || avail.y <= 0.0 { return; }
@@ -91,6 +84,4 @@ impl NodeWidget for ToggleBankWidget {
             );
         }
     }
-
-    fn as_any_mut(&mut self) -> &mut dyn Any { self }
 }

@@ -1,11 +1,9 @@
-use std::any::Any;
-
 use egui::{self, Ui};
 
 use crate::engine::nodes::math::formula::FormulaDisplay;
 use crate::engine::types::*;
 use crate::theme;
-use crate::widgets::nodes::node::NodeWidget;
+use crate::widgets::nodes::node::{NodeWidget, node_identity, with_display};
 use crate::widgets::nodes::types::UiPortDef;
 
 /// Where the operators and functions the formula understands are listed.
@@ -27,14 +25,13 @@ impl FormulaWidget {
     }
 
     fn sync_from_display(&mut self) {
-        let shared = self.shared.lock().unwrap();
-        if let Some(d) = shared.display.as_ref().and_then(|d| d.downcast_ref::<FormulaDisplay>()) {
+        with_display::<FormulaDisplay, _>(&self.shared, |d| {
             if !self.synced {
                 self.formula = d.formula.clone();
                 self.synced = true;
             }
             self.error = d.error.clone();
-        }
+        });
     }
 
     fn push(&self) {
@@ -43,8 +40,7 @@ impl FormulaWidget {
 }
 
 impl NodeWidget for FormulaWidget {
-    fn node_id(&self) -> NodeId { self.id }
-    fn type_name(&self) -> &'static str { "Formula" }
+    node_identity!("Formula");
     fn description(&self) -> &'static str {
         "Writes a function of its input to its output. The input is x (or i); \
          write the result as 2*x+7 or y = sin(x*2*PI). Operators and functions: \
@@ -56,7 +52,6 @@ impl NodeWidget for FormulaWidget {
 
     fn min_width(&self) -> f32 { 130.0 }
     fn min_content_height(&self) -> f32 { 20.0 }
-    fn shared_state(&self) -> &SharedState { &self.shared }
 
     fn show_content(&mut self, ui: &mut Ui, _zoom: f32) {
         self.sync_from_display();
@@ -91,6 +86,4 @@ impl NodeWidget for FormulaWidget {
         );
         ui.hyperlink_to("Syntax reference (meval)", SYNTAX_URL);
     }
-
-    fn as_any_mut(&mut self) -> &mut dyn Any { self }
 }

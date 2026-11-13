@@ -1,10 +1,9 @@
-use std::any::Any;
 use egui::{Color32, Ui};
 
 use crate::engine::nodes::math::logic_gate::{ports_for, LogicDisplay, LogicOp};
 use crate::engine::types::*;
 use crate::theme;
-use crate::widgets::nodes::node::{current_choice, NodeWidget};
+use crate::widgets::nodes::node::{current_choice, NodeWidget, node_identity};
 use crate::widgets::nodes::types::UiPortDef;
 
 const ADD_PORT_FILL: Color32 = theme::SEM_SUCCESS;
@@ -32,14 +31,13 @@ impl LogicGateWidget {
 }
 
 impl NodeWidget for LogicGateWidget {
-    fn node_id(&self) -> NodeId { self.id }
+    node_identity!(by |w| w.op.label());
     fn follow_params(&mut self) {
         if self.op == LogicOp::Not { return; }
         if let Some(op) = current_choice(&self.shared, 0).and_then(|i| LogicOp::VARIADIC.get(i)) {
             self.op = *op;
         }
     }
-    fn type_name(&self) -> &'static str { self.op.label() }
     fn title(&self) -> &str { self.op.label() }
     fn description(&self) -> &'static str {
         "Boolean logic gate. AND/OR/XOR fold across all inputs; drag to the green + port to add another. NOT is unary."
@@ -62,7 +60,6 @@ impl NodeWidget for LogicGateWidget {
     }
     fn min_width(&self) -> f32 { 80.0 }
     fn min_content_height(&self) -> f32 { 15.0 }
-    fn shared_state(&self) -> &SharedState { &self.shared }
 
     fn on_ui_connect(&mut self, input_port: usize, _source_type: PortType) {
         if self.op == LogicOp::Not { return; }
@@ -89,6 +86,4 @@ impl NodeWidget for LogicGateWidget {
         drop(shared);
         ui.label(if out >= 0.5 { "HIGH" } else { "LOW" });
     }
-
-    fn as_any_mut(&mut self) -> &mut dyn Any { self }
 }

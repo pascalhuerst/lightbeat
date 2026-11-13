@@ -1,8 +1,7 @@
-use std::any::Any;
 use egui::Ui;
 
 use crate::engine::types::*;
-use crate::widgets::nodes::node::NodeWidget;
+use crate::widgets::nodes::node::{NodeWidget, node_identity};
 use crate::widgets::nodes::types::UiPortDef;
 
 pub struct ChangeDetectWidget {
@@ -17,8 +16,7 @@ impl ChangeDetectWidget {
 }
 
 impl NodeWidget for ChangeDetectWidget {
-    fn node_id(&self) -> NodeId { self.id }
-    fn type_name(&self) -> &'static str { "Change Detect" }
+    node_identity!("Change Detect");
     fn description(&self) -> &'static str { "Fires a logic pulse whenever the input value changes." }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> { UiPortDef::from_defs(&crate::engine::nodes::math::change_detect::ports().0) }
@@ -26,7 +24,6 @@ impl NodeWidget for ChangeDetectWidget {
 
     fn min_width(&self) -> f32 { 100.0 }
     fn min_content_height(&self) -> f32 { 15.0 }
-    fn shared_state(&self) -> &SharedState { &self.shared }
 
     fn show_content(&mut self, ui: &mut Ui, _zoom: f32) {
         let shared = self.shared.lock().unwrap();
@@ -34,6 +31,4 @@ impl NodeWidget for ChangeDetectWidget {
         drop(shared);
         ui.label(if out >= 0.5 { "CHANGED" } else { "same" });
     }
-
-    fn as_any_mut(&mut self) -> &mut dyn Any { self }
 }

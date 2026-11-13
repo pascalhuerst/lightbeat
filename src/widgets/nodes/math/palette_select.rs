@@ -1,4 +1,3 @@
-use std::any::Any;
 use std::sync::{Arc, Mutex};
 
 use egui::{self, Color32, Sense, Ui, Vec2};
@@ -9,7 +8,7 @@ use crate::engine::types::*;
 use crate::theme;
 use crate::objects::color_palette::{ColorPalette, ColorPaletteGroup, PALETTE_SIZE};
 use crate::widgets::setup_ui;
-use crate::widgets::nodes::node::{NodeWidget, param_usize};
+use crate::widgets::nodes::node::{NodeWidget, param_usize, node_identity};
 use crate::widgets::nodes::types::UiPortDef;
 
 pub struct PaletteContext {
@@ -87,8 +86,7 @@ impl NodeWidget for PaletteSelectWidget {
         self.select_mode = param_usize(params, 0).map(SelectMode::from_index).unwrap_or(SelectMode::Index);
     }
 
-    fn node_id(&self) -> NodeId { self.id }
-    fn type_name(&self) -> &'static str { "Palette Select" }
+    node_identity!("Palette Select");
     fn description(&self) -> &'static str { "Picks a palette (a set of 4 colors) from a palette group, indexed by group and palette index." }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> {
@@ -101,7 +99,6 @@ impl NodeWidget for PaletteSelectWidget {
     fn min_width(&self) -> f32 { 140.0 }
     fn min_content_height(&self) -> f32 { 30.0 }
     fn resizable(&self) -> bool { true }
-    fn shared_state(&self) -> &SharedState { &self.shared }
 
     fn show_content(&mut self, ui: &mut Ui, _zoom: f32) {
         self.sync_from_display();
@@ -214,6 +211,4 @@ impl NodeWidget for PaletteSelectWidget {
             self.push_data_to_engine();
         }
     }
-
-    fn as_any_mut(&mut self) -> &mut dyn Any { self }
 }
