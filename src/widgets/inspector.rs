@@ -174,7 +174,7 @@ impl PromoteCtx {
 /// A dropdown that picks what the node is. It reshapes the node, so a wire may
 /// not drive it and changing it drops the inputs the user had added.
 fn is_mode(param: &ParamDef) -> bool {
-    matches!(param, ParamDef::Choice { name, .. } if name == "Mode")
+    matches!(param, ParamDef::Choice { name, .. } if name == "Mode" || name == "Type")
 }
 
 /// Changing a mode leaves the exposed settings meaningless (a name can mean

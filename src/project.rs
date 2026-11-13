@@ -808,6 +808,74 @@ mod tests {
         assert_eq!(g.root_level().connections.len(), 1, "the wire from the second channel was kept");
     }
 
+    fn typed_signal_graph() -> crate::widgets::nodes::NodeGraph {
+        use crate::engine::types::new_shared_state;
+        use crate::widgets::nodes::math::constant::ConstantWidget;
+        use crate::widgets::nodes::transport::latch::LatchWidget;
+        use crate::widgets::nodes::transport::sample_hold::SampleHoldWidget;
+        use crate::widgets::nodes::transport::smoothing::SmoothingWidget;
+        use crate::widgets::nodes::NodeGraph;
+
+        let mut g = NodeGraph::new();
+        g.register_node("Signal", "Const Value", |id| {
+            Box::new(ConstantWidget::new(id, crate::engine::types::PortType::Untyped, new_shared_state(0, 1)))
+        });
+        g.register_node("Signal", "Sample & Hold", |id| Box::new(SampleHoldWidget::new(id, new_shared_state(41, 40))));
+        g.register_node("Signal", "Smoothing", |id| Box::new(SmoothingWidget::new(id, new_shared_state(40, 40))));
+        g.register_node("Trigger", "Tick Delay", |id| Box::new(LatchWidget::new(id, new_shared_state(40, 40))));
+        g
+    }
+
+    #[test]
+    fn nodes_saved_before_they_had_a_type_come_back_as_numbers_with_their_wires() {
+        let mut g = typed_signal_graph();
+        // No "Type" setting in the file; every wire carried a plain number.
+        let project: ProjectFile = serde_json::from_str(r#"{
+            "nodes": [
+                {"type_name": "Const Value", "id": 1, "pos": [0.0, 0.0], "params": []},
+                {"type_name": "Sample & Hold", "id": 2, "pos": [100.0, 0.0], "params": [], "data": {"held": 0.5}},
+                {"type_name": "Smoothing", "id": 3, "pos": [200.0, 0.0], "params": [{"index": 0, "value": 1}, {"index": 1, "value": 8}]},
+                {"type_name": "Tick Delay", "id": 4, "pos": [300.0, 0.0], "params": []}
+            ],
+            "connections": [
+                {"from_node": 1, "from_port": 0, "to_node": 2, "to_port": 0},
+                {"from_node": 2, "from_port": 0, "to_node": 3, "to_port": 0},
+                {"from_node": 3, "from_port": 0, "to_node": 4, "to_port": 0}
+            ]
+        }"#).unwrap();
+        load_graph(&mut g, &project);
+        g.cleanup_stale_connections();
+        assert_eq!(g.root_level().connections.len(), 3, "no wire was dropped");
+        let number = crate::engine::nodes::math::multiplex::type_to_index(crate::engine::types::PortType::Untyped);
+        for (idx, type_param) in [(1, 0), (2, 2), (3, 0)] {
+            let node = g.node_mut(idx);
+            assert_eq!(node.ui_inputs()[0].def.port_type, crate::engine::types::PortType::Untyped, "node {idx}");
+            assert_eq!(node.ui_outputs()[0].def.port_type, crate::engine::types::PortType::Untyped, "node {idx}");
+            let shared = node.shared_state().lock().unwrap();
+            assert!(
+                shared.pending_params.iter().any(|(i, v)| *i == type_param && v.as_usize() == number),
+                "node {idx} was told to run as numbers"
+            );
+        }
+    }
+
+    #[test]
+    fn a_node_with_a_saved_type_keeps_it_and_its_wires() {
+        let mut g = typed_signal_graph();
+        let project: ProjectFile = serde_json::from_str(r#"{
+            "nodes": [
+                {"type_name": "Tick Delay", "id": 1, "pos": [0.0, 0.0], "params": [{"index": 0, "value": 4}]},
+                {"type_name": "Smoothing", "id": 2, "pos": [100.0, 0.0], "params": [{"index": 2, "value": 4}]}
+            ],
+            "connections": [{"from_node": 1, "from_port": 0, "to_node": 2, "to_port": 0}]
+        }"#).unwrap();
+        load_graph(&mut g, &project);
+        g.cleanup_stale_connections();
+        assert_eq!(g.node_mut(0).ui_outputs()[0].def.port_type, crate::engine::types::PortType::Color);
+        assert_eq!(g.node_mut(1).ui_inputs()[0].def.port_type, crate::engine::types::PortType::Color);
+        assert_eq!(g.root_level().connections.len(), 1);
+    }
+
     #[test]
     fn hiding_unused_ports_is_saved_and_restored() {
         use crate::widgets::nodes::math::constant::ConstantWidget;

@@ -1,7 +1,7 @@
 use super::easing::EasingCurve;
 use crate::engine::types::*;
 
-const MAX_CHANNELS: usize = 12; // Palette is the widest at 4×RGB
+const MAX_CHANNELS: usize = GRADIENT_STOP_COUNT * GRADIENT_STOP_FLOATS;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TransitionMode {
@@ -11,6 +11,8 @@ pub enum TransitionMode {
     Palette,
     /// No value to move: the output is the eased progress itself, a phase.
     Phase,
+    Position,
+    Gradient,
 }
 
 impl TransitionMode {
@@ -21,6 +23,8 @@ impl TransitionMode {
             Self::Color => PortType::Color,
             Self::Palette => PortType::Palette,
             Self::Phase => PortType::Phase,
+            Self::Position => PortType::Position,
+            Self::Gradient => PortType::Gradient,
         }
     }
     pub fn channels(&self) -> usize {
@@ -30,6 +34,8 @@ impl TransitionMode {
             Self::Color => 3,
             Self::Palette => 12,
             Self::Phase => 1,
+            Self::Position => 2,
+            Self::Gradient => GRADIENT_STOP_COUNT * GRADIENT_STOP_FLOATS,
         }
     }
     pub fn from_index(i: usize) -> Self {
@@ -38,6 +44,8 @@ impl TransitionMode {
             2 => Self::Color,
             3 => Self::Palette,
             4 => Self::Phase,
+            5 => Self::Position,
+            6 => Self::Gradient,
             _ => Self::Neutral,
         }
     }
@@ -48,6 +56,8 @@ impl TransitionMode {
             Self::Color => 2,
             Self::Palette => 3,
             Self::Phase => 4,
+            Self::Position => 5,
+            Self::Gradient => 6,
         }
     }
 }
@@ -201,16 +211,18 @@ impl ProcessNode for TransitionProcessNode {
     }
 
     fn non_promotable_params(&self) -> &'static [&'static str] {
-        &["Mode"]
+        &["Type"]
     }
 
     fn params(&self) -> Vec<ParamDef> {
         let curve_options: Vec<String> = EasingCurve::all().iter().map(|c| c.label().into()).collect();
         vec![
             ParamDef::Choice {
-                name: "Mode".into(),
+                name: "Type".into(),
                 value: self.mode.to_index(),
-                options: vec!["Auto".into(), "Float".into(), "Color".into(), "Palette".into(), "Phase out".into()],
+                // Position and Gradient come last because saved settings go by position.
+                options: ["Auto", "Number", "Color", "Palette", "Phase out", "Position", "Gradient"]
+                    .iter().map(|s| s.to_string()).collect(),
             },
             ParamDef::Choice {
                 name: "Curve".into(),
@@ -253,6 +265,24 @@ impl ProcessNode for TransitionProcessNode {
 #[cfg(test)]
 mod phase_mode_tests {
     use super::*;
+
+    #[test]
+    fn a_position_moves_both_axes_toward_the_new_value() {
+        let mut n = TransitionProcessNode::new(NodeId(1));
+        n.set_param(0, ParamValue::Choice(TransitionMode::Position.to_index()));
+        assert_eq!(n.outputs()[0].port_type, PortType::Position);
+        n.write_input(1, 0.0);
+        n.process();
+        n.write_input(2, 1.0);
+        n.write_input(3, 0.5);
+        n.write_input(0, 1.0);
+        n.process();
+        n.write_input(0, 0.0);
+        n.write_input(1, 0.5);
+        n.process();
+        assert!((n.read_output(0) - 0.5).abs() < 1e-4);
+        assert!((n.read_output(1) - 0.25).abs() < 1e-4);
+    }
 
     #[test]
     fn phase_out_follows_the_phase_through_the_curve_after_a_trigger() {

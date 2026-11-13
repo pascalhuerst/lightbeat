@@ -367,17 +367,17 @@ pub(crate) fn node_table() -> Vec<NodeDescriptor> {
         |id, _| Box::new(RandomProcessNode::new(id)),
     ));
     table.push(node(
-        "Signal", "Sample & Hold", (2, 1),
+        "Signal", "Sample & Hold", (41, 40),
         |id, s, _| Box::new(SampleHoldWidget::new(id, s)),
         |id, _| Box::new(SampleHoldProcessNode::new(id)),
     ));
     table.push(node(
-        "Signal", "Smoothing", (1, 1),
+        "Signal", "Smoothing", (40, 40),
         |id, s, _| Box::new(SmoothingWidget::new(id, s)),
         |id, _| Box::new(SmoothingProcessNode::new(id)),
     ));
     table.push(node(
-        "Trigger", "Tick Delay", (1, 1),
+        "Trigger", "Tick Delay", (40, 40),
         |id, s, _| Box::new(LatchWidget::new(id, s)),
         |id, _| Box::new(LatchProcessNode::new(id)),
     ));
@@ -398,7 +398,7 @@ pub(crate) fn node_table() -> Vec<NodeDescriptor> {
     ));
     // trigger(1) + phase(1) + palette(12) = 14 input channels, 12 output channels max
     table.push(node(
-        "Signal", "Transition", (14, 12),
+        "Signal", "Transition", (42, 40),
         |id, s, _| Box::new(TransitionWidget::new(id, s)),
         |id, _| Box::new(TransitionProcessNode::new(id)),
     ));

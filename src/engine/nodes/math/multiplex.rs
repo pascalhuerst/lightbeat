@@ -28,7 +28,7 @@ pub const MUX_TYPES: &[PortType] = &[
 ];
 
 pub const MUX_TYPE_NAMES: &[&str] = &[
-    "Auto", "Logic", "Phase", "Untyped", "Color", "Position", "Palette", "Gradient",
+    "Auto", "Logic", "Phase", "Number", "Color", "Position", "Palette", "Gradient",
 ];
 
 pub fn type_to_index(pt: PortType) -> usize {
