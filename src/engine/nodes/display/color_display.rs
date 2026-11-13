@@ -25,23 +25,30 @@ pub struct ColorDisplayProcessNode {
     inputs: Vec<PortDef>,
 }
 
+/// The ports, stated once: the widget builds its own from this, so the two
+/// halves cannot disagree.
+pub fn ports_for(mode: usize) -> (Vec<PortDef>, Vec<PortDef>) {
+    let input = match mode {
+        MODE_PALETTE => PortDef::new("palette", PortType::Palette),
+        MODE_COLOR => PortDef::new("color", PortType::Color),
+        MODE_GRADIENT => PortDef::new("gradient", PortType::Gradient),
+        _ => PortDef::new("?", PortType::Any),
+    };
+    (vec![input], vec![])
+}
+
 impl ColorDisplayProcessNode {
     pub fn new(id: NodeId) -> Self {
         Self {
             id,
             mode: MODE_NEUTRAL,
             channels: [0.0; MAX_CHANNELS],
-            inputs: vec![PortDef::new("?", PortType::Any)],
+            inputs: ports_for(MODE_NEUTRAL).0,
         }
     }
 
     fn rebuild_inputs(&mut self) {
-        self.inputs = match self.mode {
-            MODE_PALETTE => vec![PortDef::new("palette", PortType::Palette)],
-            MODE_COLOR => vec![PortDef::new("color", PortType::Color)],
-            MODE_GRADIENT => vec![PortDef::new("gradient", PortType::Gradient)],
-            _ => vec![PortDef::new("?", PortType::Any)],
-        };
+        self.inputs = ports_for(self.mode).0;
     }
 }
 

@@ -4,7 +4,7 @@ use egui::{self, Color32, Pos2, Sense, Stroke, StrokeKind, Ui, Vec2};
 
 use crate::color::Gradient;
 use crate::engine::nodes::display::color_display::{
-    ColorDisplayData, MODE_COLOR, MODE_GRADIENT, MODE_NEUTRAL, MODE_PALETTE,
+    ports_for, ColorDisplayData, MODE_COLOR, MODE_GRADIENT, MODE_NEUTRAL, MODE_PALETTE,
 };
 use crate::engine::types::*;
 use crate::objects::color_palette::PALETTE_SIZE;
@@ -23,15 +23,6 @@ impl ColorDisplayWidget {
         Self { id, shared, mode: MODE_NEUTRAL }
     }
 
-    fn input_defs(&self) -> Vec<PortDef> {
-        match self.mode {
-            MODE_PALETTE => vec![PortDef::new("palette", PortType::Palette)],
-            MODE_COLOR => vec![PortDef::new("color", PortType::Color)],
-            MODE_GRADIENT => vec![PortDef::new("gradient", PortType::Gradient)],
-            _ => vec![PortDef::new("?", PortType::Any)],
-        }
-    }
-
     fn push_mode(&self, mode: usize) {
         let mut s = self.shared.lock().unwrap();
         s.pending_params.push((0, ParamValue::Choice(mode)));
@@ -46,7 +37,7 @@ impl NodeWidget for ColorDisplayWidget {
     }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> {
-        self.input_defs().iter().map(UiPortDef::from_def).collect()
+        UiPortDef::from_defs(&ports_for(self.mode).0)
     }
     fn ui_outputs(&self) -> Vec<UiPortDef> { vec![] }
 
