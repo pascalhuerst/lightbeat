@@ -72,7 +72,9 @@ Updated as items are implemented. Items not listed here are open.
 | T5 | done | 3804689: fixed UI colours come from `theme.rs`; the 48 literals left are computed from data |
 | E11 | no action | the audit itself says "fine as it is" |
 | T3 | left to the user | `overview.md` and `things.txt` are personal notes |
-| U4 - U7, S7, T1 | open | after the node catalogue (same files) |
+| S7 | done | merge "feature/ports-once" (360a805 .. ab38a5d): 56 node types take their ports from one engine function (`ports()` / `ports_for(..)`), widgets convert with `UiPortDef::from_defs`. Not at runtime as sketched here: a widget must have its ports before the engine ticks. A test compares both halves of every node type. Found on the way: the Input Controller widget started without `connected` |
+| U4 | done | 71555bc .. 7049324: `node_identity!` (70 widgets) and `with_display` (22 uses); no base struct |
+| U5 - U7, T1 | open | in progress |
 | R2 (settings) | done | bea6940 |
 | R3 (project file) | done | 486e28d |
 | R5, R8 (UI part) | done | 41daa6d: the status bar says "Engine stopped" or "Engine busy: N changes lost" |
