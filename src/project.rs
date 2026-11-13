@@ -14,11 +14,13 @@ use crate::widgets::nodes::{GraphLevel, NodeGraph};
 /// saved connections. Files without the field load as version 0.
 ///
 /// 1: hardware nodes gained a leading "connected" output.
+/// 2: Change Detect has its value first.
+/// 3: Envelope and Transition have their signal first and the trigger after.
 ///
 /// TEMPORARY: the migration exists only so the developers' test projects
 /// survive one load. Once they are re-saved, delete `STATUS_PORT_NODE_TYPES`,
 /// `connections_for_current_layout`, its tests and the `version` field.
-pub const PROJECT_VERSION: u32 = 2;
+pub const PROJECT_VERSION: u32 = 3;
 
 /// Node types whose outputs shifted by one when the "connected" port was
 /// inserted at index 0 (version 1).
@@ -311,6 +313,29 @@ fn connections_for_current_layout(project: &ProjectFile) -> Vec<SavedConnection>
             let to_type = project.nodes.iter().find(|n| n.id == c.to_node).map(|n| n.type_name.as_str());
             if to_type == Some("Change Detect") && c.to_port < 2 {
                 c.to_port = 1 - c.to_port;
+            }
+        }
+    }
+    if project.version < 3 {
+        for c in &mut connections {
+            let Some(node) = project.nodes.iter().find(|n| n.id == c.to_node) else { continue };
+            match node.type_name.as_str() {
+                // Was (gate, in).
+                "Envelope" if c.to_port < 2 => c.to_port = 1 - c.to_port,
+                // Was (trigger, phase, in); Phase out has no `in` and kept (trigger, phase).
+                "Transition" => {
+                    let phase_out = node.params.iter().find(|p| p.index == 0)
+                        .is_some_and(|p| p.value.as_f64() == 4.0);
+                    if !phase_out {
+                        c.to_port = match c.to_port {
+                            0 => 1,
+                            1 => 2,
+                            2 => 0,
+                            other => other,
+                        };
+                    }
+                }
+                _ => {}
             }
         }
     }
@@ -632,6 +657,52 @@ mod tests {
         p.version = PROJECT_VERSION;
         let out = connections_for_current_layout(&p);
         assert_eq!((out[0].to_port, out[1].to_port), (0, 1));
+    }
+
+    fn with_wires_to(type_name: &str, version: u32, ports: &[usize], mode: Option<usize>) -> ProjectFile {
+        let mut p = project(version);
+        let mut n = node(3, type_name);
+        if let Some(m) = mode {
+            n.params.push(SavedParam { index: 0, value: SavedParamValue::Choice(m) });
+        }
+        p.nodes.push(n);
+        p.connections = ports
+            .iter()
+            .map(|&to_port| SavedConnection { from_node: 2, from_port: 0, to_node: 3, to_port })
+            .collect();
+        p
+    }
+
+    fn to_ports(p: &ProjectFile) -> Vec<usize> {
+        connections_for_current_layout(p).iter().map(|c| c.to_port).collect()
+    }
+
+    #[test]
+    fn envelope_wires_follow_its_swapped_inputs() {
+        // Saved (gate, in); now (in, gate).
+        assert_eq!(to_ports(&with_wires_to("Envelope", 2, &[0, 1], Some(0))), vec![1, 0]);
+        assert_eq!(to_ports(&with_wires_to("Envelope", 2, &[0, 1], Some(3))), vec![1, 0]);
+        // No version at all is the oldest, and is remapped once.
+        assert_eq!(to_ports(&with_wires_to("Envelope", 0, &[0], None)), vec![1]);
+        assert_eq!(to_ports(&with_wires_to("Envelope", PROJECT_VERSION, &[0, 1], Some(0))), vec![0, 1]);
+    }
+
+    #[test]
+    fn transition_wires_follow_its_new_order_in_every_mode() {
+        // Saved (trigger, phase, in); now (in, trigger, phase).
+        for mode in [0, 1, 2, 3, 5, 6] {
+            assert_eq!(to_ports(&with_wires_to("Transition", 2, &[0, 1, 2], Some(mode))), vec![1, 2, 0], "mode {mode}");
+        }
+        // A saved node without the setting is in its default (Auto) mode.
+        assert_eq!(to_ports(&with_wires_to("Transition", 2, &[0, 1, 2], None)), vec![1, 2, 0]);
+        // Phase out has no value input and keeps (trigger, phase).
+        assert_eq!(to_ports(&with_wires_to("Transition", 2, &[0, 1], Some(4))), vec![0, 1]);
+        assert_eq!(to_ports(&with_wires_to("Transition", PROJECT_VERSION, &[0, 1, 2], Some(1))), vec![0, 1, 2]);
+        // Without a version the node is remapped once, not twice.
+        let mut p = with_wires_to("Transition", 0, &[0, 1, 2], Some(1));
+        assert_eq!(to_ports(&p), vec![1, 2, 0]);
+        p.version = PROJECT_VERSION;
+        assert_eq!(to_ports(&p), vec![0, 1, 2]);
     }
 
     #[test]

@@ -63,13 +63,12 @@ impl NodeWidget for EnvelopeWidget {
     }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> {
-        // Port 0 always maps to the first input channel so wires from
-        // previous modes survive a mode switch. The label flips between
-        // "gate" (triggered modes) and "trigger" / "(unused)" elsewhere.
-        let port0_name = if self.kind.uses_gate() { "gate" } else { "(unused)" };
+        // The gate port keeps its index in every mode so wires from other
+        // modes survive a mode switch; only the label flips.
+        let gate_name = if self.kind.uses_gate() { "gate" } else { "(unused)" };
         vec![
-            UiPortDef::from_def(&PortDef::new(port0_name, PortType::Logic)),
             UiPortDef::from_def(&PortDef::new("in", PortType::Untyped)),
+            UiPortDef::from_def(&PortDef::new(gate_name, PortType::Logic)),
         ]
     }
     fn ui_outputs(&self) -> Vec<UiPortDef> {
