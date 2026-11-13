@@ -266,6 +266,40 @@ impl LightBeatApp {
     }
 }
 
+/// Several frames selected: only what makes sense for all of them, the colour.
+pub(crate) fn show_frames_colour_inspector(
+    ui: &mut egui::Ui,
+    graph: &mut widgets::nodes::NodeGraph,
+    frame_ids: &[u64],
+) {
+    ui.heading(format!("{} frames selected", frame_ids.len()));
+    ui.separator();
+    let frames = graph.frames_mut();
+    let Some(first_color) = frames.iter().find(|f| frame_ids.contains(&f.id)).map(|f| f.color) else {
+        return;
+    };
+    ui.horizontal(|ui| {
+        ui.label("Color");
+        let mut rgb = [
+            first_color.r() as f32 / 255.0,
+            first_color.g() as f32 / 255.0,
+            first_color.b() as f32 / 255.0,
+        ];
+        if ui.color_edit_button_rgb(&mut rgb).changed() {
+            let color = egui::Color32::from_rgb(
+                (rgb[0] * 255.0) as u8,
+                (rgb[1] * 255.0) as u8,
+                (rgb[2] * 255.0) as u8,
+            );
+            for frame in frames.iter_mut().filter(|f| frame_ids.contains(&f.id)) {
+                frame.color = color;
+            }
+        }
+    });
+    ui.add_space(4.0);
+    ui.colored_label(theme::TEXT_DIM, "Select one frame to edit its title and notes.");
+}
+
 pub(crate) fn show_frame_inspector(
     ui: &mut egui::Ui,
     graph: &mut widgets::nodes::NodeGraph,

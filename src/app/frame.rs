@@ -12,7 +12,7 @@ use crate::app::macros::MacroDragPayload;
 use crate::app::files::PendingAction;
 use crate::app::undo::UndoDoc;
 use crate::app::shortcuts;
-use crate::app::panels::{NodeDragPayload, FrameDragPayload, show_frame_inspector};
+use crate::app::panels::{NodeDragPayload, FrameDragPayload, show_frame_inspector, show_frames_colour_inspector};
 use std::path::PathBuf;
 use eframe::egui;
 use crate::config::InspectorMode;
@@ -563,9 +563,7 @@ impl LightBeatApp {
                                 return;
                             }
                             if !nodes_selected && selected_frame_ids.len() > 1 {
-                                ui.heading(format!("{} frames selected", selected_frame_ids.len()));
-                                ui.separator();
-                                ui.label("Multi-frame editing isn't supported yet.");
+                                show_frames_colour_inspector(ui, &mut self.graph, &selected_frame_ids);
                                 return;
                             }
 
