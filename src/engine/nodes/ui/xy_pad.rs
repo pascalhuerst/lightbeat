@@ -74,22 +74,12 @@ impl ProcessNode for XyPadProcessNode {
     }
 
     fn save_data(&self) -> Option<serde_json::Value> {
-        Some(serde_json::json!({
-            "name": self.name,
-            "x": self.x,
-            "y": self.y,
-        }))
+        Some(serde_json::json!({ "name": self.name }))
     }
 
     fn load_data(&mut self, data: &serde_json::Value) {
         if let Some(n) = data.get("name").and_then(|v| v.as_str()) {
             self.name = n.to_string();
-        }
-        if let Some(x) = data.get("x").and_then(|v| v.as_f64()) {
-            self.x = (x as f32).clamp(0.0, 1.0);
-        }
-        if let Some(y) = data.get("y").and_then(|v| v.as_f64()) {
-            self.y = (y as f32).clamp(0.0, 1.0);
         }
     }
 

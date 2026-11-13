@@ -3,6 +3,8 @@
 //! widget renders a colored level bar with dB scale, peak hold and clip
 //! indicator.
 
+use serde::{Deserialize, Serialize};
+
 use crate::engine::types::*;
 
 pub struct PeakMeterDisplay {
@@ -42,6 +44,31 @@ impl PeakMeterOrientation {
             PeakMeterOrientation::Vertical => "vertical",
             PeakMeterOrientation::Horizontal => "horizontal",
         }
+    }
+}
+
+/// The node's own settings, as saved and as the widget pushes them.
+#[derive(Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct PeakMeterConfig {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    orientation: Option<String>,
+}
+
+impl PeakMeterConfig {
+    pub fn new(name: &str, orientation: PeakMeterOrientation) -> Self {
+        Self { name: Some(name.to_string()), orientation: Some(orientation.as_str().to_string()) }
+    }
+
+    /// Malformed data loads as an empty update, which changes nothing.
+    pub fn from_value(v: &serde_json::Value) -> Self {
+        serde_json::from_value(v.clone()).unwrap_or_default()
+    }
+
+    pub fn to_value(&self) -> serde_json::Value {
+        serde_json::to_value(self).unwrap_or(serde_json::Value::Null)
     }
 }
 
@@ -88,18 +115,16 @@ impl ProcessNode for PeakMeterProcessNode {
     fn process(&mut self) {}
 
     fn save_data(&self) -> Option<serde_json::Value> {
-        Some(serde_json::json!({
-            "name": self.name,
-            "orientation": self.orientation.as_str(),
-        }))
+        Some(PeakMeterConfig::new(&self.name, self.orientation).to_value())
     }
 
     fn load_data(&mut self, data: &serde_json::Value) {
-        if let Some(n) = data.get("name").and_then(|v| v.as_str()) {
-            self.name = n.to_string();
+        let cfg = PeakMeterConfig::from_value(data);
+        if let Some(n) = cfg.name {
+            self.name = n;
         }
-        if let Some(s) = data.get("orientation").and_then(|v| v.as_str()) {
-            self.orientation = PeakMeterOrientation::from_str(s);
+        if let Some(s) = cfg.orientation {
+            self.orientation = PeakMeterOrientation::from_str(&s);
         }
     }
 

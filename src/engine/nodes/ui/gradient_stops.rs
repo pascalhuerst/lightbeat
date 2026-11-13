@@ -81,22 +81,12 @@ impl ProcessNode for GradientStopsProcessNode {
     }
 
     fn save_data(&self) -> Option<serde_json::Value> {
-        Some(serde_json::json!({
-            "name": self.name,
-            "positions": self.positions,
-        }))
+        Some(serde_json::json!({ "name": self.name }))
     }
 
     fn load_data(&mut self, data: &serde_json::Value) {
         if let Some(n) = data.get("name").and_then(|v| v.as_str()) {
             self.name = n.to_string();
-        }
-        if let Some(arr) = data.get("positions").and_then(|v| v.as_array()) {
-            for (i, v) in arr.iter().take(4).enumerate() {
-                if let Some(f) = v.as_f64() {
-                    self.positions[i] = (f as f32).clamp(0.0, 1.0);
-                }
-            }
         }
     }
 
