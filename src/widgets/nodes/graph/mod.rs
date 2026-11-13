@@ -888,7 +888,7 @@ impl NodeGraph {
         // -- Draw node chrome (painter-based, immutable) --
         let now = ui.ctx().input(|i| i.time);
         let mut any_peer_pulsing = false;
-        for i in 0..level.nodes.len() {
+        for (i, &node_rect) in node_rects.iter().enumerate() {
             let selected = self.selected_nodes.contains(&i);
             // Every member of the group pulses, the selected one too: seeing
             // all of them at once is the point.
@@ -898,7 +898,7 @@ impl NodeGraph {
             if portal_peer { any_peer_pulsing = true; }
             // The margin covers what is drawn outside the rect: port dots, the
             // selection outline and the pulse of a linked node.
-            if !canvas_rect.intersects(node_rects[i].expand(12.0 + 12.0 * z)) { continue; }
+            if !canvas_rect.intersects(node_rect.expand(12.0 + 12.0 * z)) { continue; }
             let inputs = level.nodes[i].ui_inputs_full();
             let outputs = level.nodes[i].ui_outputs();
             let out_highlights: Vec<f32> = (0..outputs.len())
@@ -921,7 +921,7 @@ impl NodeGraph {
                 &in_highlights,
                 &out_highlights,
                 disabled,
-                node_rects[i],
+                node_rect,
                 &level.nodes[i].layout(),
                 selected,
                 portal_peer,
@@ -956,8 +956,7 @@ impl NodeGraph {
             std::sync::Arc::new(style)
         });
         let level = self.active_mut();
-        for i in 0..level.nodes.len() {
-            let rect = node_rects[i];
+        for (i, &rect) in node_rects.iter().enumerate() {
             let content_rect = content_rect(rect, &level.nodes[i].layout(), z);
             // Intersect with the canvas so node UI doesn't paint over panels
             // (inspector, status bar) when a node is partially off-canvas.
@@ -984,10 +983,10 @@ impl NodeGraph {
         // fader's coloured fill or the XY pad's cyan knob. Near-opaque gray
         // so no colour from the widget's own painter leaks through.
         let level = self.active();
-        for i in 0..level.nodes.len() {
+        for (i, &node_rect) in node_rects.iter().enumerate() {
             let disabled = level.nodes[i].shared_state().lock().disabled;
             if !disabled { continue; }
-            let rect = node_rects[i];
+            let rect = node_rect;
             let body_rect = Rect::from_min_max(
                 Pos2::new(rect.min.x, rect.min.y + level.nodes[i].layout().title_h * z),
                 rect.max,

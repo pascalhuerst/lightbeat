@@ -405,7 +405,7 @@ impl NodeGraph {
             let mut best_pos = pointer_pos;
             let mut best_target = None;
 
-            for i in 0..level.nodes.len() {
+            for (i, &node_rect) in node_rects.iter().enumerate() {
                 let (ports, target_dir) = if dc_from_dir == PortDir::Output {
                     (level.nodes[i].ui_inputs_full(), PortDir::Input)
                 } else {
@@ -429,7 +429,7 @@ impl NodeGraph {
                     if level.nodes[i].is_port_hidden(target_dir, pi) {
                         continue;
                     }
-                    let pos = level.nodes[i].port_pos(node_rects[i], target_dir, pi, z);
+                    let pos = level.nodes[i].port_pos(node_rect, target_dir, pi, z);
                     let dist = pos.distance(pointer_pos);
                     if dist < best_dist {
                         best_dist = dist;
@@ -880,10 +880,10 @@ impl NodeGraph {
 
         // Hover cursor for resize handles.
         let level = self.active();
-        for i in 0..level.nodes.len() {
+        for (i, &node_rect) in node_rects.iter().enumerate() {
             if level.nodes[i].resizable() {
                 let handle_rect = Rect::from_min_size(
-                    node_rects[i].max - Vec2::splat(RESIZE_HANDLE_SIZE),
+                    node_rect.max - Vec2::splat(RESIZE_HANDLE_SIZE),
                     Vec2::splat(RESIZE_HANDLE_SIZE),
                 );
                 if handle_rect.contains(pointer_pos) {
@@ -893,8 +893,7 @@ impl NodeGraph {
         }
 
         // Hover cursor and tooltips over ports.
-        for i in 0..level.nodes.len() {
-            let rect = node_rects[i];
+        for (i, &rect) in node_rects.iter().enumerate() {
             let outs = level.nodes[i].ui_outputs();
             for (pi, ui_port) in outs.iter().enumerate() {
                 if level.nodes[i].is_port_hidden(PortDir::Output, pi) { continue; }

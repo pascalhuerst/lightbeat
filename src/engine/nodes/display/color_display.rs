@@ -96,8 +96,8 @@ impl ProcessNode for ColorDisplayProcessNode {
             self.channels
         } else {
             let mut clamped = [0.0f32; MAX_CHANNELS];
-            for i in 0..MAX_CHANNELS {
-                clamped[i] = self.channels[i].clamp(0.0, 1.0);
+            for (dst, &c) in clamped.iter_mut().zip(&self.channels) {
+                *dst = c.clamp(0.0, 1.0);
             }
             clamped
         };

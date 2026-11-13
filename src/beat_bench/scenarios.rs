@@ -455,13 +455,13 @@ fn mix(spec: MixSpec) -> Generated {
     let n = (seconds * SR as f64) as usize;
     let b_off = (b_start * SR as f64).round() as usize;
     let mut out = vec![0.0f32; n];
-    for i in 0..n {
+    for (i, o) in out.iter_mut().enumerate() {
         let t = i as f64 / SR as f64;
         let x = ((t - fade_start) / (fade_end - fade_start)).clamp(0.0, 1.0) as f32;
         let (ga, gb) = ((x * std::f32::consts::FRAC_PI_2).cos(), (x * std::f32::consts::FRAC_PI_2).sin());
         let a = a_audio.get(i).copied().unwrap_or(0.0);
         let b = if i >= b_off { b_audio.get(i - b_off).copied().unwrap_or(0.0) } else { 0.0 };
-        out[i] = a * ga + b * gb;
+        *o = a * ga + b * gb;
     }
     synth::master(&mut out);
 

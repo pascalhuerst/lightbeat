@@ -112,10 +112,10 @@ impl NoveltyTracker {
         let mut mean = [0.0f64; STEPS];
         let mut total = 0.0;
         let mut seen = 0;
-        for i in 0..STEPS {
+        for (i, m) in mean.iter_mut().enumerate() {
             if self.weight[i] > 0.0 {
-                mean[i] = self.hist[i] / self.weight[i];
-                total += mean[i];
+                *m = self.hist[i] / self.weight[i];
+                total += *m;
                 seen += 1;
             }
         }

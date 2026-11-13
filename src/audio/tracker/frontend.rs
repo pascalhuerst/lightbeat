@@ -100,8 +100,8 @@ impl Frontend {
         let mut consumed = 0;
         while self.pending.len() - consumed >= FFT {
             let chunk = &self.pending[consumed..consumed + FFT];
-            for i in 0..FFT {
-                self.input[i] = chunk[i] * self.window[i];
+            for ((dst, &s), &w) in self.input.iter_mut().zip(chunk).zip(&self.window) {
+                *dst = s * w;
             }
             if self
                 .plan

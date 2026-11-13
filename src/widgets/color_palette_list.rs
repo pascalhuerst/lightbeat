@@ -41,8 +41,8 @@ impl ColorPaletteManager {
                 .column(Column::exact(52.0)) // duplicate and delete
                 .header(20.0, |mut header| {
                     header.col(|ui| { ui.strong("Name"); });
-                    for i in 0..PALETTE_SIZE {
-                        header.col(|ui| { ui.strong(SLOT_NAMES[i]); });
+                    for name in SLOT_NAMES.iter().take(PALETTE_SIZE) {
+                        header.col(|ui| { ui.strong(*name); });
                     }
                     header.col(|_ui| {});
                 })
