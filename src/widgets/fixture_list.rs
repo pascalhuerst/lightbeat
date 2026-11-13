@@ -103,7 +103,7 @@ fn new_channel(kind_index: usize, number: usize) -> Channel {
         4 => Channel::color(&name, ColorMode::Hs),
         5 => Channel::pan_tilt(&name, false),
         6 => Channel::pan_tilt(&name, true),
-        7 => Channel::raw(&name, 1),
+        7 => Channel { name, kind: ChannelKind::Raw { count: 1 }, offset: 0, values: vec![0.0] },
         _ => Channel::led_strip(&name, 60, PixelFormat::rgb()),
     }
 }
