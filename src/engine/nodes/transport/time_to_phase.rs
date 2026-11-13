@@ -19,8 +19,21 @@ pub struct TimeToPhaseProcessNode {
     outputs: Vec<PortDef>,
 }
 
+/// The ports, stated once: the widget builds its own from this, so the two
+/// halves cannot disagree.
+pub fn ports() -> (Vec<PortDef>, Vec<PortDef>) {
+    (
+        vec![PortDef::new("trigger", PortType::Logic)],
+        vec![
+            PortDef::new("phase", PortType::Phase),
+            PortDef::new("running", PortType::Logic),
+        ],
+    )
+}
+
 impl TimeToPhaseProcessNode {
     pub fn new(id: NodeId) -> Self {
+        let (inputs, outputs) = ports();
         Self {
             id,
             time: 1.0,
@@ -29,11 +42,8 @@ impl TimeToPhaseProcessNode {
             prev_trigger: false,
             phase: 0.0,
             running: false,
-            inputs: vec![PortDef::new("trigger", PortType::Logic)],
-            outputs: vec![
-                PortDef::new("phase", PortType::Phase),
-                PortDef::new("running", PortType::Logic),
-            ],
+            inputs,
+            outputs,
         }
     }
 }

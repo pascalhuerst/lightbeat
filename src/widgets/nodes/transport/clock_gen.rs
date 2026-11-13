@@ -22,12 +22,8 @@ impl NodeWidget for ClockGenWidget {
     fn type_name(&self) -> &'static str { "Clock Gen" }
     fn description(&self) -> &'static str { "Generates N evenly spaced triggers per phase cycle." }
 
-    fn ui_inputs(&self) -> Vec<UiPortDef> {
-        vec![UiPortDef::from_def(&PortDef::new("phase", PortType::Phase))]
-    }
-    fn ui_outputs(&self) -> Vec<UiPortDef> {
-        vec![UiPortDef::from_def(&PortDef::new("trigger", PortType::Logic))]
-    }
+    fn ui_inputs(&self) -> Vec<UiPortDef> { UiPortDef::from_defs(&crate::engine::nodes::transport::clock_gen::ports().0) }
+    fn ui_outputs(&self) -> Vec<UiPortDef> { UiPortDef::from_defs(&crate::engine::nodes::transport::clock_gen::ports().1) }
 
     fn min_width(&self) -> f32 { 100.0 }
     fn min_content_height(&self) -> f32 { 15.0 }

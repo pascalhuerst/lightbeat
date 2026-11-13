@@ -26,15 +26,8 @@ impl NodeWidget for TriggerHoldWidget {
         "Holds a trigger high for a number of milliseconds after each rising edge. Duration via input or param."
     }
 
-    fn ui_inputs(&self) -> Vec<UiPortDef> {
-        vec![
-            UiPortDef::from_def(&PortDef::new("trigger", PortType::Logic)),
-            UiPortDef::from_def(&PortDef::new("duration", PortType::Untyped)),
-        ]
-    }
-    fn ui_outputs(&self) -> Vec<UiPortDef> {
-        vec![UiPortDef::from_def(&PortDef::new("out", PortType::Logic))]
-    }
+    fn ui_inputs(&self) -> Vec<UiPortDef> { UiPortDef::from_defs(&crate::engine::nodes::transport::hold::ports().0) }
+    fn ui_outputs(&self) -> Vec<UiPortDef> { UiPortDef::from_defs(&crate::engine::nodes::transport::hold::ports().1) }
 
     fn min_width(&self) -> f32 { 120.0 }
     fn min_content_height(&self) -> f32 { 28.0 }
