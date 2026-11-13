@@ -933,6 +933,36 @@ mod tests {
         }
     }
 
+    /// The two halves state their ports separately for the nodes that have not
+    /// been moved onto one shared function; a wire is saved by index, so a
+    /// difference in order or type breaks projects and one in name misleads.
+    #[test]
+    fn the_widget_and_the_engine_node_have_the_same_ports() {
+        let ctx = context();
+        let describe = |ports: Vec<(String, PortType)>| ports.iter().map(|(n, t)| format!("{n}:{t:?}")).collect::<Vec<_>>().join(", ");
+        let mut bad = Vec::new();
+        for desc in node_table() {
+            let widget = (desc.widget)(NodeId(1), new_shared_state(desc.channels.0, desc.channels.1), &ctx);
+            let engine = (desc.engine)(NodeId(1), &ctx);
+            let w_in: Vec<_> = widget.ui_inputs().iter().filter(|p| p.marker.is_none()).map(|p| (p.def.name.clone(), p.def.port_type)).collect();
+            let w_out: Vec<_> = widget.ui_outputs().iter().filter(|p| p.marker.is_none()).map(|p| (p.def.name.clone(), p.def.port_type)).collect();
+            let e_in: Vec<_> = engine.inputs().iter().map(|p| (p.name.clone(), p.port_type)).collect();
+            let e_out: Vec<_> = engine.outputs().iter().map(|p| (p.name.clone(), p.port_type)).collect();
+            // A Portal Send's ports are its widget's own config, which the engine
+            // takes on the first tick.
+            if w_in != e_in && desc.name != "Portal Send" {
+                bad.push(format!("{} inputs: widget [{}] engine [{}]", desc.name, describe(w_in), describe(e_in)));
+            }
+            // These two name their outputs after the ratio they were set to.
+            let relabelled = matches!(desc.name, "Clock Divider" | "Phase Scaler");
+            let types = |v: &[(String, PortType)]| v.iter().map(|(_, t)| *t).collect::<Vec<_>>();
+            if w_out != e_out && !(relabelled && types(&w_out) == types(&e_out)) {
+                bad.push(format!("{} outputs: widget [{}] engine [{}]", desc.name, describe(w_out), describe(e_out)));
+            }
+        }
+        assert!(bad.is_empty(), "ports differ:\n{}", bad.join("\n"));
+    }
+
     #[test]
     fn the_shared_state_is_large_enough_for_the_fresh_engine_node() {
         let ctx = context();
