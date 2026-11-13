@@ -493,7 +493,7 @@ impl LightBeatApp {
                             ui.end_row();
                         });
                     if let Some(err) = &dlg.error {
-                        ui.colored_label(egui::Color32::LIGHT_RED, err);
+                        ui.colored_label(theme::SEM_DANGER, err);
                     }
                     ui.separator();
                     ui.horizontal(|ui| {
@@ -595,12 +595,12 @@ impl LightBeatApp {
 
                     // Blackout button — red when active.
                     let blackout_text = if shared.blackout {
-                        egui::RichText::new("BLACKOUT").color(egui::Color32::WHITE).strong()
+                        egui::RichText::new("BLACKOUT").color(theme::TEXT_BRIGHT).strong()
                     } else {
-                        egui::RichText::new("Blackout").color(egui::Color32::from_gray(160))
+                        egui::RichText::new("Blackout").color(theme::TEXT_DIM)
                     };
                     let blackout_btn = egui::Button::new(blackout_text)
-                        .fill(if shared.blackout { egui::Color32::from_rgb(180, 40, 40) } else { egui::Color32::TRANSPARENT });
+                        .fill(if shared.blackout { theme::SEM_DANGER } else { egui::Color32::TRANSPARENT });
                     if ui.add(blackout_btn).clicked() {
                         shared.blackout = !shared.blackout;
                     }
@@ -609,12 +609,12 @@ impl LightBeatApp {
 
                     // Bypass button — orange when active.
                     let bypass_text = if shared.bypass {
-                        egui::RichText::new("BYPASS").color(egui::Color32::WHITE).strong()
+                        egui::RichText::new("BYPASS").color(theme::TEXT_BRIGHT).strong()
                     } else {
-                        egui::RichText::new("Bypass").color(egui::Color32::from_gray(160))
+                        egui::RichText::new("Bypass").color(theme::TEXT_DIM)
                     };
                     let bypass_btn = egui::Button::new(bypass_text)
-                        .fill(if shared.bypass { egui::Color32::from_rgb(200, 140, 30) } else { egui::Color32::TRANSPARENT });
+                        .fill(if shared.bypass { theme::SEM_WARNING } else { egui::Color32::TRANSPARENT });
                     if ui.add(bypass_btn).clicked() {
                         shared.bypass = !shared.bypass;
                     }
@@ -629,7 +629,7 @@ impl LightBeatApp {
                     } else {
                         "Live"
                     };
-                    ui.colored_label(egui::Color32::from_gray(100), status);
+                    ui.colored_label(theme::TEXT_DIM, status);
 
                     let mut missing = self.input_controllers.missing_controllers();
                     missing.extend(self.audio_inputs.missing_inputs());
@@ -692,7 +692,7 @@ impl LightBeatApp {
                     // Right-aligned zoom indicator + performance readout.
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         ui.colored_label(
-                            egui::Color32::from_gray(140),
+                            theme::TEXT_DIM,
                             format!("Zoom: {:.0}%", self.graph.zoom() * 100.0),
                         );
                         ui.separator();
@@ -707,11 +707,11 @@ impl LightBeatApp {
                         // The engine tick has a 1 ms budget; warn once the
                         // average eats more than half of it.
                         let tick_color = if tick_us > 800 {
-                            egui::Color32::from_rgb(200, 80, 80)
+                            theme::SEM_DANGER
                         } else if tick_us > 500 {
-                            egui::Color32::from_rgb(200, 160, 60)
+                            theme::SEM_WARNING
                         } else {
-                            egui::Color32::from_gray(110)
+                            theme::TEXT_DIM
                         };
                         let perf_text = format!(
                             "engine {}/{} us  ·  ui {:.1}/{:.1} ms (graph {:.1}) @ {} fps  ·  undo snap {:.1}/{:.1} ms @ {}/s",

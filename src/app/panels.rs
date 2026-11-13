@@ -65,7 +65,7 @@ impl LightBeatApp {
         ui.separator();
 
         if let Some(err) = &self.library.last_error {
-            ui.colored_label(egui::Color32::LIGHT_RED, err);
+            ui.colored_label(theme::SEM_DANGER, err);
         }
 
         let q = self.library_search.trim().to_lowercase();
@@ -111,7 +111,7 @@ impl LightBeatApp {
             // --- Decorative (Frame) ---
             if frame_matches {
                 ui.colored_label(
-                    egui::Color32::from_gray(150),
+                    theme::TEXT_DIM,
                     egui::RichText::new("Decorative").strong().size(11.0),
                 );
                 let dnd_id = egui::Id::new("frame-dnd");
@@ -136,7 +136,7 @@ impl LightBeatApp {
                 if !searching && cat != last_cat {
                     if !last_cat.is_empty() { ui.add_space(4.0); }
                     ui.colored_label(
-                        egui::Color32::from_gray(150),
+                        theme::TEXT_DIM,
                         egui::RichText::new(cat).strong().size(11.0),
                     );
                     last_cat = cat;
@@ -175,7 +175,7 @@ impl LightBeatApp {
                         if current_group.is_some() { ui.add_space(2.0); }
                         let label = if e.group.is_empty() { "(root)".to_string() } else { e.group.clone() };
                         ui.colored_label(
-                            egui::Color32::from_gray(120),
+                            theme::TEXT_DIM,
                             egui::RichText::new(label).size(10.0),
                         );
                         current_group = Some(e.group.clone());
@@ -207,7 +207,7 @@ impl LightBeatApp {
             }
 
             if node_entries.is_empty() && macro_entries.is_empty() && !frame_matches {
-                ui.colored_label(egui::Color32::from_gray(120), "No matches.");
+                ui.colored_label(theme::TEXT_DIM, "No matches.");
             }
         });
 
@@ -300,6 +300,7 @@ pub(crate) fn show_frames_colour_inspector(
     ui.colored_label(theme::TEXT_DIM, "Select one frame to edit its title and notes.");
 }
 
+/// Inline inspector for a selected decorative frame.
 pub(crate) fn show_frame_inspector(
     ui: &mut egui::Ui,
     graph: &mut widgets::nodes::NodeGraph,
@@ -339,7 +340,7 @@ pub(crate) fn show_frame_inspector(
     );
     ui.add_space(8.0);
     ui.colored_label(
-        egui::Color32::from_gray(140),
+        theme::TEXT_DIM,
         "Drag the title bar to move; the bottom-right corner to resize. Delete key removes the frame.",
     );
 }
