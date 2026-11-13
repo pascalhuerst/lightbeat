@@ -159,12 +159,9 @@ impl LookupWidget {
         for r in 0..self.row_count {
             let src = r * old_stride;
             let dst = r * new_stride;
-            for k in 0..off {
-                new_data[dst + k] = self.data[src + k];
-            }
-            for k in 0..(old_stride - off - cc) {
-                new_data[dst + off + k] = self.data[src + off + cc + k];
-            }
+            new_data[dst..dst + off].copy_from_slice(&self.data[src..src + off]);
+            let tail = old_stride - off - cc;
+            new_data[dst + off..dst + off + tail].copy_from_slice(&self.data[src + off + cc..src + off + cc + tail]);
         }
         self.columns.remove(col_idx);
         self.data = new_data;
@@ -183,15 +180,12 @@ impl LookupWidget {
         for r in 0..self.row_count {
             let src = r * old_stride;
             let dst = r * new_stride;
-            for k in 0..off {
-                new_data[dst + k] = self.data[src + k];
-            }
+            new_data[dst..dst + off].copy_from_slice(&self.data[src..src + off]);
             // Cells for the retyped column are cleared — old values don't
             // carry meaningful semantics in the new type.
             let tail = old_stride - off - old_cc;
-            for k in 0..tail {
-                new_data[dst + off + new_cc + k] = self.data[src + off + old_cc + k];
-            }
+            new_data[dst + off + new_cc..dst + off + new_cc + tail]
+                .copy_from_slice(&self.data[src + off + old_cc..src + off + old_cc + tail]);
         }
         self.columns[col_idx].port_type = new_type;
         self.data = new_data;

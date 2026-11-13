@@ -8,12 +8,6 @@ use crate::widgets::fader::{self, FaderStyle, Orientation};
 use crate::widgets::nodes::node::NodeWidget;
 use crate::widgets::nodes::types::UiPortDef;
 
-/// Custom shared data for step value edits from UI.
-#[allow(dead_code)]
-pub struct StepValueEdits {
-    pub edits: Vec<(usize, f32)>,
-}
-
 pub struct StepSequencerWidget {
     id: NodeId,
     shared: SharedState,
