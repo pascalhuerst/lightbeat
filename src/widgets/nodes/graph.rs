@@ -5287,6 +5287,8 @@ mod removed_port_tests {
     use crate::widgets::nodes::io::midi_common::new_shared_learned;
     use crate::widgets::nodes::io::midi_input::MidiInputWidget;
     use crate::widgets::nodes::io::midi_output::MidiOutputWidget;
+    use crate::widgets::nodes::meta::subgraph::SubgraphWidget;
+    use crate::engine::nodes::meta::subgraph::SubgraphPortDef;
 
     fn three_entries() -> serde_json::Value {
         serde_json::json!({ "port": "dev", "entries": [
@@ -5358,5 +5360,111 @@ mod removed_port_tests {
         let mut w: Vec<(u64, usize)> = g.active().connections.iter().map(|c| (c.from.node.0, c.to.index)).collect();
         w.sort();
         assert_eq!(w, vec![(11, 0), (12, 1)]);
+    }
+
+    fn constant(id: u64) -> Box<dyn NodeWidget> {
+        Box::new(crate::widgets::nodes::math::constant::ConstantWidget::new(NodeId(id), PortType::Untyped, new_shared_state(0, 1)))
+    }
+
+    fn display(id: u64) -> Box<dyn NodeWidget> {
+        Box::new(ValueDisplayWidget::new(NodeId(id), new_shared_state(1, 0)))
+    }
+
+    /// Constants 10..13 wired into the first three input ports of node 1.
+    fn wire_inputs_of_node_1(g: &mut NodeGraph) {
+        for k in 0..3u64 {
+            g.add_node(constant(10 + k), Pos2::new(0.0, k as f32 * 50.0));
+            g.add_connection(
+                PortId { node: NodeId(10 + k), index: 0, dir: PortDir::Output },
+                PortId { node: NodeId(1), index: k as usize, dir: PortDir::Input },
+            );
+        }
+    }
+
+    /// The first three output ports of node 1 wired into displays 10..13.
+    fn wire_outputs_of_node_1(g: &mut NodeGraph, first_port: usize) {
+        for k in 0..3u64 {
+            g.add_node(display(10 + k), Pos2::new(200.0, k as f32 * 50.0));
+            g.add_connection(
+                PortId { node: NodeId(1), index: first_port + k as usize, dir: PortDir::Output },
+                PortId { node: NodeId(10 + k), index: 0, dir: PortDir::Input },
+            );
+        }
+    }
+
+    fn input_wires(g: &NodeGraph) -> Vec<(u64, usize)> {
+        let mut w: Vec<(u64, usize)> = g.active().connections.iter().map(|c| (c.from.node.0, c.to.index)).collect();
+        w.sort();
+        w
+    }
+
+    fn three_subgraph_ports() -> Vec<SubgraphPortDef> {
+        ["a", "b", "c"].iter().map(|n| SubgraphPortDef { name: n.to_string(), port_type_idx: 2 }).collect()
+    }
+
+    #[test]
+    fn removing_a_subgraph_input_moves_the_outer_wires_after_it_down() {
+        let mut g = NodeGraph::new();
+        let mut sub = SubgraphWidget::new(NodeId(1), new_shared_state(3, 3));
+        sub.input_defs = three_subgraph_ports();
+        g.add_node(Box::new(sub), Pos2::new(200.0, 0.0));
+        wire_inputs_of_node_1(&mut g);
+        assert_eq!(input_wires(&g), vec![(10, 0), (11, 1), (12, 2)]);
+        g.node_mut(0).as_any_mut().downcast_mut::<SubgraphWidget>().unwrap().remove_input(1);
+        g.remap_removed_ports();
+        g.cleanup_stale_connections();
+        assert_eq!(input_wires(&g), vec![(10, 0), (12, 1)]);
+    }
+
+    #[test]
+    fn removing_a_subgraph_output_moves_the_outer_wires_after_it_down() {
+        let mut g = NodeGraph::new();
+        let mut sub = SubgraphWidget::new(NodeId(1), new_shared_state(3, 3));
+        sub.output_defs = three_subgraph_ports();
+        g.add_node(Box::new(sub), Pos2::ZERO);
+        wire_outputs_of_node_1(&mut g, 0);
+        g.node_mut(0).as_any_mut().downcast_mut::<SubgraphWidget>().unwrap().remove_output(0);
+        g.remap_removed_ports();
+        g.cleanup_stale_connections();
+        assert_eq!(wires(&g), vec![(11, 0), (12, 1)]);
+    }
+
+    #[test]
+    fn removing_a_portal_send_port_moves_the_wires_after_it_down() {
+        use crate::widgets::nodes::meta::portal::PortalSendWidget;
+        let mut g = NodeGraph::new();
+        let mut send = PortalSendWidget::new(NodeId(1), new_shared_state(3, 0));
+        send.restore_from_save_data(&serde_json::json!({ "name": "p", "ports": [
+            { "name": "a", "port_type_idx": 2 }, { "name": "b", "port_type_idx": 2 }, { "name": "c", "port_type_idx": 2 },
+        ]}));
+        g.add_node(Box::new(send), Pos2::new(200.0, 0.0));
+        wire_inputs_of_node_1(&mut g);
+        assert_eq!(input_wires(&g), vec![(10, 0), (11, 1), (12, 2)]);
+        g.node_mut(0).as_any_mut().downcast_mut::<PortalSendWidget>().unwrap().remove_port(0);
+        g.remap_removed_ports();
+        g.cleanup_stale_connections();
+        assert_eq!(input_wires(&g), vec![(11, 0), (12, 1)]);
+    }
+
+    #[test]
+    fn removing_a_lookup_column_moves_the_output_wires_after_it_down() {
+        use crate::widgets::nodes::math::lookup::LookupWidget;
+        let mut g = NodeGraph::new();
+        let mut lookup = LookupWidget::new(
+            NodeId(1),
+            new_shared_state(1, 321),
+            crate::widgets::nodes::math::gradient_source::new_shared_gradient_library(),
+        );
+        lookup.restore_from_save_data(&serde_json::json!({ "columns": [
+            { "name": "a" }, { "name": "b" }, { "name": "c" },
+        ]}));
+        g.add_node(Box::new(lookup), Pos2::ZERO);
+        // Output 0 is "rows"; the columns are ports 1..=3.
+        wire_outputs_of_node_1(&mut g, 1);
+        assert_eq!(wires(&g), vec![(10, 1), (11, 2), (12, 3)]);
+        g.node_mut(0).as_any_mut().downcast_mut::<LookupWidget>().unwrap().remove_column(1);
+        g.remap_removed_ports();
+        g.cleanup_stale_connections();
+        assert_eq!(wires(&g), vec![(10, 1), (12, 2)]);
     }
 }

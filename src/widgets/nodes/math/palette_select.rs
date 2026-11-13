@@ -13,6 +13,9 @@ use crate::widgets::nodes::types::UiPortDef;
 pub struct PaletteContext {
     pub palettes: Vec<ColorPalette>,
     pub groups: Vec<ColorPaletteGroup>,
+    /// Bumped whenever the setup's palettes or groups change; nodes keep a
+    /// copy of what they pick from in the engine and re-push on a new value.
+    pub version: u64,
 }
 
 pub type SharedPaletteContext = Arc<Mutex<PaletteContext>>;
@@ -21,6 +24,7 @@ pub fn new_shared_palette_context() -> SharedPaletteContext {
     Arc::new(Mutex::new(PaletteContext {
         palettes: Vec::new(),
         groups: Vec::new(),
+        version: 1,
     }))
 }
 
@@ -31,6 +35,7 @@ pub struct PaletteSelectWidget {
     /// Ordered list of group IDs this node uses.
     selected_group_ids: Vec<u32>,
     select_mode: SelectMode,
+    seen_ctx_version: u64,
 }
 
 impl PaletteSelectWidget {
@@ -41,6 +46,7 @@ impl PaletteSelectWidget {
             palette_ctx,
             selected_group_ids: Vec::new(),
             select_mode: SelectMode::Index,
+            seen_ctx_version: 0,
         }
     }
 
@@ -120,6 +126,14 @@ impl NodeWidget for PaletteSelectWidget {
         // Restore widget selection from engine on first frame after load.
         if let Some(ids) = restored_ids {
             self.selected_group_ids = ids;
+        }
+
+        let version = self.palette_ctx.lock().unwrap().version;
+        if version != self.seen_ctx_version {
+            self.seen_ctx_version = version;
+            if !self.selected_group_ids.is_empty() {
+                self.push_data_to_engine();
+            }
         }
 
         if group_count == 0 {
