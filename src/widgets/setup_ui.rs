@@ -109,6 +109,36 @@ pub fn add_menu<T>(ui: &mut Ui, id: impl Hash, caption: &str, items: Vec<(T, Str
     picked
 }
 
+/// A labelled dropdown for a mode setting, like the generic Choice rows of the
+/// inspector. Each option is (value, caption, hover text); an empty hover text
+/// shows none. Returns true when another option was picked.
+pub fn choice_combo<T: PartialEq + Copy>(
+    ui: &mut Ui,
+    id: impl Hash,
+    label: &str,
+    current: &mut T,
+    options: &[(T, &str, &str)],
+) -> bool {
+    let mut changed = false;
+    ui.horizontal(|ui| {
+        ui.label(label);
+        let shown = options.iter().find(|o| o.0 == *current).map_or("?", |o| o.1);
+        egui::ComboBox::from_id_salt(id).selected_text(shown).show_ui(ui, |ui| {
+            for (value, caption, hover) in options {
+                let mut r = ui.selectable_label(*current == *value, *caption);
+                if !hover.is_empty() {
+                    r = r.on_hover_text(*hover);
+                }
+                if r.clicked() && *current != *value {
+                    *current = *value;
+                    changed = true;
+                }
+            }
+        });
+    });
+    changed
+}
+
 // ---------------------------------------------------------------------------
 // Text
 // ---------------------------------------------------------------------------

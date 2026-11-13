@@ -6,6 +6,7 @@ use crate::engine::nodes::ui::common::MouseOverrideMode;
 use crate::engine::nodes::ui::fader::{FaderDisplay, FaderOrientation};
 use crate::engine::types::*;
 use crate::theme;
+use crate::widgets::setup_ui;
 use crate::widgets::fader::{self, highlight_alpha, FaderStyle};
 use crate::widgets::nodes::node::{NodeLayout, NodeWidget};
 use crate::widgets::nodes::types::UiPortDef;
@@ -256,15 +257,12 @@ impl NodeWidget for FaderWidget {
             }
         });
         ui.separator();
-        ui.horizontal(|ui| {
-            ui.label("Orientation");
-            if ui.radio_value(&mut self.orientation, FaderOrientation::Vertical, "Vertical").clicked() {
-                changed = true;
-            }
-            if ui.radio_value(&mut self.orientation, FaderOrientation::Horizontal, "Horizontal").clicked() {
-                changed = true;
-            }
-        });
+        if setup_ui::choice_combo(ui, ("fader_orientation", self.id.0), "Orientation", &mut self.orientation, &[
+            (FaderOrientation::Vertical, "Vertical", ""),
+            (FaderOrientation::Horizontal, "Horizontal", ""),
+        ]) {
+            changed = true;
+        }
 
         ui.separator();
         ui.label(egui::RichText::new("Output").strong());

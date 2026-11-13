@@ -5,6 +5,7 @@ use egui::{self, Color32, Pos2, Rect, Sense, Stroke, StrokeKind, Ui};
 use crate::engine::nodes::ui::peak_meter::{PeakMeterDisplay, PeakMeterOrientation};
 use crate::engine::types::*;
 use crate::theme;
+use crate::widgets::setup_ui;
 use crate::widgets::nodes::node::{NodeLayout, NodeWidget, PORT_RADIUS};
 use crate::widgets::nodes::types::UiPortDef;
 
@@ -181,15 +182,12 @@ impl NodeWidget for PeakMeterWidget {
             }
         });
         ui.separator();
-        ui.horizontal(|ui| {
-            ui.label("Orientation");
-            if ui.radio_value(&mut self.orientation, PeakMeterOrientation::Vertical, "Vertical").clicked() {
-                changed = true;
-            }
-            if ui.radio_value(&mut self.orientation, PeakMeterOrientation::Horizontal, "Horizontal").clicked() {
-                changed = true;
-            }
-        });
+        if setup_ui::choice_combo(ui, ("peak_orientation", self.id.0), "Orientation", &mut self.orientation, &[
+            (PeakMeterOrientation::Vertical, "Vertical", ""),
+            (PeakMeterOrientation::Horizontal, "Horizontal", ""),
+        ]) {
+            changed = true;
+        }
         ui.horizontal(|ui| {
             ui.label("Peak");
             ui.colored_label(theme::TEXT, format!("{:.3} ({:+.1} dB)", self.peak, level_to_db(self.peak)));

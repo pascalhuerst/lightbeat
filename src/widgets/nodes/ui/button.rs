@@ -6,6 +6,7 @@ use crate::engine::nodes::ui::button::{ButtonDisplay, ButtonMode};
 use crate::engine::nodes::ui::common::MouseOverrideMode;
 use crate::engine::types::*;
 use crate::theme;
+use crate::widgets::setup_ui;
 use crate::widgets::fader::highlight_alpha;
 use crate::widgets::nodes::node::{NodeLayout, NodeWidget};
 use crate::widgets::nodes::types::UiPortDef;
@@ -224,15 +225,12 @@ impl NodeWidget for ButtonWidget {
             }
         });
 
-        ui.horizontal(|ui| {
-            ui.label("Mode");
-            if ui.radio_value(&mut self.mode, ButtonMode::Trigger, "Trigger").clicked() {
-                changed = true;
-            }
-            if ui.radio_value(&mut self.mode, ButtonMode::Toggle, "Toggle").clicked() {
-                changed = true;
-            }
-        });
+        if setup_ui::choice_combo(ui, ("button_mode", self.id), "Mode", &mut self.mode, &[
+            (ButtonMode::Trigger, "Trigger", ""),
+            (ButtonMode::Toggle, "Toggle", ""),
+        ]) {
+            changed = true;
+        }
 
         if ui.checkbox(&mut self.inputs_enabled, "Input enabled").changed() {
             changed = true;

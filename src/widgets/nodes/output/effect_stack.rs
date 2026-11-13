@@ -17,6 +17,7 @@ use crate::engine::effects::stack::{LayerConfig, PreviewStrip, StackConfig, Stac
 use crate::engine::types::*;
 use crate::objects::channel::ChannelKind;
 use crate::theme;
+use crate::widgets::setup_ui;
 use crate::widgets::nodes::node::{NodeWidget, StackMember};
 use crate::widgets::group_context::SharedGroupContext;
 use crate::widgets::nodes::output::effect::SharedStackNames;
@@ -475,18 +476,12 @@ impl NodeWidget for EffectStackWidget {
                 changed = true;
             }
         });
-        ui.horizontal(|ui| {
-            ui.label("Mode");
-            for (mode, label, hint) in [
-                (StackMode::Layers, "Layers", "Blend everything sent here, bottom to top"),
-                (StackMode::Scenes, "Scenes", "Show one at a time; the scene input picks it (the first in the list is 0) and the fade input fades to it"),
-            ] {
-                if ui.selectable_label(self.config.mode == mode, label).on_hover_text(hint).clicked() {
-                    self.config.mode = mode;
-                    changed = true;
-                }
-            }
-        });
+        if setup_ui::choice_combo(ui, ("stack_mode", self.id.0), "Mode", &mut self.config.mode, &[
+            (StackMode::Layers, "Layers", "Blend everything sent here, bottom to top"),
+            (StackMode::Scenes, "Scenes", "Show one at a time; the scene input picks it (the first in the list is 0) and the fade input fades to it"),
+        ]) {
+            changed = true;
+        }
         ui.horizontal(|ui| {
             ui.label("Send to");
             let choices = self.names.lock().unwrap().parents_for(&self.config.name);
