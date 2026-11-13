@@ -1,4 +1,7 @@
+use crate::engine::param_spec::{IntParam};
 use crate::engine::types::*;
+
+const EVERY_NTH: IntParam = IntParam::new("Every Nth", 2, 64).at_least(2);
 
 /// Outputs besides the first one.
 pub const MAX_EXTRA_OUTPUTS: usize = 15;
@@ -119,17 +122,12 @@ impl ProcessNode for ClockDividerProcessNode {
     }
 
     fn params(&self) -> Vec<ParamDef> {
-        vec![ParamDef::Int {
-            name: "Every Nth".into(),
-            value: self.divisor as i64,
-            min: 2,
-            max: 64,
-        }]
+        vec![EVERY_NTH.def(self.divisor as i64)]
     }
 
     fn set_param(&mut self, index: usize, value: ParamValue) {
         if index == 0 {
-            self.divisor = value.as_i64().max(2) as i32;
+            self.divisor = EVERY_NTH.apply(&value) as i32;
             self.count = 0;
         }
     }

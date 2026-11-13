@@ -1,6 +1,10 @@
 use serde::{Deserialize, Serialize};
 
+use crate::engine::param_spec::{FloatParam, IntParam};
 use crate::engine::types::*;
+
+const EXPONENT: IntParam = IntParam::new("Exponent", -6, 6);
+const OFFSET: FloatParam = FloatParam::new("Offset", 0.0, 1.0, 0.01, "");
 
 /// Outputs besides the first one.
 pub const MAX_EXTRA_OUTPUTS: usize = 15;
@@ -200,15 +204,15 @@ impl ProcessNode for PhaseScalerProcessNode {
 
     fn params(&self) -> Vec<ParamDef> {
         vec![
-            ParamDef::Int { name: "Exponent".into(), value: self.exponent as i64, min: -6, max: 6 },
-            ParamDef::Float { name: "Offset".into(), value: self.offset, min: 0.0, max: 1.0, step: 0.01, unit: "" },
+            EXPONENT.def(self.exponent as i64),
+            OFFSET.def(self.offset),
         ]
     }
 
     fn set_param(&mut self, index: usize, value: ParamValue) {
         match index {
-            0 => self.exponent = value.as_i64() as i32,
-            1 => self.offset = value.as_f32(),
+            0 => self.exponent = EXPONENT.apply(&value) as i32,
+            1 => self.offset = OFFSET.apply(&value),
             _ => {}
         }
     }
