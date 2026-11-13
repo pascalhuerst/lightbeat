@@ -28,7 +28,7 @@ impl LfoWaveform {
             _ => LfoWaveform::Sine,
         }
     }
-    pub fn to_index(&self) -> usize {
+    pub fn to_index(self) -> usize {
         match self {
             LfoWaveform::Sine => 0,
             LfoWaveform::Triangle => 1,

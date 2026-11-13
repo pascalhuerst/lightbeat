@@ -49,7 +49,7 @@ impl TransitionMode {
             _ => Self::Neutral,
         }
     }
-    pub fn to_index(&self) -> usize {
+    pub fn to_index(self) -> usize {
         match self {
             Self::Neutral => 0,
             Self::Float => 1,

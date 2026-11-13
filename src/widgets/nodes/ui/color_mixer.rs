@@ -34,7 +34,7 @@ impl ColorMixerWidget {
     fn set_mode(&mut self, mode: MixerMode) {
         if mode == self.mode { return; }
         let c = self.mode.to_rgb(self.values);
-        self.values = mode.from_rgb(c);
+        self.values = mode.sliders_for(c);
         self.mode = mode;
         self.push_config();
     }

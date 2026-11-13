@@ -18,7 +18,7 @@ impl SmoothingMode {
             _ => Self::Exponential,
         }
     }
-    pub fn to_index(&self) -> usize {
+    pub fn to_index(self) -> usize {
         match self {
             Self::Exponential => 0,
             Self::MovingAverage => 1,

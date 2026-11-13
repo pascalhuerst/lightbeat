@@ -51,8 +51,8 @@ impl EasingCurve {
         Self::all().get(i).copied().unwrap_or(Self::Linear)
     }
 
-    pub fn to_index(&self) -> usize {
-        Self::all().iter().position(|c| c == self).unwrap_or(0)
+    pub fn to_index(self) -> usize {
+        Self::all().iter().position(|c| *c == self).unwrap_or(0)
     }
 
     /// Apply the easing curve. Input t in 0..1, output in 0..1.

@@ -60,7 +60,7 @@ impl MixerMode {
     }
 
     /// Slider values in this mode that give `c`, so a mode switch keeps the color.
-    pub fn from_rgb(self, c: Rgb) -> [f32; 3] {
+    pub fn sliders_for(self, c: Rgb) -> [f32; 3] {
         match self {
             MixerMode::Rgb => [c.r, c.g, c.b],
             MixerMode::Hsv => {
@@ -204,7 +204,7 @@ mod tests {
         let c = Rgb::new(0.2, 0.6, 0.9);
         for from in [MixerMode::Rgb, MixerMode::Hsv, MixerMode::Cmy] {
             for to in [MixerMode::Rgb, MixerMode::Hsv, MixerMode::Cmy] {
-                let back = to.to_rgb(to.from_rgb(from.to_rgb(from.from_rgb(c))));
+                let back = to.to_rgb(to.sliders_for(from.to_rgb(from.sliders_for(c))));
                 assert!((back.r - c.r).abs() < 1e-4 && (back.g - c.g).abs() < 1e-4 && (back.b - c.b).abs() < 1e-4);
             }
         }
