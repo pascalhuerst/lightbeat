@@ -96,7 +96,7 @@ pub const FILL: EffectSpec = EffectSpec {
 };
 
 pub const BAR_LOOP: EffectSpec = EffectSpec {
-    type_name: "Bar Loop",
+    type_name: "Bar",
     kind: "Loop",
     description: "A bar of light at a position on the group. Position, width and softness can be promoted to inputs, for example to follow an LFO or a fader.",
     inputs: || Bar::default().inputs(),

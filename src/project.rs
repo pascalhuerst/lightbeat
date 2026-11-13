@@ -319,6 +319,26 @@ fn connections_for_current_layout(project: &ProjectFile) -> Vec<SavedConnection>
     connections
 }
 
+/// Names nodes were saved under before they were renamed, with the name they
+/// have now. Every path that makes nodes from saved data (project load, macros,
+/// paste of an inner graph) goes through `load_graph`, so this is the one place.
+/// Temporary: drop an entry once the test projects have been saved again.
+pub(crate) const RENAMED_NODES: [(&str, &str); 8] = [
+    // Renamed when the node gained several envelope kinds.
+    ("ADSR", "Envelope"),
+    ("Position Merge", "Pan Tilt to Position"),
+    ("Position Split", "Position to Pan Tilt"),
+    ("Latch", "Tick Delay"),
+    ("Flip-Flop", "SR Flip-Flop"),
+    ("Clock", "Link Clock"),
+    ("Scaler", "Range to Unit"),
+    ("Bar Loop", "Bar"),
+];
+
+fn current_type_name(saved: &str) -> &str {
+    RENAMED_NODES.iter().find(|(old, _)| *old == saved).map_or(saved, |(_, new)| new)
+}
+
 #[allow(dead_code)]
 pub fn load_graph(graph: &mut NodeGraph, project: &ProjectFile) -> Vec<usize> {
     let mut indices = Vec::new();
@@ -327,13 +347,7 @@ pub fn load_graph(graph: &mut NodeGraph, project: &ProjectFile) -> Vec<usize> {
 
     for saved in &project.nodes {
         let id = NodeId(saved.id);
-        let type_name: &str = match saved.type_name.as_str() {
-            // ADSR was renamed to "Envelope" when the node gained
-            // multiple envelope kinds. Old projects still save under
-            // the former type_name.
-            "ADSR" => "Envelope",
-            other => other,
-        };
+        let type_name = current_type_name(&saved.type_name);
         if let Some(node) = graph.create_from_registry(type_name, id) {
             let idx = graph.add_node(node, egui::Pos2::new(saved.pos[0], saved.pos[1]));
 
@@ -663,13 +677,13 @@ mod tests {
     }
 
     #[test]
-    fn a_bar_loop_with_promoted_inputs_loads_from_its_saved_form() {
+    fn a_bar_saved_as_bar_loop_with_promoted_inputs_loads_from_its_saved_form() {
         use crate::widgets::nodes::output::effect::{BAR_LOOP, EffectWidget, new_shared_stack_names};
         use crate::widgets::nodes::NodeGraph;
 
         let mut g = NodeGraph::new();
         let names = new_shared_stack_names();
-        g.register_node("Effect", "Bar Loop", move |id| {
+        g.register_node("Effect", "Bar", move |id| {
             Box::new(EffectWidget::new(id, crate::engine::types::new_shared_state(48, 0), BAR_LOOP, names.clone()))
         });
         // Exactly what the Group Output conversion writes.

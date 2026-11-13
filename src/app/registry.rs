@@ -215,7 +215,7 @@ pub(crate) const CATEGORIES: [&str; 14] = [
 pub(crate) fn node_table() -> Vec<NodeDescriptor> {
     let mut table = Vec::new();
     table.push(node(
-        "Clock", "Clock", (0, 3),
+        "Clock", "Link Clock", (0, 3),
         |id, s, _| Box::new(ClockWidget::new(id, s)),
         |id, ctx| {
             let node = ClockProcessNode::new(id, Arc::clone(&ctx.snapshot));
@@ -377,7 +377,7 @@ pub(crate) fn node_table() -> Vec<NodeDescriptor> {
         |id, _| Box::new(SmoothingProcessNode::new(id)),
     ));
     table.push(node(
-        "Trigger", "Latch", (1, 1),
+        "Trigger", "Tick Delay", (1, 1),
         |id, s, _| Box::new(LatchWidget::new(id, s)),
         |id, _| Box::new(LatchProcessNode::new(id)),
     ));
@@ -557,7 +557,7 @@ pub(crate) fn node_table() -> Vec<NodeDescriptor> {
         |id, _| Box::new(LogicGateProcessNode::new(id, LogicOp::Not)),
     ));
     table.push(node(
-        "Logic", "Flip-Flop", (2, 2),
+        "Logic", "SR Flip-Flop", (2, 2),
         |id, s, _| Box::new(FlipFlopWidget::new(id, s, FlipFlopKind::Sr)),
         |id, _| Box::new(FlipFlopProcessNode::new(id)),
     ));
@@ -567,12 +567,12 @@ pub(crate) fn node_table() -> Vec<NodeDescriptor> {
         |id, _| Box::new(JkFlipFlopProcessNode::new(id)),
     ));
     table.push(node(
-        "Position", "Position Merge", (2, 2),
+        "Position", "Pan Tilt to Position", (2, 2),
         |id, s, _| Box::new(PositionMergeWidget::new(id, s)),
         |id, _| Box::new(PositionMergeProcessNode::new(id)),
     ));
     table.push(node(
-        "Position", "Position Split", (2, 2),
+        "Position", "Position to Pan Tilt", (2, 2),
         |id, s, _| Box::new(PositionSplitWidget::new(id, s)),
         |id, _| Box::new(PositionSplitProcessNode::new(id)),
     ));
@@ -606,7 +606,7 @@ pub(crate) fn node_table() -> Vec<NodeDescriptor> {
     ));
     // Inputs: in, min, max (3). Output: out (1).
     table.push(node(
-        "Math", "Scaler", (3, 1),
+        "Math", "Range to Unit", (3, 1),
         |id, s, _| Box::new(ScalerWidget::new(id, s)),
         |id, _| Box::new(ScalerProcessNode::new(id)),
     ));
@@ -850,6 +850,73 @@ mod tests {
             assert!(CATEGORIES.contains(&desc.category), "{} is in {}", desc.name, desc.category);
             let path = widgets::nodes::paths::node_path(desc.category, desc.name);
             assert_eq!(path.split('/').next(), Some(desc.category.to_lowercase().as_str()), "{}", desc.name);
+        }
+    }
+
+    /// Loads a one-node project saved under `old` into a graph holding every
+    /// registered widget and returns the type name of what came out.
+    fn loaded_as(old: &str) -> Option<String> {
+        let ctx = context();
+        let mut g = widgets::nodes::NodeGraph::new();
+        for desc in node_table() {
+            let (inputs, outputs) = desc.channels;
+            let ctx = ctx.clone();
+            g.register_node(desc.category, desc.name, move |id| (desc.widget)(id, new_shared_state(inputs, outputs), &ctx));
+        }
+        let project: crate::project::ProjectFile = serde_json::from_str(&format!(
+            r#"{{"nodes": [{{"type_name": "{old}", "id": 1, "pos": [0.0, 0.0], "params": []}}], "connections": []}}"#
+        ))
+        .unwrap();
+        let loaded = crate::project::load_graph(&mut g, &project);
+        loaded.first().map(|i| g.node_mut(*i).type_name().to_string())
+    }
+
+    #[test]
+    fn position_merge_loads_as_pan_tilt_to_position() {
+        assert_eq!(loaded_as("Position Merge").as_deref(), Some("Pan Tilt to Position"));
+    }
+
+    #[test]
+    fn position_split_loads_as_position_to_pan_tilt() {
+        assert_eq!(loaded_as("Position Split").as_deref(), Some("Position to Pan Tilt"));
+    }
+
+    #[test]
+    fn latch_loads_as_tick_delay() {
+        assert_eq!(loaded_as("Latch").as_deref(), Some("Tick Delay"));
+    }
+
+    #[test]
+    fn flip_flop_loads_as_sr_flip_flop() {
+        assert_eq!(loaded_as("Flip-Flop").as_deref(), Some("SR Flip-Flop"));
+    }
+
+    #[test]
+    fn clock_loads_as_link_clock() {
+        assert_eq!(loaded_as("Clock").as_deref(), Some("Link Clock"));
+    }
+
+    #[test]
+    fn scaler_loads_as_range_to_unit() {
+        assert_eq!(loaded_as("Scaler").as_deref(), Some("Range to Unit"));
+    }
+
+    #[test]
+    fn bar_loop_loads_as_bar() {
+        assert_eq!(loaded_as("Bar Loop").as_deref(), Some("Bar"));
+    }
+
+    #[test]
+    fn adsr_loads_as_envelope() {
+        assert_eq!(loaded_as("ADSR").as_deref(), Some("Envelope"));
+    }
+
+    #[test]
+    fn every_rename_points_at_a_registered_node_and_no_old_name_is_registered() {
+        let table = node_table();
+        for (old, new) in crate::project::RENAMED_NODES {
+            assert!(table.iter().any(|d| d.name == new), "{new} is not registered");
+            assert!(table.iter().all(|d| d.name != old), "{old} is still registered");
         }
     }
 

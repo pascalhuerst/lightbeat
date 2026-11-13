@@ -1,4 +1,4 @@
-//! Bar Loop: a bar of light at a position on the group.
+//! Bar: a bar of light at a position on the group.
 //!
 //! The position, width and softness are parameters, so each can be promoted
 //! to an input and driven by an LFO, the beat phase or a fader.
@@ -49,7 +49,7 @@ fn coverage(x: f32, lo: f32, hi: f32, softness: f32) -> f32 {
 }
 
 impl EffectKind for Bar {
-    fn type_name(&self) -> &'static str { "Bar Loop" }
+    fn type_name(&self) -> &'static str { "Bar" }
 
     fn inputs(&self) -> Vec<PortDef> {
         vec![PortDef::new("color", PortType::Gradient)]

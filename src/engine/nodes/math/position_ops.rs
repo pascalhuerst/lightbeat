@@ -14,8 +14,8 @@ impl PositionMergeProcessNode {
         Self {
             id, pan: 0.0, tilt: 0.0,
             inputs: vec![
-                PortDef::new("Pan", PortType::Untyped),
-                PortDef::new("Tilt", PortType::Untyped),
+                PortDef::new("pan", PortType::Untyped),
+                PortDef::new("tilt", PortType::Untyped),
             ],
             outputs: vec![PortDef::new("position", PortType::Position)],
         }
@@ -24,7 +24,7 @@ impl PositionMergeProcessNode {
 
 impl ProcessNode for PositionMergeProcessNode {
     fn node_id(&self) -> NodeId { self.id }
-    fn type_name(&self) -> &'static str { "Position Merge" }
+    fn type_name(&self) -> &'static str { "Pan Tilt to Position" }
     fn inputs(&self) -> &[PortDef] { &self.inputs }
     fn outputs(&self) -> &[PortDef] { &self.outputs }
 
@@ -55,8 +55,8 @@ impl PositionSplitProcessNode {
             id, pan: 0.0, tilt: 0.0,
             inputs: vec![PortDef::new("position", PortType::Position)],
             outputs: vec![
-                PortDef::new("Pan", PortType::Untyped),
-                PortDef::new("Tilt", PortType::Untyped),
+                PortDef::new("pan", PortType::Untyped),
+                PortDef::new("tilt", PortType::Untyped),
             ],
         }
     }
@@ -64,7 +64,7 @@ impl PositionSplitProcessNode {
 
 impl ProcessNode for PositionSplitProcessNode {
     fn node_id(&self) -> NodeId { self.id }
-    fn type_name(&self) -> &'static str { "Position Split" }
+    fn type_name(&self) -> &'static str { "Position to Pan Tilt" }
     fn inputs(&self) -> &[PortDef] { &self.inputs }
     fn outputs(&self) -> &[PortDef] { &self.outputs }
 
