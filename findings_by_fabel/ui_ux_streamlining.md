@@ -35,6 +35,15 @@ Updated as items are implemented. Items not listed here are open.
 | 3.12 | open | needs the gradient editor in the tab |
 | 4.7 | done | 6f62bfd |
 | 10.1 - 10.3, 10.6 | partly | done inside the Setup tabs and the DMX monitor |
+| 2.1 | done | 0052003 |
+| 4.1 | done | c99970b |
+| 4.2 | done | 61118b6 |
+| 4.3 | done | 3db0d64 |
+| 4.4 | done | b44dcf0 |
+| 4.5 | done | 5436c27 |
+| 4.6 | done | 9bd6077 |
+| 4.9 | done | 850f5f3 |
+| 10.1, 10.2, 10.6 | partly | 96e524b, 395d014: done in the shell as well |
 
 ---
 

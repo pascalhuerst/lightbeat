@@ -38,13 +38,15 @@ src/
 ├── main.rs                       # main(), the LightBeatApp struct and its
 │                                 # constructor, the eframe App impl.
 ├── app/                          # The rest of LightBeatApp, by concern:
-│   ├── registry.rs               # node registration (widget + engine side).
+│   ├── registry.rs               # node_table(): one entry per node type with
+│   │                             # both constructors; NodeContext.
 │   ├── files.rs                  # project/setup load and save, autosave,
 │   │                             # file dialogs, unsaved-changes logic.
 │   ├── frame.rs                  # update_frame: menu bar, status bar,
 │   │                             # inspector panel, canvas, shortcuts, dialogs.
 │   ├── panels.rs                 # Add Nodes panel, Setup window, frame inspector.
 │   ├── macros.rs                 # macro library actions and dialogs.
+│   ├── undo.rs, preferences.rs, shortcuts.rs
 │   └── update_ui.rs              # Software update and About windows.
 ├── engine/
 │   ├── mod.rs                    # EngineHandle, ringbuf wiring, thread spawn.
@@ -161,9 +163,8 @@ src/
 │                                 # per-channel Override mechanism, test_universes.
 ├── project.rs                    # Save/load NodeGraph (root level + recursive
 │                                 # inner_graph for subgraphs). After the engine's
-│                                 # load_data, `load_graph` restores widget state
-│                                 # with one `if type_name == ...` block per node
-│                                 # type that has any (about 30). PROJECT_VERSION
+│                                 # load_data, `load_graph` calls each widget's
+│                                 # `restore_from_save`. PROJECT_VERSION
 │                                 # and connections_for_current_layout live here.
 ├── setup.rs                      # SetupFile (fixtures, objects, interfaces,
 │                                 # groups, palettes, gradient presets, input
@@ -176,13 +177,15 @@ src/
 
 ### The window
 
-Menu bar (File, Edit with separate undo for project and setup, View, Window,
-Help; version on the right). Left: the "Add Nodes" panel (search, node types by
+Menu bar (File, Edit, View, Help; version on the right). Undo/Redo is one pair
+that acts on whichever of project and setup changed last (`app/undo.rs`);
+Edit also has Preferences (`app/preferences.rs`, the settings in
+`settings.json`); Help lists the keyboard shortcuts (`app/shortcuts.rs`). Left: the "Add Nodes" panel (search, node types by
 category, macros; entries are dragged onto the canvas). Centre: the canvas.
 Right: the inspector (Show/Auto/Hide), with the snapshot panel under it when one
 node is selected. Bottom: the status bar (Blackout, Bypass, missing hardware +
 Rescan, Latency, update notice, perf gauges, zoom). Floating windows: **Setup**
-(Window menu; tabs Interfaces, Fixture Templates, Objects, Groups, Color
+(View menu; tabs Interfaces, Fixture Templates, Objects, Groups, Color
 Palettes, Palette Groups, Gradients, Audio Inputs, Input Controllers, DMX
 Inputs) and **DMX Monitor** (View menu). All of this is in `app/frame.rs`
 (`update_frame`) and `app/panels.rs`. The setup is written to `setup.json` on exit, on Ctrl+S and on
@@ -607,27 +610,25 @@ import; the project only when saved.
 
 ## 4. Adding a new node — checklist
 
-1. **Engine file**: `src/engine/nodes/<category>/<snake_name>.rs` —
-   define struct + `impl ProcessNode`. If it has runtime state to persist,
-   implement `save_data()` and `load_data()`.
-2. **Widget file**: `src/widgets/nodes/<category>/<snake_name>.rs` —
-   define struct + `impl NodeWidget`. Set `description()`. If the widget
-   keeps state of its own that shapes it (port lists, entries, a mode), give it
-   a `restore_from_save_data(&mut self, &serde_json::Value)` and call it from a
-   block in `project.rs::load_graph` (about 30 node types do; see Lookup Table
-   or MIDI Input). Paste (`graph.rs::paste`) and "Move to Subgraph" have their
-   own, shorter lists of such blocks: add the node there too, or a pasted copy
-   comes back with default ports.
-3. Register both in their respective `mod.rs` files. If category and name
-   would put the node in the wrong quick-add group, add a line to
-   `widgets/nodes/paths.rs`.
-4. In `main.rs`:
-   - Add the `use` import.
-   - Register the widget factory: `self.graph.register_node("Category", "Display Name", |id| Box::new(MyWidget::new(id, new_shared_state(num_inputs, num_outputs))));`
-   - Add the engine arm in `wire_new_nodes`: `"Display Name" => Some(Box::new(MyProcessNode::new(id))),`
-5. The **first input/output channel counts** in `new_shared_state(in, out)`
-   must match the engine's `total_channels(inputs)` and `total_channels(outputs)`.
-   For nodes with dynamic ports (e.g. mode switching), pass a generous max.
+1. **Engine file**: `src/engine/nodes/<dir>/<snake_name>.rs` — define struct +
+   `impl ProcessNode`. If it has runtime state to persist, implement
+   `save_data()` and `load_data()`. A node that integrates time reads
+   `engine::time::dt()`.
+2. **Widget file**: `src/widgets/nodes/<dir>/<snake_name>.rs` — define struct +
+   `impl NodeWidget`. Set `description()`. If its ports or looks depend on its
+   own state (columns, entries, size, slots, a mode), implement
+   `NodeWidget::restore_from_save(data, params)`: load, paste and "Move to
+   Subgraph" all call it, so nothing in `project.rs` or the graph needs an edit.
+3. Register both modules in their `mod.rs` files.
+4. Add ONE entry to `node_table()` in `src/app/registry.rs`:
+   `node(category, name, (max_in, max_out), widget_ctor, engine_ctor)`. Hubs
+   and registries come from the `NodeContext` passed to both constructors. The
+   name is also the saved `type_name`. Tests in that file check that both
+   halves build, the names agree and the channel counts are large enough.
+5. The channel counts must be at least the engine's `total_channels(inputs)`
+   and `total_channels(outputs)`; for dynamic ports pass a generous max.
+6. If category and name would put the node in the wrong quick-add group, add
+   a line to `widgets/nodes/paths.rs`.
 
 ---
 
