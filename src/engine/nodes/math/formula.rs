@@ -1,4 +1,7 @@
-use meval::{ContextProvider, Expr, FuncEvalError};
+mod syntax;
+
+use syntax::{Ast, Op};
+
 
 use crate::engine::types::*;
 
@@ -24,68 +27,128 @@ fn expression_of(formula: &str) -> &str {
     formula
 }
 
-/// What a formula can refer to: the input as `x` or `i`, the constants, and
-/// the functions. (`meval` parses; it brings its own functions, but a context
-/// of its own is not `Send`, so they are listed here.)
-struct Env {
-    input: f64,
+/// A formula with every name resolved, so that evaluating it is a walk over
+/// the tree: no lookups by text and no allocation.
+enum Expr {
+    Number(f64),
+    Input,
+    Neg(Box<Expr>),
+    Binary(Op, Box<Expr>, Box<Expr>),
+    One(fn(f64) -> f64, Box<Expr>),
+    Two(fn(f64, f64) -> f64, Box<Expr>, Box<Expr>),
+    Clamp(Box<Expr>, Box<Expr>, Box<Expr>),
+    Max(Vec<Expr>),
+    Min(Vec<Expr>),
 }
 
-impl ContextProvider for Env {
-    fn get_var(&self, name: &str) -> Option<f64> {
-        use std::f64::consts::{E, PI, TAU};
-        match name {
-            "x" | "i" => Some(self.input),
-            "PI" | "pi" => Some(PI),
-            "TAU" | "tau" => Some(TAU),
-            "E" | "e" => Some(E),
-            _ => None,
+impl Expr {
+    fn eval(&self, input: f64) -> f64 {
+        match self {
+            Expr::Number(n) => *n,
+            Expr::Input => input,
+            Expr::Neg(a) => -a.eval(input),
+            Expr::Binary(op, a, b) => {
+                let (a, b) = (a.eval(input), b.eval(input));
+                match op {
+                    Op::Add => a + b,
+                    Op::Sub => a - b,
+                    Op::Mul => a * b,
+                    Op::Div => a / b,
+                    Op::Rem => a % b,
+                    Op::Pow => a.powf(b),
+                }
+            }
+            Expr::One(f, a) => f(a.eval(input)),
+            Expr::Two(f, a, b) => f(a.eval(input), b.eval(input)),
+            Expr::Clamp(a, lo, hi) => a.eval(input).max(lo.eval(input)).min(hi.eval(input)),
+            Expr::Max(args) => args.iter().skip(1).fold(args[0].eval(input), |m, e| m.max(e.eval(input))),
+            Expr::Min(args) => args.iter().skip(1).fold(args[0].eval(input), |m, e| m.min(e.eval(input))),
         }
     }
+}
 
-    fn eval_func(&self, name: &str, args: &[f64]) -> Result<f64, FuncEvalError> {
-        let one: Option<fn(f64) -> f64> = match name {
-            "sin" => Some(f64::sin),
-            "cos" => Some(f64::cos),
-            "tan" => Some(f64::tan),
-            "asin" => Some(f64::asin),
-            "acos" => Some(f64::acos),
-            "atan" => Some(f64::atan),
-            "sinh" => Some(f64::sinh),
-            "cosh" => Some(f64::cosh),
-            "tanh" => Some(f64::tanh),
-            "sqrt" => Some(f64::sqrt),
-            "cbrt" => Some(f64::cbrt),
-            "exp" => Some(f64::exp),
-            "ln" => Some(f64::ln),
-            "log2" => Some(f64::log2),
-            "log10" => Some(f64::log10),
-            "abs" => Some(f64::abs),
-            "signum" => Some(f64::signum),
-            "floor" => Some(f64::floor),
-            "ceil" => Some(f64::ceil),
-            "round" => Some(f64::round),
-            "trunc" => Some(f64::trunc),
-            "fract" => Some(f64::fract),
-            _ => None,
-        };
-        if let Some(f) = one {
-            return match args {
-                [a] => Ok(f(*a)),
-                _ => Err(FuncEvalError::NumberArgs(1)),
-            };
+/// The input as `x` or `i`, and the constants, under both spellings.
+fn variable(name: &str) -> Option<Expr> {
+    use std::f64::consts::{E, PI, TAU};
+    match name {
+        "x" | "i" => Some(Expr::Input),
+        "PI" | "pi" => Some(Expr::Number(PI)),
+        "TAU" | "tau" => Some(Expr::Number(TAU)),
+        "E" | "e" => Some(Expr::Number(E)),
+        _ => None,
+    }
+}
+
+fn function_of_one(name: &str) -> Option<fn(f64) -> f64> {
+    Some(match name {
+        "sin" => f64::sin,
+        "cos" => f64::cos,
+        "tan" => f64::tan,
+        "asin" => f64::asin,
+        "acos" => f64::acos,
+        "atan" => f64::atan,
+        "sinh" => f64::sinh,
+        "cosh" => f64::cosh,
+        "tanh" => f64::tanh,
+        "sqrt" => f64::sqrt,
+        "cbrt" => f64::cbrt,
+        "exp" => f64::exp,
+        "ln" => f64::ln,
+        "log2" => f64::log2,
+        "log10" => f64::log10,
+        "abs" => f64::abs,
+        "signum" => f64::signum,
+        "floor" => f64::floor,
+        "ceil" => f64::ceil,
+        "round" => f64::round,
+        "trunc" => f64::trunc,
+        "fract" => f64::fract,
+        _ => return None,
+    })
+}
+
+/// Look up every name in the order the formula is evaluated (a call's
+/// arguments before the call itself), so the first problem reported is the one
+/// that would have been hit first.
+fn resolve(ast: &Ast) -> Result<Expr, String> {
+    match ast {
+        Ast::Number(n) => Ok(Expr::Number(*n)),
+        Ast::Name(name) => {
+            variable(name).ok_or_else(|| format!("unknown name '{name}': the input is x (or i)"))
         }
-        match (name, args) {
-            ("atan2", [a, b]) => Ok(a.atan2(*b)),
-            ("atan2", _) => Err(FuncEvalError::NumberArgs(2)),
-            ("pow", [a, b]) => Ok(a.powf(*b)),
-            ("pow", _) => Err(FuncEvalError::NumberArgs(2)),
-            ("clamp", [a, lo, hi]) => Ok(a.max(*lo).min(*hi)),
-            ("clamp", _) => Err(FuncEvalError::NumberArgs(3)),
-            ("max", [first, rest @ ..]) => Ok(rest.iter().fold(*first, |m, v| m.max(*v))),
-            ("min", [first, rest @ ..]) => Ok(rest.iter().fold(*first, |m, v| m.min(*v))),
-            ("max" | "min", []) => Err(FuncEvalError::TooFewArguments),
-            _ => Err(FuncEvalError::UnknownFunction),
+        Ast::Neg(a) => Ok(Expr::Neg(Box::new(resolve(a)?))),
+        Ast::Binary(op, a, b) => {
+            let a = resolve(a)?;
+            let b = resolve(b)?;
+            Ok(Expr::Binary(*op, Box::new(a), Box::new(b)))
+        }
+        Ast::Call(name, args) => {
+            let mut args = args.iter().map(resolve).collect::<Result<Vec<_>, _>>()?;
+            let takes = |n: usize| format!("{name} takes {n} argument(s)");
+            if let Some(f) = function_of_one(name) {
+                return match args.len() {
+                    1 => Ok(Expr::One(f, Box::new(args.remove(0)))),
+                    _ => Err(takes(1)),
+                };
+            }
+            match (name.as_str(), args.len()) {
+                ("atan2" | "pow", 2) => {
+                    let f: fn(f64, f64) -> f64 = if name == "atan2" { f64::atan2 } else { f64::powf };
+                    let b = args.remove(1);
+                    Ok(Expr::Two(f, Box::new(args.remove(0)), Box::new(b)))
+                }
+                ("atan2" | "pow", _) => Err(takes(2)),
+                ("clamp", 3) => {
+                    let hi = args.remove(2);
+                    let lo = args.remove(1);
+                    Ok(Expr::Clamp(Box::new(args.remove(0)), Box::new(lo), Box::new(hi)))
+                }
+                ("clamp", _) => Err(takes(3)),
+                ("max", 1..) => Ok(Expr::Max(args)),
+                ("min", 1..) => Ok(Expr::Min(args)),
+                ("max" | "min", 0) => Err(format!("wrong number of arguments to {name}")),
+                _ => Err(format!("unknown function '{name}'")),
+            }
         }
     }
 }
@@ -97,21 +160,7 @@ fn compile(formula: &str) -> Result<Expr, String> {
     if source.is_empty() {
         return Err("empty formula".to_string());
     }
-    let expr: Expr = source.parse().map_err(|e: meval::Error| e.to_string())?;
-    match expr.eval_with_context(Env { input: 0.5 }) {
-        Err(meval::Error::UnknownVariable(name)) => {
-            Err(format!("unknown name '{name}': the input is x (or i)"))
-        }
-        Err(meval::Error::Function(name, FuncEvalError::UnknownFunction)) => {
-            Err(format!("unknown function '{name}'"))
-        }
-        Err(meval::Error::Function(name, FuncEvalError::NumberArgs(n))) => {
-            Err(format!("{name} takes {n} argument(s)"))
-        }
-        Err(meval::Error::Function(name, _)) => Err(format!("wrong number of arguments to {name}")),
-        Err(other) => Err(other.to_string()),
-        Ok(_) => Ok(expr),
-    }
+    resolve(&syntax::parse(source)?)
 }
 
 /// Formula. Writes a function of its input to its output, for example
@@ -164,7 +213,7 @@ impl ProcessNode for FormulaProcessNode {
             self.out = 0.0;
             return;
         };
-        let value = expr.eval_with_context(Env { input: f64::from(self.input) }).unwrap_or(0.0);
+        let value = expr.eval(f64::from(self.input));
         // A result that is not a number (the log of a negative, a division by
         // zero) would poison everything downstream.
         self.out = if value.is_finite() { value as f32 } else { 0.0 };
@@ -457,6 +506,15 @@ mod tests {
         let shown = shared.display.as_ref().and_then(|d| d.downcast_ref::<FormulaDisplay>()).unwrap();
         assert!(shown.error.is_none());
         assert_eq!(shown.formula, "x * 4");
+    }
+
+    #[test]
+    fn absurd_nesting_is_an_error_and_not_a_crash() {
+        let deep = format!("{}x{}", "(".repeat(10_000), ")".repeat(10_000));
+        let Err(msg) = compile(&deep) else { panic!("should not compile") };
+        assert!(msg.contains("nested too deeply"), "{msg}");
+        assert_eq!(eval(&format!("{}x", "-".repeat(10_000)), 1.0), 0.0);
+        assert_eq!(eval(&format!("{}x{}", "(".repeat(50), ")".repeat(50)), 1.0), 1.0);
     }
 
     #[test]
