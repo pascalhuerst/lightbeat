@@ -465,7 +465,7 @@ impl ProcessNode for EffectStackProcessNode {
                 self.unpublish();
                 return;
             }
-            let resolved = Geometry::resolve(&self.config.targets, &self.store.lock().unwrap());
+            let resolved = Geometry::resolve(&self.config.targets, &self.store.lock());
             match &self.geometry {
                 Some(g) if **g == resolved => g.clone(),
                 _ => Arc::new(resolved),

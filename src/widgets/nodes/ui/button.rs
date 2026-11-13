@@ -46,7 +46,7 @@ impl ButtonWidget {
     }
 
     fn push_config(&self, override_state: Option<Option<bool>>) {
-        let mut shared = self.shared.lock().unwrap();
+        let mut shared = self.shared.lock();
         let mut cfg = serde_json::json!({
             "label": self.label,
             "click_id": self.click_id,

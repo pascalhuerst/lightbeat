@@ -161,7 +161,7 @@ impl NodeGraph {
         let active_level = self.active_level;
         for (li, level) in self.levels.iter_mut().enumerate() {
             let hide_flags: Vec<bool> = level.nodes.iter()
-                .map(|n| n.shared_state().lock().unwrap().hide_unused_ports)
+                .map(|n| n.shared_state().lock().hide_unused_ports)
                 .collect();
             let mut wired: std::collections::HashSet<(NodeId, PortDir, usize)> = std::collections::HashSet::new();
             if hide_flags.iter().any(|h| *h) {
@@ -187,7 +187,7 @@ impl NodeGraph {
                 } else {
                     (Vec::new(), Vec::new())
                 };
-                let mut shared = node.shared_state().lock().unwrap();
+                let mut shared = node.shared_state().lock();
                 if shared.hidden_inputs != hidden_in {
                     shared.hidden_inputs = hidden_in;
                 }
@@ -206,10 +206,10 @@ impl NodeGraph {
         let all_hidden = sel
             .iter()
             .filter_map(|&i| level.nodes.get(i))
-            .all(|n| n.shared_state().lock().unwrap().hide_unused_ports);
+            .all(|n| n.shared_state().lock().hide_unused_ports);
         for &i in &sel {
             if let Some(n) = level.nodes.get(i) {
-                n.shared_state().lock().unwrap().hide_unused_ports = !all_hidden;
+                n.shared_state().lock().hide_unused_ports = !all_hidden;
             }
         }
     }
@@ -225,7 +225,7 @@ impl NodeGraph {
             // Before locking: most widgets lock their own shared state inside
             // `ui_inputs`, and the mutex is not reentrant.
             let native = node.ui_inputs().len();
-            let mut shared = node.shared_state().lock().unwrap();
+            let mut shared = node.shared_state().lock();
             if shared.promoted != shared.promoted_applied {
                 let new = shared.promoted.clone();
                 let old = std::mem::replace(&mut shared.promoted_applied, new.clone());

@@ -90,7 +90,8 @@ pub fn layer_level(buf: &LayerBuffer) -> f32 {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::{Arc, Mutex};
+    use std::sync::Arc;
+    use parking_lot::Mutex;
     use std::time::Duration;
 
     use super::fill::Fill;
@@ -117,7 +118,7 @@ mod tests {
     }
 
     fn pixel(store: &SharedObjectStore, object: u32, i: usize) -> Rgb {
-        let s = store.lock().unwrap();
+        let s = store.lock();
         let v = &s.objects.iter().find(|o| o.id == object).unwrap().channels[0].values;
         Rgb::new(v[i * 3], v[i * 3 + 1], v[i * 3 + 2])
     }
@@ -245,7 +246,7 @@ mod tests {
         let (hub, store) = (EffectHub::new(), store_with_strips(&[3]));
         let geometry = Arc::new(Geometry::resolve(
             &[geometry::TargetSpec::Strip { object_id: 1, logical_start: 0.0, logical_end: 1.0, y: None }],
-            &store.lock().unwrap(),
+            &store.lock(),
         ));
         let solid = |c: Rgb| -> LayerBuffer {
             geometry.targets.iter().map(|t| vec![Pixel { color: c, alpha: 1.0 }; t.count]).collect()
@@ -351,7 +352,7 @@ mod tests {
         }));
         let geometry = Arc::new(Geometry::resolve(
             &[geometry::TargetSpec::Strip { object_id: 1, logical_start: 0.0, logical_end: 1.0, y: None }],
-            &store.lock().unwrap(),
+            &store.lock(),
         ));
         for (i, c) in colours.iter().enumerate() {
             hub.lock().stacks.insert(

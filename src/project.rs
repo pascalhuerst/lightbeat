@@ -189,7 +189,7 @@ pub fn save_level(level: &GraphLevel, graph: &NodeGraph) -> ProjectFile {
         }
 
         // Read params from shared state.
-        let shared = node.shared_state().lock().unwrap();
+        let shared = node.shared_state().lock();
         let mut params = Vec::new();
         for (pi, p) in shared.current_params.iter().enumerate() {
             let value = match p {
@@ -403,10 +403,10 @@ pub fn load_graph(graph: &mut NodeGraph, project: &ProjectFile) -> Vec<usize> {
             {
                 let n = graph.node_mut(idx);
                 let declared = {
-                    let shared = n.shared_state().lock().unwrap();
+                    let shared = n.shared_state().lock();
                     shared.current_params.clone()
                 };
-                let mut shared = n.shared_state().lock().unwrap();
+                let mut shared = n.shared_state().lock();
                 for sp in &saved.params {
                     let val = if let Some(decl) = declared.get(sp.index) {
                         match decl {
@@ -757,10 +757,10 @@ mod tests {
         a.node_mut(ei).as_any_mut().downcast_mut::<EffectWidget>().unwrap().set_stack("Shelf");
 
         // What the engine would hand back for saving: the config it was sent.
-        let sent = |g: &mut NodeGraph, i: usize| g.node_mut(i).shared_state().lock().unwrap().pending_config.clone();
+        let sent = |g: &mut NodeGraph, i: usize| g.node_mut(i).shared_state().lock().pending_config.clone();
         let (stack_data, effect_data) = (sent(&mut a, si), sent(&mut a, ei));
         for (i, d) in [(si, stack_data), (ei, effect_data)] {
-            a.node_mut(i).shared_state().lock().unwrap().save_data = d;
+            a.node_mut(i).shared_state().lock().save_data = d;
         }
         let saved = save_graph(&a);
 
@@ -802,7 +802,7 @@ mod tests {
         assert_eq!(ports, ["gradient", "Position", "Width"]);
         let n = g.node_mut(0);
         assert_eq!(n.as_any_mut().downcast_mut::<EffectWidget>().unwrap().stack(), "Record Shelf");
-        let shared = n.shared_state().lock().unwrap();
+        let shared = n.shared_state().lock();
         assert_eq!(shared.promoted.len(), 2);
         assert_eq!(shared.pending_promoted.as_ref().map(Vec::len), Some(2));
         assert!(shared.pending_params.iter().any(|(i, _)| *i == 2), "the anchor was restored");
@@ -966,7 +966,7 @@ mod tests {
         let mut params = vec![ParamDef::Float { name: "Value".into(), value: 0.0, min: 0.0, max: 1.0, step: 0.1, unit: "" }];
         params.truncate(index);
         params.push(ParamDef::Choice { name: "Operation".into(), value: choice, options: Vec::new() });
-        g.node_mut(node).shared_state().lock().unwrap().current_params = params;
+        g.node_mut(node).shared_state().lock().current_params = params;
     }
 
     #[test]
@@ -1090,7 +1090,7 @@ mod tests {
             let node = g.node_mut(idx);
             assert_eq!(node.ui_inputs()[0].def.port_type, crate::engine::types::PortType::Untyped, "node {idx}");
             assert_eq!(node.ui_outputs()[0].def.port_type, crate::engine::types::PortType::Untyped, "node {idx}");
-            let shared = node.shared_state().lock().unwrap();
+            let shared = node.shared_state().lock();
             assert!(
                 shared.pending_params.iter().any(|(i, v)| *i == type_param && v.as_usize() == number),
                 "node {idx} was told to run as numbers"
@@ -1129,7 +1129,7 @@ mod tests {
             "connections": []
         }"#).unwrap();
         load_graph(&mut g, &project);
-        assert!(g.node_mut(0).shared_state().lock().unwrap().hide_unused_ports);
+        assert!(g.node_mut(0).shared_state().lock().hide_unused_ports);
         let saved = save_graph(&g);
         assert!(saved.nodes[0].hide_unused_ports);
         let json = serde_json::to_string(&saved).unwrap();

@@ -45,7 +45,7 @@ impl PortalSendWidget {
     }
 
     fn push_config(&self) {
-        let mut shared = self.shared.lock().unwrap();
+        let mut shared = self.shared.lock();
         shared.pending_config = Some(serde_json::json!({
             "name": self.name,
             "ports": self.port_defs,
@@ -103,7 +103,7 @@ impl NodeWidget for PortalSendWidget {
 
     fn show_content(&mut self, ui: &mut Ui, _zoom: f32) {
         let snap = {
-            let shared = self.shared.lock().unwrap();
+            let shared = self.shared.lock();
             shared.display.as_ref()
                 .and_then(|d| d.downcast_ref::<PortalSendDisplay>())
                 .map(|d| (d.name.clone(), d.conflict))
@@ -196,7 +196,7 @@ impl PortalReceiveWidget {
     }
 
     fn push_config(&self) {
-        let mut shared = self.shared.lock().unwrap();
+        let mut shared = self.shared.lock();
         shared.pending_config = Some(serde_json::json!({
             "bound_name": self.bound_name,
             "ports": self.port_defs,
@@ -243,7 +243,7 @@ impl NodeWidget for PortalReceiveWidget {
 
     fn show_content(&mut self, ui: &mut Ui, _zoom: f32) {
         let snap = {
-            let shared = self.shared.lock().unwrap();
+            let shared = self.shared.lock();
             shared.display.as_ref()
                 .and_then(|d| d.downcast_ref::<PortalReceiveDisplay>())
                 .map(|d| (d.bound_name.clone(), d.port_defs.clone(), d.connected))

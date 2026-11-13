@@ -23,11 +23,11 @@ impl ClockDividerWidget {
     }
 
     fn push_extra(&self) {
-        self.shared.lock().unwrap().pending_config = Some(serde_json::json!({ "extra": self.extra }));
+        self.shared.lock().pending_config = Some(serde_json::json!({ "extra": self.extra }));
     }
 
     fn first_divisor(&self) -> i32 {
-        let shared = self.shared.lock().unwrap();
+        let shared = self.shared.lock();
         shared.display.as_ref().and_then(|d| d.downcast_ref::<ClockDividerDisplay>()).map_or(2, |d| d.divisor)
     }
 }

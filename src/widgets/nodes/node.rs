@@ -15,7 +15,7 @@ pub fn param_usize(params: &[(usize, ParamValue)], index: usize) -> Option<usize
 /// The mirrored value of the choice at `index`, for widgets that follow a
 /// setting (`NodeWidget::follow_params`). None until the engine has mirrored it.
 pub fn current_choice(shared: &SharedState, index: usize) -> Option<usize> {
-    match shared.lock().unwrap().current_params.get(index) {
+    match shared.lock().current_params.get(index) {
         Some(ParamDef::Choice { value, .. }) => Some(*value),
         _ => None,
     }
@@ -24,7 +24,7 @@ pub fn current_choice(shared: &SharedState, index: usize) -> Option<usize> {
 /// Runs `f` on the engine's display data of type `T`, if the engine has
 /// published one yet. The lock is held only while `f` runs.
 pub fn with_display<T: 'static, R>(shared: &SharedState, f: impl FnOnce(&T) -> R) -> Option<R> {
-    let shared = shared.lock().unwrap();
+    let shared = shared.lock();
     shared.display.as_ref().and_then(|d| d.downcast_ref::<T>()).map(f)
 }
 
@@ -250,7 +250,7 @@ pub trait NodeWidget: Any {
 impl dyn NodeWidget {
     /// Which of the ports on this side are hidden, by port index.
     pub fn hidden_ports(&self, dir: PortDir) -> Vec<bool> {
-        let shared = self.shared_state().lock().unwrap();
+        let shared = self.shared_state().lock();
         match dir {
             PortDir::Input => shared.hidden_inputs.clone(),
             PortDir::Output => shared.hidden_outputs.clone(),
@@ -258,7 +258,7 @@ impl dyn NodeWidget {
     }
 
     pub fn is_port_hidden(&self, dir: PortDir, index: usize) -> bool {
-        let shared = self.shared_state().lock().unwrap();
+        let shared = self.shared_state().lock();
         let list = match dir {
             PortDir::Input => &shared.hidden_inputs,
             PortDir::Output => &shared.hidden_outputs,
@@ -280,7 +280,7 @@ impl dyn NodeWidget {
     /// graph must use this, not `ui_inputs`, wherever it deals with ports.
     pub fn ui_inputs_full(&self) -> Vec<UiPortDef> {
         let mut ports = self.ui_inputs();
-        let shared = self.shared_state().lock().unwrap();
+        let shared = self.shared_state().lock();
         ports.extend(shared.promoted.iter().map(|p| {
             let (group, label) = self.param_display(&p.name);
             let name = match group {

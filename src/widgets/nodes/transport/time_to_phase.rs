@@ -32,7 +32,7 @@ impl NodeWidget for TimeToPhaseWidget {
 
     fn show_content(&mut self, ui: &mut Ui, _zoom: f32) {
         let (phase, running) = {
-            let s = self.shared.lock().unwrap();
+            let s = self.shared.lock();
             (s.outputs.first().copied().unwrap_or(0.0), s.outputs.get(1).copied().unwrap_or(0.0) > 0.5)
         };
         let (resp, painter) = ui.allocate_painter(Vec2::new(ui.available_width(), 10.0), Sense::hover());

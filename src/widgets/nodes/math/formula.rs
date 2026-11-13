@@ -35,7 +35,7 @@ impl FormulaWidget {
     }
 
     fn push(&self) {
-        self.shared.lock().unwrap().pending_config = Some(serde_json::json!({ "formula": self.formula }));
+        self.shared.lock().pending_config = Some(serde_json::json!({ "formula": self.formula }));
     }
 }
 

@@ -26,7 +26,7 @@ impl ColorModifierWidget {
             PortType::Gradient => 2,
             _ => 0,
         };
-        let mut s = self.shared.lock().unwrap();
+        let mut s = self.shared.lock();
         s.pending_params.push((0, ParamValue::Choice(idx)));
     }
 
@@ -78,7 +78,7 @@ impl NodeWidget for ColorModifierWidget {
     fn show_content(&mut self, ui: &mut Ui, _zoom: f32) {
         self.sync_from_display();
         let amount = {
-            let shared = self.shared.lock().unwrap();
+            let shared = self.shared.lock();
             shared.display.as_ref()
                 .and_then(|d| d.downcast_ref::<ColorModifierDisplay>())
                 .map(|d| d.amount).unwrap_or(0.0)

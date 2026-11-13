@@ -42,12 +42,12 @@ impl GradientStopsWidget {
     }
 
     fn push_position(&self, idx: usize, v: f32) {
-        let mut s = self.shared.lock().unwrap();
+        let mut s = self.shared.lock();
         s.pending_params.push((idx, ParamValue::Float(v)));
     }
 
     fn push_name(&self) {
-        let mut s = self.shared.lock().unwrap();
+        let mut s = self.shared.lock();
         s.pending_config = Some(serde_json::json!({ "name": self.name }));
     }
 

@@ -116,7 +116,7 @@ impl NodeGraph {
             let Some(idx) = level.states.iter().position(|s| s.id == port_id.node) else {
                 return;
             };
-            let shared = level.nodes[idx].shared_state().lock().unwrap();
+            let shared = level.nodes[idx].shared_state().lock();
             let arr = match port_id.dir {
                 PortDir::Input => &shared.inputs,
                 PortDir::Output => &shared.outputs,
@@ -711,7 +711,7 @@ impl NodeGraph {
                     }
                     if let Some(i) = toggle_hit {
                         let shared = self.active().nodes[i].shared_state().clone();
-                        let mut s = shared.lock().unwrap();
+                        let mut s = shared.lock();
                         s.disabled = !s.disabled;
                         return;
                     }

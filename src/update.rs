@@ -10,7 +10,8 @@
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use parking_lot::Mutex;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
@@ -154,7 +155,7 @@ pub fn fetch_release(channel: Channel) -> Result<Release, String> {
 fn download(url: &str, dest: &Path, progress: &Mutex<(u64, u64)>) -> Result<String, String> {
     let response = agent().get(url).call().map_err(|e| e.to_string())?;
     let total = response.header("Content-Length").and_then(|v| v.parse().ok()).unwrap_or(0);
-    *progress.lock().unwrap() = (0, total);
+    *progress.lock() = (0, total);
     let mut reader = response.into_reader();
     let mut file = std::fs::File::create(dest).map_err(|e| e.to_string())?;
     let mut hasher = Sha256::new();
@@ -168,7 +169,7 @@ fn download(url: &str, dest: &Path, progress: &Mutex<(u64, u64)>) -> Result<Stri
         hasher.update(&buf[..n]);
         file.write_all(&buf[..n]).map_err(|e| e.to_string())?;
         done += n as u64;
-        progress.lock().unwrap().0 = done;
+        progress.lock().0 = done;
     }
     Ok(hasher.finalize().iter().map(|b| format!("{b:02x}")).collect())
 }
@@ -382,19 +383,19 @@ pub struct Updater {
 
 impl Updater {
     pub fn state(&self) -> State {
-        self.state.lock().unwrap().clone()
+        self.state.lock().clone()
     }
 
     /// Bytes done and total of the download in progress.
     pub fn progress(&self) -> (u64, u64) {
-        *self.progress.lock().unwrap()
+        *self.progress.lock()
     }
 
     /// Ask GitHub whether there is something newer. Does nothing while a
     /// check or install is under way.
     pub fn check(&self, channel: Channel) {
         {
-            let mut s = self.state.lock().unwrap();
+            let mut s = self.state.lock();
             if matches!(*s, State::Checking | State::Installing) {
                 return;
             }
@@ -407,31 +408,31 @@ impl Updater {
                 Ok(_) => State::UpToDate,
                 Err(e) => State::Failed(format!("could not check for updates: {e}")),
             };
-            *state.lock().unwrap() = next;
+            *state.lock() = next;
         });
     }
 
     pub fn install(&self, release: Release) {
         {
-            let mut s = self.state.lock().unwrap();
+            let mut s = self.state.lock();
             if matches!(*s, State::Installing) {
                 return;
             }
             *s = State::Installing;
         }
-        *self.progress.lock().unwrap() = (0, 0);
+        *self.progress.lock() = (0, 0);
         let (state, progress) = (self.state.clone(), self.progress.clone());
         std::thread::spawn(move || {
             let next = match install(&release, &progress) {
                 Ok(()) => State::Installed(release),
                 Err(e) => State::Failed(format!("the update was not installed: {e}")),
             };
-            *state.lock().unwrap() = next;
+            *state.lock() = next;
         });
     }
 
     pub fn dismiss(&self) {
-        let mut s = self.state.lock().unwrap();
+        let mut s = self.state.lock();
         if matches!(*s, State::Failed(_) | State::UpToDate) {
             *s = State::Idle;
         }

@@ -37,13 +37,13 @@ impl XyPadWidget {
 
     fn push_position(&self) {
         // Engine params: 0 = X, 1 = Y.
-        let mut s = self.shared.lock().unwrap();
+        let mut s = self.shared.lock();
         s.pending_params.push((0, ParamValue::Float(self.x)));
         s.pending_params.push((1, ParamValue::Float(self.y)));
     }
 
     fn push_name(&self) {
-        let mut s = self.shared.lock().unwrap();
+        let mut s = self.shared.lock();
         s.pending_config = Some(serde_json::json!({ "name": self.name }));
     }
 }

@@ -23,7 +23,7 @@ impl LfoWidget {
     /// engine counts, so wires saved in this mode are not dropped as the
     /// wrong type while a loaded project settles.
     fn phase_input(&self) -> bool {
-        let s = self.shared.lock().unwrap();
+        let s = self.shared.lock();
         if let Some((_, v)) = s.pending_params.iter().rev().find(|(i, _)| *i == PHASE_INPUT_PARAM) {
             return matches!(v, ParamValue::Bool(true));
         }

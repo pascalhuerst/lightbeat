@@ -32,7 +32,7 @@ enum Edit {
 
 /// Whether the node has anything a snapshot could hold.
 pub fn applicable(node: &dyn NodeWidget) -> bool {
-    let shared = node.shared_state().lock().unwrap();
+    let shared = node.shared_state().lock();
     shared.current_params.iter().any(|p| storable(p, shared.non_promotable))
 }
 
@@ -71,7 +71,7 @@ fn clock(ui: &mut Ui, active: bool, modified: bool, fading: bool, progress: f32)
 pub fn show(ui: &mut Ui, node: &dyn NodeWidget) {
     let native_inputs = node.ui_inputs().len();
     let (set, params, skip, fading, progress, promoted, connected) = {
-        let shared = node.shared_state().lock().unwrap();
+        let shared = node.shared_state().lock();
         let mut set = shared.snapshots.clone();
         set.active = shared.snapshot_active.or(set.active);
         (
@@ -244,7 +244,7 @@ pub fn show(ui: &mut Ui, node: &dyn NodeWidget) {
 }
 
 fn apply(node: &dyn NodeWidget, edit: Edit, params: &[crate::engine::types::ParamDef], skip: &[&str]) {
-    let mut shared = node.shared_state().lock().unwrap();
+    let mut shared = node.shared_state().lock();
     let mut set: SnapshotSet = shared.snapshots.clone();
     set.active = shared.snapshot_active.or(set.active);
     let mut changed_set = true;

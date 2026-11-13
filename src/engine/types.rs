@@ -1,7 +1,8 @@
 pub use super::promoted::{PromotedKind, PromotedParam};
 pub use super::snapshots::SnapshotSet;
 use std::any::Any;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use parking_lot::Mutex;
 
 // ---------------------------------------------------------------------------
 // IDs

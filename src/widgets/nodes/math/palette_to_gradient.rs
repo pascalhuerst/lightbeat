@@ -36,7 +36,7 @@ impl NodeWidget for PaletteToGradientWidget {
     fn overridden_param_indices(&self) -> Vec<usize> {
         // Inspector params are Pos 1..Pos 4 at indices 0..=3; each is
         // overridden by its matching input port at logical index 1..=4.
-        let s = self.shared.lock().unwrap();
+        let s = self.shared.lock();
         let mut hidden = Vec::new();
         for i in 0..N {
             if s.inputs_connected.get(1 + i).copied().unwrap_or(false) {
@@ -50,7 +50,7 @@ impl NodeWidget for PaletteToGradientWidget {
         // Read the current gradient output straight from shared outputs
         // and render a compact preview bar.
         let chans: Vec<f32> = {
-            let s = self.shared.lock().unwrap();
+            let s = self.shared.lock();
             s.outputs.iter().copied().take(GRADIENT_STOP_COUNT * GRADIENT_STOP_FLOATS).collect()
         };
 

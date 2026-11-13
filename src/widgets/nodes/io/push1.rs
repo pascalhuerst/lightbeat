@@ -52,7 +52,7 @@ impl NodeWidget for Push1Widget {
 
     fn show_content(&mut self, ui: &mut Ui, _zoom: f32) {
         let snap = {
-            let shared = self.shared.lock().unwrap();
+            let shared = self.shared.lock();
             shared.display.as_ref()
                 .and_then(|d| d.downcast_ref::<Push1Display>())
                 .map(|d| (d.controller_id, d.controller_name.clone(), d.connected))

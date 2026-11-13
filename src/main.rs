@@ -84,7 +84,7 @@ struct LightBeatApp {
     file_dialog_rx: Option<std::sync::mpsc::Receiver<FileDialogResult>>,
     /// What an imported setup could not match on this computer, shown until dismissed.
     setup_notice: Option<Vec<String>>,
-    snapshot: Arc<std::sync::Mutex<beat_clock::LinkSnapshot>>,
+    snapshot: Arc<parking_lot::Mutex<beat_clock::LinkSnapshot>>,
     quit_requested: bool,
     updater: update::Updater,
     last_update_check: Option<std::time::Instant>,
@@ -184,7 +184,7 @@ impl LightBeatApp {
         // app to wake up silent set `dmx_bypass_on_startup: true` in
         // settings.json.
         if config.dmx_bypass_on_startup {
-            dmx_shared.lock().unwrap().bypass = true;
+            dmx_shared.lock().bypass = true;
         }
         let object_store = dmx_io::new_shared_object_store();
         let group_ctx = widgets::group_context::new_shared_group_context();
@@ -260,7 +260,7 @@ impl LightBeatApp {
             midi_learned: widgets::nodes::io::midi_common::new_shared_learned(),
             audio_inputs: AudioInputManager::new(),
             dmx_inputs: dmx_input::DmxInputHub::start(),
-            portals: std::sync::Arc::new(std::sync::Mutex::new(
+            portals: std::sync::Arc::new(parking_lot::Mutex::new(
                 engine::nodes::meta::portal::PortalRegistry::default(),
             )),
             library: LibraryManager::new(macros::default_library_root()),
@@ -315,20 +315,20 @@ impl LightBeatApp {
 
     /// Sync group and object data to the shared context the effect stacks read.
     fn sync_group_context(&self) {
-        let mut ctx = self.group_ctx.lock().unwrap();
+        let mut ctx = self.group_ctx.lock();
         ctx.groups = self.group_manager.groups.clone();
         ctx.objects = self.object_manager.objects.clone();
     }
 
     fn sync_palette_context(&self) {
-        let mut ctx = self.palette_ctx.lock().unwrap();
+        let mut ctx = self.palette_ctx.lock();
         ctx.palettes = self.color_palette_manager.palettes.clone();
         ctx.groups = self.color_palette_group_manager.groups.clone();
         ctx.version += 1;
     }
 
     fn sync_gradient_library(&self) {
-        let mut lib = self.gradient_library.lock().unwrap();
+        let mut lib = self.gradient_library.lock();
         lib.presets = self.gradient_preset_manager.presets.clone();
     }
 
@@ -337,7 +337,7 @@ impl LightBeatApp {
     /// so all Gradient Sources see the new preset in their dropdowns.
     fn drain_pending_gradient_saves(&mut self) {
         let (pending, updates) = {
-            let mut lib = self.gradient_library.lock().unwrap();
+            let mut lib = self.gradient_library.lock();
             (std::mem::take(&mut lib.pending_saves), std::mem::take(&mut lib.pending_updates))
         };
         if pending.is_empty() && updates.is_empty() { return; }
@@ -379,7 +379,7 @@ impl LightBeatApp {
 
     /// Sync object instances from the UI manager to the engine's shared store.
     fn sync_object_store(&self) {
-        let mut store = self.object_store.lock().unwrap();
+        let mut store = self.object_store.lock();
         store.objects = self.object_manager.objects.clone();
     }
 

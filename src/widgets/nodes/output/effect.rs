@@ -5,7 +5,8 @@
 //! next. What it adds is the link to a stack: picked in the inspector, shown
 //! by the node's colour, and highlighted together with the stack.
 
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use parking_lot::Mutex;
 
 use egui::{self, Color32, Sense, Ui, Vec2};
 
@@ -142,11 +143,11 @@ impl EffectWidget {
 
     pub fn set_stack(&mut self, name: &str) {
         self.stack = name.to_string();
-        self.shared.lock().unwrap().pending_config = Some(serde_json::json!({ "stack": self.stack }));
+        self.shared.lock().pending_config = Some(serde_json::json!({ "stack": self.stack }));
     }
 
     fn display(&self) -> Option<(bool, f32)> {
-        let shared = self.shared.lock().unwrap();
+        let shared = self.shared.lock();
         shared
             .display
             .as_ref()
@@ -212,7 +213,7 @@ impl NodeWidget for EffectWidget {
     fn show_inspector(&mut self, ui: &mut Ui) {
         ui.horizontal(|ui| {
             ui.label("Stack");
-            let names = self.names.lock().unwrap().names.clone();
+            let names = self.names.lock().names.clone();
             let current = if self.stack.is_empty() { "(none)".to_string() } else { self.stack.clone() };
             let mut picked: Option<String> = None;
             egui::ComboBox::from_id_salt(("effect_stack_pick", self.id.0))
@@ -272,7 +273,7 @@ mod tests {
         w.set_stack("Shelf");
         assert_eq!(w.link_key().as_deref(), Some("stack:Shelf"));
         assert_eq!(w.linked_stack().as_deref(), Some("Shelf"));
-        let sent = w.shared.lock().unwrap().pending_config.take().unwrap();
+        let sent = w.shared.lock().pending_config.take().unwrap();
         assert_eq!(sent["stack"], "Shelf");
     }
 

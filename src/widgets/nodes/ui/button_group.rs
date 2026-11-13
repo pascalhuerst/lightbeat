@@ -56,7 +56,7 @@ impl ButtonGroupWidget {
         let clicks: serde_json::Map<String, serde_json::Value> = self.click_ids.iter()
             .map(|((r, c), v)| (format!("{},{}", r, c), serde_json::json!(v)))
             .collect();
-        let mut shared = self.shared.lock().unwrap();
+        let mut shared = self.shared.lock();
         let mut cfg = serde_json::json!({
             "name": self.name,
             "rows": self.rows,
@@ -152,7 +152,7 @@ impl NodeWidget for ButtonGroupWidget {
             String, usize, usize, ButtonMode, Vec<bool>, Vec<f32>, Vec<bool>,
             bool, bool, MouseOverrideMode,
         )> = {
-            let shared = self.shared.lock().unwrap();
+            let shared = self.shared.lock();
             shared.display.as_ref()
                 .and_then(|d| d.downcast_ref::<ButtonGroupDisplay>())
                 .map(|d| (

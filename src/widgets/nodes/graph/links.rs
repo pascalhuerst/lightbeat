@@ -225,7 +225,7 @@ impl NodeGraph {
         let remember = looping.is_empty();
         if stacks.is_empty() && effects.is_empty() {
             if let Some(reg) = &self.stack_names {
-                *reg.lock().unwrap() = Default::default();
+                *reg.lock() = Default::default();
             }
             if remember {
                 self.stack_sig = Some(StackSig { hash, registry_set, members: Vec::new() });
@@ -248,7 +248,7 @@ impl NodeGraph {
         stacks.sort();
         stacks.dedup();
         if let Some(reg) = &self.stack_names {
-            let mut reg = reg.lock().unwrap();
+            let mut reg = reg.lock();
             reg.names = stacks;
             reg.parent_of = parent_of;
         }
@@ -295,7 +295,7 @@ mod stack_tree_tests {
         add(&mut g, 3, "Sparks", "Colour", &[]);
         g.reconcile_effect_stacks();
 
-        let reg = names.lock().unwrap().clone();
+        let reg = names.lock().clone();
         assert_eq!(reg.parent_of.get("Sparks").map(String::as_str), Some("Colour"));
         // Master may be sent to neither of the stacks below it, which would loop.
         assert_eq!(reg.parents_for("Master"), Vec::<String>::new());
@@ -357,6 +357,6 @@ mod stack_tree_tests {
         g.reconcile_effect_stacks();
         let w = g.node_mut(child).as_any_mut().downcast_mut::<EffectStackWidget>().unwrap();
         assert_eq!(w.config().parent, "Shelf");
-        assert_eq!(names.lock().unwrap().parent_of.get("Colour").map(String::as_str), Some("Shelf"));
+        assert_eq!(names.lock().parent_of.get("Colour").map(String::as_str), Some("Shelf"));
     }
 }

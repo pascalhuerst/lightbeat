@@ -334,7 +334,7 @@ impl ProcessNode for Push1ProcessNode {
         // feedback. Everything else happens after the lock is released so we
         // can call &mut self helpers freely.
         {
-            let mut state = self.controllers.lock().unwrap();
+            let mut state = self.controllers.lock();
             let Some(c) = bind_controller(
                 &mut state, self.controller_id,
                 |k| matches!(k, InputControllerKind::Push1 { .. }),

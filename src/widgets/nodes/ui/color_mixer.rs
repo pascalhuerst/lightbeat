@@ -27,7 +27,7 @@ impl ColorMixerWidget {
     }
 
     fn push_config(&self) {
-        let mut s = self.shared.lock().unwrap();
+        let mut s = self.shared.lock();
         s.pending_config = Some(serde_json::json!({
             "name": self.name,
             "mode": self.mode.to_index(),

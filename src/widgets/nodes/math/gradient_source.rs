@@ -1,4 +1,5 @@
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use parking_lot::Mutex;
 
 use egui::{self, Color32, Pos2, Sense, Stroke, StrokeKind, Ui, Vec2};
 
@@ -145,7 +146,7 @@ impl GradientSourceWidget {
                 "alpha": s.alpha,
             })
         }).collect();
-        let mut shared = self.shared.lock().unwrap();
+        let mut shared = self.shared.lock();
         shared.pending_config = Some(serde_json::json!({ "stops": stops }));
     }
 }
@@ -185,7 +186,7 @@ impl NodeWidget for GradientSourceWidget {
         // Pull the active stops from the engine display so the node always
         // renders what's actually being emitted (including after load).
         let snap = {
-            let shared = self.shared.lock().unwrap();
+            let shared = self.shared.lock();
             shared.display.as_ref()
                 .and_then(|d| d.downcast_ref::<GradientSourceDisplay>())
                 .map(|d| d.stops.iter().map(|(p, c, a)| {
@@ -358,7 +359,7 @@ impl NodeWidget for GradientSourceWidget {
         // -- Preset library: load and save -------------------------------
         setup_ui::section(ui, "Preset Library");
         let presets: Vec<(u32, String, Vec<GradientStop>)> = {
-            let lib = self.library.lock().unwrap();
+            let lib = self.library.lock();
             lib.presets.iter().map(|p| (p.id, p.name.clone(), p.stops.clone())).collect()
         };
         ui.horizontal(|ui| {
@@ -394,7 +395,7 @@ impl NodeWidget for GradientSourceWidget {
             if (enter || click) && !self.save_name_buf.trim().is_empty() {
                 let name = self.save_name_buf.trim().to_string();
                 let stops = self.current_stops();
-                let mut lib = self.library.lock().unwrap();
+                let mut lib = self.library.lock();
                 lib.pending_saves.push(PendingPresetSave { name, stops });
                 self.save_name_buf.clear();
             }
@@ -407,7 +408,7 @@ impl NodeWidget for GradientSourceWidget {
                 .clicked()
         {
             let stops = self.current_stops();
-            self.library.lock().unwrap().pending_updates.push(PendingPresetUpdate { id, stops });
+            self.library.lock().pending_updates.push(PendingPresetUpdate { id, stops });
         }
 
         ui.separator();

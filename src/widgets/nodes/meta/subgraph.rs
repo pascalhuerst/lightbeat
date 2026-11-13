@@ -65,7 +65,7 @@ impl SubgraphWidget {
     }
 
     pub fn push_config(&self) {
-        let mut shared = self.shared.lock().unwrap();
+        let mut shared = self.shared.lock();
         shared.pending_config = Some(serde_json::json!({
             "name": self.name,
             "inputs": self.input_defs,
@@ -167,7 +167,7 @@ impl NodeWidget for SubgraphWidget {
 
     fn show_content(&mut self, ui: &mut Ui, _zoom: f32) {
         let (inner_count, locked, inner_displays) = {
-            let shared = self.shared.lock().unwrap();
+            let shared = self.shared.lock();
             let display = shared
                 .display
                 .as_ref()

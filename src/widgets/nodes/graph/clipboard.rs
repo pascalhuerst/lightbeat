@@ -81,7 +81,7 @@ impl NodeGraph {
             let state = &level.states[i];
 
             // Read params from shared state.
-            let shared = node.shared_state().lock().unwrap();
+            let shared = node.shared_state().lock();
             let params: Vec<(usize, ParamValue)> = shared
                 .current_params
                 .iter()
@@ -190,7 +190,7 @@ impl NodeGraph {
                 // Apply params by pushing to shared state pending_params.
                 {
                     let shared = self.active().nodes[idx].shared_state();
-                    let mut state = shared.lock().unwrap();
+                    let mut state = shared.lock();
                     for (pi, val) in &cn.params {
                         state.pending_params.push((*pi, val.clone()));
                     }
@@ -339,7 +339,7 @@ mod paste_tests {
         let i = g.add_node(fresh, Pos2::ZERO);
         g.node_mut(i).restore_from_save(data.as_ref(), &params);
         {
-            let mut shared = g.node_mut(i).shared_state().lock().unwrap();
+            let mut shared = g.node_mut(i).shared_state().lock();
             shared.save_data = data;
             shared.current_params = declared;
         }

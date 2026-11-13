@@ -84,7 +84,7 @@ impl PeakMeterWidget {
     }
 
     fn push_config(&self) {
-        let mut shared = self.shared.lock().unwrap();
+        let mut shared = self.shared.lock();
         shared.pending_config = Some(serde_json::json!({
             "name": self.name,
             "orientation": self.orientation.as_str(),

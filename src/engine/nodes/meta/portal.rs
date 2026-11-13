@@ -6,7 +6,8 @@
 //! (names and types) are defined on the Send.
 
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use parking_lot::Mutex;
 
 use crate::engine::nodes::meta::subgraph::{idx_to_port_type, port_type_to_idx};
 use crate::engine::types::*;
@@ -54,10 +55,7 @@ impl PortalPortDef {
 /// Snapshot of the current portal names in a registry — used by the
 /// binding-side picker of Portal Receive.
 pub fn available_portal_names(registry: &SharedPortalRegistry) -> Vec<String> {
-    let reg = match registry.lock() {
-        Ok(r) => r,
-        Err(_) => return Vec::new(),
-    };
+    let reg = registry.lock();
     let mut names: Vec<String> = reg.entries.keys().cloned().collect();
     names.sort();
     names
@@ -98,11 +96,11 @@ impl PortalSendProcessNode {
 
     /// Take our name out of the registry, unless it is another Send's.
     fn release(&self) {
-        if !self.name.is_empty()
-            && let Ok(mut reg) = self.registry.lock()
-            && reg.entries.get(&self.name).is_some_and(|e| e.owner == self.id)
-        {
-            reg.entries.remove(&self.name);
+        if !self.name.is_empty() {
+            let mut reg = self.registry.lock();
+            if reg.entries.get(&self.name).is_some_and(|e| e.owner == self.id) {
+                reg.entries.remove(&self.name);
+            }
         }
     }
 }
@@ -130,7 +128,8 @@ impl ProcessNode for PortalSendProcessNode {
 
     fn process(&mut self) {
         if self.name.is_empty() { return; }
-        if let Ok(mut reg) = self.registry.lock() {
+        {
+            let mut reg = self.registry.lock();
             if reg.entries.get(&self.name).is_some_and(|e| e.owner != self.id) {
                 self.conflict = true;
                 return;
@@ -233,7 +232,8 @@ impl ProcessNode for PortalReceiveProcessNode {
             self.connected = false;
             return;
         }
-        if let Ok(reg) = self.registry.lock() {
+        {
+            let reg = self.registry.lock();
             match reg.entries.get(&self.bound_name) {
                 Some(entry) => {
                     if self.seen != Some((entry.owner, entry.layout)) {
@@ -350,8 +350,8 @@ mod tests {
         second.write_input(0, 5.0);
         second.process();
         assert!(second.conflict && !first.conflict);
-        assert_eq!(reg.lock().unwrap().entries["bus"].values[0], 1.0);
+        assert_eq!(reg.lock().entries["bus"].values[0], 1.0);
         drop(second);
-        assert!(reg.lock().unwrap().entries.contains_key("bus"));
+        assert!(reg.lock().entries.contains_key("bus"));
     }
 }

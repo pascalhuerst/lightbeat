@@ -44,7 +44,7 @@ impl ControllerBinding {
     }
 
     fn push_config(&self, shared: &SharedState) {
-        shared.lock().unwrap().pending_config = Some(serde_json::json!({
+        shared.lock().pending_config = Some(serde_json::json!({
             "controller_id": self.controller_id,
         }));
     }
@@ -65,7 +65,7 @@ impl ControllerBinding {
     /// Lists only controllers of this node's kind; any other would be useless here.
     pub fn show_picker(&mut self, ui: &mut Ui, node_id: NodeId, shared: &SharedState) {
         let controllers: Vec<(u32, String)> = {
-            let state = self.controllers.lock().unwrap();
+            let state = self.controllers.lock();
             state.iter()
                 .filter(|c| (self.spec.is_kind)(&c.kind))
                 .map(|c| (c.id, c.name.clone()))

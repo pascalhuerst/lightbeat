@@ -38,7 +38,7 @@ impl EnvelopeWidget {
     }
 
     fn sync_from_display(&mut self) {
-        let shared = self.shared.lock().unwrap();
+        let shared = self.shared.lock();
         if let Some(d) = shared.display.as_ref().and_then(|d| d.downcast_ref::<EnvelopeDisplay>())
             && d.kind != self.kind {
                 self.kind = d.kind;
@@ -93,7 +93,7 @@ impl NodeWidget for EnvelopeWidget {
     fn show_content(&mut self, ui: &mut Ui, zoom: f32) {
         self.sync_from_display();
 
-        let shared = self.shared.lock().unwrap();
+        let shared = self.shared.lock();
         let display = shared.display.as_ref()
             .and_then(|d| d.downcast_ref::<EnvelopeDisplay>());
         let (kind, stage, env_val, times) = if let Some(d) = display {
@@ -323,7 +323,7 @@ impl EnvelopeWidget {
             && let Some(Grab::Segment(i)) = geo.pick(pos, hit)
             && let Some(param) = geo.segs[i].curve_param
         {
-            self.shared.lock().unwrap().pending_params.push((param, ParamValue::Float(0.0)));
+            self.shared.lock().pending_params.push((param, ParamValue::Float(0.0)));
         }
         if let Some((grab, _)) = self.grab {
             if resp.dragged() {
@@ -413,7 +413,7 @@ impl EnvelopeWidget {
     }
 
     fn apply_drag(&self, kind: EnvelopeKind, geo: &Geo, grab: Grab, pos: Pos2, rect: egui::Rect) {
-        let mut shared = self.shared.lock().unwrap();
+        let mut shared = self.shared.lock();
         let mut set = |idx: usize, v: f32| shared.pending_params.push((idx, ParamValue::Float(v)));
         let x = pos.x.clamp(rect.min.x, rect.max.x);
         match grab {

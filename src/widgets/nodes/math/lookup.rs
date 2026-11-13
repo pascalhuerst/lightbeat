@@ -102,7 +102,7 @@ impl LookupWidget {
             "row_count": self.row_count,
             "data": self.data,
         });
-        let mut s = self.shared.lock().unwrap();
+        let mut s = self.shared.lock();
         s.pending_config = Some(cfg);
     }
 
@@ -555,7 +555,7 @@ fn edit_cell(
                     ui.memory_mut(|m| m.open_popup(popup_id));
                 }
                 let presets: Vec<(u32, String, Vec<GradientStop>)> = {
-                    let lib = library.lock().unwrap();
+                    let lib = library.lock();
                     lib.presets.iter().map(|p|
                         (p.id, p.name.clone(), p.stops.clone())
                     ).collect()

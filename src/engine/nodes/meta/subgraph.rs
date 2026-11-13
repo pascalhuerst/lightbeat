@@ -215,7 +215,7 @@ impl InnerGraph {
         self.disabled_mask.clear();
         for (i, node) in self.nodes.iter_mut().enumerate() {
             let (disabled, pending, config_update, promoted_update, snapshots_update, recall) = {
-                let mut shared = self.shared_states[i].lock().unwrap();
+                let mut shared = self.shared_states[i].lock();
                 (
                     shared.disabled,
                     std::mem::take(&mut shared.pending_params),
@@ -346,7 +346,7 @@ impl InnerGraph {
         self.plan_dirty = true;
         match cmd {
             SubgraphInnerCmd::AddNode { node, shared } => {
-                shared.lock().unwrap().default_params = node.params();
+                shared.lock().default_params = node.params();
                 self.shared_states.push(shared);
                 self.nodes.push(node);
                 self.promoted.push(PromotedInputs::default());
@@ -433,7 +433,7 @@ impl InnerGraph {
             }
             let (active, fading, progress) = self.promoted[i].snapshot_state();
 
-            let mut shared = self.shared_states[i].lock().unwrap();
+            let mut shared = self.shared_states[i].lock();
             shared.inputs_connected.clear();
             shared
                 .inputs_connected
@@ -673,7 +673,7 @@ mod promoted_tests {
             g.promoted.push(PromotedInputs::default());
         }
         g.index_stale = true;
-        g.shared_states[1].lock().unwrap().pending_promoted = Some(vec![PromotedParam {
+        g.shared_states[1].lock().pending_promoted = Some(vec![PromotedParam {
             name: "Rate".to_string(),
             kind: PromotedKind::Float,
         }]);

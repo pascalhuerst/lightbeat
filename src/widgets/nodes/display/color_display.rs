@@ -22,7 +22,7 @@ impl ColorDisplayWidget {
     }
 
     fn push_mode(&self, mode: usize) {
-        let mut s = self.shared.lock().unwrap();
+        let mut s = self.shared.lock();
         s.pending_params.push((0, ParamValue::Choice(mode)));
     }
 }

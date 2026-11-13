@@ -129,7 +129,7 @@ impl LightBeatApp {
                 // Can't downcast through &dyn; need &mut. Use a different
                 // route: serialize the subgraph's pending shared.save_data
                 // which contains the port defs JSON.
-                let shared = n.shared_state().lock().unwrap();
+                let shared = n.shared_state().lock();
                 if let Some(data) = &shared.save_data {
                     use engine::nodes::meta::subgraph::SubgraphPortDef;
                     let inputs = data.get("inputs")

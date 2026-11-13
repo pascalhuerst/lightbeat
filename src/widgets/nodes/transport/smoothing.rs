@@ -50,7 +50,7 @@ impl NodeWidget for SmoothingWidget {
 
     fn show_content(&mut self, ui: &mut Ui, _zoom: f32) {
         self.value_type.sync(&self.shared);
-        let shared = self.shared.lock().unwrap();
+        let shared = self.shared.lock();
         let out = shared.outputs.first().copied().unwrap_or(0.0);
         drop(shared);
         ui.label(self.value_type.summary(out));

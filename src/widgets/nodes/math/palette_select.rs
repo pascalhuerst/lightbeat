@@ -1,4 +1,5 @@
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use parking_lot::Mutex;
 
 use egui::{self, Color32, Sense, Ui, Vec2};
 
@@ -52,7 +53,7 @@ impl PaletteSelectWidget {
     }
 
     fn sync_from_display(&mut self) {
-        let shared = self.shared.lock().unwrap();
+        let shared = self.shared.lock();
         if let Some(d) = shared.display.as_ref().and_then(|d| d.downcast_ref::<PaletteSelectDisplay>())
             && d.select_mode != self.select_mode {
                 self.select_mode = d.select_mode;
@@ -60,7 +61,7 @@ impl PaletteSelectWidget {
     }
 
     fn push_data_to_engine(&self) {
-        let ctx = self.palette_ctx.lock().unwrap();
+        let ctx = self.palette_ctx.lock();
         let groups_data: Vec<serde_json::Value> = self.selected_group_ids.iter().filter_map(|gid| {
             let group = ctx.groups.iter().find(|g| g.id == *gid)?;
             let palettes: Vec<&ColorPalette> = group.palette_ids.iter()
@@ -73,7 +74,7 @@ impl PaletteSelectWidget {
         }).collect();
         drop(ctx);
 
-        let mut shared = self.shared.lock().unwrap();
+        let mut shared = self.shared.lock();
         shared.pending_config = Some(serde_json::json!({
             "group_ids": self.selected_group_ids,
             "groups": groups_data,
@@ -102,7 +103,7 @@ impl NodeWidget for PaletteSelectWidget {
 
     fn show_content(&mut self, ui: &mut Ui, _zoom: f32) {
         self.sync_from_display();
-        let shared = self.shared.lock().unwrap();
+        let shared = self.shared.lock();
         let display = shared.display.as_ref()
             .and_then(|d| d.downcast_ref::<PaletteSelectDisplay>());
 
@@ -121,7 +122,7 @@ impl NodeWidget for PaletteSelectWidget {
             self.selected_group_ids = ids;
         }
 
-        let version = self.palette_ctx.lock().unwrap().version;
+        let version = self.palette_ctx.lock().version;
         if version != self.seen_ctx_version {
             self.seen_ctx_version = version;
             if !self.selected_group_ids.is_empty() {
@@ -156,7 +157,7 @@ impl NodeWidget for PaletteSelectWidget {
     }
 
     fn show_inspector(&mut self, ui: &mut Ui) {
-        let ctx = self.palette_ctx.lock().unwrap();
+        let ctx = self.palette_ctx.lock();
         let all_groups: Vec<(u32, String)> = ctx.groups.iter()
             .map(|g| (g.id, g.name.clone()))
             .collect();

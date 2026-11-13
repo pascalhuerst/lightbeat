@@ -56,7 +56,7 @@ pub fn show(ui: &mut Ui, mgr: &mut AudioInputManager, missing: &[String]) -> boo
     let mut remove_analyzer: Vec<(u32, usize)> = Vec::new();
 
     {
-        let state = mgr.shared.lock().unwrap();
+        let state = mgr.shared.lock();
         if state.is_empty() {
             setup_ui::empty_state(ui, "No audio inputs yet. Add one below.");
         }

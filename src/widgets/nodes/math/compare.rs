@@ -34,7 +34,7 @@ impl NodeWidget for CompareWidget {
     fn min_content_height(&self) -> f32 { 15.0 }
 
     fn show_content(&mut self, ui: &mut Ui, _zoom: f32) {
-        let shared = self.shared.lock().unwrap();
+        let shared = self.shared.lock();
         let out = shared.outputs.first().copied().unwrap_or(0.0);
         drop(shared);
         ui.label(if out >= 0.5 { "TRUE" } else { "FALSE" });

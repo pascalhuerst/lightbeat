@@ -6,7 +6,7 @@
 //! a port is hovered the engine records its value every tick; the UI drains
 //! the batch each frame.
 
-use std::sync::Mutex;
+use parking_lot::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use super::types::NodeId;
@@ -25,7 +25,7 @@ static STATE: Mutex<(Option<ProbeTarget>, Vec<f32>)> = Mutex::new((None, Vec::ne
 const MAX_BATCH: usize = 4096;
 
 pub fn set_target(target: Option<ProbeTarget>) {
-    let mut s = STATE.lock().unwrap();
+    let mut s = STATE.lock();
     if s.0 != target {
         s.0 = target;
         s.1.clear();
@@ -37,11 +37,11 @@ pub fn target() -> Option<ProbeTarget> {
     if !ACTIVE.load(Ordering::Relaxed) {
         return None;
     }
-    STATE.lock().unwrap().0
+    STATE.lock().0
 }
 
 pub fn record(value: f32) {
-    let mut s = STATE.lock().unwrap();
+    let mut s = STATE.lock();
     if s.1.len() < MAX_BATCH {
         s.1.push(value);
     }
@@ -49,7 +49,7 @@ pub fn record(value: f32) {
 
 /// Everything recorded since the last call.
 pub fn drain() -> Vec<f32> {
-    std::mem::take(&mut STATE.lock().unwrap().1)
+    std::mem::take(&mut STATE.lock().1)
 }
 
 /// The sample of a batch that deserves the pixel: the one farthest from

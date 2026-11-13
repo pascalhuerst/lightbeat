@@ -65,7 +65,7 @@ impl FaderGroupWidget {
         mouse_values: Option<&[f32]>,
         overrides: Option<&[Option<f32>]>,
     ) {
-        let mut shared = self.shared.lock().unwrap();
+        let mut shared = self.shared.lock();
         let mo_strs: Vec<&str> = self.mouse_override.iter().map(|m| m.as_str()).collect();
         let mut cfg = serde_json::json!({
             "name": self.name,
@@ -179,7 +179,7 @@ impl NodeWidget for FaderGroupWidget {
     fn show_content(&mut self, ui: &mut Ui, _zoom: f32) {
         // Sync from engine display.
         let snapshot = {
-            let shared = self.shared.lock().unwrap();
+            let shared = self.shared.lock();
             shared.display.as_ref()
                 .and_then(|d| d.downcast_ref::<FaderGroupDisplay>())
                 .map(|d| (

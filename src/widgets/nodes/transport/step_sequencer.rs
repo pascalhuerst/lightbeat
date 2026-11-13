@@ -115,7 +115,7 @@ impl NodeWidget for StepSequencerWidget {
                 );
                 let mut value = values.get(step_index).copied().unwrap_or(0.0);
                 if fader::handle_fader_interaction(ui, &response, cell, Orientation::Vertical, &mut value) {
-                    let mut shared = self.shared.lock().unwrap();
+                    let mut shared = self.shared.lock();
                     shared.pending_params.push((100 + step_index, ParamValue::Float(value)));
                 }
             }

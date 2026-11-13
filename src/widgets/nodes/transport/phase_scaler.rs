@@ -24,11 +24,11 @@ impl PhaseScalerWidget {
     }
 
     fn push_extra(&self) {
-        self.shared.lock().unwrap().pending_config = Some(serde_json::json!({ "extra": self.extra }));
+        self.shared.lock().pending_config = Some(serde_json::json!({ "extra": self.extra }));
     }
 
     fn first_exponent(&self) -> i32 {
-        let shared = self.shared.lock().unwrap();
+        let shared = self.shared.lock();
         shared.display.as_ref().and_then(|d| d.downcast_ref::<PhaseScalerDisplay>()).map(|d| d.exponent).unwrap_or(0)
     }
 }
@@ -85,7 +85,7 @@ impl NodeWidget for PhaseScalerWidget {
     /// are overridden by the engine. Hide them from the auto-inspector so
     /// the user isn't editing values that get thrown away.
     fn overridden_param_indices(&self) -> Vec<usize> {
-        let shared = self.shared.lock().unwrap();
+        let shared = self.shared.lock();
         let exp_wired = shared.inputs_connected.get(2).copied().unwrap_or(false);
         let offset_wired = shared.inputs_connected.get(3).copied().unwrap_or(false);
         drop(shared);
@@ -103,11 +103,11 @@ impl NodeWidget for PhaseScalerWidget {
 
         ui.horizontal(|ui| {
             if ui.small_button("÷2").clicked() && exponent > -6 {
-                self.shared.lock().unwrap().pending_params.push((0, ParamValue::Int((exponent - 1) as i64)));
+                self.shared.lock().pending_params.push((0, ParamValue::Int((exponent - 1) as i64)));
             }
             ui.label(exponent_label(exponent));
             if ui.small_button("×2").clicked() && exponent < 6 {
-                self.shared.lock().unwrap().pending_params.push((0, ParamValue::Int((exponent + 1) as i64)));
+                self.shared.lock().pending_params.push((0, ParamValue::Int((exponent + 1) as i64)));
             }
         });
         let last = self.extra.len().saturating_sub(1);
@@ -178,7 +178,7 @@ mod tests {
         let names: Vec<String> = w.ui_outputs().into_iter().map(|p| p.def.name).collect();
         assert_eq!(names, ["×1", "÷2", "×4"]);
         w.push_extra();
-        let sent = w.shared.lock().unwrap().pending_config.take().unwrap();
+        let sent = w.shared.lock().pending_config.take().unwrap();
         assert_eq!(sent["extra"].as_array().map(Vec::len), Some(2));
     }
 }

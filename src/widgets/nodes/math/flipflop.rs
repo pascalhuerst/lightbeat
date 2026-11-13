@@ -61,7 +61,7 @@ impl NodeWidget for FlipFlopWidget {
 
     fn show_content(&mut self, ui: &mut Ui, _zoom: f32) {
         let q = {
-            let shared = self.shared.lock().unwrap();
+            let shared = self.shared.lock();
             shared.outputs.first().copied().unwrap_or(0.0) >= 0.5
         };
         let (text, color) = if q {

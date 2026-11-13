@@ -10,7 +10,8 @@ pub mod artnet;
 
 use std::collections::{HashMap, VecDeque};
 use std::net::Ipv4Addr;
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::Arc;
+use parking_lot::{Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
@@ -185,7 +186,7 @@ impl DmxInputHub {
     }
 
     pub(crate) fn lock(&self) -> MutexGuard<'_, DmxState> {
-        self.0.lock().unwrap()
+        self.0.lock()
     }
 
     // -- the setup ----------------------------------------------------------

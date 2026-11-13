@@ -29,7 +29,7 @@ impl NodeWidget for ScaleOffsetWidget {
 
     fn overridden_param_indices(&self) -> Vec<usize> {
         // Scale = param 0, wired from port 1. Offset = param 1, wired from port 2.
-        let s = self.shared.lock().unwrap();
+        let s = self.shared.lock();
         let mut hidden = Vec::new();
         if s.inputs_connected.get(1).copied().unwrap_or(false) { hidden.push(0); }
         if s.inputs_connected.get(2).copied().unwrap_or(false) { hidden.push(1); }
@@ -37,7 +37,7 @@ impl NodeWidget for ScaleOffsetWidget {
     }
 
     fn show_content(&mut self, ui: &mut Ui, _zoom: f32) {
-        let s = self.shared.lock().unwrap();
+        let s = self.shared.lock();
         let out = s.outputs.first().copied().unwrap_or(0.0);
         drop(s);
         ui.label(format!("{:+.2}", out));

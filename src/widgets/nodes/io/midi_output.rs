@@ -43,7 +43,7 @@ impl MidiOutputWidget {
 
     fn push_config(&self) {
         if let Ok(value) = serde_json::to_value(&self.config) {
-            self.shared.lock().unwrap().pending_config = Some(value);
+            self.shared.lock().pending_config = Some(value);
         }
     }
 
@@ -55,7 +55,7 @@ impl MidiOutputWidget {
     }
 
     fn connected(&self) -> bool {
-        self.shared.lock().unwrap().outputs.first().copied().unwrap_or(0.0) >= 0.5
+        self.shared.lock().outputs.first().copied().unwrap_or(0.0) >= 0.5
     }
 }
 
@@ -119,7 +119,7 @@ impl NodeWidget for MidiOutputWidget {
         setup_ui::section(ui, "Inputs");
 
         let learned: Vec<(String, LearnedControl)> = {
-            let map = self.learned.lock().unwrap();
+            let map = self.learned.lock();
             let mut nodes: Vec<_> = map.iter().collect();
             nodes.sort_by_key(|(id, _)| **id);
             nodes

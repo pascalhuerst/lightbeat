@@ -3,7 +3,8 @@
 //! kept here for the engine and UI to read.
 
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use parking_lot::Mutex;
 
 use serde::{Deserialize, Serialize};
 
@@ -202,7 +203,7 @@ impl AudioInputManager {
     /// exclusive selection. Pass `input_id = 0` to release without binding
     /// to anything new.
     pub fn rebind(shared: &SharedAudioInputs, node_id: u64, input_id: u32) {
-        let mut state = shared.lock().unwrap();
+        let mut state = shared.lock();
         for c in state.iter_mut() {
             if c.bound_to == Some(node_id) {
                 c.bound_to = None;
@@ -216,7 +217,7 @@ impl AudioInputManager {
 
     /// Release `node_id`'s binding (called from widget Drop).
     pub fn release(shared: &SharedAudioInputs, node_id: u64) {
-        let mut state = shared.lock().unwrap();
+        let mut state = shared.lock();
         for c in state.iter_mut() {
             if c.bound_to == Some(node_id) {
                 c.bound_to = None;
@@ -247,19 +248,19 @@ impl AudioInputManager {
     /// Replace the entire input set (called on setup load/undo/redo).
     pub fn set_inputs(&mut self, inputs: &[AudioInputConfig]) {
         self.streams.clear();
-        let mut state = self.shared.lock().unwrap();
+        let mut state = self.shared.lock();
         *state = inputs.iter().map(AudioInputRuntime::from_config).collect();
         drop(state);
         self.reconcile();
     }
 
     pub fn export(&self) -> Vec<AudioInputConfig> {
-        let state = self.shared.lock().unwrap();
+        let state = self.shared.lock();
         state.iter().map(AudioInputRuntime::to_config).collect()
     }
 
     pub fn add_input(&mut self, name: String) -> u32 {
-        let mut state = self.shared.lock().unwrap();
+        let mut state = self.shared.lock();
         let id = state.iter().map(|c| c.id).max().unwrap_or(0) + 1;
         state.push(AudioInputRuntime {
             id,
@@ -283,14 +284,14 @@ impl AudioInputManager {
     }
 
     pub fn remove_input(&mut self, id: u32) {
-        let mut state = self.shared.lock().unwrap();
+        let mut state = self.shared.lock();
         state.retain(|c| c.id != id);
         drop(state);
         self.reconcile();
     }
 
     pub fn rename(&mut self, id: u32, name: String) {
-        let mut state = self.shared.lock().unwrap();
+        let mut state = self.shared.lock();
         if let Some(c) = state.iter_mut().find(|c| c.id == id) {
             c.name = name;
         }
@@ -301,7 +302,7 @@ impl AudioInputManager {
     /// reconcile opens a fresh stream on the next tick.
     pub fn set_enabled(&mut self, id: u32, enabled: bool) {
         {
-            let mut state = self.shared.lock().unwrap();
+            let mut state = self.shared.lock();
             if let Some(c) = state.iter_mut().find(|c| c.id == id) {
                 if c.enabled == enabled { return; }
                 c.enabled = enabled;
@@ -320,7 +321,7 @@ impl AudioInputManager {
     /// device names aren't portable across backends.
     pub fn set_backend(&mut self, id: u32, backend: AudioBackendKind) {
         {
-            let mut state = self.shared.lock().unwrap();
+            let mut state = self.shared.lock();
             if let Some(c) = state.iter_mut().find(|c| c.id == id) {
                 if c.backend == backend { return; }
                 c.backend = backend;
@@ -334,7 +335,7 @@ impl AudioInputManager {
 
     pub fn set_device(&mut self, id: u32, device_name: String) {
         {
-            let mut state = self.shared.lock().unwrap();
+            let mut state = self.shared.lock();
             if let Some(c) = state.iter_mut().find(|c| c.id == id) {
                 c.device_name = device_name;
                 c.status = ConnectionStatus::Disconnected;
@@ -346,7 +347,7 @@ impl AudioInputManager {
 
     pub fn set_sample_rate(&mut self, id: u32, rate: Option<u32>) {
         {
-            let mut state = self.shared.lock().unwrap();
+            let mut state = self.shared.lock();
             if let Some(c) = state.iter_mut().find(|c| c.id == id) {
                 c.sample_rate = rate;
                 c.analyzer_handles.clear(); c.analyzer_frame = None;
@@ -357,7 +358,7 @@ impl AudioInputManager {
 
     pub fn set_buffer_size(&mut self, id: u32, frames: Option<u32>) {
         {
-            let mut state = self.shared.lock().unwrap();
+            let mut state = self.shared.lock();
             if let Some(c) = state.iter_mut().find(|c| c.id == id) {
                 c.buffer_size_frames = frames;
             }
@@ -367,7 +368,7 @@ impl AudioInputManager {
 
     pub fn add_analyzer(&mut self, input_id: u32, kind: AnalyzerKind) {
         {
-            let mut state = self.shared.lock().unwrap();
+            let mut state = self.shared.lock();
             if let Some(c) = state.iter_mut().find(|c| c.id == input_id) {
                 c.analyzer_kinds.push(kind);
             }
@@ -380,7 +381,7 @@ impl AudioInputManager {
 
     pub fn remove_analyzer(&mut self, input_id: u32, analyzer_index: usize) {
         {
-            let mut state = self.shared.lock().unwrap();
+            let mut state = self.shared.lock();
             if let Some(c) = state.iter_mut().find(|c| c.id == input_id)
                 && analyzer_index < c.analyzer_kinds.len() {
                     c.analyzer_kinds.remove(analyzer_index);
@@ -395,7 +396,7 @@ impl AudioInputManager {
     /// `force_rescan`, never on a timer: enumerating ALSA probes every
     /// device and prints to stderr each time.
     pub fn missing_inputs(&self) -> Vec<String> {
-        let state = self.shared.lock().unwrap();
+        let state = self.shared.lock();
         state
             .iter()
             .filter(|c| c.enabled && c.status == ConnectionStatus::Waiting)
@@ -413,7 +414,7 @@ impl AudioInputManager {
         // live `analyzers` vec — that's only populated after a successful
         // stream open).
         let desired: Vec<(u32, bool, AudioBackendKind, String, Option<u32>, Option<u32>, Vec<AnalyzerKind>)> = {
-            let state = self.shared.lock().unwrap();
+            let state = self.shared.lock();
             state
                 .iter()
                 .map(|c| {
@@ -457,7 +458,7 @@ impl AudioInputManager {
         // would just leak frozen values.
         {
             let live_ids: Vec<u32> = self.streams.iter().map(|s| s.input_id).collect();
-            let mut state = self.shared.lock().unwrap();
+            let mut state = self.shared.lock();
             for c in state.iter_mut() {
                 if !live_ids.contains(&c.id) {
                     c.analyzer_handles.clear();
@@ -469,7 +470,7 @@ impl AudioInputManager {
         // Open streams for desired configs that don't have one yet.
         for (id, enabled, backend, device_name, sr, bs, kinds) in &desired {
             if !*enabled {
-                let mut state = self.shared.lock().unwrap();
+                let mut state = self.shared.lock();
                 if let Some(c) = state.iter_mut().find(|c| c.id == *id) {
                     c.status = ConnectionStatus::Disabled;
                     c.actual_sample_rate = 0;
@@ -478,7 +479,7 @@ impl AudioInputManager {
                 continue;
             }
             if device_name.is_empty() {
-                let mut state = self.shared.lock().unwrap();
+                let mut state = self.shared.lock();
                 if let Some(c) = state.iter_mut().find(|c| c.id == *id) {
                     c.status = ConnectionStatus::Disconnected;
                 }
@@ -490,7 +491,7 @@ impl AudioInputManager {
             }
             let available_for_backend = cached.get(backend).cloned().unwrap_or_default();
             if !available_for_backend.iter().any(|n| n == device_name) {
-                let mut state = self.shared.lock().unwrap();
+                let mut state = self.shared.lock();
                 if let Some(c) = state.iter_mut().find(|c| c.id == *id) {
                     c.status = ConnectionStatus::Waiting;
                 }
@@ -527,7 +528,7 @@ impl AudioInputManager {
                         _worker: worker,
                     });
 
-                    let mut state = self.shared.lock().unwrap();
+                    let mut state = self.shared.lock();
                     if let Some(c) = state.iter_mut().find(|c| c.id == *id) {
                         c.analyzer_handles = handles;
                         c.analyzer_frame = Some(frame);
@@ -538,7 +539,7 @@ impl AudioInputManager {
                 }
                 Err(e) => {
                     eprintln!("[audio/{}] open '{}': {}", backend.label(), device_name, e);
-                    let mut state = self.shared.lock().unwrap();
+                    let mut state = self.shared.lock();
                     if let Some(c) = state.iter_mut().find(|c| c.id == *id) {
                         c.status = ConnectionStatus::Waiting;
                     }

@@ -18,7 +18,7 @@ impl CounterWidget {
     }
 
     fn sync_from_display(&mut self) {
-        let shared = self.shared.lock().unwrap();
+        let shared = self.shared.lock();
         if let Some(d) = shared.display.as_ref().and_then(|d| d.downcast_ref::<CounterDisplay>())
             && d.select_mode != self.select_mode {
                 self.select_mode = d.select_mode;
@@ -46,7 +46,7 @@ impl NodeWidget for CounterWidget {
     fn overridden_param_indices(&self) -> Vec<usize> {
         // Hide the "Max" param (index 0) when the `max` input port (logical
         // index 2) is wired — its value is what the engine actually uses.
-        let s = self.shared.lock().unwrap();
+        let s = self.shared.lock();
         if s.inputs_connected.get(2).copied().unwrap_or(false) {
             vec![0]
         } else {
@@ -62,7 +62,7 @@ impl NodeWidget for CounterWidget {
 
     fn show_content(&mut self, ui: &mut Ui, _zoom: f32) {
         self.sync_from_display();
-        let shared = self.shared.lock().unwrap();
+        let shared = self.shared.lock();
         let count = shared.outputs.first().copied().unwrap_or(0.0);
         drop(shared);
         ui.label(format!("{}", count as i64));

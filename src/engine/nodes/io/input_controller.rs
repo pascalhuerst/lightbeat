@@ -95,7 +95,7 @@ impl ProcessNode for InputControllerProcessNode {
     }
 
     fn process(&mut self) {
-        let mut state = self.controllers.lock().unwrap();
+        let mut state = self.controllers.lock();
         let Some(c) = bind_controller(
             &mut state, self.controller_id, |_| true,
             &mut self.display_name, &mut self.connected,

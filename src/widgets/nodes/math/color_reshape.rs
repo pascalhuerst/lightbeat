@@ -71,7 +71,7 @@ impl NodeWidget for ColorReshapeWidget {
             ui.label("Stops");
             if ui.add(egui::Slider::new(&mut stops, MIN_STOPS..=MAX_STOPS)).changed() {
                 self.stops = stops;
-                self.shared.lock().unwrap().pending_params.push((0, ParamValue::Int(stops as i64)));
+                self.shared.lock().pending_params.push((0, ParamValue::Int(stops as i64)));
             }
         });
         ui.colored_label(theme::TEXT_DIM, "Changing the count adds or removes ports; wires on removed ports are dropped.");

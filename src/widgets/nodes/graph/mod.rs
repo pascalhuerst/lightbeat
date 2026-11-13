@@ -907,7 +907,7 @@ impl NodeGraph {
             let in_highlights: Vec<f32> = (0..inputs.len())
                 .map(|pi| level.nodes[i].input_highlight(pi, now))
                 .collect();
-            let disabled = level.nodes[i].shared_state().lock().unwrap().disabled;
+            let disabled = level.nodes[i].shared_state().lock().disabled;
             draw_node_chrome(
                 &painter,
                 level.nodes[i].display_title(),
@@ -985,7 +985,7 @@ impl NodeGraph {
         // so no colour from the widget's own painter leaks through.
         let level = self.active();
         for i in 0..level.nodes.len() {
-            let disabled = level.nodes[i].shared_state().lock().unwrap().disabled;
+            let disabled = level.nodes[i].shared_state().lock().disabled;
             if !disabled { continue; }
             let rect = node_rects[i];
             let body_rect = Rect::from_min_max(

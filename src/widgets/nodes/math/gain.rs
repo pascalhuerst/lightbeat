@@ -113,7 +113,7 @@ impl NodeWidget for GainWidget {
         // fine steps, double-click for what the node was made with.
         if resp.double_clicked() {
             let default = fader::recorded_default(&self.shared, 0).unwrap_or(1.0);
-            self.shared.lock().unwrap()
+            self.shared.lock()
                 .pending_params.push((0, ParamValue::Float(default)));
         } else if resp.dragged() {
             let dy = resp.drag_delta().y;
@@ -121,7 +121,7 @@ impl NodeWidget for GainWidget {
                 let fine = if ui.input(|i| i.modifiers.shift) { fader::FINE_FACTOR } else { 1.0 };
                 let delta_v = -dy * fine / (DRAG_PIXELS_FOR_FULL_SWEEP * zoom.max(0.5));
                 let new_v = (self.gain + delta_v).clamp(0.0, 1.0);
-                self.shared.lock().unwrap()
+                self.shared.lock()
                     .pending_params.push((0, ParamValue::Float(new_v)));
             }
         }

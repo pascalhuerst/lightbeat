@@ -9,7 +9,7 @@ use crate::widgets::nodes::node::{NodeLayout, NodeWidget, labelled_layout, param
 use crate::widgets::nodes::types::UiPortDef;
 
 fn push_type(shared: &SharedState, port_type: PortType) {
-    let mut s = shared.lock().unwrap();
+    let mut s = shared.lock();
     s.pending_params.push((0, ParamValue::Choice(type_to_index(port_type))));
 }
 
@@ -88,7 +88,7 @@ impl NodeWidget for MultiplexerWidget {
 
     fn show_content(&mut self, ui: &mut Ui, _zoom: f32) {
         self.sync_from_display();
-        let shared = self.shared.lock().unwrap();
+        let shared = self.shared.lock();
         let sel = shared.display.as_ref()
             .and_then(|d| d.downcast_ref::<MuxDisplay>())
             .map(|d| d.selected).unwrap_or(0);
@@ -172,7 +172,7 @@ impl NodeWidget for DemultiplexerWidget {
 
     fn show_content(&mut self, ui: &mut Ui, _zoom: f32) {
         self.sync_from_display();
-        let shared = self.shared.lock().unwrap();
+        let shared = self.shared.lock();
         let sel = shared.display.as_ref()
             .and_then(|d| d.downcast_ref::<MuxDisplay>())
             .map(|d| d.selected).unwrap_or(0);

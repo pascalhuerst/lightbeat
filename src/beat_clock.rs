@@ -1,4 +1,5 @@
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use parking_lot::Mutex;
 use std::thread;
 use std::time::Duration;
 
@@ -87,9 +88,9 @@ impl BeatClock {
             loop {
                 for event in link.events() {
                     let crate::link_controller::LinkEvent::PlayStateChanged(playing) = event;
-                    let subs = subs.lock().unwrap();
+                    let subs = subs.lock();
                     for sub in subs.iter() {
-                        sub.listener.lock().unwrap().on_transport_change(playing);
+                        sub.listener.lock().on_transport_change(playing);
                     }
                 }
 
@@ -98,7 +99,7 @@ impl BeatClock {
                 // Update snapshot every poll (~1ms).
                 // Normalize phase from [0, quantum) to [0, 1).
                 {
-                    let mut s = snap.lock().unwrap();
+                    let mut s = snap.lock();
                     s.tempo = state.tempo;
                     s.beat = state.beat;
                     s.phase = state.phase / quantum;
@@ -109,9 +110,9 @@ impl BeatClock {
                 // Notify subscribers of play state changes,
                 // including the initial state on first poll.
                 if state.playing != was_playing {
-                    let subs = subs.lock().unwrap();
+                    let subs = subs.lock();
                     for sub in subs.iter() {
-                        sub.listener.lock().unwrap().on_transport_change(state.playing);
+                        sub.listener.lock().on_transport_change(state.playing);
                     }
                 }
 
@@ -120,12 +121,12 @@ impl BeatClock {
 
                     if let Some(prev) = last_beat
                         && current_beat > prev {
-                            let subs = subs.lock().unwrap();
+                            let subs = subs.lock();
                             for beat in (prev + 1)..=current_beat {
                                 let info = BeatInfo { beat };
                                 for sub in subs.iter() {
                                     if sub.pattern.matches(beat) {
-                                        sub.listener.lock().unwrap().on_beat(&info);
+                                        sub.listener.lock().on_beat(&info);
                                     }
                                 }
                             }
@@ -163,13 +164,13 @@ impl BeatClock {
         // Immediately notify the listener of the current playing state
         // so it doesn't miss an already-running session.
         {
-            let snap = self.snapshot.lock().unwrap();
-            let mut l = listener.lock().unwrap();
+            let snap = self.snapshot.lock();
+            let mut l = listener.lock();
             l.on_transport_change(snap.playing);
         }
 
         let id = {
-            let mut subs = self.subscribers.lock().unwrap();
+            let mut subs = self.subscribers.lock();
             let id = subs.len();
             subs.push(Subscription { pattern, listener });
             id
@@ -189,7 +190,7 @@ pub struct SubscriptionHandle {
 
 impl Drop for SubscriptionHandle {
     fn drop(&mut self) {
-        let mut subs = self.subscribers.lock().unwrap();
+        let mut subs = self.subscribers.lock();
         if self.id < subs.len() {
             subs.swap_remove(self.id);
         }

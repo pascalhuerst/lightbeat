@@ -70,7 +70,7 @@ impl MidiInputWidget {
 
     fn push_config(&self) {
         if let Ok(value) = serde_json::to_value(&self.config) {
-            self.shared.lock().unwrap().pending_config = Some(value);
+            self.shared.lock().pending_config = Some(value);
         }
         self.publish();
     }
@@ -87,7 +87,7 @@ impl MidiInputWidget {
                 e.binding.map(|binding| LearnedControl { name: e.port_name(i), binding, mode: e.mode })
             })
             .collect();
-        self.learned.lock().unwrap().insert(self.id.0, (label, controls));
+        self.learned.lock().insert(self.id.0, (label, controls));
     }
 
     fn set_binding(&mut self, entry: u32, binding: Binding) {
@@ -134,17 +134,17 @@ impl MidiInputWidget {
     }
 
     fn value_of(&self, index: usize) -> f32 {
-        self.shared.lock().unwrap().outputs.get(index + 1).copied().unwrap_or(0.0)
+        self.shared.lock().outputs.get(index + 1).copied().unwrap_or(0.0)
     }
 
     fn connected(&self) -> bool {
-        self.shared.lock().unwrap().outputs.first().copied().unwrap_or(0.0) >= 0.5
+        self.shared.lock().outputs.first().copied().unwrap_or(0.0) >= 0.5
     }
 }
 
 impl Drop for MidiInputWidget {
     fn drop(&mut self) {
-        self.learned.lock().unwrap().remove(&self.id.0);
+        self.learned.lock().remove(&self.id.0);
     }
 }
 
@@ -345,7 +345,7 @@ mod tests {
         let hat = &w.config.entries[1];
         assert_eq!(hat.binding, Some(Binding { kind: MsgKind::Note, channel: 2, number: 36 }));
         assert_eq!(hat.mode, InMode::Gate, "a value does not fit a note, so it becomes a gate");
-        let published = learned.lock().unwrap();
+        let published = learned.lock();
         let (_, controls) = published.get(&4).unwrap();
         assert_eq!(controls.iter().map(|c| c.name.as_str()).collect::<Vec<_>>(), vec!["Bass", "Hat"]);
     }
@@ -356,9 +356,9 @@ mod tests {
         w.restore_from_save(Some(&serde_json::json!({ "port": PORT, "entries": [{ "id": 1, "name": "A", "binding": {"kind": "cc", "channel": 1, "number": 7}, "mode": "relative" }] })), &[]);
         assert_eq!(w.ui_outputs().len(), 2, "status port and one entry");
         assert_eq!(w.config().entries[0].mode, InMode::Relative);
-        assert_eq!(learned.lock().unwrap().len(), 1);
+        assert_eq!(learned.lock().len(), 1);
         drop(w);
-        assert!(learned.lock().unwrap().is_empty());
+        assert!(learned.lock().is_empty());
     }
 
     #[test]
