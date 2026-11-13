@@ -228,7 +228,7 @@ impl ProcessNode for FaderGroupProcessNode {
                     && let Some(slot) = self.bipolar.get_mut(i) { *slot = b; }
             }
         }
-        if let Some(vals) = data.get("mouse_values").or_else(|| data.get("values")).and_then(|v| v.as_array()) {
+        if let Some(vals) = data.get("mouse_values").and_then(|v| v.as_array()) {
             for (i, v) in vals.iter().enumerate() {
                 if let Some(f) = v.as_f64()
                     && let Some(slot) = self.mouse_values.get_mut(i) {
@@ -269,5 +269,30 @@ impl ProcessNode for FaderGroupProcessNode {
             any_input_enabled: self.any_input_enabled(),
             any_output_enabled: self.any_output_enabled(),
         }));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn save_load_round_trip() {
+        let mut a = FaderGroupProcessNode::new(NodeId(1));
+        a.load_data(&serde_json::json!({
+            "name": "Bank", "rows": 1, "cols": 2,
+            "mouse_values": [0.25, 0.5],
+            "inputs_enabled": [true, false],
+            "outputs_enabled": [true, false],
+            "mouse_override": ["clear_on_reset", "pickup_decrease"],
+            "bipolar": [false, true],
+            "override_values": [0.75, null],
+        }));
+        let saved = a.save_data().unwrap();
+        assert_eq!(saved["mouse_values"], serde_json::json!([0.25, 0.5]));
+        assert_eq!(saved["override_values"], serde_json::json!([0.75, null]));
+        let mut b = FaderGroupProcessNode::new(NodeId(2));
+        b.load_data(&saved);
+        assert_eq!(b.save_data().unwrap(), saved);
     }
 }
