@@ -349,11 +349,6 @@ pub enum EngineCommand {
     RemoveNode(NodeId),
     AddConnection(Connection),
     RemoveConnectionTo(PortId),
-    SetParam {
-        node_id: NodeId,
-        index: usize,
-        value: ParamValue,
-    },
     /// Notify engine of a connection for on_connect/on_disconnect callbacks.
     NotifyConnect {
         node_id: NodeId,

@@ -146,15 +146,6 @@ impl EngineGraph {
             EngineCommand::RemoveConnectionTo(to) => {
                 self.remove_connection_to(to);
             }
-            EngineCommand::SetParam {
-                node_id,
-                index,
-                value,
-            } => {
-                if let Some(node) = self.nodes.iter_mut().find(|n| n.node_id() == node_id) {
-                    node.set_param(index, value);
-                }
-            }
             EngineCommand::NotifyConnect {
                 node_id,
                 input_port,
