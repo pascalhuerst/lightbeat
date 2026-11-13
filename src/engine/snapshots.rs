@@ -17,7 +17,7 @@ pub const FADE_NAME: &str = "Snapshot fade";
 /// Ticks a fade phase is ignored after a recall: the node that makes the phase
 /// restarts a tick or two later, and until then it still reads the old end.
 const SETTLE_TICKS: u32 = 4;
-const DT: f32 = 0.001;
+const MIN_FADE: f32 = 0.001;
 const EPS: f32 = 1e-4;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -299,7 +299,7 @@ impl Player {
             }
             self.progress = pos;
         } else if self.progress < 1.0 {
-            self.progress = (self.progress + DT / self.set.fade_time.max(DT)).min(1.0);
+            self.progress = (self.progress + super::time::dt() / self.set.fade_time.max(MIN_FADE)).min(1.0);
             self.write(node, self.progress);
             if self.progress >= 1.0 {
                 self.finish();

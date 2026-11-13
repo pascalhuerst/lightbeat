@@ -207,13 +207,14 @@ impl PromotedInputs {
         (self.player.active(), self.player.fading(), self.player.progress())
     }
 
+    /// Whether `refresh` has anything to do, so the caller can skip building `params`.
+    pub fn wants_refresh(&self) -> bool {
+        !self.wanted.is_empty()
+    }
+
     /// Re-read ranges and indices, which can change with a node's mode.
     /// Called at UI sync rate rather than every tick since `params()` allocates.
-    pub fn refresh(&mut self, node: &dyn ProcessNode) {
-        if self.wanted.is_empty() {
-            return;
-        }
-        let params = node.params();
+    pub fn refresh(&mut self, params: &[ParamDef]) {
         for (entry, w) in self.entries.iter_mut().zip(&self.wanted) {
             if let Some(e) = entry
                 && e.role == Role::Param

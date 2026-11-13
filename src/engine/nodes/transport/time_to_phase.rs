@@ -5,7 +5,6 @@
 
 use crate::engine::types::*;
 
-const DT: f32 = 0.001;
 const MIN_TIME: f32 = 0.001;
 
 pub struct TimeToPhaseProcessNode {
@@ -65,7 +64,7 @@ impl ProcessNode for TimeToPhaseProcessNode {
         if !self.running {
             return;
         }
-        self.phase += DT / self.time.max(MIN_TIME);
+        self.phase += crate::engine::time::dt() / self.time.max(MIN_TIME);
         if self.phase >= 1.0 {
             if self.looping {
                 self.phase = self.phase.fract();
@@ -133,5 +132,21 @@ mod tests {
         let p = n.read_output(0);
         assert!(p > 0.4 && p < 0.6, "{p}");
         assert_eq!(n.read_output(1), 1.0);
+    }
+
+    #[test]
+    fn a_longer_tick_covers_the_same_time() {
+        let run = |dt: f32, ticks: usize| {
+            crate::engine::time::set_dt(dt);
+            let mut n = TimeToPhaseProcessNode::new(NodeId(1));
+            n.set_param(0, ParamValue::Float(0.1));
+            n.write_input(0, 1.0);
+            run(&mut n, ticks);
+            crate::engine::time::set_dt(crate::engine::time::NOMINAL_DT);
+            n.read_output(0)
+        };
+        let fine = run(0.001, 50);
+        let coarse = run(0.002, 25);
+        assert!((fine - coarse).abs() < 0.03, "{fine} vs {coarse}");
     }
 }

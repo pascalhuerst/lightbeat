@@ -154,7 +154,7 @@ impl EnvelopeProcessNode {
     /// Moves the running segment on by one tick towards `to`, bent by `curve`.
     /// True when it has arrived.
     fn advance(&mut self, secs: f32, curve: f32, to: f32) -> bool {
-        self.seg_pos += if secs > 0.0 { DT / secs } else { 1.0 };
+        self.seg_pos += if secs > 0.0 { crate::engine::time::dt() / secs } else { 1.0 };
         if self.seg_pos >= 1.0 {
             self.envelope = to;
             return true;
@@ -172,8 +172,6 @@ impl EnvelopeProcessNode {
     }
 }
 
-// Engine tick rate ~1kHz, so dt ~0.001s
-const DT: f32 = 0.001;
 
 /// How far along a segment's height the point at time fraction `t` is.
 /// `curve` 0 is a straight line, above 0 starts slowly and ends fast, below 0
@@ -197,7 +195,7 @@ const CURVE_SCALE: f32 = 6.0;
 /// One-pole time-constant coefficient for a smoothing filter: values closer
 /// to 1.0 mean slower response. `tau` is the 1/e time in seconds.
 fn tau_coeff(tau: f32) -> f32 {
-    if tau <= 0.0 { 0.0 } else { (-DT / tau).exp() }
+    if tau <= 0.0 { 0.0 } else { (-crate::engine::time::dt() / tau).exp() }
 }
 
 impl ProcessNode for EnvelopeProcessNode {
@@ -490,5 +488,22 @@ mod curve_tests {
         e.write_input(0, 0.0);
         for _ in 0..30 { e.process(); }
         assert_eq!(e.read_output(0), 0.0);
+    }
+
+    #[test]
+    fn a_longer_tick_covers_the_same_time() {
+        let run = |dt: f32, ticks: usize| {
+            crate::engine::time::set_dt(dt);
+            let mut e = EnvelopeProcessNode::new(NodeId(1));
+            e.set_param(0, ParamValue::Float(0.1));
+            e.write_input(0, 1.0);
+            for _ in 0..ticks { e.process(); }
+            crate::engine::time::set_dt(crate::engine::time::NOMINAL_DT);
+            e.read_output(0)
+        };
+        let fine = run(0.001, 80);
+        let coarse = run(0.002, 40);
+        assert!(fine > 0.0 && fine < 1.0);
+        assert!((fine - coarse).abs() < 0.03, "{fine} vs {coarse}");
     }
 }

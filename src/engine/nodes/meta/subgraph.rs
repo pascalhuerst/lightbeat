@@ -5,6 +5,7 @@ use crate::engine::graph::UI_SYNC_EVERY_N_TICKS;
 use crate::engine::promoted::PromotedInputs;
 use crate::engine::routing::RoutePlan;
 use crate::engine::sync_hint::SaveDataGate;
+use crate::perf::NodeProfiler;
 use std::any::Any;
 use std::collections::HashMap;
 
@@ -126,6 +127,10 @@ pub struct InnerGraph {
     /// Scratch buffers reused across ticks so the hot loop does not allocate.
     disabled_mask: Vec<bool>,
     sync_counter: u32,
+    /// Only the root graph has one; see `process_nodes`.
+    profiler: Option<NodeProfiler>,
+    /// Phase names for the node profile, which tell the root from the inner graphs.
+    laps: [&'static str; 5],
 }
 
 /// Reserved NodeIds for bridge endpoints.
@@ -134,6 +139,27 @@ pub const BRIDGE_OUT_NODE_ID: NodeId = NodeId(u64::MAX);
 
 impl InnerGraph {
     pub fn new() -> Self {
+        Self::with_profiling(None, [
+            "[inner] 0 take pending",
+            "[inner] 1 connected bitmap",
+            "[inner] 2 process (nodes)",
+            "[inner] 3 propagate",
+            "[inner] 4 ui sync",
+        ])
+    }
+
+    /// The top level graph: no bridges, its own node profiler.
+    pub fn new_root() -> Self {
+        Self::with_profiling(NodeProfiler::from_env(), [
+            "[root] 0 take pending",
+            "[root] 1 connected bitmap",
+            "[root] 2 process (nodes)",
+            "[root] 3 propagate",
+            "[root] 4 ui sync",
+        ])
+    }
+
+    fn with_profiling(profiler: Option<NodeProfiler>, laps: [&'static str; 5]) -> Self {
         Self {
             nodes: Vec::new(),
             shared_states: Vec::new(),
@@ -148,6 +174,8 @@ impl InnerGraph {
             plan_dirty: true,
             disabled_mask: Vec::new(),
             sync_counter: 0,
+            profiler,
+            laps,
         }
     }
 
@@ -180,17 +208,10 @@ impl InnerGraph {
         self.plan_dirty = false;
     }
 
-    /// Run one tick of the inner graph. Mirrors `EngineGraph::tick`; keep the
-    /// two in step when changing either.
-    pub fn tick(&mut self, input_ports: &[PortDef], output_ports: &[PortDef]) {
-        let mut clock = crate::perf::PhaseClock::start();
-        if self.index_stale {
-            self.rebuild_node_index();
-        }
-
-        // 0. Take everything the UI pushed, in a single lock per node, before
-        // `process` so an edit lands on the tick it arrives and before the
-        // connection scan because `load_data` can rebuild a node's ports.
+    /// Takes everything the UI pushed, in a single lock per node, before
+    /// `process` so an edit lands on the tick it arrives and before the
+    /// connection scan because `load_data` can rebuild a node's ports.
+    fn take_pending(&mut self) {
         self.disabled_mask.clear();
         for (i, node) in self.nodes.iter_mut().enumerate() {
             let (disabled, pending, config_update, promoted_update, snapshots_update, recall) = {
@@ -224,22 +245,24 @@ impl InnerGraph {
                 self.promoted[i].recall_snapshot(index, node.as_mut());
             }
         }
+    }
 
-        clock.lap("[inner] 0 take pending");
-
-        // 1. Re-resolve routing and the per-node connected-input bitmap (the
-        //    "input-overrides-param" pattern inside subgraphs) only when
-        //    something that could change them did.
-        if self.plan_dirty
-            || !self.plan.is_current(&self.nodes, input_ports, output_ports)
-        {
-            self.rebuild_plan(input_ports, output_ports);
-        }
-
-        clock.lap("[inner] 1 connected bitmap");
-
-        // 2. Process inner nodes, skipping disabled ones.
-        if crate::perf::node_profiling_enabled() {
+    /// Processes all nodes except disabled ones, which keep their previous
+    /// output values so downstream signal flow freezes instead of dropping to
+    /// zero. The root graph has its own profiler; nodes inside subgraphs
+    /// report to the shared sample list instead.
+    fn process_nodes(&mut self) {
+        if let Some(profile) = &mut self.profiler {
+            for (i, node) in self.nodes.iter_mut().enumerate() {
+                if self.disabled_mask[i] {
+                    continue;
+                }
+                let started = std::time::Instant::now();
+                node.process();
+                profile.record(node.type_name(), started.elapsed().as_nanos() as u64);
+            }
+            profile.end_tick();
+        } else if crate::perf::node_profiling_enabled() {
             for (i, node) in self.nodes.iter_mut().enumerate() {
                 if self.disabled_mask[i] {
                     continue;
@@ -258,10 +281,42 @@ impl InnerGraph {
                 }
             }
         }
+    }
 
-        clock.lap("[inner] 2 process (nodes)");
+    /// Run one tick of the graph: the root graph and every subgraph's inner
+    /// graph go through here. `after_propagate` runs once the signals have
+    /// moved and before the UI mirror; the root uses it for the hover probe.
+    pub fn tick_with(
+        &mut self,
+        input_ports: &[PortDef],
+        output_ports: &[PortDef],
+        after_propagate: impl FnOnce(&InnerGraph),
+    ) {
+        let mut clock = crate::perf::PhaseClock::start();
+        if self.index_stale {
+            self.rebuild_node_index();
+        }
 
-        // 3. Propagate connections (including bridge connections).
+        // 0. Pending params, config, promoted lists and snapshot recalls.
+        self.take_pending();
+        clock.lap(self.laps[0]);
+
+        // 1. Re-resolve routing and the per-node "which input ports are
+        //    connected" bitmap (the "input-overrides-param" pattern) only when
+        //    something that could change them did.
+        if self.plan_dirty
+            || !self.plan.is_current(&self.nodes, input_ports, output_ports)
+        {
+            self.rebuild_plan(input_ports, output_ports);
+        }
+        clock.lap(self.laps[1]);
+
+        // 2. Process the nodes.
+        self.process_nodes();
+        clock.lap(self.laps[2]);
+
+        // 3. Propagate connections (including bridge connections). Multi-channel
+        // ports (Color=3, Position=2) expand to multiple float copies.
         self.plan.run(
             &mut self.nodes,
             &mut self.promoted,
@@ -271,7 +326,9 @@ impl InnerGraph {
         for (i, node) in self.nodes.iter_mut().enumerate() {
             self.promoted[i].step_snapshots(node.as_mut());
         }
-        clock.lap("[inner] 3 propagate");
+        clock.lap(self.laps[3]);
+
+        after_propagate(self);
 
         // 4. Mirror state for the UI at roughly frame rate. `params()`,
         // `save_data()` and `update_display()` allocate, and the UI only sees
@@ -281,19 +338,114 @@ impl InnerGraph {
             self.sync_counter = 0;
             self.sync_shared_state();
         }
-        clock.lap("[inner] 4 ui sync");
+        clock.lap(self.laps[4]);
+    }
+
+    /// The structural edits, for the root graph and for every subgraph.
+    pub fn apply(&mut self, cmd: SubgraphInnerCmd) {
+        self.plan_dirty = true;
+        match cmd {
+            SubgraphInnerCmd::AddNode { node, shared } => {
+                shared.lock().unwrap().default_params = node.params();
+                self.shared_states.push(shared);
+                self.nodes.push(node);
+                self.promoted.push(PromotedInputs::default());
+                self.index_stale = true;
+            }
+            SubgraphInnerCmd::RemoveNode(id) => {
+                if let Some(idx) = self.nodes.iter().position(|n| n.node_id() == id) {
+                    self.nodes.remove(idx);
+                    self.shared_states.remove(idx);
+                    self.promoted.remove(idx);
+                    self.index_stale = true;
+                    self.connections
+                        .retain(|c| c.from.node != id && c.to.node != id);
+                }
+            }
+            SubgraphInnerCmd::AddConnection(conn) => {
+                if !self.connections.contains(&conn) {
+                    self.connections.push(conn);
+                }
+            }
+            SubgraphInnerCmd::RemoveConnectionTo(to) => {
+                self.connections.retain(|c| c.to != to);
+            }
+            SubgraphInnerCmd::LoadData { node_id, data } => {
+                if let Some(node) = self.nodes.iter_mut().find(|n| n.node_id() == node_id) {
+                    node.load_data(&data);
+                }
+            }
+            SubgraphInnerCmd::NotifyConnect {
+                node_id,
+                input_port,
+                source_type,
+            } => {
+                if let Some(node) = self.nodes.iter_mut().find(|n| n.node_id() == node_id) {
+                    node.on_connect(input_port, source_type);
+                }
+            }
+            SubgraphInnerCmd::NotifyDisconnect {
+                node_id,
+                input_port,
+            } => {
+                if let Some(node) = self.nodes.iter_mut().find(|n| n.node_id() == node_id) {
+                    node.on_disconnect(input_port);
+                }
+            }
+        }
+    }
+
+    /// Any command, however deep, makes the root re-resolve its routing.
+    pub fn mark_plan_dirty(&mut self) {
+        self.plan_dirty = true;
+    }
+
+    pub fn clear(&mut self) {
+        self.plan_dirty = true;
+        self.nodes.clear();
+        self.shared_states.clear();
+        self.promoted.clear();
+        self.connections.clear();
+        self.node_index.clear();
+        self.index_stale = false;
+    }
+
+    /// Where a node sits in `nodes`; only valid after a tick has rebuilt a stale index.
+    pub fn index_of(&self, id: NodeId) -> Option<usize> {
+        self.node_index.get(&id).copied()
+    }
+
+    pub fn tick(&mut self, input_ports: &[PortDef], output_ports: &[PortDef]) {
+        self.tick_with(input_ports, output_ports, |_| {});
     }
 
     fn sync_shared_state(&mut self) {
         let sync_save_data = self.save_data_gate.due();
         for (i, node) in self.nodes.iter().enumerate() {
+            let disabled = self.disabled_mask[i];
+            // One `params()` per node (it allocates), shared by the promoted
+            // entries' refresh and the UI copy.
+            let params = (!disabled || self.promoted[i].wants_refresh()).then(|| node.params());
+            if self.promoted[i].wants_refresh()
+                && let Some(params) = &params
+            {
+                self.promoted[i].refresh(params);
+            }
+            let (active, fading, progress) = self.promoted[i].snapshot_state();
+
             let mut shared = self.shared_states[i].lock().unwrap();
             shared.inputs_connected.clear();
             shared
                 .inputs_connected
                 .extend_from_slice(&self.plan.connected[i]);
-            shared.non_promotable = node.non_promotable_params();
-            if self.disabled_mask[i] {
+            let non_promotable = node.non_promotable_params();
+            if !std::ptr::eq(shared.non_promotable, non_promotable) {
+                shared.non_promotable = non_promotable;
+            }
+            shared.snapshot_active = active;
+            shared.snapshot_fading = fading;
+            shared.snapshot_progress = progress;
+            if disabled {
                 continue;
             }
             let total_out = total_channels(node.outputs());
@@ -304,19 +456,13 @@ impl InnerGraph {
             for ch in 0..total_in.min(shared.inputs.len()) {
                 shared.inputs[ch] = node.read_input(ch);
             }
-            shared.current_params = node.params();
+            if let Some(params) = params {
+                shared.current_params = params;
+            }
             if sync_save_data {
                 shared.save_data = node.save_data();
             }
             node.update_display(&mut shared);
-        }
-        for (i, node) in self.nodes.iter().enumerate() {
-            self.promoted[i].refresh(node.as_ref());
-            let (active, fading, progress) = self.promoted[i].snapshot_state();
-            let mut shared = self.shared_states[i].lock().unwrap();
-            shared.snapshot_active = active;
-            shared.snapshot_fading = fading;
-            shared.snapshot_progress = progress;
         }
     }
 }
@@ -499,57 +645,7 @@ impl SubgraphProcessNode {
 
     /// Apply an inner command to this subgraph's inner graph.
     pub fn apply_inner_cmd(&mut self, cmd: SubgraphInnerCmd) {
-        self.inner.plan_dirty = true;
-        match cmd {
-            SubgraphInnerCmd::AddNode { node, shared } => {
-                shared.lock().unwrap().default_params = node.params();
-                self.inner.shared_states.push(shared);
-                self.inner.nodes.push(node);
-                self.inner.promoted.push(PromotedInputs::default());
-                self.inner.index_stale = true;
-            }
-            SubgraphInnerCmd::RemoveNode(id) => {
-                if let Some(idx) = self.inner.nodes.iter().position(|n| n.node_id() == id) {
-                    self.inner.nodes.remove(idx);
-                    self.inner.shared_states.remove(idx);
-                    self.inner.promoted.remove(idx);
-                    self.inner.index_stale = true;
-                    self.inner
-                        .connections
-                        .retain(|c| c.from.node != id && c.to.node != id);
-                }
-            }
-            SubgraphInnerCmd::AddConnection(conn) => {
-                if !self.inner.connections.contains(&conn) {
-                    self.inner.connections.push(conn);
-                }
-            }
-            SubgraphInnerCmd::RemoveConnectionTo(to) => {
-                self.inner.connections.retain(|c| c.to != to);
-            }
-            SubgraphInnerCmd::LoadData { node_id, data } => {
-                if let Some(node) = self.inner.nodes.iter_mut().find(|n| n.node_id() == node_id) {
-                    node.load_data(&data);
-                }
-            }
-            SubgraphInnerCmd::NotifyConnect {
-                node_id,
-                input_port,
-                source_type,
-            } => {
-                if let Some(node) = self.inner.nodes.iter_mut().find(|n| n.node_id() == node_id) {
-                    node.on_connect(input_port, source_type);
-                }
-            }
-            SubgraphInnerCmd::NotifyDisconnect {
-                node_id,
-                input_port,
-            } => {
-                if let Some(node) = self.inner.nodes.iter_mut().find(|n| n.node_id() == node_id) {
-                    node.on_disconnect(input_port);
-                }
-            }
-        }
+        self.inner.apply(cmd);
     }
 }
 
