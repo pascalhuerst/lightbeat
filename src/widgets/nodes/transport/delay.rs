@@ -11,8 +11,6 @@ use crate::widgets::nodes::types::UiPortDef;
 pub struct TriggerDelayWidget {
     id: NodeId,
     shared: SharedState,
-    inputs: Vec<PortDef>,
-    outputs: Vec<PortDef>,
 }
 
 impl TriggerDelayWidget {
@@ -20,11 +18,6 @@ impl TriggerDelayWidget {
         Self {
             id,
             shared,
-            inputs: vec![
-                PortDef::new("trigger", PortType::Logic),
-                PortDef::new("phase", PortType::Phase),
-            ],
-            outputs: vec![PortDef::new("trigger", PortType::Logic)],
         }
     }
 }
@@ -42,12 +35,8 @@ impl NodeWidget for TriggerDelayWidget {
     fn type_name(&self) -> &'static str { "Trigger Delay" }
     fn description(&self) -> &'static str { "Delays incoming triggers by a power-of-two fraction or multiple of a beat (Exponent), counted on the phase input, before passing them through." }
 
-    fn ui_inputs(&self) -> Vec<UiPortDef> {
-        self.inputs.iter().map(UiPortDef::from_def).collect()
-    }
-    fn ui_outputs(&self) -> Vec<UiPortDef> {
-        self.outputs.iter().map(UiPortDef::from_def).collect()
-    }
+    fn ui_inputs(&self) -> Vec<UiPortDef> { UiPortDef::from_defs(&crate::engine::nodes::transport::delay::ports().0) }
+    fn ui_outputs(&self) -> Vec<UiPortDef> { UiPortDef::from_defs(&crate::engine::nodes::transport::delay::ports().1) }
 
     fn min_width(&self) -> f32 { 130.0 }
     fn min_content_height(&self) -> f32 { 20.0 }

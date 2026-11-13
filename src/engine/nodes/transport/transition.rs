@@ -89,6 +89,20 @@ pub struct TransitionProcessNode {
     outputs: Vec<PortDef>,
 }
 
+/// The ports, stated once: the widget builds its own from this, so the two
+/// halves cannot disagree.
+pub fn ports_for(mode: TransitionMode) -> (Vec<PortDef>, Vec<PortDef>) {
+    // Phase out has no value, so there the trigger leads.
+    let mut inputs = Vec::new();
+    if mode != TransitionMode::Phase {
+        inputs.push(PortDef::new("in", mode.value_type()));
+    }
+    inputs.push(PortDef::new("trigger", PortType::Logic));
+    inputs.push(PortDef::new("phase", PortType::Phase));
+    let name = if mode == TransitionMode::Phase { "phase" } else { "out" };
+    (inputs, vec![PortDef::new(name, mode.value_type())])
+}
+
 impl TransitionProcessNode {
     pub fn new(id: NodeId) -> Self {
         let mode = TransitionMode::Neutral;
@@ -106,31 +120,15 @@ impl TransitionProcessNode {
             active: false,
             progress: 0.0,
             prev_phase: 0.0,
-            inputs: Self::build_inputs(mode),
-            outputs: Self::build_outputs(mode),
+            inputs: ports_for(mode).0,
+            outputs: ports_for(mode).1,
         }
-    }
-
-    fn build_inputs(mode: TransitionMode) -> Vec<PortDef> {
-        // Phase out has no value, so there the trigger leads.
-        let mut ports = Vec::new();
-        if mode != TransitionMode::Phase {
-            ports.push(PortDef::new("in", mode.value_type()));
-        }
-        ports.push(PortDef::new("trigger", PortType::Logic));
-        ports.push(PortDef::new("phase", PortType::Phase));
-        ports
     }
 
     /// Channel of the trigger: after the value's channels, or first in Phase
     /// mode, which has no value.
     fn lead(&self) -> usize {
         if self.mode == TransitionMode::Phase { 0 } else { self.mode.channels() }
-    }
-
-    fn build_outputs(mode: TransitionMode) -> Vec<PortDef> {
-        let name = if mode == TransitionMode::Phase { "phase" } else { "out" };
-        vec![PortDef::new(name, mode.value_type())]
     }
 }
 
@@ -245,8 +243,8 @@ impl ProcessNode for TransitionProcessNode {
                 let new_mode = TransitionMode::from_index(value.as_usize());
                 if new_mode != self.mode {
                     self.mode = new_mode;
-                    self.inputs = Self::build_inputs(new_mode);
-                    self.outputs = Self::build_outputs(new_mode);
+                    self.inputs = ports_for(new_mode).0;
+                    self.outputs = ports_for(new_mode).1;
                 }
             }
             1 => self.curve = EasingCurve::from_index(value.as_usize()),

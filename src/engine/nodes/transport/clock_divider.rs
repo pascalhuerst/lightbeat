@@ -24,6 +24,19 @@ pub struct ClockDividerProcessNode {
     outputs: Vec<PortDef>,
 }
 
+/// The ports, stated once: the widget builds its own from this, so the two
+/// halves cannot disagree.
+/// `extra` is the number of outputs besides the first. The widget renames the
+/// outputs after their ratio on top of this.
+pub fn ports_for(extra: usize) -> (Vec<PortDef>, Vec<PortDef>) {
+    (
+        vec![PortDef::new("trigger", PortType::Logic)],
+        std::iter::once(PortDef::new("trigger", PortType::Logic))
+            .chain((0..extra).map(|i| PortDef::new(format!("trigger {}", i + 2), PortType::Logic)))
+            .collect(),
+    )
+}
+
 impl ClockDividerProcessNode {
     pub fn new(id: NodeId) -> Self {
         Self {
@@ -36,8 +49,8 @@ impl ClockDividerProcessNode {
             extra: Vec::new(),
             extra_count: Vec::new(),
             extra_out: Vec::new(),
-            inputs: vec![PortDef::new("trigger", PortType::Logic)],
-            outputs: vec![PortDef::new("trigger", PortType::Logic)],
+            inputs: ports_for(0).0,
+            outputs: ports_for(0).1,
         }
     }
 }
@@ -101,9 +114,7 @@ impl ProcessNode for ClockDividerProcessNode {
                 .collect();
             self.extra_out.resize(extra.len(), 0.0);
             self.extra = extra;
-            self.outputs = std::iter::once(PortDef::new("trigger", PortType::Logic))
-                .chain((0..self.extra.len()).map(|i| PortDef::new(format!("trigger {}", i + 2), PortType::Logic)))
-                .collect();
+            self.outputs = ports_for(self.extra.len()).1;
         }
     }
 

@@ -1,7 +1,7 @@
 use std::any::Any;
 use egui::{self, Ui};
 
-use crate::engine::nodes::transport::clock_divider::{ClockDividerDisplay, MAX_EXTRA_OUTPUTS};
+use crate::engine::nodes::transport::clock_divider::{ports_for, ClockDividerDisplay, MAX_EXTRA_OUTPUTS};
 use crate::engine::types::*;
 use crate::theme;
 use crate::widgets::nodes::node::NodeWidget;
@@ -10,7 +10,6 @@ use crate::widgets::nodes::types::UiPortDef;
 pub struct ClockDividerWidget {
     id: NodeId,
     shared: SharedState,
-    inputs: Vec<PortDef>,
     /// Divisors of the outputs besides the first. The widget owns them and
     /// sends the list to the engine whenever it changes.
     extra: Vec<u32>,
@@ -20,7 +19,6 @@ impl ClockDividerWidget {
     pub fn new(id: NodeId, shared: SharedState) -> Self {
         Self {
             id, shared,
-            inputs: vec![PortDef::new("trigger", PortType::Logic)],
             extra: Vec::new(),
         }
     }
@@ -52,13 +50,17 @@ impl NodeWidget for ClockDividerWidget {
     }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> {
-        self.inputs.iter().map(UiPortDef::from_def).collect()
+        UiPortDef::from_defs(&ports_for(self.extra.len()).0)
     }
     fn ui_outputs(&self) -> Vec<UiPortDef> {
-        std::iter::once(self.first_divisor() as u32)
-            .chain(self.extra.iter().copied())
-            .map(|d| UiPortDef::from_def(&PortDef::new(format!("1/{d}"), PortType::Logic)))
-            .collect()
+        // Named by their ratio here, since the first divisor is a setting
+        // the engine does not turn into a port name.
+        let mut ports = UiPortDef::from_defs(&ports_for(self.extra.len()).1);
+        let divisors = std::iter::once(self.first_divisor() as u32).chain(self.extra.iter().copied());
+        for (port, d) in ports.iter_mut().zip(divisors) {
+            port.def.name = format!("1/{d}");
+        }
+        ports
     }
 
     fn min_width(&self) -> f32 { 110.0 }

@@ -2,7 +2,7 @@ use std::any::Any;
 
 use egui::{self, Ui};
 
-use crate::engine::nodes::transport::phase_scaler::{ExtraOutput, MAX_EXTRA_OUTPUTS, PhaseScalerDisplay};
+use crate::engine::nodes::transport::phase_scaler::{ports_for, ExtraOutput, MAX_EXTRA_OUTPUTS, PhaseScalerDisplay};
 use crate::engine::types::*;
 use crate::widgets::nodes::node::NodeWidget;
 use crate::widgets::setup_ui;
@@ -11,7 +11,6 @@ use crate::widgets::nodes::types::UiPortDef;
 pub struct PhaseScalerWidget {
     id: NodeId,
     shared: SharedState,
-    inputs: Vec<PortDef>,
     /// Outputs besides the first, each with its own ratio. The widget owns
     /// them and sends the list to the engine whenever it changes.
     extra: Vec<ExtraOutput>,
@@ -22,12 +21,6 @@ impl PhaseScalerWidget {
         Self {
             id,
             shared,
-            inputs: vec![
-                PortDef::new("phase", PortType::Phase),
-                PortDef::new("reset", PortType::Logic),
-                PortDef::new("exp", PortType::Untyped),
-                PortDef::new("offset", PortType::Phase),
-            ],
             extra: Vec::new(),
         }
     }
@@ -75,14 +68,16 @@ impl NodeWidget for PhaseScalerWidget {
     }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> {
-        self.inputs.iter().map(UiPortDef::from_def).collect()
+        UiPortDef::from_defs(&ports_for(self.extra.len()).0)
     }
     fn ui_outputs(&self) -> Vec<UiPortDef> {
         // Each output is named by what it does to the phase.
-        std::iter::once(self.first_exponent())
-            .chain(self.extra.iter().map(|x| x.exponent))
-            .map(|e| UiPortDef::from_def(&PortDef::new(exponent_label(e), PortType::Phase)))
-            .collect()
+        let mut ports = UiPortDef::from_defs(&ports_for(self.extra.len()).1);
+        let exponents = std::iter::once(self.first_exponent()).chain(self.extra.iter().map(|x| x.exponent));
+        for (port, e) in ports.iter_mut().zip(exponents) {
+            port.def.name = exponent_label(e);
+        }
+        ports
     }
 
     fn min_width(&self) -> f32 { 120.0 }

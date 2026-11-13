@@ -2,7 +2,7 @@ use std::any::Any;
 use egui::{self, Pos2, Sense, Stroke, Ui, Vec2};
 
 use crate::engine::nodes::transport::easing::EasingCurve;
-use crate::engine::nodes::transport::transition::{TransitionDisplay, TransitionMode};
+use crate::engine::nodes::transport::transition::{ports_for, TransitionDisplay, TransitionMode};
 use crate::engine::types::*;
 use crate::theme;
 use crate::widgets::nodes::node::{NodeWidget, param_usize};
@@ -17,21 +17,6 @@ pub struct TransitionWidget {
 impl TransitionWidget {
     pub fn new(id: NodeId, shared: SharedState) -> Self {
         Self { id, shared, mode: TransitionMode::Neutral }
-    }
-
-    fn build_inputs(mode: TransitionMode) -> Vec<UiPortDef> {
-        let mut ports = Vec::new();
-        if mode != TransitionMode::Phase {
-            ports.push(UiPortDef::from_def(&PortDef::new("in", mode.value_type())));
-        }
-        ports.push(UiPortDef::from_def(&PortDef::new("trigger", PortType::Logic)));
-        ports.push(UiPortDef::from_def(&PortDef::new("phase", PortType::Phase)));
-        ports
-    }
-
-    fn build_outputs(mode: TransitionMode) -> Vec<UiPortDef> {
-        let name = if mode == TransitionMode::Phase { "phase" } else { "out" };
-        vec![UiPortDef::from_def(&PortDef::new(name, mode.value_type()))]
     }
 
     fn push_mode(&self, mode: TransitionMode) {
@@ -63,8 +48,8 @@ impl NodeWidget for TransitionWidget {
     fn type_name(&self) -> &'static str { "Transition" }
     fn description(&self) -> &'static str { "Smoothly interpolates between values using an easing curve when triggered; the phase input moves it along. With Type set to Phase out there is no value: the output is the eased phase itself, a curve shaper that a trigger starts. For a time instead of a phase, drive it with Time to Phase." }
 
-    fn ui_inputs(&self) -> Vec<UiPortDef> { Self::build_inputs(self.mode) }
-    fn ui_outputs(&self) -> Vec<UiPortDef> { Self::build_outputs(self.mode) }
+    fn ui_inputs(&self) -> Vec<UiPortDef> { UiPortDef::from_defs(&ports_for(self.mode).0) }
+    fn ui_outputs(&self) -> Vec<UiPortDef> { UiPortDef::from_defs(&ports_for(self.mode).1) }
 
     fn min_width(&self) -> f32 { 120.0 }
     fn min_content_height(&self) -> f32 { 50.0 }

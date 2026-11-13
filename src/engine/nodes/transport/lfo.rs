@@ -68,6 +68,22 @@ pub struct LfoProcessNode {
     outputs: Vec<PortDef>,
 }
 
+/// The ports, stated once: the widget builds its own from this, so the two
+/// halves cannot disagree.
+pub fn ports_for(phase_input: bool) -> (Vec<PortDef>, Vec<PortDef>) {
+    if phase_input {
+        (
+            vec![PortDef::new("phase", PortType::Phase)],
+            vec![PortDef::new("out", PortType::Untyped)],
+        )
+    } else {
+        (
+            vec![PortDef::new("trigger", PortType::Logic)],
+            vec![PortDef::new("out", PortType::Untyped), PortDef::new("phase", PortType::Phase)],
+        )
+    }
+}
+
 impl LfoProcessNode {
     pub fn new(id: NodeId) -> Self {
         Self {
@@ -84,32 +100,15 @@ impl LfoProcessNode {
             value_out: 0.0,
             sh_value: 0.0,
             rng_state: 0x1234_5678,
-            inputs: Self::input_ports(false),
-            outputs: Self::output_ports(false),
+            inputs: ports_for(false).0,
+            outputs: ports_for(false).1,
         }
-    }
-
-    fn input_ports(phase_input: bool) -> Vec<PortDef> {
-        if phase_input {
-            vec![PortDef::new("phase", PortType::Phase)]
-        } else {
-            vec![PortDef::new("trigger", PortType::Logic)]
-        }
-    }
-
-    fn output_ports(phase_input: bool) -> Vec<PortDef> {
-        let mut ports = vec![PortDef::new("out", PortType::Untyped)];
-        if !phase_input {
-            ports.push(PortDef::new("phase", PortType::Phase));
-        }
-        ports
     }
 
     fn set_phase_input(&mut self, on: bool) {
         if self.phase_input != on {
             self.phase_input = on;
-            self.inputs = Self::input_ports(on);
-            self.outputs = Self::output_ports(on);
+            (self.inputs, self.outputs) = ports_for(on);
             self.sync_in = 0.0;
             self.prev_sync = 0.0;
             self.phase_in = 0.0;

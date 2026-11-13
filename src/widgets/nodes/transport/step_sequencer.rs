@@ -2,7 +2,7 @@ use std::any::Any;
 
 use egui::{self, Rect, Sense, StrokeKind, Ui, Vec2};
 
-use crate::engine::nodes::transport::step_sequencer::{StepMode, StepSequencerDisplay};
+use crate::engine::nodes::transport::step_sequencer::{ports_for, StepMode, StepSequencerDisplay};
 use crate::engine::types::*;
 use crate::theme;
 use crate::widgets::fader::{self, FaderStyle, Orientation};
@@ -14,7 +14,6 @@ pub struct StepSequencerWidget {
     shared: SharedState,
     /// Mirror of engine mode — drives `ui_inputs` so the input port matches.
     mode: StepMode,
-    outputs: Vec<PortDef>,
 }
 
 impl StepSequencerWidget {
@@ -23,11 +22,6 @@ impl StepSequencerWidget {
             id,
             shared,
             mode: StepMode::Phase,
-            outputs: vec![
-                PortDef::new("trigger", PortType::Logic),
-                PortDef::new("out", PortType::Untyped),
-                PortDef::new("step", PortType::Untyped),
-            ],
         }
     }
 }
@@ -37,20 +31,8 @@ impl NodeWidget for StepSequencerWidget {
     fn type_name(&self) -> &'static str { "Step Sequencer" }
     fn description(&self) -> &'static str { "N-step pattern of values. In Phase mode a phase wire picks the step; in Trigger mode each trigger advances it and a rising edge on reset goes back to step 0. Outputs the current step value, its index and a per-step trigger." }
 
-    fn ui_inputs(&self) -> Vec<UiPortDef> {
-        match self.mode {
-            StepMode::Phase => vec![
-                UiPortDef::from_def(&PortDef::new("phase", PortType::Phase)),
-            ],
-            StepMode::Trigger => vec![
-                UiPortDef::from_def(&PortDef::new("trigger", PortType::Logic)),
-                UiPortDef::from_def(&PortDef::new("reset", PortType::Logic)),
-            ],
-        }
-    }
-    fn ui_outputs(&self) -> Vec<UiPortDef> {
-        self.outputs.iter().map(UiPortDef::from_def).collect()
-    }
+    fn ui_inputs(&self) -> Vec<UiPortDef> { UiPortDef::from_defs(&ports_for(self.mode).0) }
+    fn ui_outputs(&self) -> Vec<UiPortDef> { UiPortDef::from_defs(&ports_for(self.mode).1) }
 
     fn min_width(&self) -> f32 { 160.0 }
     fn min_content_height(&self) -> f32 { 80.0 }

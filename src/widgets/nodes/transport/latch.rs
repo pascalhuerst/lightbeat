@@ -2,6 +2,7 @@ use std::any::Any;
 
 use egui::{self, Ui};
 
+use crate::engine::nodes::transport::latch::ports_for;
 use crate::engine::types::*;
 use crate::theme;
 use crate::widgets::nodes::node::NodeWidget;
@@ -32,10 +33,10 @@ impl NodeWidget for LatchWidget {
     }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> {
-        vec![UiPortDef::from_def(&PortDef::new("in", self.value_type.port_type))]
+        UiPortDef::from_defs(&ports_for(self.value_type.port_type).0)
     }
     fn ui_outputs(&self) -> Vec<UiPortDef> {
-        vec![UiPortDef::from_def(&PortDef::new("out", self.value_type.port_type))]
+        UiPortDef::from_defs(&ports_for(self.value_type.port_type).1)
     }
 
     fn min_width(&self) -> f32 { 90.0 }

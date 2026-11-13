@@ -18,6 +18,12 @@ pub struct LatchProcessNode {
     outputs: Vec<PortDef>,
 }
 
+/// The ports, stated once: the widget builds its own from this, so the two
+/// halves cannot disagree.
+pub fn ports_for(port_type: PortType) -> (Vec<PortDef>, Vec<PortDef>) {
+    (vec![PortDef::new("in", port_type)], vec![PortDef::new("out", port_type)])
+}
+
 impl LatchProcessNode {
     pub fn new(id: NodeId) -> Self {
         let mut node = Self {
@@ -33,8 +39,7 @@ impl LatchProcessNode {
     }
 
     fn rebuild(&mut self) {
-        self.inputs = vec![PortDef::new("in", self.port_type)];
-        self.outputs = vec![PortDef::new("out", self.port_type)];
+        (self.inputs, self.outputs) = ports_for(self.port_type);
         self.pending_in = [0.0; MAX_CHANNELS];
         self.held = [0.0; MAX_CHANNELS];
     }

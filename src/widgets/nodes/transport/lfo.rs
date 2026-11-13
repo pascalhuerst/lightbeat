@@ -2,7 +2,7 @@ use std::any::Any;
 
 use egui::{self, Sense, Stroke, Ui, Vec2};
 
-use crate::engine::nodes::transport::lfo::LfoDisplay;
+use crate::engine::nodes::transport::lfo::{ports_for, LfoDisplay};
 use crate::engine::types::*;
 use crate::theme;
 use crate::widgets::nodes::node::NodeWidget;
@@ -14,20 +14,6 @@ const PHASE_INPUT_PARAM: usize = 3;
 pub struct LfoWidget {
     id: NodeId,
     shared: SharedState,
-}
-
-fn ports_for(phase_input: bool) -> (Vec<PortDef>, Vec<PortDef>) {
-    if phase_input {
-        (
-            vec![PortDef::new("phase", PortType::Phase)],
-            vec![PortDef::new("out", PortType::Untyped)],
-        )
-    } else {
-        (
-            vec![PortDef::new("trigger", PortType::Logic)],
-            vec![PortDef::new("out", PortType::Untyped), PortDef::new("phase", PortType::Phase)],
-        )
-    }
 }
 
 impl LfoWidget {
@@ -56,12 +42,10 @@ impl NodeWidget for LfoWidget {
     }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> {
-        let (inputs, _) = ports_for(self.phase_input());
-        inputs.iter().map(UiPortDef::from_def).collect()
+        UiPortDef::from_defs(&ports_for(self.phase_input()).0)
     }
     fn ui_outputs(&self) -> Vec<UiPortDef> {
-        let (_, outputs) = ports_for(self.phase_input());
-        outputs.iter().map(UiPortDef::from_def).collect()
+        UiPortDef::from_defs(&ports_for(self.phase_input()).1)
     }
 
     fn min_width(&self) -> f32 { 130.0 }

@@ -22,8 +22,21 @@ pub struct TriggerDelayProcessNode {
     outputs: Vec<PortDef>,
 }
 
+/// The ports, stated once: the widget builds its own from this, so the two
+/// halves cannot disagree.
+pub fn ports() -> (Vec<PortDef>, Vec<PortDef>) {
+    (
+        vec![
+            PortDef::new("trigger", PortType::Logic),
+            PortDef::new("phase", PortType::Phase),
+        ],
+        vec![PortDef::new("trigger", PortType::Logic)],
+    )
+}
+
 impl TriggerDelayProcessNode {
     pub fn new(id: NodeId) -> Self {
+        let (inputs, outputs) = ports();
         Self {
             id,
             exponent: -2, // default: 1/4 beat
@@ -33,11 +46,8 @@ impl TriggerDelayProcessNode {
             remaining: None,
             prev_phase: 0.0,
             trigger_out: 0.0,
-            inputs: vec![
-                PortDef::new("trigger", PortType::Logic),
-                PortDef::new("phase", PortType::Phase),
-            ],
-            outputs: vec![PortDef::new("trigger", PortType::Logic)],
+            inputs,
+            outputs,
         }
     }
 
