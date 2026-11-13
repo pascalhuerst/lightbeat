@@ -642,7 +642,7 @@ impl LightBeatApp {
                         );
                         if ui
                             .small_button("Rescan")
-                            .on_hover_text("Look for the missing controllers and audio inputs again")
+                            .on_hover_text("Look again for everything listed as not found: controllers, audio inputs and MIDI devices")
                             .clicked()
                         {
                             self.input_controllers.rescan();
