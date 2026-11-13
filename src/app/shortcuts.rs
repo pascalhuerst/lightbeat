@@ -49,6 +49,7 @@ fn sections() -> Vec<(&'static str, Vec<(Keys, &'static str)>)> {
         (
             "Canvas: nodes",
             vec![
+                (Text("Click or drag in Add nodes"), "Add a node (a click adds it at the centre of the view)"),
                 (Text("Right-click empty canvas"), "Quick add: type to find a node, Up/Down to choose, Enter to add"),
                 (Text("Drag on empty canvas"), "Select; dragging left selects everything touched, right only what is fully inside"),
                 (Text("Ctrl+click or Shift+click"), "Add to or remove from the selection"),

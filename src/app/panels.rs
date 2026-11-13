@@ -68,22 +68,26 @@ impl LightBeatApp {
             ui.colored_label(egui::Color32::LIGHT_RED, err);
         }
 
-        let q = self.library_search.to_lowercase();
+        let q = self.library_search.trim().to_lowercase();
 
-        // Build a filtered view of registered node types grouped by category.
-        // Hidden categories (prefixed with `_`) are always excluded.
-        let node_entries: Vec<(usize, String, String, &'static str)> = self.graph
-            .registry_entries()
-            .iter()
-            .enumerate()
+        // Registered node types: grouped by category when nothing is typed, in
+        // quick add's ranking (one flat list) when searching. Hidden
+        // categories (prefixed with `_`) are always excluded.
+        let searching = !q.is_empty();
+        let order: Vec<usize> = if searching {
+            self.graph.find_entries(&q)
+        } else {
+            (0..self.graph.registry_entries().len()).collect()
+        };
+        let node_entries: Vec<(usize, String, String, &'static str)> = order
+            .into_iter()
+            .map(|i| (i, &self.graph.registry_entries()[i]))
             .filter(|(_, e)| !e.category.starts_with('_'))
-            .filter(|(_, e)| {
-                q.is_empty()
-                    || e.label.to_lowercase().contains(&q)
-                    || e.category.to_lowercase().contains(&q)
-            })
             .map(|(i, e)| (i, e.category.clone(), e.label.clone(), e.description))
             .collect();
+
+        // A click adds at the middle of what the canvas shows; dragging places it.
+        let centre = self.graph.screen_to_world(self.graph.canvas_rect().center());
 
         let macro_entries: Vec<_> = self.library.entries.iter().enumerate()
             .filter(|(_, e)| {
@@ -115,8 +119,11 @@ impl LightBeatApp {
                     ui.add(egui::Button::new("+ Frame")
                         .wrap_mode(egui::TextWrapMode::Extend))
                 }).inner;
+                if resp.clicked() {
+                    self.graph.add_frame_at(centre);
+                }
                 resp.on_hover_text(
-                    "Drag onto canvas to add a decorative frame for visually \
+                    "Click or drag onto canvas to add a decorative frame for visually \
                      grouping nodes. Drag the title bar to move, the bottom-\
                      right corner to resize.",
                 );
@@ -126,7 +133,7 @@ impl LightBeatApp {
             // --- Registered node types, grouped by category ---
             let mut last_cat = "";
             for (idx, cat, label, desc) in &node_entries {
-                if cat != last_cat {
+                if !searching && cat != last_cat {
                     if !last_cat.is_empty() { ui.add_space(4.0); }
                     ui.colored_label(
                         egui::Color32::from_gray(150),
@@ -140,11 +147,16 @@ impl LightBeatApp {
                     ui.add(egui::Button::new(label.as_str())
                         .wrap_mode(egui::TextWrapMode::Extend))
                 }).inner;
-                let hover = if desc.is_empty() {
-                    "Drag onto canvas to add.".to_string()
-                } else {
-                    format!("Drag onto canvas to add.\n\n{}", desc)
-                };
+                if resp.clicked() {
+                    self.graph.spawn_from_registry(*idx, centre);
+                }
+                let mut hover = "Click or drag onto canvas to add.".to_string();
+                if searching {
+                    hover.push_str(&format!("\n\n{cat}"));
+                }
+                if !desc.is_empty() {
+                    hover.push_str(&format!("\n\n{desc}"));
+                }
                 resp.on_hover_text(hover);
             }
 
@@ -177,11 +189,14 @@ impl LightBeatApp {
                                 .wrap_mode(egui::TextWrapMode::Extend)
                         )
                     });
-                    let mut hover = format!("Drag onto canvas to add.\n\n{}", e.description);
+                    let mut hover = format!("Click or drag onto canvas to add.\n\n{}", e.description);
                     if !e.tags.is_empty() {
                         hover.push_str(&format!("\n\nTags: {}", e.tags.join(", ")));
                     }
                     let btn_resp = inner_resp.inner.on_hover_text(hover);
+                    if btn_resp.clicked() {
+                        self.instantiate_macro_from_path(&e.path, centre);
+                    }
                     btn_resp.context_menu(|ui| {
                         if ui.button("Delete from library").clicked() {
                             delete = Some(e.path.clone());
