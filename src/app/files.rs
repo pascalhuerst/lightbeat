@@ -214,9 +214,7 @@ impl LightBeatApp {
     }
 
     fn view_state(&self) -> project::ProjectViewState {
-        // Panel visibility lives in settings.json now; the field is only kept
-        // (at its old default) because the project format still has it.
-        project::ProjectViewState { show_library: true }
+        project::ProjectViewState {}
     }
 
     pub(crate) fn save_project_as(&mut self, ctx: &egui::Context) {
