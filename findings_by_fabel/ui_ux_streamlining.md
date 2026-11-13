@@ -44,6 +44,21 @@ Updated as items are implemented. Items not listed here are open.
 | 4.6 | done | 9bd6077 |
 | 4.9 | done | 850f5f3 |
 | 10.1, 10.2, 10.6 | partly | 96e524b, 395d014: done in the shell as well |
+| 4.8 | done | 0a5e293 |
+| 5.5 | done | b5a13bb |
+| 7 (name field row) | done | f8c616a. The rest of the table (port and param names) is open |
+| 8.1 | done | eb12e05 |
+| 8.2 | done | 5ee7cd7 |
+| 8.4 | done | f3e658d |
+| 8.5 | done | 533a58f: all four controls list their ports |
+| 9.1 | done | 3220f9a: Value Display, LED Display, Level Meter, Gauge and Gain are compact. Their header switch is gone; "Disable" / "Enable" is in the node menu instead |
+| 9.2 | done | 65795fd |
+| 9.3 | partly | 0c6f351: Launchpad S, X1, Push 1, Multiplexer, Demultiplexer, Port Hub. DMX Input and Lookup Table left as they are (their bodies already name things / are too wide) |
+| 10.4 | done | 10e86f5 |
+| 10.5 | partly | ab42e63: one helper for ms and s fields |
+| 10.6 | done | b8b5759 for node widgets; what remains is computed from data |
+| 2.2 (rest), 3.10 (rest), 3.12 | in progress | branch `feature/shell-leftovers`, not merged |
+| 5.1 - 5.4, 6.x, 7 (ports, params), 7.1 - 7.4 | open | the node catalogue: not started |
 
 ---
 

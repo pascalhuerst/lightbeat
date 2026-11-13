@@ -62,6 +62,12 @@ Updated as items are implemented. Items not listed here are open.
 | M6 | done | 856f49b |
 | M7 | done | fd018f1 |
 | M1, M2, M8 | kept | three test projects have no version, one has an "ADSR"; delete after they are re-saved or retired |
+| D3 | done | 679d718 |
+| D4 | done | 679d718 (rest) |
+| D12 | done | 679d718 (rest) |
+| D11 | done | b5a13bb (descriptions) |
+| D1, U2 - U7, S7, E11, T1, T3, T5 | open | not started |
+| R2 (settings), R3 (project file), R5/R8 (UI part) | in progress | branch `feature/shell-leftovers`, not merged |
 
 Checked against your own files on 2026-11-13: `setup.json` uses the new pixel
 format only (M3 can go), no saved Fader or Fader Group uses the old keys (M4,
