@@ -43,6 +43,23 @@ pub const SEM_WARNING_BRIGHT: Color32 = Color32::from_rgb(255, 180, 60);
 pub const SEM_DANGER: Color32 = Color32::from_rgb(230, 80, 70);
 
 // ---------------------------------------------------------------------------
+// Setup window
+// ---------------------------------------------------------------------------
+
+/// Text of a list row that an event just touched (controller input table).
+pub const ROW_HIGHLIGHT: Color32 = Color32::from_rgb(255, 220, 90);
+/// Two greys of the checkerboard drawn behind translucent previews.
+pub const CHECKER_DARK: Color32 = Color32::from_gray(40);
+pub const CHECKER_LIGHT: Color32 = Color32::from_gray(70);
+/// DMX monitor grid.
+pub const DMX_CELL_BG: Color32 = Color32::from_rgb(30, 30, 34);
+pub const DMX_CELL_HOVER: Color32 = Color32::from_rgb(45, 45, 52);
+pub const DMX_CELL_BORDER: Color32 = Color32::from_rgb(50, 50, 56);
+pub const DMX_LABEL: Color32 = Color32::from_rgb(160, 160, 170);
+pub const DMX_VALUE: Color32 = Color32::from_rgb(200, 200, 210);
+pub const DMX_OVERRIDE: Color32 = Color32::from_rgb(240, 160, 40);
+
+// ---------------------------------------------------------------------------
 // Data-type palette — one colour per PortType (consumed by `PortTypeUi::color`)
 // ---------------------------------------------------------------------------
 
