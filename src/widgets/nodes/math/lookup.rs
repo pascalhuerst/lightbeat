@@ -61,6 +61,8 @@ pub struct LookupWidget {
     row_count: usize,
     /// Mirrored from engine display so the body can highlight the live row.
     current_row: usize,
+    /// Set when a column is removed, for the graph to move the output wires after it.
+    removed: Option<usize>,
 }
 
 impl LookupWidget {
@@ -71,7 +73,7 @@ impl LookupWidget {
         }];
         let row_count = 4;
         let data = vec![0.0, 0.25, 0.5, 1.0];
-        Self { id, shared, library, columns, data, row_count, current_row: 0 }
+        Self { id, shared, library, columns, data, row_count, current_row: 0, removed: None }
     }
 
     pub fn restore_from_save_data(&mut self, data: &serde_json::Value) {
@@ -147,7 +149,7 @@ impl LookupWidget {
         self.data = new_data;
     }
 
-    fn remove_column(&mut self, col_idx: usize) {
+    pub(crate) fn remove_column(&mut self, col_idx: usize) {
         if col_idx >= self.columns.len() || self.columns.len() == 1 { return; }
         let off = self.column_channel_offset(col_idx);
         let cc = self.columns[col_idx].port_type.channel_count();
@@ -166,6 +168,7 @@ impl LookupWidget {
         }
         self.columns.remove(col_idx);
         self.data = new_data;
+        self.removed = Some(col_idx);
     }
 
     fn set_column_type(&mut self, col_idx: usize, new_type: PortType) {
@@ -226,6 +229,11 @@ impl NodeWidget for LookupWidget {
     fn ui_inputs(&self) -> Vec<UiPortDef> {
         vec![UiPortDef::from_def(&PortDef::new("index", PortType::Untyped))]
     }
+    fn take_removed_port(&mut self) -> Option<(PortDir, usize)> {
+        // Output 0 is "rows", so column i is port i + 1.
+        self.removed.take().map(|i| (PortDir::Output, i + 1))
+    }
+
     fn ui_outputs(&self) -> Vec<UiPortDef> {
         // "rows" is always at index 0 so its position is stable when columns
         // are added/removed — wires from it survive schema edits.
