@@ -66,7 +66,6 @@ pub fn available_portal_names(registry: &SharedPortalRegistry) -> Vec<String> {
 
 pub struct PortalSendDisplay {
     pub name: String,
-    pub port_defs: Vec<PortDef>,
     /// Another Send already publishes this name.
     pub conflict: bool,
 }
@@ -161,7 +160,6 @@ impl ProcessNode for PortalSendProcessNode {
     fn update_display(&self, shared: &mut NodeSharedState) {
         shared.display = Some(Box::new(PortalSendDisplay {
             name: self.name.clone(),
-            port_defs: self.ports.clone(),
             conflict: self.conflict,
         }));
     }

@@ -6,7 +6,6 @@ use crate::engine::types::*;
 
 pub struct GainDisplay {
     pub gain: f32,
-    pub input: f32,
     pub output: f32,
 }
 
@@ -83,7 +82,6 @@ impl ProcessNode for GainProcessNode {
     fn update_display(&self, shared: &mut NodeSharedState) {
         shared.display = Some(Box::new(GainDisplay {
             gain: self.gain,
-            input: self.input,
             output: self.output,
         }));
     }
