@@ -114,7 +114,7 @@ impl LightBeatApp {
             self.config.show_setup = self.show_setup;
             self.config.show_dmx_monitor = self.show_dmx_monitor;
             self.config.setup_tab = self.setup_active_tab;
-            self.config.save();
+            self.save_settings();
         }
 
         // Track window size / maximized state so on_exit can persist them.
@@ -138,6 +138,7 @@ impl LightBeatApp {
         // widgets into the preset manager, then re-sync the shared mirror.
         self.drain_pending_gradient_saves();
         self.check_engine_health();
+        self.report_settings_failure();
         // Keep the shared library in sync with the manager every frame —
         // the management window edits `gradient_preset_manager.presets`
         // directly (rename / delete / add), and those changes need to be
@@ -297,7 +298,7 @@ impl LightBeatApp {
                     }
                     if clear_recents {
                         self.config.recent_projects.clear();
-                        self.config.save();
+                        self.save_settings();
                     }
                     ui.separator();
                     if ui.add(egui::Button::new("Save").shortcut_text(ctx.format_shortcut(&shortcuts::SAVE))).clicked() {
@@ -359,7 +360,7 @@ impl LightBeatApp {
                         ui.close_menu();
                     }
                     if ui.checkbox(&mut self.config.snap_to_grid, "Snap to grid").changed() {
-                        self.config.save();
+                        self.save_settings();
                         ui.close_menu();
                     }
                     ui.separator();
@@ -374,7 +375,7 @@ impl LightBeatApp {
                         if ui.radio_value(&mut self.config.inspector_mode, InspectorMode::Hide, "Hide").clicked() {
                             changed = true;
                         }
-                        if changed { self.config.save(); }
+                        if changed { self.save_settings(); }
                     });
                 });
                 ui.menu_button("Help", |ui| {
@@ -680,7 +681,7 @@ impl LightBeatApp {
                         latency::set_lead_ms(ms);
                     }
                     if drag.drag_stopped() || drag.lost_focus() {
-                        self.config.save();
+                        if let Err(e) = self.config.save() { self.settings_save_error = Some(e); }
                     }
 
                     match self.updater.state() {

@@ -105,6 +105,9 @@ struct LightBeatApp {
     /// File errors (project, setup, macros, autosave) shown until dismissed.
     notices: Vec<String>,
     engine_stop_reported: bool,
+    /// A failed settings write waits here for `report_settings_failure`.
+    settings_save_error: Option<String>,
+    settings_failure_reported: bool,
     /// Set when the setup file existed but could not be read: every setup save
     /// is refused for the session so the empty setup never replaces it.
     setup_save_blocked: bool,
@@ -227,6 +230,8 @@ impl LightBeatApp {
             after_save_as: None,
             notices: Vec::new(),
             engine_stop_reported: false,
+            settings_save_error: None,
+            settings_failure_reported: false,
             setup_save_blocked: false,
             setup_baseline: setup::SetupFile::default(),
             setup_changed_at: None,
@@ -477,7 +482,7 @@ impl eframe::App for LightBeatApp {
         // decision; if the user closed without prompting (clean no-op),
         // there are no unsaved changes so the autosave is stale anyway.
         self.delete_autosave_for(self.project_path.as_deref());
-        self.config.save();
+        self.save_settings();
     }
 }
 

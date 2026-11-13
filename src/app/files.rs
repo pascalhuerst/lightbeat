@@ -82,6 +82,24 @@ impl LightBeatApp {
         }
     }
 
+    /// Write settings.json; a failure is remembered for `report_settings_failure`.
+    pub(crate) fn save_settings(&mut self) {
+        if let Err(e) = self.config.save() {
+            self.settings_save_error = Some(e);
+        }
+    }
+
+    /// Settings are saved on many small edits, so a failing disk would repeat
+    /// the message; the user is told once per session.
+    pub(crate) fn report_settings_failure(&mut self) {
+        if let Some(e) = self.settings_save_error.take()
+            && !self.settings_failure_reported
+        {
+            self.settings_failure_reported = true;
+            self.report_error(format!("Settings were not saved ({e}). They will be lost when you quit."));
+        }
+    }
+
     /// Tell the user once that the engine thread has died; the status bar
     /// keeps showing it. There is no recovery, the lights hold their last look.
     pub(crate) fn check_engine_health(&mut self) {
@@ -100,7 +118,7 @@ impl LightBeatApp {
         self.project_path = Some(path.clone());
         self.mark_project_saved();
         self.config.push_recent_project(&path);
-        self.config.save();
+        self.save_settings();
         self.delete_autosave_for(Some(&path));
         true
     }
@@ -412,7 +430,7 @@ impl LightBeatApp {
                 self.project_undoer = egui::util::undoer::Undoer::default();
                 self.mark_project_saved();
                 self.config.push_recent_project(path);
-                self.config.save();
+                self.save_settings();
                 // If a crash-recovery autosave exists for this project and
                 // is newer than the project file on disk, surface a prompt
                 // so the user can choose to recover.

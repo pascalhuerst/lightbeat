@@ -140,14 +140,14 @@ impl AppConfig {
         }
     }
 
-    #[allow(dead_code)]
-    pub fn save(&self) {
+    pub fn save(&self) -> Result<(), String> {
         let path = Self::config_path();
-        if let Ok(json) = serde_json::to_string_pretty(self) {
-            if let Err(e) = crate::paths::write_atomic(&path, json) {
-                eprintln!("settings: could not write {}: {e}", path.display());
-            }
-        }
+        let json = serde_json::to_string_pretty(self).map_err(|e| e.to_string())?;
+        crate::paths::write_atomic(&path, json).map_err(|e| {
+            let message = format!("could not write {}: {e}", path.display());
+            eprintln!("settings: {message}");
+            message
+        })
     }
 
     /// Add a project path to the recent list: move to front, dedupe by path,
