@@ -46,41 +46,65 @@ src/
 │   │                             # ParamValue, ProcessNode trait, EngineCommand,
 │   │                             # NodeSharedState, port_base_index,
 │   │                             # total_channels.
-│   ├── nodes/                    # ProcessNode implementations grouped by
-│   │   ├── io/                   # category (matches the menu categories):
-│   │   │                         # clock, internal_clock, audio_input,
-│   │   │                         # input_controller, launchpad, push1, x1.
+│   ├── routing.rs                # RoutePlan: cached wire routing (section 3b).
+│   ├── promoted.rs               # Params as inputs + snapshot Player (3c).
+│   ├── snapshots.rs              # Per-node snapshots (recall, fades).
+│   ├── probe.rs                  # Full-rate recording for the hover scope.
+│   ├── sync_hint.rs              # "User is interacting" hint for save_data.
+│   ├── nodes/                    # ProcessNode implementations by directory.
+│   │   │                         # The directories are NOT the menu categories
+│   │   │                         # (IO, UI, Transport, Math, Color, Route,
+│   │   │                         # Compare, Logic, Display, Meta, Effects):
+│   │   │                         # math/ also holds Color, Route, Compare, Logic.
+│   │   ├── io/                   # clock (Link), internal_clock, audio_input,
+│   │   │                         # input_controller, midi_input, midi_output,
+│   │   │                         # dmx_input, launchpad, push1, x1, status.
 │   │   ├── transport/            # lfo, envelope, phase scaler, transition,
-│   │   │                         # smoothing, latch, sample_hold, sequencer...
-│   │   ├── math/                 # constants, oscillators, logic, counters,
+│   │   │                         # time_to_phase, smoothing, latch, sample_hold,
+│   │   │                         # step sequencer, clock divider/gen, delay, hold.
+│   │   ├── math/                 # constants, arithmetic, logic, compare,
+│   │   │                         # counters, banks, scalers, multiplex, port hub,
 │   │   │                         # color/palette/gradient ops, lookup, schmitt.
-│   │   ├── display/              # scope, value/color/LED display.
+│   │   ├── display/              # scope, value/color/LED display, meter.
 │   │   ├── meta/                 # subgraph (InnerGraph + bridge nodes),
 │   │   │                         # portal (wireless connections).
-│   │   ├── output/               # group, group_preview, effect_stack.
 │   │   └── ui/                   # button(+group), fader(+group), xy_pad,
-│   │                             # peak_meter, gradient_stops.
-│   └── effects/                  # Effect Stack + effects, EffectHub, geometry.
+│   │                             # color_mixer, peak_meter, gradient_stops.
+│   └── effects/                  # Effects and the Effect Stack: hub, stack,
+│                                 # geometry, node (the shared ProcessNode),
+│                                 # fill, bar, wave, ripple, spark.
 ├── widgets/
-│   ├── inspector.rs              # show_inspector(node) — generic params/ports view.
+│   ├── inspector.rs              # show_inspector(node) — generic params/ports
+│   │                             # view, plus the multi-selection variant.
+│   ├── snapshots.rs              # Snapshot list at the bottom of the inspector.
+│   ├── fader.rs                  # The shared fader control (drag, Shift = fine,
+│   │                             # double-click = reset).
 │   ├── dmx_monitor.rs            # Per-universe channel grid w/ test universes.
 │   ├── fixture_list.rs           # Fixture template editor (channels incl. LedStrip).
 │   ├── object_list.rs            # Fixture instances (address, interface).
-│   ├── group_list.rs             # Groups + per-strip layout + member reorder.
+│   ├── group_list.rs             # Groups, strip layout, the "Space" picture,
+│   │                             # member reorder. group_context.rs shares the
+│   │                             # groups with the node widgets.
 │   ├── color_palette_list.rs     # Palettes (a palette = 4 colors).
 │   ├── color_palette_group_list.rs
 │   ├── gradient_preset_list.rs   # Reusable gradient presets.
 │   ├── input_controller_list.rs  # Virtual MIDI/X1 controllers + learned inputs.
 │   ├── audio_input_list.rs       # Audio inputs + analyzer lists.
+│   ├── dmx_input_list.rs         # DMX inputs (Art-Net universes from a desk).
 │   ├── interface_list.rs         # ArtNet/sACN interface config.
 │   └── nodes/
 │       ├── graph.rs              # NodeGraph: levels, navigation, interactions,
-│       │                         # connections, clipboard, context menu,
-│       │                         # cleanup_stale_connections (drops wires whose
-│       │                         # types are no longer compatible).
+│       │                         # connections, clipboard, menus, quick add,
+│       │                         # frames, minimap, portal prompt, effect-stack
+│       │                         # reconcile, move-to-subgraph/unpack, drawing.
+│       │                         # 5400 lines; cleanup_stale_connections drops
+│       │                         # wires whose types are no longer compatible.
 │       ├── node.rs               # NodeWidget trait + layout helpers.
+│       ├── paths.rs              # Quick-add addresses (group/name) per node.
 │       ├── types.rs              # UI port colors, UiPortDef.
-│       └── <category>/<name>.rs  # widget per node, mirrors engine/nodes structure.
+│       ├── output/               # effect.rs (all effects, by EffectSpec) and
+│       │                         # effect_stack.rs; engine side is engine/effects/.
+│       └── <dir>/<name>.rs       # widget per node, mirrors engine/nodes.
 ├── color/                        # Reusable color types/utilities — USE THESE for
 │   │                             # any new color/blend/palette code.
 │   ├── types.rs                  # Rgb, Hsv with lerp/clamp etc.
@@ -96,34 +120,59 @@ src/
 │   │                             # accepting legacy enum forms.
 │   ├── fixture.rs                # Fixture template (id, name, channels).
 │   ├── object.rs                 # Object: instance with DMX address + iface.
-│   ├── group.rs                  # Group + StripLayout (logical_start/end).
+│   ├── group.rs                  # Group + StripLayout (logical_start/end, y)
+│   │                             # + FixturePlacement.
 │   ├── color_palette.rs          # ColorPalette (4 colors), ColorPaletteGroup.
+│   ├── gradient_preset.rs        # GradientPreset.
 │   ├── universe.rs               # DmxUniverse buffer.
 │   └── output.rs                 # OutputConfig (ArtNet/sACN serialization).
 ├── interfaces/                   # ArtNet/sACN sender impls.
 ├── audio/                        # Audio input subsystem: AudioBackend trait
-│                                 # (cpal impl), per-input analyzer threads
-│                                 # (beat clock, peak level, envelope); the beat
-│                                 # tracking itself is in audio/tracker/.
+│                                 # (cpal and optional JACK), manager, analyzers/
+│                                 # (one thread per input, see Hardware / IO),
+│                                 # tracker/ (the beat tracking, section 3d).
+├── beat_bench/                   # `lightbeat bench`: synthetic tracks + scoring.
 ├── input_controller/             # Persistent virtual MIDI/X1 controller slots
-│                                 # with learned inputs; midir + reconnect worker.
+│                                 # with learned inputs (midir); x1/ is the USB
+│                                 # driver. Hardware is looked for on rescan only.
+├── midi_io.rs                    # MidiHub for the MIDI Input/Output nodes.
+├── dmx_input/                    # DmxInputHub + Art-Net receiver (artnet.rs).
 ├── macros/                       # .lbm library of reusable subgraphs.
 ├── theme.rs                      # ALL UI colors (neutrals, SEM_*, TYPE_*).
 ├── perf.rs                       # Lock-free Gauge counters, NodeProfiler.
+├── latency.rs                    # Global clock lead in ms.
 ├── link_controller.rs            # Link session snapshots/events for the UI.
 ├── beat_clock.rs                 # Ableton Link wrapper, BeatPattern subscriptions.
 ├── dmx_io.rs                     # DmxOutputManager (engine side), shared state,
 │                                 # per-channel Override mechanism, test_universes.
 ├── project.rs                    # Save/load NodeGraph (root level + recursive
-│                                 # inner_graph for subgraphs). Restores widget
-│                                 # state for SubgraphWidget / GroupWidget /
-│                                 # EffectStackWidget after engine load_data.
+│                                 # inner_graph for subgraphs). After the engine's
+│                                 # load_data, `load_graph` restores widget state
+│                                 # with one `if type_name == ...` block per node
+│                                 # type that has any (about 30). PROJECT_VERSION
+│                                 # and connections_for_current_layout live here.
 ├── setup.rs                      # SetupFile (fixtures, objects, interfaces,
 │                                 # groups, palettes, gradient presets, input
-│                                 # controllers, audio inputs) — separate from
-│                                 # project.
-└── config.rs                     # AppConfig (autoload, snap_to_grid, etc.).
+│                                 # controllers, audio inputs, DMX inputs) —
+│                                 # separate from project. adapt_to_machine.
+├── paths.rs                      # data_file: where settings/setup/project live.
+├── update.rs, version.rs         # Self-update and version stamping.
+└── config.rs                     # AppConfig (settings.json).
 ```
+
+### The window
+
+Menu bar (File, Edit with separate undo for project and setup, View, Window,
+Help; version on the right). Left: the "Add Nodes" panel (search, node types by
+category, macros; entries are dragged onto the canvas). Centre: the canvas.
+Right: the inspector (Show/Auto/Hide), with the snapshot panel under it when one
+node is selected. Bottom: the status bar (Blackout, Bypass, missing hardware +
+Rescan, Latency, update notice, perf gauges, zoom). Floating windows: **Setup**
+(Window menu; tabs Interfaces, Fixture Templates, Objects, Groups, Color
+Palettes, Palette Groups, Gradients, Audio Inputs, Input Controllers, DMX
+Inputs) and **DMX Monitor** (View menu). All of this is in `main.rs`
+(`update_frame`). The setup is written to `setup.json` on exit, on Ctrl+S and on
+import; the project only when saved.
 
 ---
 
@@ -155,7 +204,7 @@ src/
   `end < start` means the strip is reversed.
 - For non-strip Color fixtures in a group, the **Effect Stack** computes
   implicit positions from `i / (n-1)` based on order in `object_ids`. The
-  group_list UI has Up/Dn buttons to reorder.
+  group_list UI has up/down arrow buttons to reorder.
 
 ### Gradient
 - `PortType::Gradient` carries `GRADIENT_STOP_COUNT` (8) stops. Convert with
@@ -238,16 +287,20 @@ src/
   (NodeIds `u64::MAX-1` and `u64::MAX`). Connections to/from them are saved
   along with all inner connections.
 - `EngineCommand::SubgraphInnerCommand { subgraph_path, command }` routes
-  inner mutations to the right subgraph (supports up to 2 levels of nesting
-  in `apply_subgraph_inner_cmd`).
+  inner mutations to the right subgraph, to any depth
+  (`SubgraphProcessNode::apply_inner_cmd_at_path` recurses along the path;
+  `MAX_SUBGRAPH_NEST_DEPTH` = 32 is only a guard).
+- The subgraph's node shows the Value and LED Displays inside it
+  (`inner_value_displays`), so they can be read without opening it.
 - "Move selection into subgraph" right-click action analyzes cut wires,
   deduplicates by source port, creates a new Subgraph + bridge connections,
   preserves params via `pending_params`/`pending_config`.
 
-### Mode auto-detection pattern (NEW)
-- Nodes that worked across multiple types (Color to Components, Components to Color, Color Display,
-  Transition, Scope) used to have a "mode" dropdown forcing the user to pick.
-- New convention: default `Mode = Neutral`, ports are `Any` (white ring),
+### Mode auto-detection pattern
+- Nodes that work across multiple types (Color to Components, Components to
+  Color, Color Display, Color Modifier, Transition, Scope, Multiplexer,
+  Demultiplexer) used to have a "mode" dropdown forcing the user to pick.
+- The convention: default `Mode = Neutral`, ports are `Any` (white ring),
   process is no-op. On the **first wire** attached to either side, the widget
   infers the mode and pushes it to the engine via `pending_params`.
 - Wired up by the trait callbacks `on_ui_connect(input_port, source_type)`
@@ -307,8 +360,8 @@ src/
   audio. Known limits: Drums' kick also fires on sustained notes in the 30-120 Hz
   band; Key needs several seconds of tonal material.
 - **Input Controller** nodes read a persistent virtual controller
-  (`SetupFile::input_controllers`). Missing hardware just emits 0s and is
-  reconnected by a ~1 Hz worker. Binding modes (Value / TriggerOnPress /
+  (`SetupFile::input_controllers`). Missing hardware just emits 0s until a
+  rescan finds it (see below; there is no timer). Binding modes (Value / TriggerOnPress /
   TriggerOnRelease) are applied in the engine node.
 - **MIDI Input / MIDI Output** nodes are the self-contained alternative to a
   setup-level MIDI controller: the device and the list of controls are the
@@ -341,9 +394,10 @@ src/
   lowest channel that moved on the desk. Values hold when the desk goes quiet;
   `connected` is high while a universe has had a packet in the last 5 s.
   sACN input would be another `DmxInputKind` feeding the same hub.
-- Every hardware node (Input Controller, Audio Input, Launchpad S, Push 1,
-  X1) has a leading **`connected`** Logic output (port 0): high while the
-  device has a live session. Build layouts with `io::status::with_status_port`.
+- Every hardware node (Input Controller, Audio Input, MIDI Input, MIDI Output,
+  DMX Input, Launchpad S, Push 1, X1) has a leading **`connected`** Logic
+  output (port 0): high while the device has a live session. Build layouts
+  with `io::status::with_status_port`. The Link clock ("Clock") has none.
 - `ProjectFile.version` records port-layout changes that would repoint saved
   wires. When you insert or reorder ports on an existing node type, bump
   `PROJECT_VERSION` and extend `connections_for_current_layout` in
@@ -532,10 +586,16 @@ src/
    define struct + `impl ProcessNode`. If it has runtime state to persist,
    implement `save_data()` and `load_data()`.
 2. **Widget file**: `src/widgets/nodes/<category>/<snake_name>.rs` —
-   define struct + `impl NodeWidget`. Set `description()`. If the node has
-   widget-only state (selection, layer list), restore it in `project.rs` after
-   `load_data` runs (see how Group/Subgraph/EffectStack do it).
-3. Register both in their respective `mod.rs` files.
+   define struct + `impl NodeWidget`. Set `description()`. If the widget
+   keeps state of its own that shapes it (port lists, entries, a mode), give it
+   a `restore_from_save_data(&mut self, &serde_json::Value)` and call it from a
+   block in `project.rs::load_graph` (about 30 node types do; see Lookup Table
+   or MIDI Input). Paste (`graph.rs::paste`) and "Move to Subgraph" have their
+   own, shorter lists of such blocks: add the node there too, or a pasted copy
+   comes back with default ports.
+3. Register both in their respective `mod.rs` files. If category and name
+   would put the node in the wrong quick-add group, add a line to
+   `widgets/nodes/paths.rs`.
 4. In `main.rs`:
    - Add the `use` import.
    - Register the widget factory: `self.graph.register_node("Category", "Display Name", |id| Box::new(MyWidget::new(id, new_shared_state(num_inputs, num_outputs))));`
@@ -549,12 +609,17 @@ src/
 ## 5. Build / test
 
 - `cargo build 2>&1 | grep "^error"` — fast iteration check.
-- `cargo run` — launches the app. Default project is `project.json` in the
-  working directory; setup is `setup.json`. Both auto-load if `autoload_on_open`
-  is set in `~/.config/lightbeat/...` (managed by `config.rs`).
-- There are some unit tests in `objects/`, `color/` and elsewhere (~46);
-  `cargo test` runs them. The crate uses edition 2024, so it needs a recent
-  stable toolchain (`rustup update stable`).
+- `cargo run` — launches the app. From a checkout, `settings.json`,
+  `setup.json` and the default `project.json` are the ones in the working
+  directory (`paths::data_file`). With `autoload_on_open` the most recent
+  project (`recent_projects` in `settings.json`) is opened, not `project.json`.
+- About 290 unit tests across the crate (graph behaviour, project save/load,
+  effects, analyzers, the tracker, objects, color); `cargo test` runs them. CI
+  runs only the tests, no clippy. The crate uses edition 2024, so it needs a
+  recent stable toolchain (`rustup update stable`).
+- `cargo build` has about 18 warnings, mostly dead code; many more are hidden
+  by `#[allow(dead_code)]` on whole types. The code is not rustfmt-formatted:
+  do not run `cargo fmt` on files you touch, it rewrites them entirely.
 - We use **egui-phosphor** for icon glyphs (registered in `main.rs::new`).
   Use `egui_phosphor::regular::ARROW_UP`, `ARROW_DOWN`, `X`, `CARET_RIGHT`,
   `ARROW_SQUARE_OUT`, etc. for any icon-style buttons. The default egui font
@@ -565,7 +630,9 @@ src/
 ## 6. Conventions / gotchas
 
 - **No emojis in code or files** unless the user asks for them.
-- **No inline colors in widgets** — use `theme.rs` constants.
+- **No inline colors in widgets** — use `theme.rs` constants. Older code still
+  has about 200 inline `Color32`s (dim greys, status colours); do not copy
+  them, and replace the ones in code you touch (`theme::TEXT_DIM`, `SEM_*`).
 - **Node shape comes from `NodeWidget::layout()`** (`NodeLayout` in `node.rs`):
   title height, content area, first port, enable switch, frame. Controls that
   are the point of their node (buttons, faders, pads, meters) return
@@ -680,3 +747,9 @@ commit messages).
 
 When in doubt about a design choice, prefer **flexibility presented in an
 easy-to-understand way** — the user's stated guiding principle.
+
+`findings_by_fabel/` holds an audit from 2026-11-13: UI/UX inconsistencies
+(`ui_ux_streamlining.md`), dead code and cleanups (`code_cleanups.md`), feature
+ideas, and an outlook on big graphs (buses, front panels, linked subgraphs, a
+Desk view). It is a snapshot with file:line references that go stale as items
+are worked off; check an item against the code before acting on it.
