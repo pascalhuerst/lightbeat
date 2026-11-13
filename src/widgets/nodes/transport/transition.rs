@@ -5,7 +5,7 @@ use crate::engine::nodes::transport::easing::EasingCurve;
 use crate::engine::nodes::transport::transition::{TransitionDisplay, TransitionMode};
 use crate::engine::types::*;
 use crate::theme;
-use crate::widgets::nodes::node::NodeWidget;
+use crate::widgets::nodes::node::{NodeWidget, param_usize};
 use crate::widgets::nodes::types::UiPortDef;
 
 pub struct TransitionWidget {
@@ -46,6 +46,8 @@ impl TransitionWidget {
             PortType::Untyped | PortType::Phase | PortType::Logic => Some(TransitionMode::Float),
             PortType::Color => Some(TransitionMode::Color),
             PortType::Palette => Some(TransitionMode::Palette),
+            PortType::Position => Some(TransitionMode::Position),
+            PortType::Gradient => Some(TransitionMode::Gradient),
             _ => None,
         }
     }
@@ -54,9 +56,13 @@ impl TransitionWidget {
 const CURVE_SEGMENTS: usize = 30;
 
 impl NodeWidget for TransitionWidget {
+    fn restore_from_save(&mut self, _data: Option<&serde_json::Value>, params: &[(usize, ParamValue)]) {
+        self.mode = param_usize(params, 0).map(TransitionMode::from_index).unwrap_or(TransitionMode::Neutral);
+    }
+
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { "Transition" }
-    fn description(&self) -> &'static str { "Smoothly interpolates between values using an easing curve when triggered; the phase input moves it along. In Phase out mode there is no value: the output is the eased phase itself, a curve shaper that a trigger starts. For a time instead of a phase, drive it with Time to Phase." }
+    fn description(&self) -> &'static str { "Smoothly interpolates between values using an easing curve when triggered; the phase input moves it along. With Type set to Phase out there is no value: the output is the eased phase itself, a curve shaper that a trigger starts. For a time instead of a phase, drive it with Time to Phase." }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> { Self::build_inputs(self.mode) }
     fn ui_outputs(&self) -> Vec<UiPortDef> { Self::build_outputs(self.mode) }

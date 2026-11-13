@@ -62,12 +62,12 @@ impl ProcessNode for ColorDisplayProcessNode {
     fn process(&mut self) {}
 
     fn non_promotable_params(&self) -> &'static [&'static str] {
-        &["Mode"]
+        &["Type"]
     }
 
     fn params(&self) -> Vec<ParamDef> {
         vec![ParamDef::Choice {
-            name: "Mode".into(),
+            name: "Type".into(),
             value: self.mode,
             options: vec!["Auto".into(), "Color".into(), "Palette".into(), "Gradient".into()],
         }]

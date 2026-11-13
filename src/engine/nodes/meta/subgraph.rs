@@ -95,7 +95,7 @@ pub fn port_type_to_idx(pt: PortType) -> usize {
     }
 }
 
-pub const PORT_TYPE_NAMES: &[&str] = &["Logic", "Phase", "Untyped", "Color", "Position", "Palette", "Gradient"];
+pub const PORT_TYPE_NAMES: &[&str] = &["Logic", "Phase", "Number", "Color", "Position", "Palette", "Gradient"];
 
 // ---------------------------------------------------------------------------
 // Inner graph (owns nodes + connections, runs synchronously)

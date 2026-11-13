@@ -367,17 +367,17 @@ pub(crate) fn node_table() -> Vec<NodeDescriptor> {
         |id, _| Box::new(RandomProcessNode::new(id)),
     ));
     table.push(node(
-        "Signal", "Sample & Hold", (2, 1),
+        "Signal", "Sample & Hold", (41, 40),
         |id, s, _| Box::new(SampleHoldWidget::new(id, s)),
         |id, _| Box::new(SampleHoldProcessNode::new(id)),
     ));
     table.push(node(
-        "Signal", "Smoothing", (1, 1),
+        "Signal", "Smoothing", (40, 40),
         |id, s, _| Box::new(SmoothingWidget::new(id, s)),
         |id, _| Box::new(SmoothingProcessNode::new(id)),
     ));
     table.push(node(
-        "Trigger", "Tick Delay", (1, 1),
+        "Trigger", "Tick Delay", (40, 40),
         |id, s, _| Box::new(LatchWidget::new(id, s)),
         |id, _| Box::new(LatchProcessNode::new(id)),
     ));
@@ -398,7 +398,7 @@ pub(crate) fn node_table() -> Vec<NodeDescriptor> {
     ));
     // trigger(1) + phase(1) + palette(12) = 14 input channels, 12 output channels max
     table.push(node(
-        "Signal", "Transition", (14, 12),
+        "Signal", "Transition", (42, 40),
         |id, s, _| Box::new(TransitionWidget::new(id, s)),
         |id, _| Box::new(TransitionProcessNode::new(id)),
     ));
@@ -841,6 +841,19 @@ mod tests {
             let engine = (desc.engine)(NodeId(1), &ctx);
             assert_eq!(widget.type_name(), desc.name, "the widget of {} reports another name", desc.name);
             assert_eq!(engine.node_id(), NodeId(1), "{}", desc.name);
+        }
+    }
+
+    #[test]
+    fn a_type_setting_reshapes_the_node_so_it_cannot_be_an_input() {
+        let ctx = context();
+        for desc in node_table() {
+            let engine = (desc.engine)(NodeId(1), &ctx);
+            for p in engine.params() {
+                if p.name() == "Type" {
+                    assert!(engine.non_promotable_params().contains(&"Type"), "{}", desc.name);
+                }
+            }
         }
     }
 

@@ -38,7 +38,7 @@ impl PortHubProcessNode {
     pub fn new(id: NodeId) -> Self {
         let mut node = Self {
             id,
-            port_type: PortType::Untyped,
+            port_type: PortType::Any,
             slots: HUB_DEFAULT_SLOTS,
             values: vec![0.0; MUX_MAX_SLOTS * MAX_SLOT_CHANNELS],
             inputs: Vec::new(),

@@ -1,5 +1,6 @@
 use std::collections::VecDeque;
 
+use super::signal_type::{MAX_CHANNELS, publish_type, type_from_param, type_param};
 use crate::engine::types::*;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -28,17 +29,18 @@ impl SmoothingMode {
 
 pub struct SmoothingProcessNode {
     id: NodeId,
-    value_in: f32,
-    value_out: f32,
+    port_type: PortType,
+    value_in: [f32; MAX_CHANNELS],
+    value_out: [f32; MAX_CHANNELS],
     mode: SmoothingMode,
     /// Window length in samples (engine ticks ≈ 1 kHz, so window = ms).
     /// Also controls the exponential time constant: α = 1 - exp(-1/window).
     window: usize,
-    /// Ring buffer of the last `window` samples. Only populated when mode
-    /// needs history (MovingAverage / Median).
-    history: VecDeque<f32>,
+    /// Ring buffer of the last `window` samples of each channel. Only
+    /// populated when mode needs history (MovingAverage / Median).
+    history: Vec<VecDeque<f32>>,
     /// Running sum for MovingAverage — avoids re-summing the window each tick.
-    sum: f64,
+    sum: Vec<f64>,
     /// Reused by the median so it does not allocate every tick.
     scratch: Vec<f32>,
     inputs: Vec<PortDef>,
@@ -65,21 +67,24 @@ impl SmoothingProcessNode {
     pub fn new(id: NodeId) -> Self {
         Self {
             id,
-            value_in: 0.0,
-            value_out: 0.0,
+            port_type: PortType::Any,
+            value_in: [0.0; MAX_CHANNELS],
+            value_out: [0.0; MAX_CHANNELS],
             mode: SmoothingMode::Exponential,
             window: 32,
-            history: VecDeque::new(),
-            sum: 0.0,
+            history: vec![VecDeque::new(); MAX_CHANNELS],
+            sum: vec![0.0; MAX_CHANNELS],
             scratch: Vec::new(),
-            inputs: vec![PortDef::new("in", PortType::Untyped)],
-            outputs: vec![PortDef::new("out", PortType::Untyped)],
+            inputs: vec![PortDef::new("in", PortType::Any)],
+            outputs: vec![PortDef::new("out", PortType::Any)],
         }
     }
 
+    fn width(&self) -> usize { self.port_type.channel_count() }
+
     fn reset_history(&mut self) {
-        self.history.clear();
-        self.sum = 0.0;
+        for h in &mut self.history { h.clear(); }
+        self.sum.fill(0.0);
     }
 }
 
@@ -90,50 +95,58 @@ impl ProcessNode for SmoothingProcessNode {
     fn outputs(&self) -> &[PortDef] { &self.outputs }
 
     fn write_input(&mut self, pi: usize, v: f32) {
-        if pi == 0 { self.value_in = v; }
+        if pi < self.width() { self.value_in[pi] = v; }
     }
     fn read_input(&self, pi: usize) -> f32 {
-        if pi == 0 { self.value_in } else { 0.0 }
+        if pi < self.width() { self.value_in[pi] } else { 0.0 }
     }
 
     fn process(&mut self) {
         let win = self.window.max(1);
-        match self.mode {
-            SmoothingMode::Exponential => {
-                // One-pole IIR: y += α (x - y). α derived from `window` so the
-                // 63 %-rise time matches the window length in ticks.
-                let alpha = if win <= 1 {
-                    1.0
-                } else {
-                    1.0 - (-1.0 / win as f32).exp()
-                };
-                self.value_out += alpha * (self.value_in - self.value_out);
-            }
-            SmoothingMode::MovingAverage => {
-                self.history.push_back(self.value_in);
-                self.sum += self.value_in as f64;
-                while self.history.len() > win {
-                    if let Some(old) = self.history.pop_front() {
-                        self.sum -= old as f64;
+        // One-pole IIR: y += α (x - y). α derived from `window` so the
+        // 63 %-rise time matches the window length in ticks.
+        let alpha = if win <= 1 { 1.0 } else { 1.0 - (-1.0 / win as f32).exp() };
+        for c in 0..self.width() {
+            let x = self.value_in[c];
+            match self.mode {
+                SmoothingMode::Exponential => {
+                    self.value_out[c] += alpha * (x - self.value_out[c]);
+                }
+                SmoothingMode::MovingAverage => {
+                    let history = &mut self.history[c];
+                    history.push_back(x);
+                    self.sum[c] += x as f64;
+                    while history.len() > win {
+                        if let Some(old) = history.pop_front() {
+                            self.sum[c] -= old as f64;
+                        }
                     }
+                    let n = history.len().max(1);
+                    self.value_out[c] = (self.sum[c] / n as f64) as f32;
                 }
-                let n = self.history.len().max(1);
-                self.value_out = (self.sum / n as f64) as f32;
-            }
-            SmoothingMode::Median => {
-                self.history.push_back(self.value_in);
-                while self.history.len() > win {
-                    self.history.pop_front();
+                SmoothingMode::Median => {
+                    let history = &mut self.history[c];
+                    history.push_back(x);
+                    while history.len() > win {
+                        history.pop_front();
+                    }
+                    self.scratch.clear();
+                    self.scratch.extend(history.iter().copied());
+                    self.value_out[c] = median_in_place(&mut self.scratch);
                 }
-                self.scratch.clear();
-                self.scratch.extend(self.history.iter().copied());
-                self.value_out = median_in_place(&mut self.scratch);
             }
         }
     }
 
     fn read_output(&self, pi: usize) -> f32 {
-        if pi == 0 { self.value_out } else { 0.0 }
+        if pi < self.width() { self.value_out[pi] } else { 0.0 }
+    }
+
+    // The type reshapes the ports; Mode and Window stay promotable.
+    fn non_promotable_params(&self) -> &'static [&'static str] { &["Type"] }
+
+    fn update_display(&self, shared: &mut NodeSharedState) {
+        publish_type(shared, self.port_type);
     }
 
     fn params(&self) -> Vec<ParamDef> {
@@ -153,6 +166,8 @@ impl ProcessNode for SmoothingProcessNode {
                 min: 1,
                 max: 2000,
             },
+            // Last, because saved settings go by position.
+            type_param(self.port_type),
         ]
     }
 
@@ -169,6 +184,17 @@ impl ProcessNode for SmoothingProcessNode {
                 let new_win = value.as_i64().clamp(1, 2000) as usize;
                 if new_win != self.window {
                     self.window = new_win;
+                    self.reset_history();
+                }
+            }
+            2 => {
+                let pt = type_from_param(&value);
+                if pt != self.port_type {
+                    self.port_type = pt;
+                    self.inputs = vec![PortDef::new("in", pt)];
+                    self.outputs = vec![PortDef::new("out", pt)];
+                    self.value_in.fill(0.0);
+                    self.value_out.fill(0.0);
                     self.reset_history();
                 }
             }
@@ -211,5 +237,21 @@ mod tests {
             out.push(n.read_output(0));
         }
         assert_eq!(out, vec![1.0, 5.0, 2.0, 8.0]);
+    }
+
+    #[test]
+    fn a_color_is_smoothed_channel_by_channel() {
+        let mut n = SmoothingProcessNode::new(NodeId(1));
+        n.set_param(2, ParamValue::Choice(4));
+        n.set_param(0, ParamValue::Choice(1));
+        n.set_param(1, ParamValue::Int(2));
+        assert_eq!(n.inputs()[0].port_type, PortType::Color);
+        for (r, g) in [(1.0, 0.0), (0.0, 1.0)] {
+            n.write_input(0, r);
+            n.write_input(1, g);
+            n.write_input(2, 0.5);
+            n.process();
+        }
+        assert_eq!([n.read_output(0), n.read_output(1), n.read_output(2)], [0.5, 0.5, 0.5]);
     }
 }

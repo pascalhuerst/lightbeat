@@ -176,7 +176,7 @@ impl ProcessNode for CounterProcessNode {
     }
 
     fn non_promotable_params(&self) -> &'static [&'static str] {
-        &["Max", "Select Mode"]
+        &["Max", "Select by"]
     }
 
     fn params(&self) -> Vec<ParamDef> {
@@ -188,7 +188,7 @@ impl ProcessNode for CounterProcessNode {
                 options: vec!["Up".into(), "Down".into()],
             },
             ParamDef::Choice {
-                name: "Select Mode".into(),
+                name: "Select by".into(),
                 value: self.select_mode.to_index(),
                 options: SelectMode::ALL.iter().map(|m| m.label().to_string()).collect(),
             },

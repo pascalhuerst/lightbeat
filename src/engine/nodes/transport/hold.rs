@@ -6,14 +6,15 @@ pub struct TriggerHoldDisplay {
 }
 
 /// Holds a trigger high for N engine ticks after each rising edge.
-/// Duration is taken from the `duration` input (in ticks) when wired
-/// (non-zero), otherwise falls back to the `Duration` param.
+/// Duration is taken from the `duration` input (in ticks) while it is wired,
+/// otherwise from the `Duration` param.
 pub struct TriggerHoldProcessNode {
     id: NodeId,
     trigger_in: f32,
     prev_trigger: f32,
     duration_in: f32,
-    /// Param fallback when input is 0 / unwired.
+    duration_connected: bool,
+    /// Used while the input is unwired.
     default_duration: u32,
     remaining: u32,
     output: f32,
@@ -28,6 +29,7 @@ impl TriggerHoldProcessNode {
             trigger_in: 0.0,
             prev_trigger: 0.0,
             duration_in: 0.0,
+            duration_connected: false,
             default_duration: 100,
             remaining: 0,
             output: 0.0,
@@ -40,7 +42,7 @@ impl TriggerHoldProcessNode {
     }
 
     fn effective_duration(&self) -> u32 {
-        if self.duration_in > 0.0 {
+        if self.duration_connected {
             self.duration_in.round().max(1.0) as u32
         } else {
             self.default_duration.max(1)
@@ -65,6 +67,10 @@ impl ProcessNode for TriggerHoldProcessNode {
         match pi { 0 => self.trigger_in, 1 => self.duration_in, _ => 0.0 }
     }
 
+    fn set_input_connections(&mut self, connected: &[bool]) {
+        self.duration_connected = connected.get(1).copied().unwrap_or(false);
+    }
+
     fn process(&mut self) {
         // Rising edge: (re)start the hold.
         if self.trigger_in >= 0.5 && self.prev_trigger < 0.5 {
@@ -83,6 +89,9 @@ impl ProcessNode for TriggerHoldProcessNode {
     fn read_output(&self, pi: usize) -> f32 {
         if pi == 0 { self.output } else { 0.0 }
     }
+
+    // The duration already has an input port of its own.
+    fn non_promotable_params(&self) -> &'static [&'static str] { &["Duration"] }
 
     fn params(&self) -> Vec<ParamDef> {
         vec![ParamDef::Int {
@@ -113,5 +122,38 @@ impl ProcessNode for TriggerHoldProcessNode {
             remaining_ticks: self.remaining,
             effective_duration: self.effective_duration(),
         }));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn pulse_length(n: &mut TriggerHoldProcessNode) -> usize {
+        n.write_input(0, 0.0);
+        n.process();
+        n.write_input(0, 1.0);
+        n.process();
+        n.write_input(0, 0.0);
+        let mut high = if n.read_output(0) > 0.5 { 1 } else { 0 };
+        for _ in 0..50 {
+            n.process();
+            if n.read_output(0) > 0.5 { high += 1; }
+        }
+        high
+    }
+
+    #[test]
+    fn the_input_decides_by_being_wired_not_by_its_value() {
+        let mut n = TriggerHoldProcessNode::new(NodeId(1));
+        n.set_param(0, ParamValue::Int(5));
+        assert_eq!(pulse_length(&mut n), 5);
+        n.set_input_connections(&[false, true]);
+        n.write_input(1, 0.0);
+        assert_eq!(pulse_length(&mut n), 1, "a wired zero is the shortest hold, not the setting");
+        n.write_input(1, 8.0);
+        assert_eq!(pulse_length(&mut n), 8);
+        n.set_input_connections(&[false, false]);
+        assert_eq!(pulse_length(&mut n), 5);
     }
 }
