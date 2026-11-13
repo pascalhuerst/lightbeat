@@ -199,8 +199,8 @@ impl LightBeatApp {
         let ctx = ctx.clone();
         std::thread::spawn(move || {
             let dialog = rfd::FileDialog::new()
-                .set_title("Save Project As")
-                .add_filter("LightBeat Project", &["json"])
+                .set_title("Save project as")
+                .add_filter("LightBeat project", &["json"])
                 .set_file_name("project.json");
             if let Some(path) = dialog.save_file() {
                 let _ = tx.send(FileDialogResult::SaveProjectAs(path));
@@ -216,8 +216,8 @@ impl LightBeatApp {
         let ctx = ctx.clone();
         std::thread::spawn(move || {
             let dialog = rfd::FileDialog::new()
-                .set_title("Open Project")
-                .add_filter("LightBeat Project", &["json"]);
+                .set_title("Open project")
+                .add_filter("LightBeat project", &["json"]);
             if let Some(path) = dialog.pick_file() {
                 let _ = tx.send(FileDialogResult::OpenProject(path));
             }
@@ -232,8 +232,8 @@ impl LightBeatApp {
         let ctx = ctx.clone();
         std::thread::spawn(move || {
             let dialog = rfd::FileDialog::new()
-                .set_title("Export Setup")
-                .add_filter("LightBeat Setup", &["json"])
+                .set_title("Export setup")
+                .add_filter("LightBeat setup", &["json"])
                 .set_file_name("lightbeat-setup.json");
             if let Some(path) = dialog.save_file() {
                 let _ = tx.send(FileDialogResult::ExportSetup(path));
@@ -249,8 +249,8 @@ impl LightBeatApp {
         let ctx = ctx.clone();
         std::thread::spawn(move || {
             let dialog = rfd::FileDialog::new()
-                .set_title("Import Setup")
-                .add_filter("LightBeat Setup", &["json"]);
+                .set_title("Import setup")
+                .add_filter("LightBeat setup", &["json"]);
             if let Some(path) = dialog.pick_file() {
                 let _ = tx.send(FileDialogResult::ImportSetup(path));
             }

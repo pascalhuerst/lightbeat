@@ -58,7 +58,7 @@ impl LightBeatApp {
 
         // DMX Monitor (floating window, toggled via View menu).
         if self.show_dmx_monitor {
-            egui::Window::new("DMX Monitor")
+            egui::Window::new("DMX monitor")
                 .open(&mut self.show_dmx_monitor)
                 .default_size([600.0, 200.0])
                 .show(ctx, |ui| {
@@ -240,7 +240,7 @@ impl LightBeatApp {
         if let Some(lines) = self.setup_notice.clone() {
             let mut open = true;
             let mut dismiss = false;
-            egui::Window::new("Import / Export Setup").open(&mut open).collapsible(false).resizable(true).show(ctx, |ui| {
+            egui::Window::new("Import / export setup").open(&mut open).collapsible(false).resizable(true).show(ctx, |ui| {
                 for line in &lines {
                     ui.label(line);
                 }
@@ -270,7 +270,7 @@ impl LightBeatApp {
                     let mut load_recent: Option<PathBuf> = None;
                     let mut clear_recents = false;
                     ui.add_enabled_ui(!recents.is_empty(), |ui| {
-                        ui.menu_button("Open Recent", |ui| {
+                        ui.menu_button("Open recent", |ui| {
                             for p in &recents {
                                 let label = p.file_name()
                                     .and_then(|s| s.to_str())
@@ -303,16 +303,16 @@ impl LightBeatApp {
                         ui.close_menu();
                         self.save_command(ctx, None);
                     }
-                    if ui.button("Save As...").clicked() {
+                    if ui.button("Save as...").clicked() {
                         ui.close_menu();
                         self.save_project_as(ctx);
                     }
                     ui.separator();
-                    if ui.button("Export Setup...").on_hover_text("Fixtures, objects, groups, interfaces, palettes, controllers and audio inputs, as one file").clicked() {
+                    if ui.button("Export setup...").on_hover_text("Fixtures, objects, groups, interfaces, palettes, controllers and audio inputs, as one file").clicked() {
                         ui.close_menu();
                         self.export_setup_dialog(ctx);
                     }
-                    if ui.button("Import Setup...").on_hover_text("Replace the setup with one from a file; Edit, Undo (setup) brings the old one back").clicked() {
+                    if ui.button("Import setup...").on_hover_text("Replace the setup with one from a file; Edit, Undo (setup) brings the old one back").clicked() {
                         ui.close_menu();
                         self.import_setup_dialog(ctx);
                     }
@@ -348,13 +348,13 @@ impl LightBeatApp {
                     }
                 });
                 ui.menu_button("View", |ui| {
-                    if ui.checkbox(&mut self.show_add_nodes, "Add Nodes").changed() {
+                    if ui.checkbox(&mut self.show_add_nodes, "Add nodes").changed() {
                         ui.close_menu();
                     }
                     if ui.checkbox(&mut self.show_setup, "Setup").changed() {
                         ui.close_menu();
                     }
-                    if ui.checkbox(&mut self.show_dmx_monitor, "DMX Monitor").changed() {
+                    if ui.checkbox(&mut self.show_dmx_monitor, "DMX monitor").changed() {
                         ui.close_menu();
                     }
                     if ui.checkbox(&mut self.config.snap_to_grid, "Snap to grid").changed() {
@@ -377,11 +377,11 @@ impl LightBeatApp {
                     });
                 });
                 ui.menu_button("Help", |ui| {
-                    if ui.button(format!("About LightBeat {}", version::version())).clicked() {
+                    if ui.button(format!("About LightBeat {}...", version::version())).clicked() {
                         ui.close_menu();
                         self.show_about = true;
                     }
-                    if ui.button("Keyboard shortcuts").clicked() {
+                    if ui.button("Keyboard shortcuts...").clicked() {
                         ui.close_menu();
                         self.show_shortcuts = true;
                     }

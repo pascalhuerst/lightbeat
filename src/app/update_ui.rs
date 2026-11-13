@@ -40,7 +40,7 @@ impl LightBeatApp {
             return;
         }
         let mut open = true;
-        egui::Window::new("Software Update").open(&mut open).collapsible(false).resizable(false).show(ctx, |ui| {
+        egui::Window::new("Software update").open(&mut open).collapsible(false).resizable(false).show(ctx, |ui| {
             ui.label(format!("You have {}.", version::label()));
             ui.add_space(4.0);
             match &state {

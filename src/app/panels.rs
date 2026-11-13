@@ -22,15 +22,15 @@ pub(crate) enum SetupTab {
 
 const SETUP_TABS: &[(SetupTab, &str)] = &[
     (SetupTab::Interfaces, "Interfaces"),
-    (SetupTab::FixtureTemplates, "Fixture Templates"),
+    (SetupTab::FixtureTemplates, "Fixture templates"),
     (SetupTab::Objects, "Objects"),
     (SetupTab::Groups, "Groups"),
-    (SetupTab::ColorPalettes, "Color Palettes"),
-    (SetupTab::ColorPaletteGroups, "Palette Groups"),
-    (SetupTab::Gradients, "Gradients"),
-    (SetupTab::AudioInputs, "Audio Inputs"),
-    (SetupTab::InputControllers, "Input Controllers"),
-    (SetupTab::DmxInputs, "DMX Inputs"),
+    (SetupTab::ColorPalettes, "Color palettes"),
+    (SetupTab::ColorPaletteGroups, "Palette groups"),
+    (SetupTab::Gradients, "Gradient presets"),
+    (SetupTab::AudioInputs, "Audio inputs"),
+    (SetupTab::InputControllers, "Input controllers"),
+    (SetupTab::DmxInputs, "DMX inputs"),
 ];
 
 /// Payload carried during a node-registry → canvas drag (Add Nodes panel).
@@ -46,7 +46,7 @@ pub(crate) struct FrameDragPayload;
 impl LightBeatApp {
     pub(crate) fn show_add_nodes_panel(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
-            ui.heading("Add Nodes");
+            ui.heading("Add nodes");
             if ui.small_button(egui_phosphor::regular::ARROWS_CLOCKWISE)
                 .on_hover_text("Refresh macro library")
                 .clicked()
@@ -59,7 +59,7 @@ impl LightBeatApp {
         ui.horizontal(|ui| {
             ui.label(egui_phosphor::regular::MAGNIFYING_GLASS);
             ui.add(egui::TextEdit::singleline(&mut self.library_search)
-                .hint_text("search nodes, macros, tags…")
+                .hint_text("Search nodes, macros, tags...")
                 .desired_width(ui.available_width()));
         });
         ui.separator();
