@@ -265,7 +265,10 @@ pub fn item_header(
         });
     });
 
-    state.show_body_indented(&row.response, ui, body);
+    // Scoped by the item, so widgets in two bodies never share an id.
+    state.show_body_indented(&row.response, ui, |ui| {
+        ui.push_id(state_id, body);
+    });
     actions
 }
 
