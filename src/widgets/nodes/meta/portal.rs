@@ -24,6 +24,9 @@ pub struct PortalSendWidget {
     name: String,
     pub port_defs: Vec<PortalPortDef>,
     conflict: bool,
+    /// Set when a port is removed from the middle of the list, for the graph to
+    /// move the wires after it.
+    removed: Option<usize>,
 }
 
 impl PortalSendWidget {
@@ -35,6 +38,7 @@ impl PortalSendWidget {
             name: String::new(),
             port_defs: vec![PortalPortDef { name: "in 1".into(), port_type_idx: DEFAULT_PORT_TYPE }],
             conflict: false,
+            removed: None,
         };
         w.push_config();
         w
@@ -46,6 +50,11 @@ impl PortalSendWidget {
             "name": self.name,
             "ports": self.port_defs,
         }));
+    }
+
+    pub fn remove_port(&mut self, i: usize) {
+        self.port_defs.remove(i);
+        self.removed = Some(i);
     }
 
     pub fn restore_from_save_data(&mut self, data: &serde_json::Value) {
@@ -79,6 +88,9 @@ impl NodeWidget for PortalSendWidget {
         self.port_defs.iter().map(|p| UiPortDef::from_def(&p.to_port_def())).collect()
     }
     fn ui_outputs(&self) -> Vec<UiPortDef> { vec![] }
+    fn take_removed_port(&mut self) -> Option<(PortDir, usize)> {
+        self.removed.take().map(|i| (PortDir::Input, i))
+    }
 
     fn min_width(&self) -> f32 { 160.0 }
     fn min_content_height(&self) -> f32 { 18.0 }
@@ -136,7 +148,10 @@ impl NodeWidget for PortalSendWidget {
                 if ui.small_button(egui_phosphor::regular::X).clicked() { remove = Some(i); }
             });
         }
-        if let Some(i) = remove { self.port_defs.remove(i); changed = true; }
+        if let Some(i) = remove {
+            self.remove_port(i);
+            changed = true;
+        }
         if ui.small_button("+ Add Port").clicked() {
             self.port_defs.push(PortalPortDef {
                 name: format!("in {}", self.port_defs.len() + 1),

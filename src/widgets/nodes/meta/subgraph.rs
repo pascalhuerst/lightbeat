@@ -31,6 +31,9 @@ pub struct SubgraphWidget {
     /// so the node grows tall enough to show every row by default. Updated
     /// each frame from the shared display.
     inner_display_count: usize,
+    /// Set when a port is removed from the middle of a list, for the graph to
+    /// move the outer wires after it.
+    removed: Option<(PortDir, usize)>,
 }
 
 impl SubgraphWidget {
@@ -46,7 +49,18 @@ impl SubgraphWidget {
             macro_description: String::new(),
             macro_path: String::new(),
             inner_display_count: 0,
+            removed: None,
         }
+    }
+
+    pub fn remove_input(&mut self, i: usize) {
+        self.input_defs.remove(i);
+        self.removed = Some((PortDir::Input, i));
+    }
+
+    pub fn remove_output(&mut self, i: usize) {
+        self.output_defs.remove(i);
+        self.removed = Some((PortDir::Output, i));
     }
 
     pub fn set_name(&mut self, name: String) {
@@ -125,6 +139,10 @@ impl NodeWidget for SubgraphWidget {
             .iter()
             .map(|p| UiPortDef::from_def(&p.to_port_def()))
             .collect()
+    }
+
+    fn take_removed_port(&mut self) -> Option<(PortDir, usize)> {
+        self.removed.take()
     }
 
     fn min_width(&self) -> f32 {
@@ -255,7 +273,7 @@ impl NodeWidget for SubgraphWidget {
             });
         }
         if let Some(i) = remove_input {
-            self.input_defs.remove(i);
+            self.remove_input(i);
             input_changed = true;
         }
         if ui.small_button("+ Add Input").clicked() {
@@ -296,7 +314,7 @@ impl NodeWidget for SubgraphWidget {
             });
         }
         if let Some(i) = remove_output {
-            self.output_defs.remove(i);
+            self.remove_output(i);
             output_changed = true;
         }
         if ui.small_button("+ Add Output").clicked() {
