@@ -3,7 +3,7 @@ use egui::Ui;
 
 use crate::engine::nodes::math::compare::CompareOp;
 use crate::engine::types::*;
-use crate::widgets::nodes::node::NodeWidget;
+use crate::widgets::nodes::node::{current_choice, NodeWidget};
 use crate::widgets::nodes::types::UiPortDef;
 
 pub struct CompareWidget {
@@ -29,6 +29,11 @@ impl CompareWidget {
 
 impl NodeWidget for CompareWidget {
     fn node_id(&self) -> NodeId { self.id }
+    fn follow_params(&mut self) {
+        if let Some(i) = current_choice(&self.shared, 0) {
+            self.op = CompareOp::from_index(i);
+        }
+    }
     fn type_name(&self) -> &'static str { self.op.label() }
     fn title(&self) -> &str { self.op.label() }
     fn description(&self) -> &'static str { "Compares two values (>=, <=, ==, !=) and outputs a logic signal." }

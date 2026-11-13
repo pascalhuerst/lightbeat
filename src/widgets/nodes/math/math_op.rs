@@ -5,7 +5,7 @@ use egui::{Color32, Ui};
 use crate::engine::nodes::math::math_op::{MathDisplay, MathOp};
 use crate::engine::types::*;
 use crate::theme;
-use crate::widgets::nodes::node::NodeWidget;
+use crate::widgets::nodes::node::{current_choice, NodeWidget};
 use crate::widgets::nodes::types::UiPortDef;
 
 const ADD_PORT_FILL: Color32 = theme::SEM_SUCCESS;
@@ -52,6 +52,11 @@ impl MathWidget {
 
 impl NodeWidget for MathWidget {
     fn node_id(&self) -> NodeId { self.id }
+    fn follow_params(&mut self) {
+        if let Some(i) = current_choice(&self.shared, 0) {
+            self.op = MathOp::from_index(i);
+        }
+    }
     fn type_name(&self) -> &'static str { self.op.label() }
     fn title(&self) -> &str { self.op.label() }
     fn neutral_input_value(&self, _port: usize) -> f32 {

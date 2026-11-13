@@ -927,6 +927,120 @@ mod tests {
         g
     }
 
+    fn operation_graph() -> crate::widgets::nodes::NodeGraph {
+        use crate::engine::nodes::math::compare::CompareOp;
+        use crate::engine::nodes::math::logic_gate::LogicOp;
+        use crate::engine::nodes::math::math_op::MathOp;
+        use crate::engine::types::new_shared_state;
+        use crate::widgets::nodes::math::compare::CompareWidget;
+        use crate::widgets::nodes::math::constant::ConstantWidget;
+        use crate::widgets::nodes::math::logic_gate::LogicGateWidget;
+        use crate::widgets::nodes::math::math_op::MathWidget;
+        use crate::widgets::nodes::NodeGraph;
+
+        let mut g = NodeGraph::new();
+        for (label, op) in [("Add", MathOp::Add), ("Sub", MathOp::Sub), ("Mul", MathOp::Mul), ("Div", MathOp::Div)] {
+            g.register_node("Math", label, move |id| Box::new(MathWidget::new(id, op, new_shared_state(16, 1))));
+        }
+        for (label, op) in [(">=", CompareOp::Gte), ("<=", CompareOp::Lte), ("==", CompareOp::Eq), ("!=", CompareOp::Neq)] {
+            g.register_node("Compare", label, move |id| Box::new(CompareWidget::new(id, op, new_shared_state(2, 1))));
+        }
+        for (label, op) in [("AND", LogicOp::And), ("OR", LogicOp::Or), ("XOR", LogicOp::Xor)] {
+            g.register_node("Logic", label, move |id| Box::new(LogicGateWidget::new(id, op, new_shared_state(16, 1))));
+        }
+        for (label, ty) in [
+            ("Const Value", crate::engine::types::PortType::Untyped),
+            ("Const Logic", crate::engine::types::PortType::Logic),
+            ("Const Phase", crate::engine::types::PortType::Phase),
+        ] {
+            g.register_node("Signal", label, move |id| Box::new(ConstantWidget::new(id, ty, new_shared_state(0, 1))));
+        }
+        g
+    }
+
+    /// What the engine mirrors back after "Operation" (the param at `index`)
+    /// was set to `choice`.
+    fn mirror_operation(g: &mut crate::widgets::nodes::NodeGraph, node: usize, index: usize, choice: usize) {
+        let mut params = vec![ParamDef::Float { name: "Value".into(), value: 0.0, min: 0.0, max: 1.0, step: 0.1, unit: "" }];
+        params.truncate(index);
+        params.push(ParamDef::Choice { name: "Operation".into(), value: choice, options: Vec::new() });
+        g.node_mut(node).shared_state().lock().unwrap().current_params = params;
+    }
+
+    #[test]
+    fn switching_the_operation_keeps_position_and_wires_and_saves_the_siblings_name() {
+        let mut g = operation_graph();
+        let project: ProjectFile = serde_json::from_str(&format!(r#"{{
+            "version": {PROJECT_VERSION},
+            "nodes": [
+                {{"type_name": "Const Value", "id": 1, "pos": [0.0, 0.0], "params": []}},
+                {{"type_name": "Add", "id": 2, "pos": [200.0, 40.0], "params": []}},
+                {{"type_name": ">=", "id": 3, "pos": [400.0, 40.0], "params": []}},
+                {{"type_name": "AND", "id": 4, "pos": [600.0, 40.0], "params": []}}
+            ],
+            "connections": [
+                {{"from_node": 1, "from_port": 0, "to_node": 2, "to_port": 0}},
+                {{"from_node": 2, "from_port": 0, "to_node": 3, "to_port": 1}},
+                {{"from_node": 3, "from_port": 0, "to_node": 4, "to_port": 1}}
+            ]
+        }}"#)).unwrap();
+        load_graph(&mut g, &project);
+        g.cleanup_stale_connections();
+        assert_eq!(g.root_level().connections.len(), 3);
+
+        // Add to Div, >= to !=, AND to XOR, as the engine would report them.
+        for (idx, choice) in [(1, 3), (2, 3), (3, 2)] {
+            mirror_operation(&mut g, idx, 0, choice);
+            g.node_mut(idx).follow_params();
+        }
+        g.cleanup_stale_connections();
+
+        let saved = save_graph(&g);
+        let by_id = |id: u64| saved.nodes.iter().find(|n| n.id == id).unwrap();
+        assert_eq!(by_id(2).type_name, "Div");
+        assert_eq!(by_id(3).type_name, "!=");
+        assert_eq!(by_id(4).type_name, "XOR");
+        assert_eq!(by_id(2).pos, [200.0, 40.0]);
+        assert_eq!(saved.connections.len(), 3, "no wire was dropped");
+
+        // The saved file loads back as the new operations, wires intact.
+        let mut g2 = operation_graph();
+        load_graph(&mut g2, &saved);
+        g2.cleanup_stale_connections();
+        assert_eq!(g2.root_level().connections.len(), 3);
+        let again = save_graph(&g2);
+        assert_eq!(again.nodes.iter().map(|n| n.type_name.as_str()).collect::<Vec<_>>(), ["Const Value", "Div", "!=", "XOR"]);
+    }
+
+    #[test]
+    fn a_constant_switched_to_another_kind_keeps_only_the_wires_that_still_fit() {
+        let mut g = operation_graph();
+        let project: ProjectFile = serde_json::from_str(&format!(r#"{{
+            "version": {PROJECT_VERSION},
+            "nodes": [
+                {{"type_name": "Const Logic", "id": 1, "pos": [0.0, 0.0], "params": []}},
+                {{"type_name": "Const Value", "id": 5, "pos": [0.0, 200.0], "params": []}},
+                {{"type_name": ">=", "id": 2, "pos": [200.0, 0.0], "params": []}},
+                {{"type_name": "AND", "id": 3, "pos": [200.0, 100.0], "params": []}}
+            ],
+            "connections": [
+                {{"from_node": 5, "from_port": 0, "to_node": 2, "to_port": 0}},
+                {{"from_node": 1, "from_port": 0, "to_node": 3, "to_port": 0}}
+            ]
+        }}"#)).unwrap();
+        load_graph(&mut g, &project);
+        g.cleanup_stale_connections();
+        assert_eq!(g.root_level().connections.len(), 2, "both wires fit to begin with");
+        // The logic constant becomes a number; the other one is left alone.
+        mirror_operation(&mut g, 0, 1, 0);
+        g.node_mut(0).follow_params();
+        g.cleanup_stale_connections();
+        let saved = save_graph(&g);
+        assert_eq!(saved.nodes[0].type_name, "Const Value");
+        assert!(!g.root_level().connections.iter().any(|c| c.to.node == NodeId(3)), "a number no longer feeds the gate");
+        assert!(g.root_level().connections.iter().any(|c| c.to.node == NodeId(2)), "the number wire that was not touched stays");
+    }
+
     #[test]
     fn a_renamed_setting_keeps_its_promotion_and_snapshots_by_name() {
         assert_eq!(current_setting_name("Lookup Table", "Input"), "Select by");

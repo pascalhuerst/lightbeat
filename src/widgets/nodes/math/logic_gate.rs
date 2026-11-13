@@ -4,7 +4,7 @@ use egui::{Color32, Ui};
 use crate::engine::nodes::math::logic_gate::{LogicDisplay, LogicOp};
 use crate::engine::types::*;
 use crate::theme;
-use crate::widgets::nodes::node::NodeWidget;
+use crate::widgets::nodes::node::{current_choice, NodeWidget};
 use crate::widgets::nodes::types::UiPortDef;
 
 const ADD_PORT_FILL: Color32 = theme::SEM_SUCCESS;
@@ -41,6 +41,12 @@ impl LogicGateWidget {
 
 impl NodeWidget for LogicGateWidget {
     fn node_id(&self) -> NodeId { self.id }
+    fn follow_params(&mut self) {
+        if self.op == LogicOp::Not { return; }
+        if let Some(op) = current_choice(&self.shared, 0).and_then(|i| LogicOp::VARIADIC.get(i)) {
+            self.op = *op;
+        }
+    }
     fn type_name(&self) -> &'static str { self.op.label() }
     fn title(&self) -> &str { self.op.label() }
     fn description(&self) -> &'static str {

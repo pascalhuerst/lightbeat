@@ -4,7 +4,7 @@ use egui::{self, Ui};
 
 use crate::engine::nodes::math::constant::ConstantProcessNode;
 use crate::engine::types::*;
-use crate::widgets::nodes::node::NodeWidget;
+use crate::widgets::nodes::node::{current_choice, NodeWidget};
 use crate::widgets::nodes::types::UiPortDef;
 
 pub struct ConstantWidget {
@@ -40,6 +40,16 @@ impl ConstantWidget {
 
 impl NodeWidget for ConstantWidget {
     fn node_id(&self) -> NodeId { self.id }
+    fn follow_params(&mut self) {
+        let Some(kind) = current_choice(&self.shared, 1).and_then(|i| ConstantProcessNode::KINDS.get(i)) else { return };
+        if *kind != self.port_type {
+            self.port_type = *kind;
+            self.outputs = vec![PortDef::new("out", *kind)];
+        }
+    }
+    fn param_display(&self, name: &str) -> (Option<String>, String) {
+        (None, if name == "Operation" { "Output type".to_string() } else { name.to_string() })
+    }
     fn type_name(&self) -> &'static str { ConstantProcessNode::type_name_for(self.port_type) }
     fn set_initial_value(&mut self, value: f32) {
         self.value = value;

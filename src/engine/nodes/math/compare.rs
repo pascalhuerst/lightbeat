@@ -9,6 +9,11 @@ pub enum CompareOp {
 }
 
 impl CompareOp {
+    pub const ALL: [CompareOp; 4] = [CompareOp::Gte, CompareOp::Lte, CompareOp::Eq, CompareOp::Neq];
+
+    pub fn from_index(i: usize) -> Self { Self::ALL.get(i).copied().unwrap_or(CompareOp::Gte) }
+    pub fn to_index(self) -> usize { Self::ALL.iter().position(|o| *o == self).unwrap_or(0) }
+
     pub fn label(&self) -> &'static str {
         match self {
             CompareOp::Gte => ">=",
@@ -66,6 +71,20 @@ impl ProcessNode for CompareProcessNode {
         match pi { 0 => self.a, 1 => self.b, _ => 0.0 }
     }
     fn process(&mut self) { self.out = self.op.apply(self.a, self.b); }
+
+    fn non_promotable_params(&self) -> &'static [&'static str] { &["Operation"] }
+
+    fn params(&self) -> Vec<ParamDef> {
+        vec![ParamDef::Choice {
+            name: "Operation".into(),
+            value: self.op.to_index(),
+            options: CompareOp::ALL.iter().map(|o| o.label().to_string()).collect(),
+        }]
+    }
+
+    fn set_param(&mut self, index: usize, value: ParamValue) {
+        if index == 0 { self.op = CompareOp::from_index(value.as_usize()); }
+    }
     fn read_output(&self, pi: usize) -> f32 {
         match pi { 0 => self.out, _ => 0.0 }
     }
