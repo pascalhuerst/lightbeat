@@ -61,7 +61,10 @@ Updated as items are implemented. Items not listed here are open.
 | 3.10 (rest) | done | 5c3cf3d: one Rescan and one banner |
 | 3.12 | done | 18f19bf: presets are edited in their tab; "Update preset" on the Gradient Source (until the project is reloaded, the node does not remember the preset) |
 | 4.5 (rest) | done | b8254bb |
-| 5.1 - 5.4, 6.x, 7 (ports, params), 7.1 - 7.4 | open | the node catalogue: not started |
+| 5.1 | done | ad9061b: nodes are registered under the 14 quick-add groups; the panel, the menus and quick add agree |
+| 5.2 | done | 164310f: Pan Tilt to Position, Position to Pan Tilt, Tick Delay, SR Flip-Flop, Link Clock, Range to Unit, Bar. Old names load through `RENAMED_NODES` in `project.rs` (temporary). Fill and Bar are still kind "Loop" internally |
+| 5.4 | done | e990688 |
+| 5.3, 6.x, 7 (ports, params), 7.1 - 7.4 | open | in progress |
 
 ---
 

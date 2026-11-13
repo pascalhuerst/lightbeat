@@ -66,7 +66,13 @@ Updated as items are implemented. Items not listed here are open.
 | D4 | done | 679d718 (rest) |
 | D12 | done | 679d718 (rest) |
 | D11 | done | b5a13bb (descriptions) |
-| D1, U2 - U7, S7, E11, T1, T3, T5 | open | not started |
+| D1 | done | 08e4962: no `allow(` left in `src`; nothing they covered was unused any more |
+| U2 | done | 2771dff: `ControllerBinding` in `widgets/nodes/io/controller_binding.rs` |
+| U3 | done | 4495924: `bind_controller` in `engine/nodes/io/status.rs` |
+| T5 | done | 3804689: fixed UI colours come from `theme.rs`; the 48 literals left are computed from data |
+| E11 | no action | the audit itself says "fine as it is" |
+| T3 | left to the user | `overview.md` and `things.txt` are personal notes |
+| U4 - U7, S7, T1 | open | after the node catalogue (same files) |
 | R2 (settings) | done | bea6940 |
 | R3 (project file) | done | 486e28d |
 | R5, R8 (UI part) | done | 41daa6d: the status bar says "Engine stopped" or "Engine busy: N changes lost" |
