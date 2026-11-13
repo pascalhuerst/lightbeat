@@ -196,7 +196,7 @@ mod tests {
         // Stop 0: red @ 0.0, alpha 1.0
         ch[0] = 1.0; ch[3] = 1.0; ch[4] = 0.0;
         // Stop 1: green @ 1.0, alpha 1.0
-        ch[5 * 1 + 1] = 1.0; ch[5 * 1 + 3] = 1.0; ch[5 * 1 + 4] = 1.0;
+        ch[6] = 1.0; ch[8] = 1.0; ch[9] = 1.0;
         // Stop 2-7: alpha = -1 (unused)
         for i in 2..GRADIENT_STOP_COUNT {
             ch[5 * i + 3] = -1.0;
