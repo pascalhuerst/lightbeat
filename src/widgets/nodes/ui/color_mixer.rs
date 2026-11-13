@@ -1,10 +1,8 @@
-use std::any::Any;
-
 use egui::{self, Ui};
 
 use crate::engine::nodes::ui::color_mixer::{ColorMixerDisplay, MixerMode, MIXER_MODE_NAMES};
 use crate::engine::types::*;
-use crate::widgets::nodes::node::{NodeLayout, NodeWidget};
+use crate::widgets::nodes::node::{NodeLayout, NodeWidget, node_identity, with_display};
 use crate::widgets::nodes::types::UiPortDef;
 
 pub struct ColorMixerWidget {
@@ -21,12 +19,11 @@ impl ColorMixerWidget {
     }
 
     fn sync_from_display(&mut self) {
-        let s = self.shared.lock().unwrap();
-        if let Some(d) = s.display.as_ref().and_then(|d| d.downcast_ref::<ColorMixerDisplay>()) {
+        with_display::<ColorMixerDisplay, _>(&self.shared, |d| {
             self.name = d.name.clone();
             self.mode = d.mode;
             self.values = d.values;
-        }
+        });
     }
 
     fn push_config(&self) {
@@ -48,8 +45,7 @@ impl ColorMixerWidget {
 }
 
 impl NodeWidget for ColorMixerWidget {
-    fn node_id(&self) -> NodeId { self.id }
-    fn type_name(&self) -> &'static str { "Color Mixer" }
+    node_identity!("Color Mixer");
     fn title(&self) -> &str { &self.name }
     fn description(&self) -> &'static str {
         "Three sliders that mix a color in RGB, HSV or CMY. Switching mode keeps the color."
@@ -67,7 +63,6 @@ impl NodeWidget for ColorMixerWidget {
     fn min_width(&self) -> f32 { 150.0 }
     fn min_content_height(&self) -> f32 { 84.0 }
     fn resizable(&self) -> bool { true }
-    fn shared_state(&self) -> &SharedState { &self.shared }
 
     fn show_content(&mut self, ui: &mut Ui, _zoom: f32) {
         self.sync_from_display();
@@ -111,6 +106,4 @@ impl NodeWidget for ColorMixerWidget {
             self.set_mode(mode);
         });
     }
-
-    fn as_any_mut(&mut self) -> &mut dyn Any { self }
 }

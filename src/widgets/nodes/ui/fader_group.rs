@@ -1,5 +1,3 @@
-use std::any::Any;
-
 use egui::{self, Color32, Ui, Vec2};
 
 use crate::engine::nodes::ui::common::MouseOverrideMode;
@@ -8,7 +6,7 @@ use crate::engine::types::*;
 use crate::theme;
 use crate::widgets::setup_ui;
 use crate::widgets::fader::{self, highlight_alpha, FaderStyle, Orientation};
-use crate::widgets::nodes::node::{NodeLayout, NodeWidget};
+use crate::widgets::nodes::node::{NodeLayout, NodeWidget, node_identity};
 use crate::widgets::nodes::types::UiPortDef;
 use crate::widgets::nodes::ui::fader::draw_override_indicator;
 
@@ -145,8 +143,7 @@ impl NodeWidget for FaderGroupWidget {
         self.any_output_enabled = self.outputs_enabled.iter().any(|&b| b);
     }
 
-    fn node_id(&self) -> NodeId { self.id }
-    fn type_name(&self) -> &'static str { "Fader Group" }
+    node_identity!("Fader Group");
     fn title(&self) -> &str { &self.name }
     fn description(&self) -> &'static str {
         "Grid of faders. Each cell has its own input enable, mouse override mode, and bipolar setting."
@@ -169,7 +166,6 @@ impl NodeWidget for FaderGroupWidget {
     fn min_width(&self) -> f32 { (self.cols as f32 * 28.0).max(120.0) }
     fn min_content_height(&self) -> f32 { (self.rows as f32 * 60.0).max(80.0) }
     fn resizable(&self) -> bool { true }
-    fn shared_state(&self) -> &SharedState { &self.shared }
 
     fn output_highlight(&self, port_idx: usize, now: f64) -> f32 {
         let last = self.last_edit_time.get(port_idx).copied().flatten();
@@ -437,6 +433,4 @@ impl NodeWidget for FaderGroupWidget {
 
         if changed { self.push_settings(); }
     }
-
-    fn as_any_mut(&mut self) -> &mut dyn Any { self }
 }

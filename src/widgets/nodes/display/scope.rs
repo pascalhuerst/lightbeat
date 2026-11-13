@@ -1,11 +1,9 @@
-use std::any::Any;
-
 use egui::{self, Pos2, Sense, Stroke, StrokeKind, Ui, Vec2};
 
 use crate::engine::nodes::display::scope::{SCOPE_INPUTS, ScopeDisplay};
 use crate::engine::types::*;
 use crate::theme;
-use crate::widgets::nodes::node::NodeWidget;
+use crate::widgets::nodes::node::{NodeWidget, node_identity};
 use crate::widgets::nodes::types::UiPortDef;
 
 pub struct ScopeWidget {
@@ -25,8 +23,7 @@ impl ScopeWidget {
 }
 
 impl NodeWidget for ScopeWidget {
-    fn node_id(&self) -> NodeId { self.id }
-    fn type_name(&self) -> &'static str { "Scope" }
+    node_identity!("Scope");
     fn description(&self) -> &'static str { "Visualizes up to eight input signals as waveforms over time." }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> { self.ui_inputs.clone() }
@@ -36,7 +33,6 @@ impl NodeWidget for ScopeWidget {
     fn min_content_height(&self) -> f32 { 80.0 }
     fn resizable(&self) -> bool { true }
 
-    fn shared_state(&self) -> &SharedState { &self.shared }
 
     fn on_ui_connect(&mut self, input_port: usize, source_type: PortType) {
         if input_port < SCOPE_INPUTS {
@@ -112,8 +108,6 @@ impl NodeWidget for ScopeWidget {
         let size = Vec2::new(ui.available_width(), 200.0);
         draw_scope(ui, &buffers, &connected, width_samples, range_min, range_max, size);
     }
-
-    fn as_any_mut(&mut self) -> &mut dyn Any { self }
 }
 
 fn unconnected_port(index: usize) -> UiPortDef {

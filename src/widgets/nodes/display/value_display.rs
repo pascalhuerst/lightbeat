@@ -1,10 +1,9 @@
-use std::any::Any;
 use egui::{self, Sense, Ui, Vec2};
 
 use crate::engine::nodes::display::value_display::ValueDisplayData;
 use crate::engine::types::*;
 use crate::theme;
-use crate::widgets::nodes::node::{NodeLayout, NodeWidget, PORT_RADIUS};
+use crate::widgets::nodes::node::{NodeLayout, NodeWidget, PORT_RADIUS, node_identity};
 use crate::widgets::nodes::types::UiPortDef;
 
 const NAME_GAP: f32 = 2.0;
@@ -36,8 +35,7 @@ impl NodeWidget for ValueDisplayWidget {
         }
     }
 
-    fn node_id(&self) -> NodeId { self.id }
-    fn type_name(&self) -> &'static str { "Value Display" }
+    node_identity!("Value Display");
     fn description(&self) -> &'static str { "Shows a numeric value. Name appears above the value and on parent subgraph nodes." }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> { UiPortDef::from_defs(&crate::engine::nodes::display::value_display::ports().0) }
@@ -47,7 +45,6 @@ impl NodeWidget for ValueDisplayWidget {
     fn min_width(&self) -> f32 { 80.0 }
     fn min_content_height(&self) -> f32 { 25.0 }
     fn resizable(&self) -> bool { true }
-    fn shared_state(&self) -> &SharedState { &self.shared }
 
     fn show_content(&mut self, ui: &mut Ui, _zoom: f32) {
         let (name, value) = {
@@ -102,8 +99,6 @@ impl NodeWidget for ValueDisplayWidget {
             }
         });
     }
-
-    fn as_any_mut(&mut self) -> &mut dyn Any { self }
 }
 
 /// Binary-search the largest monospace font size that lets `text` fit inside
