@@ -48,14 +48,6 @@ impl MidiOutputWidget {
         }
     }
 
-    /// Restore the saved list before wires are attached, so wires to its
-    /// ports still have ports to land on.
-    pub fn restore_from_save_data(&mut self, data: &serde_json::Value) {
-        if let Ok(config) = serde_json::from_value::<MidiOutputConfig>(data.clone()) {
-            self.config = config;
-        }
-    }
-
     /// Take entry `i` out of the list; the graph moves the wires after it.
     pub fn remove_entry(&mut self, i: usize) {
         self.config.entries.remove(i);
@@ -69,6 +61,15 @@ impl MidiOutputWidget {
 }
 
 impl NodeWidget for MidiOutputWidget {
+    /// Restore the saved list before wires are attached, so wires to its
+    /// ports still have ports to land on.
+    fn restore_from_save(&mut self, data: Option<&serde_json::Value>, _params: &[(usize, crate::engine::types::ParamValue)]) {
+        let Some(data) = data else { return };
+        if let Ok(config) = serde_json::from_value::<MidiOutputConfig>(data.clone()) {
+            self.config = config;
+        }
+    }
+
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { "MIDI Output" }
     fn description(&self) -> &'static str {
@@ -230,11 +231,11 @@ mod tests {
             MidiHub::idle(),
             crate::widgets::nodes::io::midi_common::new_shared_learned(),
         );
-        w.restore_from_save_data(&serde_json::json!({
+        w.restore_from_save(Some(&serde_json::json!({
             "port": "Dev",
             "entries": [{ "id": 1, "name": "Fader", "binding": {"kind": "cc", "channel": 1, "number": 5}, "mode": "value" },
                         { "id": 2, "binding": {"kind": "note", "channel": 1, "number": 60}, "mode": "gate" }]
-        }));
+        })), &[]);
         let names: Vec<String> = w.ui_inputs().into_iter().map(|p| p.def.name).collect();
         assert_eq!(names, ["Fader", "in 2"]);
         assert_eq!(w.ui_inputs()[1].def.port_type, PortType::Logic);

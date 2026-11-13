@@ -21,16 +21,17 @@ impl ToggleBankWidget {
     pub fn new(id: NodeId, shared: SharedState) -> Self {
         Self { id, shared, n: 4, states: vec![false; 4] }
     }
+}
 
-    pub fn restore_from_save_data(&mut self, data: &serde_json::Value) {
+impl NodeWidget for ToggleBankWidget {
+    fn restore_from_save(&mut self, data: Option<&serde_json::Value>, _params: &[(usize, crate::engine::types::ParamValue)]) {
+        let Some(data) = data else { return };
         if let Some(n) = data.get("n").and_then(|v| v.as_u64()) {
             self.n = (n as usize).clamp(MIN_CHANNELS, MAX_CHANNELS);
             self.states.resize(self.n, false);
         }
     }
-}
 
-impl NodeWidget for ToggleBankWidget {
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { "Toggle Bank" }
     fn description(&self) -> &'static str {

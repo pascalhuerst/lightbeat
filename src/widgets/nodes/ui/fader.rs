@@ -103,17 +103,18 @@ impl FaderWidget {
     fn push_settings(&self) {
         self.push_config(None, None);
     }
+}
 
+impl NodeWidget for FaderWidget {
     /// Restore port-affecting state directly from save_data. See
-    /// `FaderGroupWidget::restore_from_save_data` for rationale.
-    pub fn restore_from_save_data(&mut self, data: &serde_json::Value) {
+    /// `FaderGroupWidget::restore_from_save` for rationale.
+    fn restore_from_save(&mut self, data: Option<&serde_json::Value>, _params: &[(usize, crate::engine::types::ParamValue)]) {
+        let Some(data) = data else { return };
         if let Some(b) = data.get("inputs_enabled").and_then(|v| v.as_bool()) {
             self.inputs_enabled = b;
         }
     }
-}
 
-impl NodeWidget for FaderWidget {
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { "Fader" }
     fn title(&self) -> &str { &self.name }

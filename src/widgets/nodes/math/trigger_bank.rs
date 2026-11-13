@@ -26,16 +26,17 @@ impl TriggerBankWidget {
     pub fn new(id: NodeId, shared: SharedState) -> Self {
         Self { id, shared, n: 4, last_pulse_time: vec![None; 4] }
     }
+}
 
-    pub fn restore_from_save_data(&mut self, data: &serde_json::Value) {
+impl NodeWidget for TriggerBankWidget {
+    fn restore_from_save(&mut self, data: Option<&serde_json::Value>, _params: &[(usize, crate::engine::types::ParamValue)]) {
+        let Some(data) = data else { return };
         if let Some(n) = data.get("n").and_then(|v| v.as_u64()) {
             self.n = (n as usize).clamp(MIN_CHANNELS, MAX_CHANNELS);
             self.last_pulse_time.resize(self.n, None);
         }
     }
-}
 
-impl NodeWidget for TriggerBankWidget {
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { "Trigger Bank" }
     fn description(&self) -> &'static str {

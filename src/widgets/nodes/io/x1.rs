@@ -40,15 +40,16 @@ impl X1Widget {
             "controller_id": self.controller_id,
         }));
     }
+}
 
-    pub fn restore_from_save_data(&mut self, data: &serde_json::Value) {
+impl NodeWidget for X1Widget {
+    fn restore_from_save(&mut self, data: Option<&serde_json::Value>, _params: &[(usize, crate::engine::types::ParamValue)]) {
+        let Some(data) = data else { return };
         if let Some(id) = data.get("controller_id").and_then(|v| v.as_u64()) {
             self.controller_id = id as u32;
         }
     }
-}
 
-impl NodeWidget for X1Widget {
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { "X1" }
     fn description(&self) -> &'static str {

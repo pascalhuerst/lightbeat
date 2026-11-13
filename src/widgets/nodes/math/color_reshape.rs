@@ -8,7 +8,7 @@ use egui::{self, Ui};
 use crate::engine::nodes::math::color_reshape::{MAX_STOPS, MIN_STOPS, ReshapeKind, DEFAULT_STOPS, clamp_stops, ports};
 use crate::engine::types::*;
 use crate::theme;
-use crate::widgets::nodes::node::NodeWidget;
+use crate::widgets::nodes::node::{NodeWidget, param_usize};
 use crate::widgets::nodes::types::UiPortDef;
 
 pub struct ColorReshapeWidget {
@@ -25,14 +25,15 @@ impl ColorReshapeWidget {
     pub fn new(id: NodeId, shared: SharedState, kind: ReshapeKind) -> Self {
         Self { id, shared, kind, stops: DEFAULT_STOPS }
     }
-
-    /// Restore the saved stop count; needed before saved wires are attached.
-    pub fn set_state_from_load(&mut self, stops: usize) {
-        self.stops = clamp_stops(stops);
-    }
 }
 
 impl NodeWidget for ColorReshapeWidget {
+    fn restore_from_save(&mut self, _data: Option<&serde_json::Value>, params: &[(usize, ParamValue)]) {
+        if let Some(stops) = param_usize(params, 0) {
+            self.stops = clamp_stops(stops);
+        }
+    }
+
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { self.kind.type_name() }
     fn description(&self) -> &'static str { self.kind.description() }

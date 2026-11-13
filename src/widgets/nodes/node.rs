@@ -6,6 +6,12 @@ use crate::engine::types::{NodeId, ParamDef, ParamValue, PortDef, PortDir, Share
 
 use super::types::UiPortDef;
 
+/// The saved value of a param as an index, for widgets whose ports follow a
+/// choice or a count.
+pub fn param_usize(params: &[(usize, ParamValue)], index: usize) -> Option<usize> {
+    params.iter().find(|(i, _)| *i == index).map(|(_, v)| v.as_usize())
+}
+
 /// An effect as its stack lists it.
 #[derive(Clone, Debug, PartialEq)]
 pub struct StackMember {
@@ -36,6 +42,21 @@ pub trait NodeWidget: Any {
     fn display_title(&self) -> &str {
         let t = self.title();
         if t.is_empty() { self.type_name() } else { t }
+    }
+
+    /// Put the widget into the state a saved node had, from the node's
+    /// `save_data` and its saved params. Called right after the widget is
+    /// created from saved state (load, paste, move into a subgraph, macro),
+    /// before saved wires are attached and before the first
+    /// `cleanup_stale_connections`: a widget whose ports depend on its own
+    /// state (columns, entries, slot count, ...) must have them by then, or
+    /// the wires on those ports are dropped. Widgets whose ports are fixed
+    /// keep the empty default.
+    fn restore_from_save(
+        &mut self,
+        _data: Option<&serde_json::Value>,
+        _params: &[(usize, ParamValue)],
+    ) {
     }
 
     /// UI port definitions (may include fill colors for display).

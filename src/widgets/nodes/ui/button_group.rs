@@ -91,6 +91,34 @@ impl ButtonGroupWidget {
 }
 
 impl NodeWidget for ButtonGroupWidget {
+    /// The grid size and the input switch decide the ports; the rest of the
+    /// settings come back with the engine's display.
+    fn restore_from_save(&mut self, data: Option<&serde_json::Value>, _params: &[(usize, ParamValue)]) {
+        let Some(data) = data else { return };
+        if let Some(n) = data.get("name").and_then(|v| v.as_str()) {
+            self.name = n.to_string();
+        }
+        if let Some(r) = data.get("rows").and_then(|v| v.as_u64()) {
+            self.rows = (r as usize).clamp(1, 16);
+        }
+        if let Some(c) = data.get("cols").and_then(|v| v.as_u64()) {
+            self.cols = (c as usize).clamp(1, 16);
+        }
+        if let Some(b) = data.get("inputs_enabled").and_then(|v| v.as_bool()) {
+            self.inputs_enabled = b;
+        }
+        if let Some(b) = data.get("override_enabled").and_then(|v| v.as_bool()) {
+            self.override_enabled = b;
+        }
+        if let Some(m) = data.get("mode").and_then(|v| v.as_str()) {
+            self.mode = ButtonMode::from_str(m);
+        }
+        if let Some(s) = data.get("reset_mode").and_then(|v| v.as_str()) {
+            self.reset_mode = MouseOverrideMode::from_str(s);
+        }
+        self.resize();
+    }
+
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { "Button Group" }
     fn title(&self) -> &str { &self.name }

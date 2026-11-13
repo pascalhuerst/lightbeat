@@ -5,7 +5,7 @@ use egui::{self, Pos2, Sense, Stroke, StrokeKind, Ui, Vec2};
 use crate::engine::nodes::transport::envelope::{EnvelopeDisplay, EnvelopeKind, curve_for_mid, shape};
 use crate::engine::types::*;
 use crate::theme;
-use crate::widgets::nodes::node::NodeWidget;
+use crate::widgets::nodes::node::{NodeWidget, param_usize};
 use crate::widgets::nodes::types::UiPortDef;
 
 const HANDLE_RADIUS: f32 = 5.0;
@@ -39,14 +39,6 @@ impl EnvelopeWidget {
         Self { id, shared, kind: EnvelopeKind::Adsr, grab: None }
     }
 
-    /// Apply restored state from a saved param snapshot before
-    /// `cleanup_stale_connections` runs. Called from project load, move-
-    /// to-subgraph, and paste paths — mirrors the other mode-switching
-    /// nodes.
-    pub fn set_state_from_load(&mut self, kind: EnvelopeKind) {
-        self.kind = kind;
-    }
-
     fn sync_from_display(&mut self) {
         let shared = self.shared.lock().unwrap();
         if let Some(d) = shared.display.as_ref().and_then(|d| d.downcast_ref::<EnvelopeDisplay>())
@@ -57,6 +49,10 @@ impl EnvelopeWidget {
 }
 
 impl NodeWidget for EnvelopeWidget {
+    fn restore_from_save(&mut self, _data: Option<&serde_json::Value>, params: &[(usize, ParamValue)]) {
+        self.kind = param_usize(params, 4).map(EnvelopeKind::from_index).unwrap_or(EnvelopeKind::Adsr);
+    }
+
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { "Envelope" }
     fn description(&self) -> &'static str {

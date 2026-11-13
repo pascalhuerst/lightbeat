@@ -76,28 +76,6 @@ impl LookupWidget {
         Self { id, shared, library, columns, data, row_count, current_row: 0, removed: None }
     }
 
-    pub fn restore_from_save_data(&mut self, data: &serde_json::Value) {
-        if let Some(arr) = data.get("columns").and_then(|v| v.as_array()) {
-            let mut cols = Vec::with_capacity(arr.len());
-            for entry in arr {
-                let name = entry.get("name").and_then(|v| v.as_str()).unwrap_or("col").to_string();
-                let port_type = entry.get("type")
-                    .and_then(|v| v.as_str())
-                    .and_then(crate::engine::nodes::math::lookup::port_type_from_str)
-                    .unwrap_or(PortType::Untyped);
-                cols.push(LookupColumn { name, port_type });
-            }
-            self.columns = cols;
-        }
-        if let Some(n) = data.get("row_count").and_then(|v| v.as_u64()) {
-            self.row_count = n as usize;
-        }
-        if let Some(arr) = data.get("data").and_then(|v| v.as_array()) {
-            self.data = arr.iter().filter_map(|v| v.as_f64().map(|f| f as f32)).collect();
-        }
-        self.fix_data_size();
-    }
-
     fn row_stride(&self) -> usize {
         self.columns.iter().map(|c| c.port_type.channel_count()).sum()
     }
@@ -220,6 +198,29 @@ impl LookupWidget {
 }
 
 impl NodeWidget for LookupWidget {
+    fn restore_from_save(&mut self, data: Option<&serde_json::Value>, _params: &[(usize, crate::engine::types::ParamValue)]) {
+        let Some(data) = data else { return };
+        if let Some(arr) = data.get("columns").and_then(|v| v.as_array()) {
+            let mut cols = Vec::with_capacity(arr.len());
+            for entry in arr {
+                let name = entry.get("name").and_then(|v| v.as_str()).unwrap_or("col").to_string();
+                let port_type = entry.get("type")
+                    .and_then(|v| v.as_str())
+                    .and_then(crate::engine::nodes::math::lookup::port_type_from_str)
+                    .unwrap_or(PortType::Untyped);
+                cols.push(LookupColumn { name, port_type });
+            }
+            self.columns = cols;
+        }
+        if let Some(n) = data.get("row_count").and_then(|v| v.as_u64()) {
+            self.row_count = n as usize;
+        }
+        if let Some(arr) = data.get("data").and_then(|v| v.as_array()) {
+            self.data = arr.iter().filter_map(|v| v.as_f64().map(|f| f as f32)).collect();
+        }
+        self.fix_data_size();
+    }
+
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { "Lookup Table" }
     fn description(&self) -> &'static str {

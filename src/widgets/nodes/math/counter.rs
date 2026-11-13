@@ -4,7 +4,7 @@ use egui::Ui;
 use crate::engine::nodes::math::counter::CounterDisplay;
 use crate::engine::nodes::math::multiplex::SelectMode;
 use crate::engine::types::*;
-use crate::widgets::nodes::node::NodeWidget;
+use crate::widgets::nodes::node::{NodeWidget, param_usize};
 use crate::widgets::nodes::types::UiPortDef;
 
 pub struct CounterWidget {
@@ -18,13 +18,6 @@ impl CounterWidget {
         Self { id, shared, select_mode: SelectMode::Index }
     }
 
-    /// Apply restored state before the first frame's stale-connection
-    /// sweep — matches the Mux/Demux loader path. Called from project
-    /// load and from move-to-subgraph.
-    pub fn set_state_from_load(&mut self, mode: SelectMode) {
-        self.select_mode = mode;
-    }
-
     fn sync_from_display(&mut self) {
         let shared = self.shared.lock().unwrap();
         if let Some(d) = shared.display.as_ref().and_then(|d| d.downcast_ref::<CounterDisplay>())
@@ -35,6 +28,10 @@ impl CounterWidget {
 }
 
 impl NodeWidget for CounterWidget {
+    fn restore_from_save(&mut self, _data: Option<&serde_json::Value>, params: &[(usize, ParamValue)]) {
+        self.select_mode = param_usize(params, 2).map(SelectMode::from_index).unwrap_or(SelectMode::Index);
+    }
+
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { "Counter" }
     fn description(&self) -> &'static str {

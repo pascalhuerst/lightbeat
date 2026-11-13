@@ -103,17 +103,6 @@ impl DmxInputWidget {
         }
     }
 
-    /// Restore the saved list before wires are attached, so wires to its
-    /// ports still have ports to land on.
-    pub fn restore_from_save_data(&mut self, data: &serde_json::Value) {
-        if let Ok(mut config) = serde_json::from_value::<DmxInputNodeConfig>(data.clone()) {
-            for o in &mut config.outputs {
-                o.fit_sources();
-            }
-            self.config = config;
-        }
-    }
-
     pub fn add_output(&mut self, kind: DmxKind) {
         let universe = self.hub.input_universes(self.config.input).first().copied().unwrap_or(0);
         let id = self.config.outputs.iter().map(|o| o.id).max().map_or(1, |m| m + 1);
@@ -270,6 +259,18 @@ fn source_row(
 }
 
 impl NodeWidget for DmxInputWidget {
+    /// Restore the saved list before wires are attached, so wires to its
+    /// ports still have ports to land on.
+    fn restore_from_save(&mut self, data: Option<&serde_json::Value>, _params: &[(usize, crate::engine::types::ParamValue)]) {
+        let Some(data) = data else { return };
+        if let Ok(mut config) = serde_json::from_value::<DmxInputNodeConfig>(data.clone()) {
+            for o in &mut config.outputs {
+                o.fit_sources();
+            }
+            self.config = config;
+        }
+    }
+
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { "DMX Input" }
     fn description(&self) -> &'static str {
@@ -532,7 +533,7 @@ mod tests {
     #[test]
     fn adding_outputs_lays_their_channels_out_one_after_the_other() {
         let (mut w, _) = widget();
-        w.restore_from_save_data(&serde_json::json!({ "input": 1, "outputs": [] }));
+        w.restore_from_save(Some(&serde_json::json!({ "input": 1, "outputs": [] })), &[]);
         w.add_output(DmxKind::Color);
         w.add_output(DmxKind::Gate);
         w.add_output(DmxKind::Position);
@@ -549,9 +550,9 @@ mod tests {
     #[test]
     fn the_list_comes_back_from_the_saved_form_and_removal_names_the_port_that_went() {
         let (mut w, _) = widget();
-        w.restore_from_save_data(&serde_json::json!({ "input": 1, "outputs": [
+        w.restore_from_save(Some(&serde_json::json!({ "input": 1, "outputs": [
             {"id": 1, "name": "Dim", "kind": "value", "sources": [{"address": 1}]},
-            {"id": 2, "kind": "color", "dimmer": true, "sources": [{"address": 2}]}]}));
+            {"id": 2, "kind": "color", "dimmer": true, "sources": [{"address": 2}]}]})), &[]);
         assert_eq!(w.config().outputs[1].sources.len(), 4, "missing sources are filled in");
         w.remove_output(0);
         assert_eq!(w.take_removed_port(), Some((PortDir::Output, 1)));
@@ -562,8 +563,8 @@ mod tests {
     #[test]
     fn a_moved_channel_is_learned_into_the_source_after_the_group_has_settled() {
         let (mut w, hub) = widget();
-        w.restore_from_save_data(&serde_json::json!({ "input": 1, "outputs": [
-            {"id": 1, "kind": "color", "sources": [{"address": 100}, {"address": 101}, {"address": 102}]}]}));
+        w.restore_from_save(Some(&serde_json::json!({ "input": 1, "outputs": [
+            {"id": 1, "kind": "color", "sources": [{"address": 100}, {"address": 101}, {"address": 102}]}]})), &[]);
         let desk = Ipv4Addr::new(2, 0, 0, 1);
         hub.apply_dmx(1, &[0; 40], desk);
         w.learning = Some(Learning { output: 1, source: 1, since: hub.latest_seq(), first_seen: None });
@@ -590,9 +591,9 @@ mod tests {
     #[test]
     fn the_live_values_follow_each_sources_range_and_inversion() {
         let (mut w, hub) = widget();
-        w.restore_from_save_data(&serde_json::json!({ "input": 1, "outputs": [
+        w.restore_from_save(Some(&serde_json::json!({ "input": 1, "outputs": [
             {"id": 1, "kind": "value", "sources": [{"address": 1, "invert": true}]},
-            {"id": 2, "kind": "position", "sources": [{"address": 2, "fine": 3}, {"address": 4}]}]}));
+            {"id": 2, "kind": "position", "sources": [{"address": 2, "fine": 3}, {"address": 4}]}]})), &[]);
         hub.apply_dmx(0, &[255, 0xFF, 0xFF, 51], Ipv4Addr::new(2, 0, 0, 1));
         let v = w.source_values();
         assert!(v[0][0].abs() < 1e-6, "inverted full is empty");

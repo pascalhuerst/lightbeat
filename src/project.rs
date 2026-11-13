@@ -2,29 +2,8 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-use crate::engine::nodes::meta::subgraph::{BRIDGE_IN_NODE_ID, BRIDGE_OUT_NODE_ID, SubgraphPortDef};
+use crate::engine::nodes::meta::subgraph::{BRIDGE_IN_NODE_ID, BRIDGE_OUT_NODE_ID};
 use crate::engine::types::{NodeId, ParamDef, ParamValue, PortDir, PortId, PromotedParam, SnapshotSet};
-use crate::widgets::nodes::display::led_display::LedDisplayWidget;
-use crate::widgets::nodes::display::value_display::ValueDisplayWidget;
-use crate::widgets::nodes::io::audio_input::AudioInputWidget;
-use crate::widgets::nodes::math::gradient_source::GradientSourceWidget;
-use crate::widgets::nodes::math::lookup::LookupWidget;
-use crate::widgets::nodes::math::multiplex::{DemultiplexerWidget, MultiplexerWidget};
-use crate::widgets::nodes::io::input_controller::InputControllerWidget;
-use crate::widgets::nodes::io::push1::Push1Widget;
-use crate::widgets::nodes::io::launchpad::LaunchpadWidget;
-use crate::widgets::nodes::io::x1::X1Widget;
-use crate::widgets::nodes::meta::portal::{
-    PortalReceiveWidget, PortalSendWidget,
-};
-use crate::widgets::nodes::meta::subgraph::SubgraphWidget;
-use crate::widgets::nodes::output::effect::EffectWidget;
-use crate::widgets::nodes::output::effect_stack::EffectStackWidget;
-use crate::widgets::nodes::math::toggle_bank::ToggleBankWidget;
-use crate::widgets::nodes::math::trigger_bank::TriggerBankWidget;
-use crate::widgets::nodes::ui::button::ButtonWidget;
-use crate::widgets::nodes::ui::fader::FaderWidget;
-use crate::widgets::nodes::ui::fader_group::FaderGroupWidget;
 use crate::widgets::nodes::{GraphLevel, NodeGraph};
 
 // ---------------------------------------------------------------------------
@@ -367,6 +346,7 @@ pub fn load_graph(graph: &mut NodeGraph, project: &ProjectFile) -> Vec<usize> {
             }
 
             // Apply params via shared state.
+            let mut restore_params: Vec<(usize, ParamValue)> = Vec::new();
             {
                 let n = graph.node_mut(idx);
                 let declared = {
@@ -392,7 +372,8 @@ pub fn load_graph(graph: &mut NodeGraph, project: &ProjectFile) -> Vec<usize> {
                             SavedParamValue::Choice(v) => ParamValue::Choice(*v),
                         }
                     };
-                    shared.pending_params.push((sp.index, val));
+                    shared.pending_params.push((sp.index, val.clone()));
+                    restore_params.push((sp.index, val));
                 }
                 shared.disabled = saved.disabled;
                 shared.hide_unused_ports = saved.hide_unused_ports;
@@ -408,44 +389,11 @@ pub fn load_graph(graph: &mut NodeGraph, project: &ProjectFile) -> Vec<usize> {
                 }
             }
 
-            // For Subgraph nodes, restore port definitions on the widget
-            // BEFORE connections are loaded (so ports exist for wiring).
-            if saved.type_name == "Subgraph" {
-                if let Some(data) = &saved.data {
-                    let n = graph.node_mut(idx);
-                    if let Some(sub) = n.as_any_mut().downcast_mut::<SubgraphWidget>() {
-                        if let Some(name) = data.get("name").and_then(|v| v.as_str()) {
-                            sub.set_name(name.to_string());
-                        }
-                        if let Some(inputs) = data.get("inputs").and_then(|v| v.as_array()) {
-                            sub.input_defs = inputs
-                                .iter()
-                                .filter_map(|v| {
-                                    serde_json::from_value::<SubgraphPortDef>(v.clone()).ok()
-                                })
-                                .collect();
-                        }
-                        if let Some(outputs) = data.get("outputs").and_then(|v| v.as_array()) {
-                            sub.output_defs = outputs
-                                .iter()
-                                .filter_map(|v| {
-                                    serde_json::from_value::<SubgraphPortDef>(v.clone()).ok()
-                                })
-                                .collect();
-                        }
-                        if let Some(b) = data.get("locked").and_then(|v| v.as_bool()) {
-                            sub.locked = b;
-                        }
-                        if let Some(s) = data.get("macro_description").and_then(|v| v.as_str()) {
-                            sub.macro_description = s.to_string();
-                        }
-                        if let Some(s) = data.get("macro_path").and_then(|v| v.as_str()) {
-                            sub.macro_path = s.to_string();
-                        }
-                        sub.push_config();
-                    }
-                }
+            // Widgets whose ports follow their own state need it before the
+            // saved wires are attached.
+            graph.node_mut(idx).restore_from_save(saved.data.as_ref(), &restore_params);
 
+            if saved.type_name == "Subgraph" {
                 if let Some(inner_project) = &saved.inner_graph {
                     // Save the active level explicitly — `navigate_up` just
                     // decrements by one, which picks the wrong level when
@@ -469,304 +417,6 @@ pub fn load_graph(graph: &mut NodeGraph, project: &ProjectFile) -> Vec<usize> {
                     let _inner_indices = load_graph(graph, inner_project);
                     graph.navigate_to_level(parent_level);
                 }
-            }
-
-            // Restore Fader widget input-port state so wires don't get
-            // dropped by `cleanup_stale_connections` on the first frame.
-            if saved.type_name == "Fader"
-                && let Some(data) = &saved.data {
-                    let n = graph.node_mut(idx);
-                    if let Some(f) = n.as_any_mut().downcast_mut::<FaderWidget>() {
-                        f.restore_from_save_data(data);
-                    }
-                }
-
-            // Same for Button — its input port only exists when
-            // `inputs_enabled` is true, and that flag's default is false.
-            // Without restoring early, any incoming wire dies on the first
-            // frame before the engine has applied save_data.
-            if saved.type_name == "Button"
-                && let Some(data) = &saved.data {
-                    let n = graph.node_mut(idx);
-                    if let Some(b) = n.as_any_mut().downcast_mut::<ButtonWidget>() {
-                        b.restore_from_save_data(data);
-                    }
-                }
-
-            // Toggle Bank's port count is variable — restore `n` before
-            // cleanup_stale_connections so wires to channels > default
-            // aren't dropped.
-            if saved.type_name == "Toggle Bank"
-                && let Some(data) = &saved.data {
-                    let n = graph.node_mut(idx);
-                    if let Some(tb) = n.as_any_mut().downcast_mut::<ToggleBankWidget>() {
-                        tb.restore_from_save_data(data);
-                    }
-                }
-            if saved.type_name == "Trigger Bank"
-                && let Some(data) = &saved.data {
-                    let n = graph.node_mut(idx);
-                    if let Some(tb) = n.as_any_mut().downcast_mut::<TriggerBankWidget>() {
-                        tb.restore_from_save_data(data);
-                    }
-                }
-
-            // Portal widgets need their port defs restored before
-            // `cleanup_stale_connections` runs, otherwise wires targeting
-            // the portal's input/output ports get dropped on the first frame.
-            if type_name == "Portal Send"
-                && let Some(data) = &saved.data {
-                    let n = graph.node_mut(idx);
-                    if let Some(w) = n.as_any_mut().downcast_mut::<PortalSendWidget>() {
-                        w.restore_from_save_data(data);
-                    }
-                }
-            if type_name == "Portal Receive"
-                && let Some(data) = &saved.data {
-                    let n = graph.node_mut(idx);
-                    if let Some(w) = n.as_any_mut().downcast_mut::<PortalReceiveWidget>() {
-                        w.restore_from_save_data(data);
-                    }
-                }
-
-            // Same for Fader Group — restore per-cell inputs/outputs enabled.
-            if saved.type_name == "Fader Group"
-                && let Some(data) = &saved.data {
-                    let n = graph.node_mut(idx);
-                    if let Some(fg) = n.as_any_mut().downcast_mut::<FaderGroupWidget>() {
-                        fg.restore_from_save_data(data);
-                    }
-                }
-
-            // Input Controller / Audio Input nodes have dynamic outputs
-            // sourced from the live setup; pre-populate them so wires aren't
-            // dropped on the first frame's stale-connection sweep.
-            if saved.type_name == "Input Controller"
-                && let Some(data) = &saved.data {
-                    let n = graph.node_mut(idx);
-                    if let Some(w) = n.as_any_mut().downcast_mut::<InputControllerWidget>() {
-                        w.restore_from_save_data(data);
-                    }
-                }
-            if saved.type_name == "Push 1"
-                && let Some(data) = &saved.data {
-                    let n = graph.node_mut(idx);
-                    if let Some(w) = n.as_any_mut().downcast_mut::<Push1Widget>() {
-                        w.restore_from_save_data(data);
-                    }
-                }
-            if saved.type_name == "X1"
-                && let Some(data) = &saved.data {
-                    let n = graph.node_mut(idx);
-                    if let Some(w) = n.as_any_mut().downcast_mut::<X1Widget>() {
-                        w.restore_from_save_data(data);
-                    }
-                }
-            if saved.type_name == "Launchpad S"
-                && let Some(data) = &saved.data {
-                    let n = graph.node_mut(idx);
-                    if let Some(w) = n.as_any_mut().downcast_mut::<LaunchpadWidget>() {
-                        w.restore_from_save_data(data);
-                    }
-                }
-            if saved.type_name == "Audio Input"
-                && let Some(data) = &saved.data {
-                    let n = graph.node_mut(idx);
-                    if let Some(w) = n.as_any_mut().downcast_mut::<AudioInputWidget>() {
-                        w.restore_from_save_data(data);
-                    }
-                }
-            if saved.type_name == "Value Display"
-                && let Some(data) = &saved.data {
-                    let n = graph.node_mut(idx);
-                    if let Some(w) = n.as_any_mut().downcast_mut::<ValueDisplayWidget>() {
-                        w.restore_from_save_data(data);
-                    }
-                }
-            if saved.type_name == "LED Display"
-                && let Some(data) = &saved.data {
-                    let n = graph.node_mut(idx);
-                    if let Some(w) = n.as_any_mut().downcast_mut::<LedDisplayWidget>() {
-                        w.restore_from_save_data(data);
-                    }
-                }
-            // The extra outputs of a Phase Scaler are ports: restore them
-            // before saved wires are attached.
-            // MIDI nodes have a port per entry of their list: restore it
-            // before saved wires are attached.
-            if saved.type_name == "DMX Input"
-                && let Some(data) = &saved.data {
-                    let n = graph.node_mut(idx);
-                    if let Some(w) = n.as_any_mut().downcast_mut::<crate::widgets::nodes::io::dmx_input::DmxInputWidget>() {
-                        w.restore_from_save_data(data);
-                    }
-                }
-            if saved.type_name == "MIDI Input"
-                && let Some(data) = &saved.data {
-                    let n = graph.node_mut(idx);
-                    if let Some(w) = n.as_any_mut().downcast_mut::<crate::widgets::nodes::io::midi_input::MidiInputWidget>() {
-                        w.restore_from_save_data(data);
-                    }
-                }
-            if saved.type_name == "MIDI Output"
-                && let Some(data) = &saved.data {
-                    let n = graph.node_mut(idx);
-                    if let Some(w) = n.as_any_mut().downcast_mut::<crate::widgets::nodes::io::midi_output::MidiOutputWidget>() {
-                        w.restore_from_save_data(data);
-                    }
-                }
-            if saved.type_name == "Clock Divider"
-                && let Some(data) = &saved.data {
-                    let n = graph.node_mut(idx);
-                    if let Some(w) = n.as_any_mut().downcast_mut::<crate::widgets::nodes::transport::clock_divider::ClockDividerWidget>() {
-                        w.restore_from_save_data(data);
-                    }
-                }
-            if saved.type_name == "Phase Scaler"
-                && let Some(data) = &saved.data {
-                    let n = graph.node_mut(idx);
-                    if let Some(w) = n.as_any_mut().downcast_mut::<crate::widgets::nodes::transport::phase_scaler::PhaseScalerWidget>() {
-                        w.restore_from_save_data(data);
-                    }
-                }
-            if saved.type_name == "Gradient Source"
-                && let Some(data) = &saved.data {
-                    let n = graph.node_mut(idx);
-                    if let Some(w) = n.as_any_mut().downcast_mut::<GradientSourceWidget>() {
-                        w.restore_from_save_data(data);
-                    }
-                }
-            // Lookup's widget owns the column list, so it must be restored
-            // before cleanup_stale_connections or wires to columns past the
-            // default single-column layout get dropped on the first frame.
-            if saved.type_name == "Lookup Table"
-                && let Some(data) = &saved.data {
-                    let n = graph.node_mut(idx);
-                    if let Some(w) = n.as_any_mut().downcast_mut::<LookupWidget>() {
-                        w.restore_from_save_data(data);
-                    }
-                }
-
-            // Gradient to/from Colors: the stop count decides how many ports
-            // there are, so it has to be known before saved wires are attached.
-            if saved.type_name == "Gradient to Colors" || saved.type_name == "Colors to Gradient" {
-                if let Some(stops) = saved.params.iter().find(|p| p.index == 0).map(|p| p.value.as_f64() as usize)
-                    && let Some(w) = graph.node_mut(idx).as_any_mut()
-                        .downcast_mut::<crate::widgets::nodes::math::color_reshape::ColorReshapeWidget>()
-                {
-                    w.set_state_from_load(stops);
-                }
-            }
-
-            // Mux/Demux need their port type + slot count synced before the
-            // first frame's stale-connection sweep, or wires on slots >= 8 or
-            // on non-default types get dropped.
-            // SavedParamValue is untagged; always coerce via as_f64.
-            if saved.type_name == "Multiplexer" || saved.type_name == "Demultiplexer" {
-                let type_idx = saved.params.iter().find(|p| p.index == 0)
-                    .map(|p| p.value.as_f64() as usize);
-                let slots = saved.params.iter().find(|p| p.index == 1)
-                    .map(|p| p.value.as_f64() as usize);
-                let mode_idx = saved.params.iter().find(|p| p.index == 2)
-                    .map(|p| p.value.as_f64() as usize);
-                let pt = type_idx.map(crate::engine::nodes::math::multiplex::type_from_index)
-                    .unwrap_or(crate::engine::types::PortType::Any);
-                let s = slots.unwrap_or(crate::engine::nodes::math::multiplex::MUX_DEFAULT_SLOTS);
-                let m = mode_idx
-                    .map(crate::engine::nodes::math::multiplex::SelectMode::from_index)
-                    .unwrap_or(crate::engine::nodes::math::multiplex::SelectMode::Index);
-                let n = graph.node_mut(idx);
-                if let Some(w) = n.as_any_mut().downcast_mut::<MultiplexerWidget>() {
-                    w.set_state_from_load(pt, s, m);
-                } else if let Some(w) = n.as_any_mut().downcast_mut::<DemultiplexerWidget>() {
-                    w.set_state_from_load(pt, s, m);
-                }
-            }
-            // Port Hub shares the Mux/Demux pattern: its Type and Slots
-            // are stored as params 0 and 1. Restore early so paired
-            // in/out wires survive the first-frame stale-connection sweep.
-            if saved.type_name == "Port Hub" {
-                let type_idx = saved.params.iter().find(|p| p.index == 0)
-                    .map(|p| p.value.as_f64() as usize);
-                let slots = saved.params.iter().find(|p| p.index == 1)
-                    .map(|p| p.value.as_f64() as usize);
-                let pt = type_idx
-                    .map(crate::engine::nodes::math::multiplex::type_from_index)
-                    .unwrap_or(crate::engine::types::PortType::Untyped);
-                let s = slots.unwrap_or(
-                    crate::engine::nodes::math::port_hub::HUB_DEFAULT_SLOTS,
-                );
-                let n = graph.node_mut(idx);
-                if let Some(w) = n.as_any_mut()
-                    .downcast_mut::<crate::widgets::nodes::math::port_hub::PortHubWidget>()
-                {
-                    w.set_state_from_load(pt, s);
-                }
-            }
-
-            // Counter: `Select Mode` lives at param index 2. Restore
-            // early so a Phase-typed wire into the `phase` port survives
-            // the first frame when the saved mode is Phase.
-            if saved.type_name == "Counter" {
-                let mode_idx = saved.params.iter().find(|p| p.index == 2)
-                    .map(|p| p.value.as_f64() as usize);
-                let m = mode_idx
-                    .map(crate::engine::nodes::math::multiplex::SelectMode::from_index)
-                    .unwrap_or(crate::engine::nodes::math::multiplex::SelectMode::Index);
-                let n = graph.node_mut(idx);
-                if let Some(w) = n.as_any_mut()
-                    .downcast_mut::<crate::widgets::nodes::math::counter::CounterWidget>()
-                {
-                    w.set_state_from_load(m);
-                }
-            }
-
-            // Envelope: `Mode` is at param index 4. Restore before the
-            // first-frame sweep so port labels (gate vs. unused) are
-            // already in sync with the saved kind.
-            if type_name == "Envelope" {
-                let mode_idx = saved.params.iter().find(|p| p.index == 4)
-                    .map(|p| p.value.as_f64() as usize);
-                let k = mode_idx
-                    .map(crate::engine::nodes::transport::envelope::EnvelopeKind::from_index)
-                    .unwrap_or(crate::engine::nodes::transport::envelope::EnvelopeKind::Adsr);
-                let n = graph.node_mut(idx);
-                if let Some(w) = n.as_any_mut()
-                    .downcast_mut::<crate::widgets::nodes::transport::envelope::EnvelopeWidget>()
-                {
-                    w.set_state_from_load(k);
-                }
-            }
-
-            // Palette Select: `Select Mode` is at param index 0. Same
-            // early-restore reasoning as Counter.
-            if saved.type_name == "Palette Select" {
-                let mode_idx = saved.params.iter().find(|p| p.index == 0)
-                    .map(|p| p.value.as_f64() as usize);
-                let m = mode_idx
-                    .map(crate::engine::nodes::math::multiplex::SelectMode::from_index)
-                    .unwrap_or(crate::engine::nodes::math::multiplex::SelectMode::Index);
-                let n = graph.node_mut(idx);
-                if let Some(w) = n.as_any_mut()
-                    .downcast_mut::<crate::widgets::nodes::math::palette_select::PaletteSelectWidget>()
-                {
-                    w.set_state_from_load(m);
-                }
-            }
-
-            // Restore Effect Stack and effect widget state from save_data.
-            if saved.type_name == "Effect Stack"
-                && let Some(data) = &saved.data
-                && let Ok(config) = serde_json::from_value::<crate::engine::effects::stack::StackConfig>(data.clone())
-                && let Some(stack) = graph.node_mut(idx).as_any_mut().downcast_mut::<EffectStackWidget>()
-            {
-                stack.set_config(config);
-            }
-            if let Some(data) = &saved.data
-                && let Some(name) = data.get("stack").and_then(|v| v.as_str())
-                && let Some(effect) = graph.node_mut(idx).as_any_mut().downcast_mut::<EffectWidget>()
-            {
-                effect.set_stack(name);
             }
 
             indices.push(idx);

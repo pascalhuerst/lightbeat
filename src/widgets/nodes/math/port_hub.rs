@@ -8,7 +8,7 @@ use crate::engine::nodes::math::multiplex::{
 use crate::engine::nodes::math::port_hub::{HUB_DEFAULT_SLOTS, PortHubDisplay};
 use crate::engine::types::*;
 use crate::theme;
-use crate::widgets::nodes::node::NodeWidget;
+use crate::widgets::nodes::node::{NodeWidget, param_usize};
 use crate::widgets::nodes::types::UiPortDef;
 
 fn push_type(shared: &SharedState, port_type: PortType) {
@@ -38,13 +38,6 @@ impl PortHubWidget {
         }
     }
 
-    /// Apply restored state before the first frame's stale-connection
-    /// sweep — same pattern as Mux/Demux.
-    pub fn set_state_from_load(&mut self, port_type: PortType, slots: usize) {
-        self.port_type = port_type;
-        self.slots = clamp_slots(slots);
-    }
-
     fn sync_from_display(&mut self) {
         let shared = self.shared.lock().unwrap();
         if let Some(d) = shared.display.as_ref().and_then(|d| d.downcast_ref::<PortHubDisplay>()) {
@@ -55,6 +48,11 @@ impl PortHubWidget {
 }
 
 impl NodeWidget for PortHubWidget {
+    fn restore_from_save(&mut self, _data: Option<&serde_json::Value>, params: &[(usize, ParamValue)]) {
+        self.port_type = param_usize(params, 0).map(type_from_index).unwrap_or(PortType::Untyped);
+        self.slots = clamp_slots(param_usize(params, 1).unwrap_or(HUB_DEFAULT_SLOTS));
+    }
+
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { "Port Hub" }
     fn description(&self) -> &'static str {

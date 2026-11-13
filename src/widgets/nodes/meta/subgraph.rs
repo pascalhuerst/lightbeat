@@ -63,10 +63,6 @@ impl SubgraphWidget {
         self.removed = Some((PortDir::Output, i));
     }
 
-    pub fn set_name(&mut self, name: String) {
-        self.name = name;
-    }
-
     pub fn push_config(&self) {
         let mut shared = self.shared.lock().unwrap();
         shared.pending_config = Some(serde_json::json!({
@@ -78,7 +74,9 @@ impl SubgraphWidget {
             "macro_path": self.macro_path,
         }));
     }
+}
 
+impl NodeWidget for SubgraphWidget {
     /// Restore the port-affecting widget state (name, input/output port
     /// definitions, lock/macro metadata) directly from save_data. Called
     /// by the project loader and by paste, BEFORE cleanup_stale_connections
@@ -86,7 +84,8 @@ impl SubgraphWidget {
     /// early restore, a freshly duplicated subgraph would navigate into
     /// an inner level with empty bridge-node ports, and connections into
     /// those ports would be lost.
-    pub fn restore_from_save_data(&mut self, data: &serde_json::Value) {
+    fn restore_from_save(&mut self, data: Option<&serde_json::Value>, _params: &[(usize, crate::engine::types::ParamValue)]) {
+        let Some(data) = data else { return };
         if let Some(name) = data.get("name").and_then(|v| v.as_str()) {
             self.name = name.to_string();
         }
@@ -111,10 +110,9 @@ impl SubgraphWidget {
         if let Some(s) = data.get("macro_path").and_then(|v| v.as_str()) {
             self.macro_path = s.to_string();
         }
+        self.push_config();
     }
-}
 
-impl NodeWidget for SubgraphWidget {
     fn node_id(&self) -> NodeId {
         self.id
     }

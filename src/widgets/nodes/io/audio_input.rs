@@ -90,11 +90,20 @@ impl AudioInputWidget {
         AudioInputManager::rebind(&self.audio, self.id.0, new_id);
         self.bound_input = new_id;
     }
+}
 
+impl Drop for AudioInputWidget {
+    fn drop(&mut self) {
+        AudioInputManager::release(&self.audio, self.id.0);
+    }
+}
+
+impl NodeWidget for AudioInputWidget {
     /// Pre-populate `input_id` and the output-port list from save_data + the
     /// live audio-inputs registry, so connections survive the first frame's
     /// `cleanup_stale_connections` after a project load.
-    pub fn restore_from_save_data(&mut self, data: &serde_json::Value) {
+    fn restore_from_save(&mut self, data: Option<&serde_json::Value>, _params: &[(usize, crate::engine::types::ParamValue)]) {
+        let Some(data) = data else { return };
         if let Some(id) = data.get("input_id").and_then(|v| v.as_u64()) {
             self.input_id = id as u32;
         }
@@ -115,15 +124,7 @@ impl AudioInputWidget {
             self.outputs = outs;
         }
     }
-}
 
-impl Drop for AudioInputWidget {
-    fn drop(&mut self) {
-        AudioInputManager::release(&self.audio, self.id.0);
-    }
-}
-
-impl NodeWidget for AudioInputWidget {
     fn node_id(&self) -> NodeId {
         self.id
     }
