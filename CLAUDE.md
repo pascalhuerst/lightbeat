@@ -83,7 +83,7 @@ src/
 │   │   ├── meta/                 # subgraph (InnerGraph + bridge nodes),
 │   │   │                         # portal (wireless connections).
 │   │   └── ui/                   # button(+group), fader(+group), xy_pad,
-│   │                             # color_mixer, peak_meter, gradient_stops.
+│   │                             # color_mixer, peak_meter.
 │   └── effects/                  # Effects and the Effect Stack: hub, stack,
 │                                 # geometry, node (the shared ProcessNode),
 │                                 # fill, bar, wave, ripple, spark.
@@ -425,7 +425,7 @@ import; the project only when saved.
   has `bpm` and `peers`).
 - `ProjectFile.version` records port-layout changes that would repoint saved
   wires. When you insert or reorder ports on an existing node type, bump
-  `PROJECT_VERSION` (now 3) and extend `connections_for_current_layout` in
+  `PROJECT_VERSION` (now 4) and extend `connections_for_current_layout` in
   `project.rs` (it runs per level, including inner subgraphs and macros).
   Renamed node types go into `RENAMED_NODES`, renamed settings that can be
   promoted or sit in snapshots into `RENAMED_SETTINGS` (same file). All three
@@ -581,9 +581,14 @@ import; the project only when saved.
 - A node opts params out with `ProcessNode::non_promotable_params()`: ones
   that reshape its ports or buffers (modes, types, slot counts) and ones
   already served by a native input port. New nodes with such params must list
-  them. A new node does not hand-build "a wire overrides this setting" ports
-  (`overridden_param_indices`, as Range to Unit, Scale Offset, Counter and a
-  few older nodes do); promotion is the one mechanism.
+  them. Promotion is the ONE mechanism for "a wire overrides this setting":
+  no node hand-builds such ports. A node that should come with some settings
+  already exposed names them in `NodeWidget::default_promoted()` (Range to
+  Unit, Scale Offset, Bipolar, Counter, Phase Scaler, Palette to Gradient,
+  Trigger Hold); that list is applied when a node is added by hand, never on
+  load or paste. Float params in `ProcessNode::unclamped_input_params()` pass
+  the wire's value through unclamped (the slider range is for the hand).
+  `hidden_param_indices` only hides settings that do not apply in a mode.
 
 ---
 
@@ -785,9 +790,9 @@ import; the project only when saved.
   `NodeLayout::with_gutters(left, right)` (see `label_gutter`) so the widget's
   content, which is drawn between them, does not collide with the names. The
   names are drawn at `11 * zoom`, so they shrink with the canvas.
-- **Operation switch**: Add/Sub/Mul/Div, the four compares, AND/OR/XOR and
-  the three Consts are separate node types over one engine struct each. Their
-  first setting ("Operation", "Output type") turns one into its sibling in
+- **Operation switch**: Add/Sub/Mul/Div, the four compares, AND/OR/XOR, the
+  three Consts and Level Meter / Gauge are separate node types over one engine
+  struct each. A setting ("Operation", "Output type", "Style") turns one into its sibling in
   place; the widget follows the mirrored param in `NodeWidget::follow_params`,
   so `type_name()` and the saved name are the sibling's.
 - **Button and Fader settings are params** (mode, orientation, input, mouse

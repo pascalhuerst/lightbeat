@@ -55,7 +55,7 @@ Updated as items are implemented. Items not listed here are open.
 | 9.2 | done | 65795fd |
 | 9.3 | partly | 0c6f351: Launchpad S, X1, Push 1, Multiplexer, Demultiplexer, Port Hub. DMX Input and Lookup Table left as they are (their bodies already name things / are too wide) |
 | 10.4 | done | 10e86f5 |
-| 10.5 | partly | ab42e63: one helper for ms and s fields |
+| 10.5 | done | ab42e63, 85e121b: one helper for unit fields (ms, s, fps, K, ch) |
 | 10.6 | done | b8b5759 for node widgets; what remains is computed from data |
 | 2.2 (rest) | done | 861674b: delete buttons say what uses the thing |
 | 3.10 (rest) | done | 5c3cf3d: one Rescan and one banner |
@@ -68,13 +68,13 @@ Updated as items are implemented. Items not listed here are open.
 | 6.2 | done | c0142b4: Sample & Hold, Tick Delay and Smoothing take any type; Transition has Position and Gradient. Nodes saved before load as Number through the connect hooks |
 | 6.3 | done | ecf4ea8: "Type" and "Number". Transition's setting is "Type" too and keeps "Phase out" as an option; colour models, Envelope, stack and Step Sequencer keep "Mode" |
 | 6.4 | done | 617f1d4: "Select by" Index / Phase on Counter, Multiplexer, Demultiplexer, Palette Select, Lookup Table (its promoted "Input" is carried over by `RENAMED_SETTINGS`, temporary). Step Sequencer and LFO mean something else and stay |
-| 6.5 | convention | no code change: new nodes use promotion only |
+| 6.5 | done | 8dfc0d9: the hand-built override ports of Range to Unit, Scale Offset, Bipolar, Counter, Phase Scaler, Palette to Gradient and Trigger Hold are promoted params; a new node starts with them promoted (`default_promoted`). `PROJECT_VERSION` 4 gives old files the same list, so their wires stay. Float inputs a node lists in `unclamped_input_params` pass any value. The Phase Scaler's offset input is a number port now, a Phase wire no longer fits it |
 | 6.6 | done | 2fa60ac: Trigger Hold picks its duration input by being wired (a wired 0 is 1 tick). A project that already promotes one of the two keeps it and can switch it off |
 | 7 (ports, params) | done | f295d56 trigger, 84bdebf in / out, 582b2de gradient, 5578f75 amount, cf4e9cb Lifetime, 981369a numbered from 1, 0d9a2c3 Trigger Hold and Smoothing in real ms (same numbers as the ticks before). Promoted or snapshot settings follow through `RENAMED_SETTINGS` (temporary). Kept: Gain, the Oscillator's amp, stack opacity, XY Pad x / y, Scope's Time/Div |
 | 7.3 | done | edf6362: `bpm` and `peers` appended to the Link Clock |
-| 5.3 | partly, by choice | bdafa3f: an "Operation" setting turns Add/Sub/Mul/Div, the compares, AND/OR/XOR and the three Consts into each other in place. No node was removed: Sin/Cos, Gradient Stops, the banks and the scale family stay (the banks wait for buses). NOT and Level Meter/Gauge have no switch |
+| 5.3 | done, except the scale family and the banks | bdafa3f: an "Operation" setting turns Add/Sub/Mul/Div, the compares, AND/OR/XOR and the three Consts into each other in place; d222de4: Level Meter / Gauge the same through "Style". 7653d6d: Sin and Cos are gone, the LFO has a Cosine waveform and an Amplitude (old nodes are converted on load). 65fe467: Gradient Stops is gone, its four handles are in Palette to Gradient's body (old Gradient Stops nodes are lost). Kept: Gain / Scale Offset / Bipolar / Range to Unit / Mul as separate nodes, the banks (they wait for buses), NOT without a switch |
 | 7.1 | done | 85a730b: Envelope is (in, gate), Transition (in, trigger, phase); `PROJECT_VERSION` 3 carries saved wires over |
-| 7.2 | dropped | port types are strict (`compatible_with`), so retyping `play` or the Toggle Bank outputs would drop saved wires |
+| 7.2 | done | c03b3f7: `play` on the Internal Clock and the Toggle Bank outputs are Logic (old wires from them into number inputs are dropped). X1 LEDs are single-colour and Push 1 pads take palette indices, so those inputs stay numbers |
 | 7.4 | done | 35c4dd8, 238105a: Button (mode, input, mouse override, reset) and Fader (orientation, input, mouse override, bipolar) settings are params; old files keep theirs |
 
 ---
