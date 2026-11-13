@@ -1,3 +1,6 @@
+use std::panic::{AssertUnwindSafe, catch_unwind};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use ringbuf::traits::Consumer;
@@ -139,9 +142,10 @@ impl EngineGraph {
         clock.lap("[root] 5 dmx");
     }
 
-    /// Run the engine loop. Called from the engine thread.
+    /// Run the engine loop. Called from the engine thread. `stopped` is set
+    /// when a tick panics and the loop gives up.
     /// `command_rx` is the consumer end of the ring buffer.
-    pub fn run(mut self, mut command_rx: CommandConsumer) {
+    pub fn run(mut self, mut command_rx: CommandConsumer, stopped: Arc<AtomicBool>) {
         let perf = self.perf.clone();
         let mut timer = EngineTickTimer::default();
         // Absolute deadlines: sleeping a fixed 1 ms after each tick would make
@@ -160,7 +164,19 @@ impl EngineGraph {
             let started = Instant::now();
             super::time::set_dt(started.duration_since(last_start).as_secs_f32());
             last_start = started;
-            timer.measure(&perf, || self.tick());
+            // A panicking node must not leave the thread silently dead or
+            // loop on the same broken graph: say so once and stop ticking.
+            let ticked = catch_unwind(AssertUnwindSafe(|| timer.measure(&perf, || self.tick())));
+            if let Err(payload) = ticked {
+                let what = payload
+                    .downcast_ref::<&str>()
+                    .map(|s| s.to_string())
+                    .or_else(|| payload.downcast_ref::<String>().cloned())
+                    .unwrap_or_else(|| "unknown panic".to_string());
+                eprintln!("Engine stopped: a tick panicked: {what}");
+                stopped.store(true, Ordering::SeqCst);
+                return;
+            }
 
             let now = Instant::now();
             if now > deadline + RESYNC_AFTER {

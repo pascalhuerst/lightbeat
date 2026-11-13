@@ -9,6 +9,8 @@ pub mod sync_hint;
 pub mod time;
 pub mod types;
 
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 
 use ringbuf::traits::{Producer, Split};
@@ -42,6 +44,8 @@ const COMMAND_BUFFER_SIZE: usize = 8192;
 pub struct EngineHandle {
     pub command_tx: CommandProducer,
     _thread: thread::JoinHandle<()>,
+    /// Set by the engine thread when a tick panicked and it stopped ticking.
+    stopped: Arc<AtomicBool>,
 }
 
 impl EngineHandle {
@@ -54,15 +58,24 @@ impl EngineHandle {
         let rb = HeapRb::new(COMMAND_BUFFER_SIZE);
         let (command_tx, command_rx) = rb.split();
 
+        let stopped = Arc::new(AtomicBool::new(false));
+        let thread_stopped = stopped.clone();
         let handle = thread::spawn(move || {
             let graph = EngineGraph::new(dmx_shared, object_store, effect_hub, perf);
-            graph.run(command_rx);
+            graph.run(command_rx, thread_stopped);
         });
 
         Self {
             command_tx,
             _thread: handle,
+            stopped,
         }
+    }
+
+    /// False once the engine thread has stopped after a panic. The lights
+    /// hold whatever they showed last.
+    pub fn is_running(&self) -> bool {
+        !self.stopped.load(Ordering::Relaxed)
     }
 
     /// Send a command to the engine thread. Retries briefly if the ring is
@@ -72,6 +85,10 @@ impl EngineHandle {
     /// push after the retry budget (indicates the engine is stuck).
     pub fn send(&mut self, cmd: EngineCommand) {
         const MAX_SPIN: u32 = 200;
+        // Nobody drains the ring any more; do not make the UI wait for it.
+        if !self.is_running() {
+            return;
+        }
         let mut pending = cmd;
         for attempt in 0..MAX_SPIN {
             match self.command_tx.try_push(pending) {
