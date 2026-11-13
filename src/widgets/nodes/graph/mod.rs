@@ -804,12 +804,26 @@ impl NodeGraph {
             ));
         }
 
+        // -- Compute node rects (with zoom) --
+        let node_rects: Vec<Rect> = (0..level.nodes.len())
+            .map(|i| {
+                let size = node_size(level.nodes[i].as_ref(), level.states[i].size_override);
+                let pos = Pos2::new(
+                    level.states[i].pos.x * z,
+                    level.states[i].pos.y * z,
+                ) + origin;
+                Rect::from_min_size(pos, size * z)
+            })
+            .collect();
+
+        let ports = PortCache::build(level);
+
         // -- Draw connections --
         for conn in &level.connections {
             if let (Some(from_pos), Some(from_type), Some(to_pos)) = (
-                port_screen_pos(&level.nodes, &level.states, conn.from, origin, z),
-                port_type_for(&level.nodes, &level.states, conn.from),
-                port_screen_pos(&level.nodes, &level.states, conn.to, origin, z),
+                ports.port_pos(&node_rects, conn.from, z),
+                ports.port_type(conn.from),
+                ports.port_pos(&node_rects, conn.to, z),
             ) {
                 let selected = self.selected_connections.contains(conn);
                 if selected {
@@ -857,19 +871,6 @@ impl NodeGraph {
                 );
             }
         }
-
-        // -- Compute node rects (with zoom) --
-        let level = self.active();
-        let node_rects: Vec<Rect> = (0..level.nodes.len())
-            .map(|i| {
-                let size = node_size(level.nodes[i].as_ref(), level.states[i].size_override);
-                let pos = Pos2::new(
-                    level.states[i].pos.x * z,
-                    level.states[i].pos.y * z,
-                ) + origin;
-                Rect::from_min_size(pos, size * z)
-            })
-            .collect();
 
         // Figure out which portal keys are currently selected so we can
         // outline their peers — the "wireless cable" hint.
