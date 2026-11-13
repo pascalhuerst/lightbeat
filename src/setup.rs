@@ -66,9 +66,34 @@ pub fn setup_path() -> PathBuf {
     crate::paths::data_file(SETUP_FILENAME)
 }
 
-pub fn save_setup(setup: &SetupFile) -> Result<(), String> {
+/// Write the setup unless `blocked`. A setup that failed to load starts the
+/// session empty, and writing that over the unreadable file would destroy it.
+/// Returns whether anything was written.
+pub fn save_setup(setup: &SetupFile, blocked: bool) -> Result<bool, String> {
+    write_setup(&setup_path(), setup, blocked)
+}
+
+fn write_setup(path: &std::path::Path, setup: &SetupFile, blocked: bool) -> Result<bool, String> {
+    if blocked {
+        return Ok(false);
+    }
     let json = serde_json::to_string_pretty(setup).map_err(|e| e.to_string())?;
-    std::fs::write(setup_path(), json).map_err(|e| e.to_string())
+    std::fs::write(path, json).map_err(|e| e.to_string())?;
+    Ok(true)
+}
+
+/// Keep an unreadable setup file by renaming it to `<name>.bad`, so the user
+/// can recover it by hand.
+pub fn set_aside_bad_setup() -> Result<PathBuf, String> {
+    set_aside(&setup_path())
+}
+
+fn set_aside(path: &std::path::Path) -> Result<PathBuf, String> {
+    let mut name = path.file_name().map(|n| n.to_os_string()).unwrap_or_default();
+    name.push(".bad");
+    let bad = path.with_file_name(name);
+    std::fs::rename(path, &bad).map_err(|e| e.to_string())?;
+    Ok(bad)
 }
 
 pub fn load_setup() -> Result<SetupFile, String> {
@@ -197,6 +222,35 @@ mod tests {
     use crate::audio::backend::AudioBackendKind;
     use crate::audio::manager::AudioInputConfig;
     use crate::input_controller::{InputController, InputControllerKind};
+
+    #[test]
+    fn a_blocked_setup_is_never_written() {
+        let dir = std::env::temp_dir().join(format!("lightbeat-setup-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("setup.json");
+        std::fs::write(&path, "original").unwrap();
+
+        assert_eq!(write_setup(&path, &SetupFile::default(), true), Ok(false));
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "original");
+
+        assert_eq!(write_setup(&path, &SetupFile::default(), false), Ok(true));
+        assert_ne!(std::fs::read_to_string(&path).unwrap(), "original");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn an_unreadable_setup_is_kept_next_to_where_the_new_one_goes() {
+        let dir = std::env::temp_dir().join(format!("lightbeat-setup-bad-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("setup.json");
+        std::fs::write(&path, "{ not json").unwrap();
+
+        let bad = set_aside(&path).unwrap();
+        assert_eq!(bad, dir.join("setup.json.bad"));
+        assert!(!path.exists());
+        assert_eq!(std::fs::read_to_string(&bad).unwrap(), "{ not json");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 
     fn mac() -> Machine {
         let mut m = Machine::default();

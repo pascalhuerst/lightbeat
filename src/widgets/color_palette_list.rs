@@ -7,16 +7,18 @@ use crate::objects::color_palette::{ColorPalette, SLOT_NAMES, PALETTE_SIZE};
 pub struct ColorPaletteManager {
     pub palettes: Vec<ColorPalette>,
     next_id: u32,
+    /// Set on any edit so the app can hand the new palettes to Palette Select nodes.
+    pub needs_refresh: bool,
 }
 
 impl ColorPaletteManager {
     pub fn new() -> Self {
-        Self { palettes: Vec::new(), next_id: 1 }
+        Self { palettes: Vec::new(), next_id: 1, needs_refresh: false }
     }
 
     pub fn from_palettes(palettes: Vec<ColorPalette>) -> Self {
         let next_id = palettes.iter().map(|s| s.id).max().unwrap_or(0) + 1;
-        Self { palettes, next_id }
+        Self { palettes, next_id, needs_refresh: false }
     }
 
     pub fn show(&mut self, ui: &mut Ui) {
@@ -48,11 +50,12 @@ impl ColorPaletteManager {
                     for palette in &mut self.palettes {
                         body.row(22.0, |mut row| {
                             row.col(|ui| {
-                                ui.add_sized(
+                                let r = ui.add_sized(
                                     [ui.available_width(), 20.0],
                                     egui::TextEdit::singleline(&mut palette.name)
                                         .id_salt(("name", palette.id)),
                                 );
+                                if r.changed() { self.needs_refresh = true; }
                             });
                             for i in 0..PALETTE_SIZE {
                                 row.col(|ui| {
@@ -63,6 +66,7 @@ impl ColorPaletteManager {
                                     ];
                                     if ui.color_edit_button_rgb(&mut color).changed() {
                                         palette.colors[i] = Rgb::new(color[0], color[1], color[2]);
+                                        self.needs_refresh = true;
                                     }
                                 });
                             }
@@ -76,6 +80,7 @@ impl ColorPaletteManager {
                 });
             if let Some(id) = remove_id {
                 self.palettes.retain(|s| s.id != id);
+                self.needs_refresh = true;
             }
         }
 
@@ -84,6 +89,7 @@ impl ColorPaletteManager {
             let id = self.next_id;
             self.next_id += 1;
             self.palettes.push(ColorPalette::new(id, format!("Palette {}", id)));
+            self.needs_refresh = true;
         }
     }
 }

@@ -177,6 +177,25 @@ use widgets::nodes::graph::MacroRequest;
 use widgets::nodes::NodeGraph;
 
 /// Result from a background file dialog.
+/// What waits behind the "Unsaved changes" dialog.
+#[derive(Debug, Clone)]
+enum PendingAction {
+    Quit,
+    New,
+    Open,
+    OpenPath(PathBuf),
+}
+
+impl PendingAction {
+    fn describe(&self) -> &'static str {
+        match self {
+            PendingAction::Quit => "quitting",
+            PendingAction::New => "starting a new project",
+            PendingAction::Open | PendingAction::OpenPath(_) => "opening another project",
+        }
+    }
+}
+
 enum FileDialogResult {
     OpenProject(PathBuf),
     SaveProjectAs(PathBuf),
@@ -260,8 +279,21 @@ struct LightBeatApp {
     last_saved_project_json: Option<String>,
     /// Time of the last autosave write, in seconds from app start (ctx time).
     last_autosave_time: f64,
-    /// Whether the close-confirm modal is currently open.
-    close_confirm_open: bool,
+    /// The action the "Unsaved changes" dialog is open for, if it is open.
+    unsaved_prompt: Option<PendingAction>,
+    /// Action to run once the Save As dialog has written the project.
+    after_save_as: Option<PendingAction>,
+    /// File errors (project, setup, macros, autosave) shown until dismissed.
+    notices: Vec<String>,
+    /// Set when the setup file existed but could not be read: every setup save
+    /// is refused for the session so the empty setup never replaces it.
+    setup_save_blocked: bool,
+    /// The setup as last seen by the change detector, and when it last changed
+    /// (for the debounced setup save).
+    setup_baseline: setup::SetupFile,
+    setup_changed_at: Option<f64>,
+    /// Macro file waiting for the user to confirm its deletion.
+    confirm_delete_macro: Option<PathBuf>,
     last_window_title: String,
     /// Set once the user chose Discard, so the close request that follows is
     /// not intercepted again while the project is still dirty.
@@ -399,7 +431,13 @@ impl LightBeatApp {
             show_about: false,
             last_saved_project_json: None,
             last_autosave_time: 0.0,
-            close_confirm_open: false,
+            unsaved_prompt: None,
+            after_save_as: None,
+            notices: Vec::new(),
+            setup_save_blocked: false,
+            setup_baseline: setup::SetupFile::default(),
+            setup_changed_at: None,
+            confirm_delete_macro: None,
             last_window_title: String::new(),
             close_discarded: false,
             recover_prompt: None,
@@ -437,6 +475,7 @@ impl LightBeatApp {
 
         // Load hardware setup (fixtures + interfaces).
         app.load_setup();
+        app.setup_baseline = app.current_setup();
 
         app.register_node_factories();
         app.sync_group_context();
@@ -858,6 +897,7 @@ impl LightBeatApp {
         let mut ctx = self.palette_ctx.lock().unwrap();
         ctx.palettes = self.color_palette_manager.palettes.clone();
         ctx.groups = self.color_palette_group_manager.groups.clone();
+        ctx.version += 1;
     }
 
     fn sync_gradient_library(&self) {
@@ -1097,14 +1137,32 @@ impl LightBeatApp {
                 // Reset history so undo doesn't go back to an empty setup.
                 self.setup_undoer = egui::util::undoer::Undoer::default();
             }
-            Err(e) => eprintln!("Failed to load setup: {}", e),
+            Err(e) => {
+                self.setup_save_blocked = true;
+                let kept = match setup::set_aside_bad_setup() {
+                    Ok(bad) => format!("The unreadable file was kept as {}.", bad.display()),
+                    Err(re) => format!("It could not be moved aside either ({re}); it stays where it is."),
+                };
+                self.report_error(format!(
+                    "The setup could not be loaded ({e}). {kept} Setup changes are not saved this session; Import Setup from a good file to start saving again."
+                ));
+            }
         }
     }
 
-    fn save_setup(&self) {
+    fn save_setup(&mut self) {
+        self.setup_changed_at = None;
         let setup = self.current_setup();
-        if let Err(e) = setup::save_setup(&setup) {
-            eprintln!("Failed to save setup: {}", e);
+        if let Err(e) = setup::save_setup(&setup, self.setup_save_blocked) {
+            self.report_error(format!("Could not save the setup: {e}"));
+        }
+    }
+
+    /// Show a file problem until the user dismisses it, and keep the terminal line.
+    fn report_error(&mut self, message: String) {
+        eprintln!("{message}");
+        if !self.notices.contains(&message) {
+            self.notices.push(message);
         }
     }
 
@@ -1130,20 +1188,57 @@ impl LightBeatApp {
         self.engine.send(EngineCommand::SetInterfaces(ifaces));
     }
 
-    fn save_project(&mut self) {
-        let path = self
-            .project_path
-            .clone()
-            .unwrap_or_else(project::default_project_path);
+    /// Write the project to `path` and make it the current file. False on failure.
+    fn write_project_to(&mut self, path: PathBuf) -> bool {
         if let Err(e) = project::save_to_file(&self.graph, self.view_state(), &path) {
-            eprintln!("Failed to save project: {}", e);
-            return;
+            self.report_error(format!("Could not save the project to {}: {e}", path.display()));
+            return false;
         }
         self.project_path = Some(path.clone());
         self.mark_project_saved();
         self.config.push_recent_project(&path);
         self.config.save();
         self.delete_autosave_for(Some(&path));
+        true
+    }
+
+    /// File > Save and Ctrl+S. A project without a file asks for one (Save As);
+    /// `then` runs once the project is on disk.
+    fn save_command(&mut self, ctx: &egui::Context, then: Option<PendingAction>) {
+        self.save_setup();
+        match self.project_path.clone() {
+            Some(path) => {
+                if self.write_project_to(path)
+                    && let Some(action) = then
+                {
+                    self.run_action(ctx, action);
+                }
+            }
+            None => {
+                if self.file_dialog_rx.is_none() {
+                    self.after_save_as = then;
+                }
+                self.save_project_as(ctx);
+            }
+        }
+    }
+
+    /// Run `action` now if nothing would be lost, otherwise ask first.
+    fn request_action(&mut self, ctx: &egui::Context, action: PendingAction) {
+        if self.is_project_dirty() {
+            self.unsaved_prompt = Some(action);
+        } else {
+            self.run_action(ctx, action);
+        }
+    }
+
+    fn run_action(&mut self, ctx: &egui::Context, action: PendingAction) {
+        match action {
+            PendingAction::Quit => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
+            PendingAction::New => self.new_project(),
+            PendingAction::Open => self.open_project(ctx),
+            PendingAction::OpenPath(p) => self.load_project_from(&p),
+        }
     }
 
     /// Serialize the current project graph + view to JSON for dirty
@@ -1183,10 +1278,10 @@ impl LightBeatApp {
         match serde_json::to_string_pretty(&project) {
             Ok(json) => {
                 if let Err(e) = std::fs::write(&path, json) {
-                    eprintln!("autosave write failed ({}): {}", path.display(), e);
+                    self.report_error(format!("Autosave failed ({}): {e}", path.display()));
                 }
             }
-            Err(e) => eprintln!("autosave serialize failed: {}", e),
+            Err(e) => self.report_error(format!("Autosave failed: {e}")),
         }
     }
 
@@ -1402,6 +1497,9 @@ impl LightBeatApp {
         };
         let notes = setup::adapt_to_machine(&mut imported, &setup::Machine::probe());
         self.apply_setup(&imported);
+        // The unreadable file was set aside at start, so this is the first
+        // good setup there is again.
+        self.setup_save_blocked = false;
         self.save_setup();
         self.setup_notice = Some(if notes.is_empty() {
             vec!["Setup imported. Everything it refers to was found on this computer.".to_string()]
@@ -1412,7 +1510,7 @@ impl LightBeatApp {
         });
     }
 
-    fn poll_file_dialog(&mut self) {
+    fn poll_file_dialog(&mut self, ctx: &egui::Context) {
         let rx = match &self.file_dialog_rx {
             Some(rx) => rx,
             None => return,
@@ -1434,14 +1532,11 @@ impl LightBeatApp {
                     }
                     FileDialogResult::ImportSetup(path) => self.import_setup(&path),
                     FileDialogResult::SaveProjectAs(path) => {
-                        if let Err(e) = project::save_to_file(&self.graph, self.view_state(), &path) {
-                            eprintln!("Failed to save project: {}", e);
-                        } else {
-                            self.project_path = Some(path.clone());
-                            self.mark_project_saved();
-                            self.config.push_recent_project(&path);
-                            self.config.save();
-                            self.delete_autosave_for(Some(&path));
+                        let then = self.after_save_as.take();
+                        if self.write_project_to(path)
+                            && let Some(action) = then
+                        {
+                            self.run_action(ctx, action);
                         }
                     }
                 }
@@ -1449,6 +1544,7 @@ impl LightBeatApp {
             Err(std::sync::mpsc::TryRecvError::Disconnected) => {
                 // Dialog was cancelled (thread finished without sending a result).
                 self.file_dialog_rx = None;
+                self.after_save_as = None;
             }
             Err(std::sync::mpsc::TryRecvError::Empty) => {
                 // Dialog still open, keep waiting.
@@ -1551,7 +1647,7 @@ impl LightBeatApp {
                 }
             }
             Err(e) => {
-                eprintln!("Failed to open project: {}", e);
+                self.report_error(format!("Could not open {}: {e}", path.display()));
             }
         }
     }
@@ -1802,10 +1898,9 @@ impl LightBeatApp {
             }
         });
 
-        if let Some(p) = delete
-            && let Err(e) = self.library.delete(&p) {
-                eprintln!("delete macro: {}", e);
-            }
+        if let Some(p) = delete {
+            self.confirm_delete_macro = Some(p);
+        }
     }
 
     /// Render the consolidated Setup window body: a top tab bar plus the
@@ -1995,10 +2090,13 @@ impl LightBeatApp {
     fn instantiate_macro_from_path(&mut self, path: &std::path::Path, canvas_pos: egui::Pos2) {
         let m = match Macro::load_from_file(path) {
             Ok(m) => m,
-            Err(e) => { eprintln!("load macro: {}", e); return; }
+            Err(e) => {
+                self.report_error(format!("Could not load the macro {}: {e}", path.display()));
+                return;
+            }
         };
         if m.format_version != macros::MACRO_FORMAT_VERSION {
-            eprintln!("macro '{}': unsupported format_version {}", m.name, m.format_version);
+            self.report_error(format!("Macro '{}' has an unsupported format version {}.", m.name, m.format_version));
         }
 
         // Remap all inner-graph NodeIds (recursively into nested subgraphs)
@@ -2109,7 +2207,7 @@ impl LightBeatApp {
         });
 
         // Poll background file dialog results.
-        self.poll_file_dialog();
+        self.poll_file_dialog(ctx);
 
         // Snapshot current state for the undoers and the Edit menu.
         // Drain any "save current as preset" requests from Gradient Source
@@ -2168,12 +2266,25 @@ impl LightBeatApp {
             self.ui_timers
                 .record_snapshot(&self.perf, started.elapsed().as_micros() as u64);
 
+            if current_setup != self.setup_baseline {
+                self.setup_baseline = current_setup.clone();
+                self.setup_changed_at = Some(now);
+            }
             self.project_undoer.feed_state(now, &current_project);
             self.setup_undoer.feed_state(now, &current_setup);
             self.can_undo_proj = self.project_undoer.has_undo(&current_project);
             self.can_redo_proj = self.project_undoer.has_redo(&current_project);
             self.can_undo_setup = self.setup_undoer.has_undo(&current_setup);
             self.can_redo_setup = self.setup_undoer.has_redo(&current_setup);
+        }
+
+        // The setup is hardware configuration that is easy to lose in a crash,
+        // so it is written shortly after the last change instead of only on exit.
+        const SETUP_SAVE_DELAY: f64 = 2.0;
+        if let Some(t) = self.setup_changed_at
+            && now - t >= SETUP_SAVE_DELAY
+        {
+            self.save_setup();
         }
 
         // Periodic crash-recovery autosave: writes to a separate file, never
@@ -2193,7 +2304,7 @@ impl LightBeatApp {
         if let Some(lines) = self.setup_notice.clone() {
             let mut open = true;
             let mut dismiss = false;
-            egui::Window::new("Setup").open(&mut open).collapsible(false).resizable(true).show(ctx, |ui| {
+            egui::Window::new("Import / Export Setup").open(&mut open).collapsible(false).resizable(true).show(ctx, |ui| {
                 for line in &lines {
                     ui.label(line);
                 }
@@ -2213,11 +2324,11 @@ impl LightBeatApp {
                 ui.menu_button("File", |ui| {
                     if ui.button("New").clicked() {
                         ui.close_menu();
-                        self.new_project();
+                        self.request_action(ctx, PendingAction::New);
                     }
                     if ui.button("Open...").clicked() {
                         ui.close_menu();
-                        self.open_project(ctx);
+                        self.request_action(ctx, PendingAction::Open);
                     }
                     let recents = self.config.recent_projects.clone();
                     let mut load_recent: Option<PathBuf> = None;
@@ -2245,7 +2356,7 @@ impl LightBeatApp {
                         });
                     });
                     if let Some(p) = load_recent {
-                        self.load_project_from(&p);
+                        self.request_action(ctx, PendingAction::OpenPath(p));
                     }
                     if clear_recents {
                         self.config.recent_projects.clear();
@@ -2254,7 +2365,7 @@ impl LightBeatApp {
                     ui.separator();
                     if ui.button("Save").clicked() {
                         ui.close_menu();
-                        self.save_project();
+                        self.save_command(ctx, None);
                     }
                     if ui.button("Save As...").clicked() {
                         ui.close_menu();
@@ -2783,31 +2894,39 @@ impl LightBeatApp {
             self.sync_object_store();
         }
 
+        if self.color_palette_manager.needs_refresh || self.color_palette_group_manager.needs_refresh {
+            self.color_palette_manager.needs_refresh = false;
+            self.color_palette_group_manager.needs_refresh = false;
+            self.sync_palette_context();
+        }
+
         // Send any pending engine commands from the graph.
         for cmd in self.graph.drain_engine_commands() {
             self.engine.send(cmd);
         }
 
-        // Keyboard shortcuts.
-        if ctx.input(|i| i.modifiers.ctrl && i.key_pressed(egui::Key::S)) {
-            self.save_project();
-            self.save_setup();
+        // Keyboard shortcuts. `command` is Ctrl on Linux and Cmd on macOS. While a
+        // text field has focus the keys belong to it (Ctrl+Z undoes its text),
+        // except Ctrl+S, which saving does not conflict with.
+        let typing = ctx.wants_keyboard_input();
+        if ctx.input(|i| i.modifiers.command && i.key_pressed(egui::Key::S)) {
+            self.save_command(ctx, None);
         }
-        if ctx.input(|i| i.modifiers.ctrl && i.key_pressed(egui::Key::O)) {
-            self.open_project(ctx);
+        if !typing && ctx.input(|i| i.modifiers.command && i.key_pressed(egui::Key::O)) {
+            self.request_action(ctx, PendingAction::Open);
         }
-        if ctx.input(|i| i.modifiers.ctrl && i.key_pressed(egui::Key::Q)) {
+        if !typing && ctx.input(|i| i.modifiers.command && i.key_pressed(egui::Key::Q)) {
             self.quit_requested = true;
         }
 
         // Undo / Redo: Ctrl+Z / Ctrl+Shift+Z (and Ctrl+Y for redo).
         // Routes to the setup undoer when the pointer is over the Setup
         // window, otherwise to the project undoer.
-        let undo_pressed = ctx.input(|i| {
-            i.modifiers.ctrl && !i.modifiers.shift && i.key_pressed(egui::Key::Z)
+        let undo_pressed = !typing && ctx.input(|i| {
+            i.modifiers.command && !i.modifiers.shift && i.key_pressed(egui::Key::Z)
         });
-        let redo_pressed = ctx.input(|i| {
-            i.modifiers.ctrl
+        let redo_pressed = !typing && ctx.input(|i| {
+            i.modifiers.command
                 && ((i.modifiers.shift && i.key_pressed(egui::Key::Z))
                     || i.key_pressed(egui::Key::Y))
         });
@@ -2841,17 +2960,12 @@ impl LightBeatApp {
         }
 
         if self.quit_requested {
-            if self.is_project_dirty() {
-                self.close_confirm_open = true;
-                self.quit_requested = false;
-            } else {
-                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-                self.quit_requested = false;
-            }
+            self.quit_requested = false;
+            self.request_action(ctx, PendingAction::Quit);
         }
 
-        // Close-confirm modal: Save / Discard / Cancel.
-        if self.close_confirm_open {
+        // Unsaved-changes modal: Save / Discard / Cancel, for quitting, New and Open.
+        if let Some(action) = self.unsaved_prompt.clone() {
             let mut do_save = false;
             let mut do_discard = false;
             let mut do_cancel = false;
@@ -2860,7 +2974,7 @@ impl LightBeatApp {
                 .resizable(false)
                 .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
                 .show(ctx, |ui| {
-                    ui.label("You have unsaved changes in this project. Save before quitting?");
+                    ui.label(format!("You have unsaved changes in this project. Save before {}?", action.describe()));
                     ui.add_space(8.0);
                     ui.horizontal(|ui| {
                         if ui.button("Save").clicked() { do_save = true; }
@@ -2869,17 +2983,66 @@ impl LightBeatApp {
                     });
                 });
             if do_save {
-                self.save_project();
-                self.save_setup();
-                self.close_confirm_open = false;
-                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                self.unsaved_prompt = None;
+                self.save_command(ctx, Some(action));
             } else if do_discard {
-                self.delete_autosave_for(self.project_path.as_deref());
-                self.close_confirm_open = false;
-                self.close_discarded = true;
-                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                self.unsaved_prompt = None;
+                // Opening through the file dialog may still be cancelled, in
+                // which case the autosave is the only copy of the edits.
+                if !matches!(action, PendingAction::Open) {
+                    self.delete_autosave_for(self.project_path.as_deref());
+                }
+                if matches!(action, PendingAction::Quit) {
+                    self.close_discarded = true;
+                }
+                self.run_action(ctx, action);
             } else if do_cancel {
-                self.close_confirm_open = false;
+                self.unsaved_prompt = None;
+            }
+        }
+
+        if let Some(path) = self.confirm_delete_macro.clone() {
+            let name = path.file_stem().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+            let mut do_delete = false;
+            let mut do_cancel = false;
+            egui::Window::new("Delete macro")
+                .collapsible(false)
+                .resizable(false)
+                .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
+                .show(ctx, |ui| {
+                    ui.label(format!("Delete \"{name}\" from the library? The file is removed and undo does not bring it back."));
+                    ui.add_space(8.0);
+                    ui.horizontal(|ui| {
+                        if ui.button("Delete").clicked() { do_delete = true; }
+                        if ui.button("Cancel").clicked() { do_cancel = true; }
+                    });
+                });
+            if do_delete {
+                self.confirm_delete_macro = None;
+                if let Err(e) = self.library.delete(&path) {
+                    self.report_error(format!("Could not delete the macro {}: {e}", path.display()));
+                }
+            } else if do_cancel {
+                self.confirm_delete_macro = None;
+            }
+        }
+
+        if !self.notices.is_empty() {
+            let mut dismiss = false;
+            egui::Window::new("File problems")
+                .collapsible(false)
+                .resizable(false)
+                .anchor(egui::Align2::RIGHT_BOTTOM, egui::vec2(-8.0, -36.0))
+                .show(ctx, |ui| {
+                    ui.set_max_width(380.0);
+                    for line in &self.notices {
+                        ui.add(egui::Label::new(egui::RichText::new(line).color(theme::SEM_DANGER)).wrap());
+                    }
+                    ui.add_space(4.0);
+                    if ui.button("Dismiss").clicked() { dismiss = true; }
+                });
+            if dismiss {
+                self.notices.clear();
             }
         }
 
@@ -2921,7 +3084,7 @@ impl LightBeatApp {
                             // baseline pointing at the on-disk project so the
                             // dirty flag reads true until the user saves.
                         }
-                        Err(e) => eprintln!("Failed to load autosave: {}", e),
+                        Err(e) => self.report_error(format!("Could not load the autosave: {e}")),
                     }
                 }
             if do_discard

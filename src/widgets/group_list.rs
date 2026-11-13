@@ -46,7 +46,9 @@ impl GroupManager {
                     .show(ui, |ui| {
                         ui.horizontal(|ui| {
                             ui.label("Name:");
-                            ui.text_edit_singleline(&mut group.name);
+                            if ui.text_edit_singleline(&mut group.name).changed() {
+                                self.needs_refresh = true;
+                            }
                         });
 
                         if !caps_str.is_empty() {

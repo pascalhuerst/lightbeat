@@ -5,16 +5,18 @@ use crate::objects::color_palette::{ColorPalette, ColorPaletteGroup, PALETTE_SIZ
 pub struct ColorPaletteGroupManager {
     pub groups: Vec<ColorPaletteGroup>,
     next_id: u32,
+    /// Set on any edit so the app can hand the new groups to Palette Select nodes.
+    pub needs_refresh: bool,
 }
 
 impl ColorPaletteGroupManager {
     pub fn new() -> Self {
-        Self { groups: Vec::new(), next_id: 1 }
+        Self { groups: Vec::new(), next_id: 1, needs_refresh: false }
     }
 
     pub fn from_groups(groups: Vec<ColorPaletteGroup>) -> Self {
         let next_id = groups.iter().map(|g| g.id).max().unwrap_or(0) + 1;
-        Self { groups, next_id }
+        Self { groups, next_id, needs_refresh: false }
     }
 
     pub fn show(&mut self, ui: &mut Ui, palettes: &[ColorPalette]) {
@@ -39,7 +41,9 @@ impl ColorPaletteGroupManager {
                         // Name
                         ui.horizontal(|ui| {
                             ui.label("Name:");
-                            ui.text_edit_singleline(&mut group.name);
+                            if ui.text_edit_singleline(&mut group.name).changed() {
+                                self.needs_refresh = true;
+                            }
                         });
 
                         // Member palettes.
@@ -73,6 +77,7 @@ impl ColorPaletteGroupManager {
                         }
                         if let Some(pid) = remove_palette_id {
                             group.palette_ids.retain(|id| *id != pid);
+                            self.needs_refresh = true;
                         }
 
                         // Add palette.
@@ -85,6 +90,7 @@ impl ColorPaletteGroupManager {
                                 for palette in &available {
                                     if ui.small_button(&palette.name).clicked() {
                                         group.palette_ids.push(palette.id);
+                                        self.needs_refresh = true;
                                     }
                                 }
                             });
@@ -101,6 +107,7 @@ impl ColorPaletteGroupManager {
 
         if let Some(id) = remove_id {
             self.groups.retain(|g| g.id != id);
+            self.needs_refresh = true;
         }
 
         ui.separator();
@@ -108,6 +115,7 @@ impl ColorPaletteGroupManager {
             let id = self.next_id;
             self.next_id += 1;
             self.groups.push(ColorPaletteGroup::new(id, format!("Palette Group {}", id)));
+            self.needs_refresh = true;
         }
     }
 }
