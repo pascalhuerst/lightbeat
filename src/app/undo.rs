@@ -5,15 +5,6 @@ pub(crate) enum UndoDoc {
     Setup,
 }
 
-impl UndoDoc {
-    pub(crate) fn label(self) -> &'static str {
-        match self {
-            UndoDoc::Project => "project",
-            UndoDoc::Setup => "setup",
-        }
-    }
-}
-
 /// Which document an Undo (or Redo) acts on: the one changed most recently, so
 /// repeated presses walk back through it. When that one has nothing to step
 /// to, the other is used, so a press is never wasted while history remains.
