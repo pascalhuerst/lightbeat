@@ -11,6 +11,7 @@ use crate::widgets;
 use crate::app::macros::MacroDragPayload;
 use crate::app::files::PendingAction;
 use crate::app::undo::UndoDoc;
+use crate::app::shortcuts;
 use crate::app::panels::{NodeDragPayload, FrameDragPayload, show_frame_inspector};
 use std::path::PathBuf;
 use eframe::egui;
@@ -30,6 +31,7 @@ impl LightBeatApp {
 
         self.update_check_tick();
         self.show_update_ui(ctx);
+        self.show_shortcuts_window(ctx);
 
         self.show_setup_window(ctx);
 
@@ -246,7 +248,7 @@ impl LightBeatApp {
                         ui.close_menu();
                         self.request_action(ctx, PendingAction::New);
                     }
-                    if ui.button("Open...").clicked() {
+                    if ui.add(egui::Button::new("Open...").shortcut_text(ctx.format_shortcut(&shortcuts::OPEN))).clicked() {
                         ui.close_menu();
                         self.request_action(ctx, PendingAction::Open);
                     }
@@ -283,7 +285,7 @@ impl LightBeatApp {
                         self.config.save();
                     }
                     ui.separator();
-                    if ui.button("Save").clicked() {
+                    if ui.add(egui::Button::new("Save").shortcut_text(ctx.format_shortcut(&shortcuts::SAVE))).clicked() {
                         ui.close_menu();
                         self.save_command(ctx, None);
                     }
@@ -301,7 +303,7 @@ impl LightBeatApp {
                         self.import_setup_dialog(ctx);
                     }
                     ui.separator();
-                    if ui.button("Quit").clicked() {
+                    if ui.add(egui::Button::new("Quit").shortcut_text(ctx.format_shortcut(&shortcuts::QUIT))).clicked() {
                         ui.close_menu();
                         self.quit_requested = true;
                     }
@@ -317,11 +319,11 @@ impl LightBeatApp {
                         Some(UndoAction::RedoSetup) => "Redo (setup)",
                         _ => "Redo",
                     };
-                    if ui.add_enabled(undo_action.is_some(), egui::Button::new(undo_label)).clicked() {
+                    if ui.add_enabled(undo_action.is_some(), egui::Button::new(undo_label).shortcut_text(ctx.format_shortcut(&shortcuts::UNDO))).clicked() {
                         ui.close_menu();
                         self.pending_undo_action = undo_action;
                     }
-                    if ui.add_enabled(redo_action.is_some(), egui::Button::new(redo_label)).clicked() {
+                    if ui.add_enabled(redo_action.is_some(), egui::Button::new(redo_label).shortcut_text(ctx.format_shortcut(&shortcuts::REDO))).clicked() {
                         ui.close_menu();
                         self.pending_undo_action = redo_action;
                     }
@@ -355,6 +357,10 @@ impl LightBeatApp {
                     if ui.button(format!("About LightBeat {}", version::version())).clicked() {
                         ui.close_menu();
                         self.show_about = true;
+                    }
+                    if ui.button("Keyboard shortcuts").clicked() {
+                        ui.close_menu();
+                        self.show_shortcuts = true;
                     }
                     ui.separator();
                     if ui.button("Check for Updates").clicked() {
@@ -865,7 +871,7 @@ impl LightBeatApp {
                     ui.label(format!("You have unsaved changes in this project. Save before {}?", action.describe()));
                     ui.add_space(8.0);
                     ui.horizontal(|ui| {
-                        if ui.button("Save").clicked() { do_save = true; }
+                        if ui.add(egui::Button::new("Save").shortcut_text(ctx.format_shortcut(&shortcuts::SAVE))).clicked() { do_save = true; }
                         if ui.button("Discard").clicked() { do_discard = true; }
                         if ui.button("Cancel").clicked() { do_cancel = true; }
                     });

@@ -5,3 +5,4 @@ pub(crate) mod panels;
 pub(crate) mod files;
 pub(crate) mod frame;
 pub(crate) mod undo;
+pub(crate) mod shortcuts;
