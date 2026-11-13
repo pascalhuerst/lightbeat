@@ -72,6 +72,11 @@ struct LightBeatApp {
     can_undo_setup: bool,
     can_redo_setup: bool,
     pending_undo_action: Option<UndoAction>,
+    /// The document that changed last; Undo and Redo act on it.
+    last_changed_doc: Option<app::undo::UndoDoc>,
+    /// The project as last seen by the change detector, to tell which of the two
+    /// documents an edit belongs to.
+    project_baseline: Option<project::ProjectFile>,
     beat_clock: BeatClock,
     _subs: Vec<SubscriptionHandle>,
     config: AppConfig,
@@ -195,6 +200,8 @@ impl LightBeatApp {
             can_undo_setup: false,
             can_redo_setup: false,
             pending_undo_action: None,
+            last_changed_doc: None,
+            project_baseline: None,
             beat_clock,
             _subs: Vec::new(),
             config,
@@ -372,6 +379,21 @@ impl LightBeatApp {
             }
         }
         self.engine.send(EngineCommand::SetInterfaces(ifaces));
+    }
+
+    /// The undo or redo the Edit menu and the shortcut stand for right now.
+    pub(crate) fn undo_action(&self, redo: bool) -> Option<UndoAction> {
+        let (project, setup) = if redo {
+            (self.can_redo_proj, self.can_redo_setup)
+        } else {
+            (self.can_undo_proj, self.can_undo_setup)
+        };
+        app::undo::pick_target(self.last_changed_doc, project, setup).map(|doc| match (doc, redo) {
+            (app::undo::UndoDoc::Project, false) => UndoAction::UndoProject,
+            (app::undo::UndoDoc::Project, true) => UndoAction::RedoProject,
+            (app::undo::UndoDoc::Setup, false) => UndoAction::UndoSetup,
+            (app::undo::UndoDoc::Setup, true) => UndoAction::RedoSetup,
+        })
     }
 
     /// Apply an undo or redo. Builds the comparison snapshot on demand: the

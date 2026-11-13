@@ -10,6 +10,7 @@ use crate::version;
 use crate::widgets;
 use crate::app::macros::MacroDragPayload;
 use crate::app::files::PendingAction;
+use crate::app::undo::UndoDoc;
 use crate::app::panels::{NodeDragPayload, FrameDragPayload, show_frame_inspector};
 use std::path::PathBuf;
 use eframe::egui;
@@ -30,7 +31,7 @@ impl LightBeatApp {
         self.update_check_tick();
         self.show_update_ui(ctx);
 
-        let setup_hovered = self.show_setup_window(ctx);
+        self.show_setup_window(ctx);
 
         self.input_controllers.reap_lost_sessions();
 
@@ -70,7 +71,7 @@ impl LightBeatApp {
 
         self.show_canvas(ctx);
 
-        self.handle_shortcuts(ctx, setup_hovered);
+        self.handle_shortcuts(ctx);
 
         self.handle_close_and_dialogs(ctx);
     }
@@ -176,6 +177,16 @@ impl LightBeatApp {
             if current_setup != self.setup_baseline {
                 self.setup_baseline = current_setup.clone();
                 self.setup_changed_at = Some(now);
+                self.last_changed_doc = Some(UndoDoc::Setup);
+            }
+            // The first sight of the project is the baseline, not an edit.
+            if let Some(base) = &self.project_baseline
+                && *base != current_project
+            {
+                self.last_changed_doc = Some(UndoDoc::Project);
+            }
+            if self.project_baseline.as_ref() != Some(&current_project) {
+                self.project_baseline = Some(current_project.clone());
             }
             self.project_undoer.feed_state(now, &current_project);
             self.setup_undoer.feed_state(now, &current_setup);
@@ -207,8 +218,8 @@ impl LightBeatApp {
     }
 
     fn show_menu_bar(&mut self, ctx: &egui::Context) {
-        let (can_undo_proj, can_redo_proj) = (self.can_undo_proj, self.can_redo_proj);
-        let (can_undo_setup, can_redo_setup) = (self.can_undo_setup, self.can_redo_setup);
+        let undo_action = self.undo_action(false);
+        let redo_action = self.undo_action(true);
 
         if let Some(lines) = self.setup_notice.clone() {
             let mut open = true;
@@ -285,7 +296,7 @@ impl LightBeatApp {
                         ui.close_menu();
                         self.export_setup_dialog(ctx);
                     }
-                    if ui.button("Import Setup...").on_hover_text("Replace the setup with one from a file; Edit, Undo brings the old one back").clicked() {
+                    if ui.button("Import Setup...").on_hover_text("Replace the setup with one from a file; Edit, Undo (setup) brings the old one back").clicked() {
                         ui.close_menu();
                         self.import_setup_dialog(ctx);
                     }
@@ -296,22 +307,23 @@ impl LightBeatApp {
                     }
                 });
                 ui.menu_button("Edit", |ui| {
-                    if ui.add_enabled(can_undo_proj, egui::Button::new("Undo Project")).clicked() {
+                    let undo_label = match undo_action {
+                        Some(UndoAction::UndoProject) => "Undo (project)",
+                        Some(UndoAction::UndoSetup) => "Undo (setup)",
+                        _ => "Undo",
+                    };
+                    let redo_label = match redo_action {
+                        Some(UndoAction::RedoProject) => "Redo (project)",
+                        Some(UndoAction::RedoSetup) => "Redo (setup)",
+                        _ => "Redo",
+                    };
+                    if ui.add_enabled(undo_action.is_some(), egui::Button::new(undo_label)).clicked() {
                         ui.close_menu();
-                        self.pending_undo_action = Some(UndoAction::UndoProject);
+                        self.pending_undo_action = undo_action;
                     }
-                    if ui.add_enabled(can_redo_proj, egui::Button::new("Redo Project")).clicked() {
+                    if ui.add_enabled(redo_action.is_some(), egui::Button::new(redo_label)).clicked() {
                         ui.close_menu();
-                        self.pending_undo_action = Some(UndoAction::RedoProject);
-                    }
-                    ui.separator();
-                    if ui.add_enabled(can_undo_setup, egui::Button::new("Undo Setup")).clicked() {
-                        ui.close_menu();
-                        self.pending_undo_action = Some(UndoAction::UndoSetup);
-                    }
-                    if ui.add_enabled(can_redo_setup, egui::Button::new("Redo Setup")).clicked() {
-                        ui.close_menu();
-                        self.pending_undo_action = Some(UndoAction::RedoSetup);
+                        self.pending_undo_action = redo_action;
                     }
                 });
                 ui.menu_button("View", |ui| {
@@ -375,17 +387,16 @@ impl LightBeatApp {
         });
     }
 
-    fn show_setup_window(&mut self, ctx: &egui::Context) -> bool {
+    fn show_setup_window(&mut self, ctx: &egui::Context) {
         // Consolidated Setup window — embedded `egui::Window` inside the
         // main viewport. All setup managers (interfaces, fixtures, objects,
         // groups, palettes, gradients, audio inputs, input controllers)
         // live as tabs inside one window.
-        let mut setup_hovered = false;
         if self.show_setup {
             // Stage the open flag locally so the closure can borrow `self`
             // mutably; assign back after the window returns.
             let mut open = true;
-            let r = egui::Window::new("Setup")
+            egui::Window::new("Setup")
                 .open(&mut open)
                 .default_size([780.0, 560.0])
                 .min_width(420.0)
@@ -394,10 +405,7 @@ impl LightBeatApp {
                     self.show_setup_tabs(ui);
                 });
             self.show_setup = open;
-            if let Some(ir) = r
-                && ir.response.contains_pointer() { setup_hovered = true; }
         }
-        setup_hovered
     }
 
     fn show_save_macro_dialog(&mut self, ctx: &egui::Context) {
@@ -793,7 +801,7 @@ impl LightBeatApp {
         }
     }
 
-    fn handle_shortcuts(&mut self, ctx: &egui::Context, setup_hovered: bool) {
+    fn handle_shortcuts(&mut self, ctx: &egui::Context) {
         // Keyboard shortcuts. `command` is Ctrl on Linux and Cmd on macOS. While a
         // text field has focus the keys belong to it (Ctrl+Z undoes its text),
         // except Ctrl+S, which saving does not conflict with.
@@ -809,8 +817,7 @@ impl LightBeatApp {
         }
 
         // Undo / Redo: Ctrl+Z / Ctrl+Shift+Z (and Ctrl+Y for redo).
-        // Routes to the setup undoer when the pointer is over the Setup
-        // window, otherwise to the project undoer.
+        // Acts on whichever of project and setup changed last.
         let undo_pressed = !typing && ctx.input(|i| {
             i.modifiers.command && !i.modifiers.shift && i.key_pressed(egui::Key::Z)
         });
@@ -821,18 +828,10 @@ impl LightBeatApp {
         });
 
         if undo_pressed {
-            self.run_undo_action(if setup_hovered {
-                UndoAction::UndoSetup
-            } else {
-                UndoAction::UndoProject
-            });
+            self.pending_undo_action = self.undo_action(false);
         }
         if redo_pressed {
-            self.run_undo_action(if setup_hovered {
-                UndoAction::RedoSetup
-            } else {
-                UndoAction::RedoProject
-            });
+            self.pending_undo_action = self.undo_action(true);
         }
         if let Some(action) = self.pending_undo_action.take() {
             self.run_undo_action(action);
