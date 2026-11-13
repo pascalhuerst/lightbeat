@@ -614,10 +614,10 @@ mod tests {
             let names = new_shared_stack_names();
             let stack_names = names.clone();
             let ctx = new_shared_group_context();
-            g.register_node("Effects", "Effect Stack", move |id| {
+            g.register_node("Effect", "Effect Stack", move |id| {
                 Box::new(EffectStackWidget::new(id, crate::engine::types::new_shared_state(3, 0), ctx.clone(), stack_names.clone()))
             });
-            g.register_node("Effects", "Ripple Burst", move |id| {
+            g.register_node("Effect", "Ripple Burst", move |id| {
                 Box::new(EffectWidget::new(id, crate::engine::types::new_shared_state(48, 0), RIPPLE_BURST, names.clone()))
             });
             g
@@ -669,7 +669,7 @@ mod tests {
 
         let mut g = NodeGraph::new();
         let names = new_shared_stack_names();
-        g.register_node("Effects", "Bar Loop", move |id| {
+        g.register_node("Effect", "Bar Loop", move |id| {
             Box::new(EffectWidget::new(id, crate::engine::types::new_shared_state(48, 0), BAR_LOOP, names.clone()))
         });
         // Exactly what the Group Output conversion writes.
@@ -701,7 +701,7 @@ mod tests {
         use crate::widgets::nodes::NodeGraph;
 
         let mut g = NodeGraph::new();
-        g.register_node("Transport", "Phase Scaler", |id| {
+        g.register_node("Clock", "Phase Scaler", |id| {
             Box::new(PhaseScalerWidget::new(id, crate::engine::types::new_shared_state(4, 16)))
         });
         g.register_node("Display", "Value Display", |id| {
@@ -733,10 +733,10 @@ mod tests {
         let mut g = NodeGraph::new();
         let (hub, learned) = (MidiHub::idle(), new_shared_learned());
         let (h1, l1, h2, l2) = (hub.clone(), learned.clone(), hub, learned);
-        g.register_node("IO", "MIDI Input", move |id| {
+        g.register_node("Input", "MIDI Input", move |id| {
             Box::new(MidiInputWidget::new(id, crate::engine::types::new_shared_state(0, 33), h1.clone(), l1.clone()))
         });
-        g.register_node("IO", "MIDI Output", move |id| {
+        g.register_node("Output", "MIDI Output", move |id| {
             Box::new(MidiOutputWidget::new(id, crate::engine::types::new_shared_state(32, 1), h2.clone(), l2.clone()))
         });
         g.register_node("Display", "Value Display", |id| {
@@ -775,7 +775,7 @@ mod tests {
 
         let mut g = NodeGraph::new();
         let hub = DmxInputHub::idle();
-        g.register_node("IO", "DMX Input", move |id| {
+        g.register_node("Input", "DMX Input", move |id| {
             Box::new(DmxInputWidget::new(id, crate::engine::types::new_shared_state(0, 200), hub.clone()))
         });
         g.register_node("Display", "Value Display", |id| {
@@ -803,7 +803,7 @@ mod tests {
         use crate::widgets::nodes::NodeGraph;
 
         let mut g = NodeGraph::new();
-        g.register_node("Math", "Const Value", |id| {
+        g.register_node("Signal", "Const Value", |id| {
             Box::new(ConstantWidget::new(id, crate::engine::types::PortType::Untyped, crate::engine::types::new_shared_state(0, 1)))
         });
         let project: ProjectFile = serde_json::from_str(r#"{

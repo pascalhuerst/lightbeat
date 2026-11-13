@@ -204,11 +204,18 @@ fn node(
     NodeDescriptor { category, name, channels, widget: Box::new(widget), engine: Box::new(engine) }
 }
 
-/// Every node type, in the order of the menus.
+/// The groups of the Add Nodes panel, the canvas menus and quick add (which
+/// addresses a node as `<group lowercased>/<name>`), in panel order.
+pub(crate) const CATEGORIES: [&str; 14] = [
+    "Input", "Output", "Clock", "Signal", "Trigger", "Math", "Compare", "Logic",
+    "Color", "Position", "Route", "Portal", "Display", "Effect",
+];
+
+/// Every node type, grouped in the order of `CATEGORIES`.
 pub(crate) fn node_table() -> Vec<NodeDescriptor> {
     let mut table = Vec::new();
     table.push(node(
-        "IO", "Clock", (0, 3),
+        "Clock", "Clock", (0, 3),
         |id, s, _| Box::new(ClockWidget::new(id, s)),
         |id, ctx| {
             let node = ClockProcessNode::new(id, Arc::clone(&ctx.snapshot));
@@ -218,7 +225,7 @@ pub(crate) fn node_table() -> Vec<NodeDescriptor> {
     ));
     // 4 inputs (play/stop, bpm, set bpm, reset) and 3 outputs.
     table.push(node(
-        "IO", "Internal Clock", (4, 3),
+        "Clock", "Internal Clock", (4, 3),
         |id, s, _| Box::new(InternalClockWidget::new(id, s)),
         |id, _| Box::new(InternalClockProcessNode::new(id)),
     ));
@@ -227,37 +234,37 @@ pub(crate) fn node_table() -> Vec<NodeDescriptor> {
     // covers generic MIDI and BCF2000 with headroom; Push 1 uses its
     // own dedicated node.
     table.push(node(
-        "IO", "Input Controller", (192, 192),
+        "Input", "Input Controller", (192, 192),
         |id, s, ctx| Box::new(InputControllerWidget::new(id, s, ctx.input_controllers.clone())),
         |id, ctx| Box::new(InputControllerProcessNode::new(id, ctx.input_controllers.clone())),
     ));
     // The status port and up to 64 entries of at most three channels.
     table.push(node(
-        "IO", "DMX Input", (0, 200),
+        "Input", "DMX Input", (0, 200),
         |id, s, ctx| Box::new(DmxInputWidget::new(id, s, ctx.dmx_inputs.clone())),
         |id, ctx| Box::new(DmxInputProcessNode::new(id, ctx.dmx_inputs.clone())),
     ));
     // The status port and up to 32 controls.
     table.push(node(
-        "IO", "MIDI Input", (0, 33),
+        "Input", "MIDI Input", (0, 33),
         |id, s, ctx| Box::new(MidiInputWidget::new(id, s, ctx.midi_hub.clone(), ctx.midi_learned.clone())),
         |id, ctx| Box::new(MidiInputProcessNode::new(id, ctx.midi_hub.clone())),
     ));
     table.push(node(
-        "IO", "MIDI Output", (32, 1),
+        "Output", "MIDI Output", (32, 1),
         |id, s, ctx| Box::new(MidiOutputWidget::new(id, s, ctx.midi_hub.clone(), ctx.midi_learned.clone())),
         |id, ctx| Box::new(MidiOutputProcessNode::new(id, ctx.midi_hub.clone())),
     ));
     // 26 outputs (incl. "connected"), 21 inputs (see push1.rs). 32/32 gives headroom.
     table.push(node(
-        "IO", "Push 1", (32, 32),
+        "Input", "Push 1", (32, 32),
         |id, s, ctx| Box::new(Push1Widget::new(id, s, ctx.input_controllers.clone())),
         |id, ctx| Box::new(Push1ProcessNode::new(id, ctx.input_controllers.clone())),
     ));
     // 34 button outputs + 4 encoder outputs + 8 pot outputs + "any change" +
     // "connected" = 48 outputs. 34 LED feedback inputs. 56/56 leaves headroom.
     table.push(node(
-        "IO", "X1", (56, 56),
+        "Input", "X1", (56, 56),
         |id, s, ctx| Box::new(X1Widget::new(id, s, ctx.input_controllers.clone())),
         |id, ctx| Box::new(X1ProcessNode::new(id, ctx.input_controllers.clone())),
     ));
@@ -265,87 +272,87 @@ pub(crate) fn node_table() -> Vec<NodeDescriptor> {
     // 80 LED feedback inputs, each `Color` (3 channels) = 240
     // channels. 256 gives a bit of headroom.
     table.push(node(
-        "IO", "Launchpad S", (256, 82),
+        "Input", "Launchpad S", (256, 82),
         |id, s, ctx| Box::new(LaunchpadWidget::new(id, s, ctx.input_controllers.clone())),
         |id, ctx| Box::new(LaunchpadProcessNode::new(id, ctx.input_controllers.clone())),
     ));
     table.push(node(
-        "IO", "Audio Input", (0, 32),
+        "Input", "Audio Input", (0, 32),
         |id, s, ctx| Box::new(AudioInputWidget::new(id, s, ctx.audio_inputs.clone())),
         |id, ctx| Box::new(AudioInputProcessNode::new(id, ctx.audio_inputs.clone())),
     ));
     // 1 optional input (Logic), 1 output.
     table.push(node(
-        "UI", "Button", (1, 1),
+        "Input", "Button", (1, 1),
         |id, s, _| Box::new(ButtonWidget::new(id, s)),
         |id, _| Box::new(ButtonProcessNode::new(id)),
     ));
     // 1 optional input (when "Enable input" is checked), 1 output.
     table.push(node(
-        "UI", "Fader", (1, 1),
+        "Input", "Fader", (1, 1),
         |id, s, _| Box::new(FaderWidget::new(id, s)),
         |id, _| Box::new(FaderProcessNode::new(id)),
     ));
     table.push(node(
-        "UI", "Button Group", (256, 256),
+        "Input", "Button Group", (256, 256),
         |id, s, _| Box::new(ButtonGroupWidget::new(id, s)),
         |id, _| Box::new(ButtonGroupProcessNode::new(id)),
     ));
     table.push(node(
-        "UI", "Fader Group", (256, 256),
+        "Input", "Fader Group", (256, 256),
         |id, s, _| Box::new(FaderGroupWidget::new(id, s)),
         |id, _| Box::new(FaderGroupProcessNode::new(id)),
     ));
     // No inputs; outputs x and y (0..1).
     table.push(node(
-        "UI", "XY Pad", (0, 2),
+        "Input", "XY Pad", (0, 2),
         |id, s, _| Box::new(XyPadWidget::new(id, s)),
         |id, _| Box::new(XyPadProcessNode::new(id)),
     ));
     table.push(node(
-        "UI", "Color Mixer", (0, 3),
+        "Input", "Color Mixer", (0, 3),
         |id, s, _| Box::new(ColorMixerWidget::new(id, s)),
         |id, _| Box::new(ColorMixerProcessNode::new(id)),
     ));
     // 1 Palette input (12 channels) for the live preview, 4 position
     // outputs to feed Palette → Gradient's pos1..pos4.
     table.push(node(
-        "UI", "Gradient Stops", (12, 4),
+        "Input", "Gradient Stops", (12, 4),
         |id, s, _| Box::new(GradientStopsWidget::new(id, s)),
         |id, _| Box::new(GradientStopsProcessNode::new(id)),
     ));
     table.push(node(
-        "UI", "Peak Level Meter", (2, 0),
+        "Display", "Peak Level Meter", (2, 0),
         |id, s, _| Box::new(PeakMeterWidget::new(id, s)),
         |id, _| Box::new(PeakMeterProcessNode::new(id)),
     ));
     table.push(node(
-        "Transport", "Phase Scaler", (4, 16),
+        "Clock", "Phase Scaler", (4, 16),
         |id, s, _| Box::new(PhaseScalerWidget::new(id, s)),
         |id, _| Box::new(PhaseScalerProcessNode::new(id)),
     ));
     table.push(node(
-        "Transport", "LFO", (1, 2),
+        "Signal", "LFO", (1, 2),
         |id, s, _| Box::new(LfoWidget::new(id, s)),
         |id, _| Box::new(LfoProcessNode::new(id)),
     ));
     table.push(node(
-        "Transport", "Step Sequencer", (2, 3),
+        "Signal", "Step Sequencer", (2, 3),
         |id, s, _| Box::new(StepSequencerWidget::new(id, s)),
         |id, _| Box::new(StepSequencerProcessNode::new(id)),
     ));
     table.push(node(
-        "Transport", "Envelope", (2, 2),
+        "Signal", "Envelope", (2, 2),
         |id, s, _| Box::new(EnvelopeWidget::new(id, s)),
         |id, _| Box::new(EnvelopeProcessNode::new(id)),
     ));
     table.push(node(
-        "Transport", "Trigger Delay", (2, 1),
+        "Trigger", "Trigger Delay", (2, 1),
         |id, s, _| Box::new(TriggerDelayWidget::new(id, s)),
         |id, _| Box::new(TriggerDelayProcessNode::new(id)),
     ));
     table.push(node(
-        "Transport", "Trigger Hold", (2, 1),
+        "Trigger", "Trigger Hold", (2, 1),
         |id, s, _| Box::new(TriggerHoldWidget::new(id, s)),
         |id, _| Box::new(TriggerHoldProcessNode::new(id)),
     ));
@@ -355,43 +362,43 @@ pub(crate) fn node_table() -> Vec<NodeDescriptor> {
         |id, _| Box::new(FormulaProcessNode::new(id)),
     ));
     table.push(node(
-        "Math", "Random", (1, 1),
+        "Signal", "Random", (1, 1),
         |id, s, _| Box::new(RandomWidget::new(id, s)),
         |id, _| Box::new(RandomProcessNode::new(id)),
     ));
     table.push(node(
-        "Transport", "Sample & Hold", (2, 1),
+        "Signal", "Sample & Hold", (2, 1),
         |id, s, _| Box::new(SampleHoldWidget::new(id, s)),
         |id, _| Box::new(SampleHoldProcessNode::new(id)),
     ));
     table.push(node(
-        "Transport", "Smoothing", (1, 1),
+        "Signal", "Smoothing", (1, 1),
         |id, s, _| Box::new(SmoothingWidget::new(id, s)),
         |id, _| Box::new(SmoothingProcessNode::new(id)),
     ));
     table.push(node(
-        "Transport", "Latch", (1, 1),
+        "Trigger", "Latch", (1, 1),
         |id, s, _| Box::new(LatchWidget::new(id, s)),
         |id, _| Box::new(LatchProcessNode::new(id)),
     ));
     table.push(node(
-        "Transport", "Clock Divider", (1, 16),
+        "Clock", "Clock Divider", (1, 16),
         |id, s, _| Box::new(ClockDividerWidget::new(id, s)),
         |id, _| Box::new(ClockDividerProcessNode::new(id)),
     ));
     table.push(node(
-        "Transport", "Clock Gen", (1, 1),
+        "Clock", "Clock Gen", (1, 1),
         |id, s, _| Box::new(ClockGenWidget::new(id, s)),
         |id, _| Box::new(ClockGenProcessNode::new(id)),
     ));
     table.push(node(
-        "Transport", "Time to Phase", (1, 2),
+        "Clock", "Time to Phase", (1, 2),
         |id, s, _| Box::new(TimeToPhaseWidget::new(id, s)),
         |id, _| Box::new(TimeToPhaseProcessNode::new(id)),
     ));
     // trigger(1) + phase(1) + palette(12) = 14 input channels, 12 output channels max
     table.push(node(
-        "Transport", "Transition", (14, 12),
+        "Signal", "Transition", (14, 12),
         |id, s, _| Box::new(TransitionWidget::new(id, s)),
         |id, _| Box::new(TransitionProcessNode::new(id)),
     ));
@@ -450,45 +457,45 @@ pub(crate) fn node_table() -> Vec<NodeDescriptor> {
         |id, _| Box::new(LookupProcessNode::new(id)),
     ));
     table.push(node(
-        "Math", "Const Value", (0, 1),
+        "Signal", "Const Value", (0, 1),
         |id, s, _| Box::new(ConstantWidget::new(id, PortType::Untyped, s)),
         |id, _| Box::new(ConstantProcessNode::new(id, PortType::Untyped, 0.0)),
     ));
     table.push(node(
-        "Math", "Const Logic", (0, 1),
+        "Signal", "Const Logic", (0, 1),
         |id, s, _| Box::new(ConstantWidget::new(id, PortType::Logic, s)),
         |id, _| Box::new(ConstantProcessNode::new(id, PortType::Logic, 0.0)),
     ));
     table.push(node(
-        "Math", "Const Phase", (0, 1),
+        "Signal", "Const Phase", (0, 1),
         |id, s, _| Box::new(ConstantWidget::new(id, PortType::Phase, s)),
         |id, _| Box::new(ConstantProcessNode::new(id, PortType::Phase, 0.0)),
     ));
     // Inputs: trigger, reset, max (3 channels). Outputs: count, wrap (2).
     table.push(node(
-        "Math", "Counter", (3, 2),
+        "Trigger", "Counter", (3, 2),
         |id, s, _| Box::new(CounterWidget::new(id, s)),
         |id, _| Box::new(CounterProcessNode::new(id)),
     ));
     table.push(node(
-        "Math", "Change Detect", (2, 2),
+        "Trigger", "Change Detect", (2, 2),
         |id, s, _| Box::new(ChangeDetectWidget::new(id, s)),
         |id, _| Box::new(ChangeDetectProcessNode::new(id)),
     ));
     table.push(node(
-        "Math", "Schmitt Trigger", (1, 1),
+        "Trigger", "Schmitt Trigger", (1, 1),
         |id, s, _| Box::new(SchmittTriggerWidget::new(id, s)),
         |id, _| Box::new(SchmittTriggerProcessNode::new(id)),
     ));
     // Up to 16 channels, each Logic in and out.
     table.push(node(
-        "Math", "Toggle Bank", (16, 16),
+        "Trigger", "Toggle Bank", (16, 16),
         |id, s, _| Box::new(ToggleBankWidget::new(id, s)),
         |id, _| Box::new(ToggleBankProcessNode::new(id)),
     ));
     // Up to 16 channels, each Untyped in and Logic out.
     table.push(node(
-        "Math", "Trigger Bank", (16, 16),
+        "Trigger", "Trigger Bank", (16, 16),
         |id, s, _| Box::new(TriggerBankWidget::new(id, s)),
         |id, _| Box::new(TriggerBankProcessNode::new(id)),
     ));
@@ -498,14 +505,14 @@ pub(crate) fn node_table() -> Vec<NodeDescriptor> {
         |id, _| Box::new(GainProcessNode::new(id)),
     ));
     table.push(node(
-        "Math", "Phase Accumulator", (2, 1),
+        "Clock", "Phase Accumulator", (2, 1),
         |id, s, _| Box::new(PhaseAccumulatorWidget::new(id, s)),
         |id, _| Box::new(PhaseAccumulatorProcessNode::new(id)),
     ));
     // Max channels = MUX_MAX_SLOTS (16) × max channels per type
     // (Gradient = 40) = 640. Round up to 1024 for headroom.
     table.push(node(
-        "Math", "Port Hub", (1024, 1024),
+        "Route", "Port Hub", (1024, 1024),
         |id, s, _| Box::new(PortHubWidget::new(id, s)),
         |id, _| Box::new(PortHubProcessNode::new(id)),
     ));
@@ -560,12 +567,12 @@ pub(crate) fn node_table() -> Vec<NodeDescriptor> {
         |id, _| Box::new(JkFlipFlopProcessNode::new(id)),
     ));
     table.push(node(
-        "Math", "Position Merge", (2, 2),
+        "Position", "Position Merge", (2, 2),
         |id, s, _| Box::new(PositionMergeWidget::new(id, s)),
         |id, _| Box::new(PositionMergeProcessNode::new(id)),
     ));
     table.push(node(
-        "Math", "Position Split", (2, 2),
+        "Position", "Position Split", (2, 2),
         |id, s, _| Box::new(PositionSplitWidget::new(id, s)),
         |id, _| Box::new(PositionSplitProcessNode::new(id)),
     ));
@@ -576,7 +583,7 @@ pub(crate) fn node_table() -> Vec<NodeDescriptor> {
     ));
     // Sized for the largest mode (Gradient = 40 channels).
     table.push(node(
-        "Color", "Color Display", (40, 0),
+        "Display", "Color Display", (40, 0),
         |id, s, _| Box::new(ColorDisplayWidget::new(id, s)),
         |id, _| Box::new(ColorDisplayProcessNode::new(id)),
     ));
@@ -617,13 +624,13 @@ pub(crate) fn node_table() -> Vec<NodeDescriptor> {
     ));
     // 1 select + MUX_MAX_SLOTS * 40 inputs, 40 outputs.
     table.push(node(
-        "Math", "Multiplexer", (1 + engine::nodes::math::multiplex::MUX_MAX_SLOTS * 40, 40),
+        "Route", "Multiplexer", (1 + engine::nodes::math::multiplex::MUX_MAX_SLOTS * 40, 40),
         |id, s, _| Box::new(MultiplexerWidget::new(id, s)),
         |id, _| Box::new(MultiplexerProcessNode::new(id)),
     ));
     // 1 select + 40 in, MUX_MAX_SLOTS * 40 outputs.
     table.push(node(
-        "Math", "Demultiplexer", (1 + 40, engine::nodes::math::multiplex::MUX_MAX_SLOTS * 40),
+        "Route", "Demultiplexer", (1 + 40, engine::nodes::math::multiplex::MUX_MAX_SLOTS * 40),
         |id, s, _| Box::new(DemultiplexerWidget::new(id, s)),
         |id, _| Box::new(DemultiplexerProcessNode::new(id)),
     ));
@@ -653,51 +660,54 @@ pub(crate) fn node_table() -> Vec<NodeDescriptor> {
     ));
     // Start with generous shared state; will resize as ports are added.
     table.push(node(
-        "Meta", "Subgraph", (12, 12),
+        "Route", "Subgraph", (12, 12),
         |id, s, _| Box::new(SubgraphWidget::new(id, s)),
         |id, _| Box::new(SubgraphProcessNode::new(id)),
     ));
     table.push(node(
-        "Meta", "Portal Send", (64, 0),
+        "Portal", "Portal Send", (64, 0),
         |id, s, _| Box::new(widgets::nodes::meta::portal::PortalSendWidget::new(id, s)),
         |id, ctx| Box::new(engine::nodes::meta::portal::PortalSendProcessNode::new(id, ctx.portals.clone())),
     ));
     table.push(node(
-        "Meta", "Portal Receive", (0, 64),
+        "Portal", "Portal Receive", (0, 64),
         |id, s, ctx| Box::new(widgets::nodes::meta::portal::PortalReceiveWidget::new(id, s, ctx.portals.clone())),
         |id, ctx| Box::new(engine::nodes::meta::portal::PortalReceiveProcessNode::new(id, ctx.portals.clone())),
     ));
     table.push(node(
-        "Effects", "Effect Stack", (3, 0),
+        "Effect", "Effect Stack", (3, 0),
         |id, s, ctx| Box::new(EffectStackWidget::new(id, s, ctx.group_ctx.clone(), ctx.stack_names.clone())),
         |id, ctx| Box::new(EffectStackProcessNode::new(id, ctx.effect_hub.clone(), ctx.object_store.clone())),
     ));
     table.push(node(
-        "Effects", widgets::nodes::output::effect::FILL.type_name, (48, 0),
+        "Effect", widgets::nodes::output::effect::FILL.type_name, (48, 0),
         // Room for a trigger or phase plus the 40 gradient channels.
         |id, s, ctx| Box::new(widgets::nodes::output::effect::EffectWidget::new(id, s, widgets::nodes::output::effect::FILL, ctx.stack_names.clone())),
         |id, ctx| Box::new(EffectNode::new(id, Fill::default(), ctx.effect_hub.clone())),
     ));
     table.push(node(
-        "Effects", widgets::nodes::output::effect::BAR_LOOP.type_name, (48, 0),
+        "Effect", widgets::nodes::output::effect::BAR_LOOP.type_name, (48, 0),
         |id, s, ctx| Box::new(widgets::nodes::output::effect::EffectWidget::new(id, s, widgets::nodes::output::effect::BAR_LOOP, ctx.stack_names.clone())),
         |id, ctx| Box::new(EffectNode::new(id, Bar::default(), ctx.effect_hub.clone())),
     ));
     table.push(node(
-        "Effects", widgets::nodes::output::effect::WAVE_LOOP.type_name, (48, 0),
+        "Effect", widgets::nodes::output::effect::WAVE_LOOP.type_name, (48, 0),
         |id, s, ctx| Box::new(widgets::nodes::output::effect::EffectWidget::new(id, s, widgets::nodes::output::effect::WAVE_LOOP, ctx.stack_names.clone())),
         |id, ctx| Box::new(EffectNode::new(id, Wave::default(), ctx.effect_hub.clone())),
     ));
     table.push(node(
-        "Effects", widgets::nodes::output::effect::RIPPLE_BURST.type_name, (48, 0),
+        "Effect", widgets::nodes::output::effect::RIPPLE_BURST.type_name, (48, 0),
         |id, s, ctx| Box::new(widgets::nodes::output::effect::EffectWidget::new(id, s, widgets::nodes::output::effect::RIPPLE_BURST, ctx.stack_names.clone())),
         |id, ctx| Box::new(EffectNode::new(id, Ripple::default(), ctx.effect_hub.clone())),
     ));
     table.push(node(
-        "Effects", widgets::nodes::output::effect::SPARK_BURST.type_name, (48, 0),
+        "Effect", widgets::nodes::output::effect::SPARK_BURST.type_name, (48, 0),
         |id, s, ctx| Box::new(widgets::nodes::output::effect::EffectWidget::new(id, s, widgets::nodes::output::effect::SPARK_BURST, ctx.stack_names.clone())),
         |id, ctx| Box::new(EffectNode::new(id, SparkBurst::default(), ctx.effect_hub.clone())),
     ));
+    // The panel starts a heading whenever the category changes, so the entries
+    // of one group must be next to each other.
+    table.sort_by_key(|d| CATEGORIES.iter().position(|c| *c == d.category).unwrap_or(CATEGORIES.len()));
     table
 }
 
@@ -831,6 +841,15 @@ mod tests {
             let engine = (desc.engine)(NodeId(1), &ctx);
             assert_eq!(widget.type_name(), desc.name, "the widget of {} reports another name", desc.name);
             assert_eq!(engine.node_id(), NodeId(1), "{}", desc.name);
+        }
+    }
+
+    #[test]
+    fn every_node_is_in_a_known_category_that_is_also_its_quick_add_group() {
+        for desc in node_table() {
+            assert!(CATEGORIES.contains(&desc.category), "{} is in {}", desc.name, desc.category);
+            let path = widgets::nodes::paths::node_path(desc.category, desc.name);
+            assert_eq!(path.split('/').next(), Some(desc.category.to_lowercase().as_str()), "{}", desc.name);
         }
     }
 

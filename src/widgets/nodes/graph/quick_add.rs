@@ -178,12 +178,12 @@ mod quick_add_tests {
     #[test]
     fn matches_start_with_names_that_begin_with_the_query_and_every_word_must_match() {
         let r = registry(&[
-            ("Sample & Hold", "Transport"),
+            ("Sample & Hold", "Signal"),
             ("Scope", "Display"),
             ("Level Meter", "Display"),
             ("Gradient Source", "Color"),
             ("Palette to Gradient", "Color"),
-            ("Color Display", "Color"),
+            ("Color Display", "Display"),
         ]);
         assert_eq!(labels(&r, "grad"), ["Gradient Source", "Palette to Gradient"]);
         assert_eq!(labels(&r, "meter"), ["Level Meter"]);
@@ -200,16 +200,16 @@ mod quick_add_tests {
 
     fn nodes() -> Vec<NodeEntry> {
         registry(&[
-            ("MIDI Input", "IO"),
-            ("MIDI Output", "IO"),
-            ("Button", "UI"),
-            ("Fader", "UI"),
+            ("MIDI Input", "Input"),
+            ("MIDI Output", "Output"),
+            ("Button", "Input"),
+            ("Fader", "Input"),
             ("Mul", "Math"),
             ("Div", "Math"),
-            ("Multiplexer", "Math"),
+            ("Multiplexer", "Route"),
             ("Add", "Math"),
             ("Scope", "Display"),
-            ("Clock Divider", "Transport"),
+            ("Clock Divider", "Clock"),
         ])
     }
 
@@ -231,11 +231,7 @@ mod quick_add_tests {
         assert_eq!(paths(&r, "math/"), ["math/add", "math/div", "math/mul"]);
         assert_eq!(paths(&r, "input/"), ["input/button", "input/fader", "input/midi"]);
         assert_eq!(paths(&r, "/mid"), ["input/midi", "output/midi"], "the group may be left open");
-        assert_eq!(
-            paths(&r, "math"),
-            ["math/add", "math/div", "math/mul", "route/multiplexer"],
-            "typing just a group works too, and the category finds Multiplexer after them"
-        );
+        assert_eq!(paths(&r, "math"), ["math/add", "math/div", "math/mul"], "typing just a group works too");
         assert!(paths(&r, "nothing/here").is_empty());
         assert!(paths(&r, "math/mul/extra").is_empty(), "a path has no more parts than it has");
     }
@@ -283,8 +279,8 @@ mod quick_add_ui_tests {
     #[test]
     fn typing_a_name_and_pressing_enter_adds_that_node_where_it_was_opened() {
         let mut g = NodeGraph::new();
-        g.register_node("UI", "Button", |id| Box::new(ButtonWidget::new(id, new_shared_state(1, 1))));
-        g.register_node("UI", "Fader", |id| Box::new(crate::widgets::nodes::ui::fader::FaderWidget::new(id, new_shared_state(1, 1))));
+        g.register_node("Input", "Button", |id| Box::new(ButtonWidget::new(id, new_shared_state(1, 1))));
+        g.register_node("Input", "Fader", |id| Box::new(crate::widgets::nodes::ui::fader::FaderWidget::new(id, new_shared_state(1, 1))));
         g.quick_add = Some(QuickAdd {
             screen: Pos2::new(100.0, 100.0),
             world: Pos2::new(40.0, 60.0),
@@ -309,7 +305,7 @@ mod quick_add_ui_tests {
     #[test]
     fn escape_closes_it_without_adding_anything() {
         let mut g = NodeGraph::new();
-        g.register_node("UI", "Button", |id| Box::new(ButtonWidget::new(id, new_shared_state(1, 1))));
+        g.register_node("Input", "Button", |id| Box::new(ButtonWidget::new(id, new_shared_state(1, 1))));
         g.quick_add = Some(QuickAdd { screen: Pos2::new(10.0, 10.0), world: Pos2::ZERO, query: String::new(), selected: 0, focused: false });
         let ctx = egui::Context::default();
         frame(&mut g, &ctx, vec![], true);

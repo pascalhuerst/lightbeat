@@ -268,7 +268,7 @@ mod stack_tree_tests {
         let names = new_shared_stack_names();
         g.set_stack_names(names.clone());
         let (n, ctx) = (names.clone(), new_shared_group_context());
-        g.register_node("Effects", "Effect Stack", move |id| {
+        g.register_node("Effect", "Effect Stack", move |id| {
             Box::new(EffectStackWidget::new(id, new_shared_state(3, 0), ctx.clone(), n.clone()))
         });
         (g, names)
