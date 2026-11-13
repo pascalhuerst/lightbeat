@@ -1,7 +1,8 @@
-use egui::{self, Color32, Ui};
+use egui::{self, Ui};
 use egui_extras::{Column, TableBuilder};
 
 use crate::color::Rgb;
+use crate::widgets::setup_ui;
 use crate::objects::color_palette::{ColorPalette, SLOT_NAMES, PALETTE_SIZE};
 
 pub struct ColorPaletteManager {
@@ -22,13 +23,11 @@ impl ColorPaletteManager {
     }
 
     pub fn show(&mut self, ui: &mut Ui) {
-        ui.heading("Color Palettes");
-        ui.separator();
-
         if self.palettes.is_empty() {
-            ui.colored_label(Color32::from_gray(120), "No color palettes.");
+            setup_ui::empty_state(ui, "No palettes yet. Add one below.");
         } else {
             let mut remove_id = None;
+            let mut duplicate_id = None;
             let swatch_w = 28.0;
 
             let mut builder = TableBuilder::new(ui)
@@ -38,7 +37,7 @@ impl ColorPaletteManager {
                 builder = builder.column(Column::exact(swatch_w));
             }
             builder
-                .column(Column::exact(24.0)) // delete button
+                .column(Column::exact(52.0)) // duplicate and delete
                 .header(20.0, |mut header| {
                     header.col(|ui| { ui.strong("Name"); });
                     for i in 0..PALETTE_SIZE {
@@ -71,9 +70,14 @@ impl ColorPaletteManager {
                                 });
                             }
                             row.col(|ui| {
-                                if ui.small_button(egui_phosphor::regular::X).clicked() {
-                                    remove_id = Some(palette.id);
-                                }
+                                ui.horizontal(|ui| {
+                                    if setup_ui::duplicate_button(ui, "Duplicate palette") {
+                                        duplicate_id = Some(palette.id);
+                                    }
+                                    if setup_ui::delete_button(ui, "Delete palette") {
+                                        remove_id = Some(palette.id);
+                                    }
+                                });
                             });
                         });
                     }
@@ -82,14 +86,45 @@ impl ColorPaletteManager {
                 self.palettes.retain(|s| s.id != id);
                 self.needs_refresh = true;
             }
+            if let Some(id) = duplicate_id {
+                self.duplicate(id);
+            }
         }
 
         ui.separator();
-        if ui.button("Add Color Palette").clicked() {
+        if setup_ui::add_button(ui, "Add palette") {
             let id = self.next_id;
             self.next_id += 1;
             self.palettes.push(ColorPalette::new(id, format!("Palette {}", id)));
             self.needs_refresh = true;
         }
+    }
+
+    /// A copy right after the original, with a fresh id.
+    fn duplicate(&mut self, id: u32) {
+        let Some(pos) = self.palettes.iter().position(|p| p.id == id) else { return };
+        let mut copy = self.palettes[pos].clone();
+        copy.id = self.next_id;
+        self.next_id += 1;
+        copy.name = setup_ui::copy_name(&copy.name);
+        self.palettes.insert(pos + 1, copy);
+        self.needs_refresh = true;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn duplicate_copies_colors_with_a_fresh_id() {
+        let mut p = ColorPalette::new(4, "Sunset");
+        p.colors[1] = Rgb::new(1.0, 0.5, 0.0);
+        let mut m = ColorPaletteManager::from_palettes(vec![p]);
+        m.duplicate(4);
+        assert_eq!(m.palettes[1].id, 5);
+        assert_eq!(m.palettes[1].name, "Sunset copy");
+        assert_eq!(m.palettes[1].colors, m.palettes[0].colors);
+        assert!(m.needs_refresh);
     }
 }
