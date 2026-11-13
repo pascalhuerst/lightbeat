@@ -1,4 +1,3 @@
-use std::any::Any;
 use std::time::{Duration, Instant};
 
 use egui::{self, Sense, Ui, Vec2};
@@ -8,7 +7,7 @@ use crate::engine::nodes::io::dmx_input::{ColorModel, DmxInputNodeConfig, DmxKin
 use crate::engine::types::*;
 use crate::widgets::setup_ui;
 use crate::theme;
-use crate::widgets::nodes::node::NodeWidget;
+use crate::widgets::nodes::node::{NodeWidget, node_identity};
 use crate::widgets::nodes::types::UiPortDef;
 
 /// The most outputs a node has.
@@ -271,8 +270,7 @@ impl NodeWidget for DmxInputWidget {
         }
     }
 
-    fn node_id(&self) -> NodeId { self.id }
-    fn type_name(&self) -> &'static str { "DMX Input" }
+    node_identity!("DMX Input");
     fn description(&self) -> &'static str {
         "What a lighting desk sends us over Art-Net, as outputs. Add an Art-Net input in Setup, then add the outputs you need here in the inspector (a colour, a value, a gate, ...) and pick the channels each is made of, or press Learn and move the fader on the desk."
     }
@@ -284,7 +282,6 @@ impl NodeWidget for DmxInputWidget {
 
     fn min_width(&self) -> f32 { 170.0 }
     fn min_content_height(&self) -> f32 { 24.0 }
-    fn shared_state(&self) -> &SharedState { &self.shared }
 
     fn take_removed_port(&mut self) -> Option<(PortDir, usize)> {
         self.removed.take().map(|i| (PortDir::Output, i + 1))
@@ -438,8 +435,6 @@ impl NodeWidget for DmxInputWidget {
             }
         }
     }
-
-    fn as_any_mut(&mut self) -> &mut dyn Any { self }
 }
 
 /// A small picture of what an output reads now: a bar, a colour, a lamp.

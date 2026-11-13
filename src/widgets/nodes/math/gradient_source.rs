@@ -1,4 +1,3 @@
-use std::any::Any;
 use std::sync::{Arc, Mutex};
 
 use egui::{self, Color32, Pos2, Sense, Stroke, StrokeKind, Ui, Vec2};
@@ -9,7 +8,7 @@ use crate::engine::types::*;
 use crate::objects::gradient_preset::GradientPreset;
 use crate::theme;
 use crate::widgets::setup_ui;
-use crate::widgets::nodes::node::NodeWidget;
+use crate::widgets::nodes::node::{NodeWidget, node_identity};
 use crate::widgets::nodes::types::UiPortDef;
 
 const MAX_STOPS: usize = GRADIENT_STOP_COUNT;
@@ -170,21 +169,17 @@ impl NodeWidget for GradientSourceWidget {
         }
     }
 
-    fn node_id(&self) -> NodeId { self.id }
-    fn type_name(&self) -> &'static str { "Gradient Source" }
+    node_identity!("Gradient Source");
     fn description(&self) -> &'static str {
         "Authors an 8-stop gradient (color + alpha + position per stop). Wire it into an effect or any other node that takes a gradient."
     }
 
-    fn ui_inputs(&self) -> Vec<UiPortDef> { vec![] }
-    fn ui_outputs(&self) -> Vec<UiPortDef> {
-        vec![UiPortDef::from_def(&PortDef::new("gradient", PortType::Gradient))]
-    }
+    fn ui_inputs(&self) -> Vec<UiPortDef> { UiPortDef::from_defs(&crate::engine::nodes::math::gradient_source::ports().0) }
+    fn ui_outputs(&self) -> Vec<UiPortDef> { UiPortDef::from_defs(&crate::engine::nodes::math::gradient_source::ports().1) }
 
     fn min_width(&self) -> f32 { 140.0 }
     fn min_content_height(&self) -> f32 { 40.0 }
     fn resizable(&self) -> bool { true }
-    fn shared_state(&self) -> &SharedState { &self.shared }
 
     fn show_content(&mut self, ui: &mut Ui, _zoom: f32) {
         // Pull the active stops from the engine display so the node always
@@ -471,8 +466,6 @@ impl NodeWidget for GradientSourceWidget {
 
         if changed { self.push_config(); }
     }
-
-    fn as_any_mut(&mut self) -> &mut dyn Any { self }
 }
 
 

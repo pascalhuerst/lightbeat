@@ -22,6 +22,12 @@ pub struct GradientSourceProcessNode {
     channels: [f32; MAX_STOPS * GRADIENT_STOP_FLOATS],
 }
 
+/// The ports, stated once: the widget builds its own from this, so the two
+/// halves cannot disagree.
+pub fn ports() -> (Vec<PortDef>, Vec<PortDef>) {
+    (vec![], vec![PortDef::new("gradient", PortType::Gradient)])
+}
+
 impl GradientSourceProcessNode {
     pub fn new(id: NodeId) -> Self {
         // Sensible default: black-to-white linear gradient (2 stops, rest unused).
@@ -35,7 +41,7 @@ impl GradientSourceProcessNode {
             id,
             stops,
             used,
-            outputs: vec![PortDef::new("gradient", PortType::Gradient)],
+            outputs: ports().1,
             channels: [0.0; MAX_STOPS * GRADIENT_STOP_FLOATS],
         };
         node.recompute_channels();

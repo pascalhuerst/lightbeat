@@ -64,6 +64,18 @@ pub struct LookupProcessNode {
     output_values: Vec<f32>,
 }
 
+/// The ports, stated once: the widget builds its own from this, so the two
+/// halves cannot disagree.
+pub fn ports_for(columns: &[LookupColumn]) -> (Vec<PortDef>, Vec<PortDef>) {
+    // "rows" stays at index 0 so wires from it survive schema edits.
+    (
+        vec![PortDef::new("index", PortType::Untyped)],
+        std::iter::once(PortDef::new("rows", PortType::Untyped))
+            .chain(columns.iter().map(|c| PortDef::new(c.name.clone(), c.port_type)))
+            .collect(),
+    )
+}
+
 impl LookupProcessNode {
     pub fn new(id: NodeId) -> Self {
         // Default: 4 rows × 1 Untyped column with a simple ramp.
@@ -82,7 +94,7 @@ impl LookupProcessNode {
             input: LookupInput::Index,
             edge: LookupEdge::Wrap,
             blend: LookupBlend::Step,
-            inputs: vec![PortDef::new("index", PortType::Untyped)],
+            inputs: ports_for(&[]).0,
             outputs: Vec::new(),
             output_values: Vec::new(),
         };
@@ -99,9 +111,7 @@ impl LookupProcessNode {
         // it first means adding/removing columns never shifts its index,
         // so wires from `rows` (typically into Counter.max) survive
         // schema edits.
-        self.outputs = std::iter::once(PortDef::new("rows", PortType::Untyped))
-            .chain(self.columns.iter().map(|c| PortDef::new(c.name.clone(), c.port_type)))
-            .collect();
+        self.outputs = ports_for(&self.columns).1;
         let stride = self.row_stride();
         // output_values: [row_count][row_data ...]
         self.output_values = vec![0.0; 1 + stride];

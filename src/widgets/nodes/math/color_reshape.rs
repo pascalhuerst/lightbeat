@@ -1,14 +1,13 @@
 //! The widget of the four nodes that take palettes and gradients apart and
 //! put them together (see the engine side).
 
-use std::any::Any;
 
 use egui::{self, Ui};
 
 use crate::engine::nodes::math::color_reshape::{MAX_STOPS, MIN_STOPS, ReshapeKind, DEFAULT_STOPS, clamp_stops, ports};
 use crate::engine::types::*;
 use crate::theme;
-use crate::widgets::nodes::node::{NodeWidget, param_usize};
+use crate::widgets::nodes::node::{NodeWidget, param_usize, node_identity};
 use crate::widgets::nodes::types::UiPortDef;
 
 pub struct ColorReshapeWidget {
@@ -34,8 +33,7 @@ impl NodeWidget for ColorReshapeWidget {
         }
     }
 
-    fn node_id(&self) -> NodeId { self.id }
-    fn type_name(&self) -> &'static str { self.kind.type_name() }
+    node_identity!(by |w| w.kind.type_name());
     fn description(&self) -> &'static str { self.kind.description() }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> {
@@ -55,7 +53,6 @@ impl NodeWidget for ColorReshapeWidget {
     }
     fn min_width(&self) -> f32 { 110.0 }
     fn min_content_height(&self) -> f32 { 4.0 }
-    fn shared_state(&self) -> &SharedState { &self.shared }
 
     fn show_content(&mut self, _ui: &mut Ui, _zoom: f32) {}
 
@@ -79,6 +76,4 @@ impl NodeWidget for ColorReshapeWidget {
         });
         ui.colored_label(theme::TEXT_DIM, "Changing the count adds or removes ports; wires on removed ports are dropped.");
     }
-
-    fn as_any_mut(&mut self) -> &mut dyn Any { self }
 }

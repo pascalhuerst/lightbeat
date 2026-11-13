@@ -1,10 +1,9 @@
-use std::any::Any;
 use egui::{self, Color32, Sense, Ui, Vec2};
 
 use crate::engine::nodes::display::led_display::LedDisplayData;
 use crate::engine::types::*;
 use crate::theme;
-use crate::widgets::nodes::node::{NodeLayout, NodeWidget, PORT_RADIUS};
+use crate::widgets::nodes::node::{NodeLayout, NodeWidget, PORT_RADIUS, node_identity};
 use crate::widgets::nodes::types::UiPortDef;
 
 const NAME_GAP: f32 = 2.0;
@@ -34,20 +33,16 @@ impl NodeWidget for LedDisplayWidget {
         }
     }
 
-    fn node_id(&self) -> NodeId { self.id }
-    fn type_name(&self) -> &'static str { "LED Display" }
+    node_identity!("LED Display");
     fn description(&self) -> &'static str { "Shows a value (0..1) as a glowing LED. Name appears above the LED and on parent subgraph nodes." }
 
-    fn ui_inputs(&self) -> Vec<UiPortDef> {
-        vec![UiPortDef::from_def(&PortDef::new("in", PortType::Any))]
-    }
-    fn ui_outputs(&self) -> Vec<UiPortDef> { vec![] }
+    fn ui_inputs(&self) -> Vec<UiPortDef> { UiPortDef::from_defs(&crate::engine::nodes::display::led_display::ports().0) }
+    fn ui_outputs(&self) -> Vec<UiPortDef> { UiPortDef::from_defs(&crate::engine::nodes::display::led_display::ports().1) }
 
     fn layout(&self) -> NodeLayout { NodeLayout::compact().with_side_inset(PORT_RADIUS + 2.0) }
     fn min_width(&self) -> f32 { 80.0 }
     fn min_content_height(&self) -> f32 { 25.0 }
     fn resizable(&self) -> bool { true }
-    fn shared_state(&self) -> &SharedState { &self.shared }
 
     fn show_content(&mut self, ui: &mut Ui, _zoom: f32) {
         let (name, value) = {
@@ -114,8 +109,6 @@ impl NodeWidget for LedDisplayWidget {
             }
         });
     }
-
-    fn as_any_mut(&mut self) -> &mut dyn Any { self }
 }
 
 fn fit_label_size(ui: &Ui, text: &str, area: Vec2) -> f32 {

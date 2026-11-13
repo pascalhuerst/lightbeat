@@ -15,16 +15,26 @@ pub struct SchmittTriggerProcessNode {
     outputs: Vec<PortDef>,
 }
 
+/// The ports, stated once: the widget builds its own from this, so the two
+/// halves cannot disagree.
+pub fn ports() -> (Vec<PortDef>, Vec<PortDef>) {
+    (
+        vec![PortDef::new("in", PortType::Untyped)],
+        vec![PortDef::new("out", PortType::Logic)],
+    )
+}
+
 impl SchmittTriggerProcessNode {
     pub fn new(id: NodeId) -> Self {
+        let (inputs, outputs) = ports();
         Self {
             id,
             value_in: 0.0,
             state: false,
             threshold: 0.5,
             hysteresis: 0.1,
-            inputs: vec![PortDef::new("in", PortType::Untyped)],
-            outputs: vec![PortDef::new("out", PortType::Logic)],
+            inputs,
+            outputs,
         }
     }
 }

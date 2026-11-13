@@ -1,10 +1,9 @@
-use std::any::Any;
 use egui::{self, Color32, Ui, Vec2, Sense};
 
-use crate::engine::nodes::math::color_components::{ColorMode, ColorOpsDisplay};
+use crate::engine::nodes::math::color_components::{color_port, component_ports, ColorMode, ColorOpsDisplay};
 use crate::engine::types::*;
 use crate::theme;
-use crate::widgets::nodes::node::NodeWidget;
+use crate::widgets::nodes::node::{NodeWidget, node_identity};
 use crate::widgets::nodes::types::UiPortDef;
 
 fn show_color_swatch(ui: &mut Ui, rgb: [f32; 3]) {
@@ -18,23 +17,6 @@ fn show_color_swatch(ui: &mut Ui, rgb: [f32; 3]) {
         Sense::hover(),
     );
     painter.rect_filled(resp.rect, 2.0, color);
-}
-
-/// The ports on the component side (inputs for Components to Color, outputs
-/// for Color to Components).
-fn component_ports(mode: ColorMode) -> Vec<PortDef> {
-    match mode {
-        ColorMode::Neutral => vec![PortDef::new("?", PortType::Any)],
-        _ => mode.channel_names().iter().map(|n| PortDef::new(*n, PortType::Untyped)).collect(),
-    }
-}
-
-/// The single port on the colour side.
-fn color_port(mode: ColorMode) -> Vec<PortDef> {
-    match mode {
-        ColorMode::Neutral => vec![PortDef::new("?", PortType::Any)],
-        _ => vec![PortDef::new("color", PortType::Color)],
-    }
 }
 
 /// Push a mode change to the engine via the standard param channel.
@@ -90,22 +72,20 @@ impl ComponentsToColorWidget {
 }
 
 impl NodeWidget for ComponentsToColorWidget {
-    fn node_id(&self) -> NodeId { self.id }
-    fn type_name(&self) -> &'static str { "Components to Color" }
+    node_identity!("Components to Color");
     fn description(&self) -> &'static str {
         "Combines components (RGB, HSV, RGBW or CMY) into a color. The mode is picked from the first connection."
     }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> {
-        component_ports(self.mode).iter().map(UiPortDef::from_def).collect()
+        UiPortDef::from_defs(&component_ports(self.mode))
     }
     fn ui_outputs(&self) -> Vec<UiPortDef> {
-        color_port(self.mode).iter().map(UiPortDef::from_def).collect()
+        UiPortDef::from_defs(&color_port(self.mode))
     }
 
     fn min_width(&self) -> f32 { 100.0 }
     fn min_content_height(&self) -> f32 { 25.0 }
-    fn shared_state(&self) -> &SharedState { &self.shared }
 
     fn on_ui_connect(&mut self, _input_port: usize, _source_type: PortType) {
         let new_mode = infer_mode(self.mode, None);
@@ -125,8 +105,6 @@ impl NodeWidget for ComponentsToColorWidget {
     fn show_content(&mut self, ui: &mut Ui, _zoom: f32) {
         show_node_content(ui, &self.shared, &mut self.mode);
     }
-
-    fn as_any_mut(&mut self) -> &mut dyn Any { self }
 }
 
 // ---------------------------------------------------------------------------
@@ -146,22 +124,20 @@ impl ColorToComponentsWidget {
 }
 
 impl NodeWidget for ColorToComponentsWidget {
-    fn node_id(&self) -> NodeId { self.id }
-    fn type_name(&self) -> &'static str { "Color to Components" }
+    node_identity!("Color to Components");
     fn description(&self) -> &'static str {
         "Splits a color into components (RGB, HSV, RGBW or CMY). The mode is picked from the first connection."
     }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> {
-        color_port(self.mode).iter().map(UiPortDef::from_def).collect()
+        UiPortDef::from_defs(&color_port(self.mode))
     }
     fn ui_outputs(&self) -> Vec<UiPortDef> {
-        component_ports(self.mode).iter().map(UiPortDef::from_def).collect()
+        UiPortDef::from_defs(&component_ports(self.mode))
     }
 
     fn min_width(&self) -> f32 { 100.0 }
     fn min_content_height(&self) -> f32 { 25.0 }
-    fn shared_state(&self) -> &SharedState { &self.shared }
 
     fn on_ui_connect(&mut self, _input_port: usize, source_type: PortType) {
         let new_mode = infer_mode(self.mode, Some(source_type));
@@ -181,6 +157,4 @@ impl NodeWidget for ColorToComponentsWidget {
     fn show_content(&mut self, ui: &mut Ui, _zoom: f32) {
         show_node_content(ui, &self.shared, &mut self.mode);
     }
-
-    fn as_any_mut(&mut self) -> &mut dyn Any { self }
 }

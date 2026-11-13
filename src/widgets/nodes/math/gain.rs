@@ -1,12 +1,10 @@
-use std::any::Any;
-
 use egui::{self, Pos2, Sense, Stroke, Ui};
 
 use crate::engine::nodes::math::gain::GainDisplay;
 use crate::engine::types::*;
 use crate::theme;
 use crate::widgets::fader;
-use crate::widgets::nodes::node::{NodeLayout, NodeWidget, PORT_RADIUS};
+use crate::widgets::nodes::node::{NodeLayout, NodeWidget, PORT_RADIUS, node_identity, with_display};
 use crate::widgets::nodes::types::UiPortDef;
 
 /// Knob sweep: 0 at bottom-left, 1 at bottom-right, going the long way
@@ -31,35 +29,26 @@ impl GainWidget {
 }
 
 impl NodeWidget for GainWidget {
-    fn node_id(&self) -> NodeId { self.id }
-    fn type_name(&self) -> &'static str { "Gain" }
+    node_identity!("Gain");
     fn description(&self) -> &'static str {
         "Multiplies the input by a 0..1 scalar. Drag the knob to adjust; \
          hold Shift for fine steps; double-click to reset."
     }
 
-    fn ui_inputs(&self) -> Vec<UiPortDef> {
-        vec![UiPortDef::from_def(&PortDef::new("in", PortType::Untyped))]
-    }
-    fn ui_outputs(&self) -> Vec<UiPortDef> {
-        vec![UiPortDef::from_def(&PortDef::new("out", PortType::Untyped))]
-    }
+    fn ui_inputs(&self) -> Vec<UiPortDef> { UiPortDef::from_defs(&crate::engine::nodes::math::gain::ports().0) }
+    fn ui_outputs(&self) -> Vec<UiPortDef> { UiPortDef::from_defs(&crate::engine::nodes::math::gain::ports().1) }
 
     fn layout(&self) -> NodeLayout { NodeLayout::compact().with_side_inset(PORT_RADIUS + 2.0) }
     fn min_width(&self) -> f32 { 90.0 }
     fn min_content_height(&self) -> f32 { 70.0 }
     fn resizable(&self) -> bool { true }
-    fn shared_state(&self) -> &SharedState { &self.shared }
 
     fn show_content(&mut self, ui: &mut Ui, zoom: f32) {
         // Sync from engine.
-        {
-            let shared = self.shared.lock().unwrap();
-            if let Some(d) = shared.display.as_ref().and_then(|d| d.downcast_ref::<GainDisplay>()) {
-                self.gain = d.gain;
-                self.output = d.output;
-            }
-        }
+        with_display::<GainDisplay, _>(&self.shared, |d| {
+            self.gain = d.gain;
+            self.output = d.output;
+        });
 
         let avail = ui.available_size();
         if avail.x <= 0.0 || avail.y <= 0.0 { return; }
@@ -137,6 +126,4 @@ impl NodeWidget for GainWidget {
             }
         }
     }
-
-    fn as_any_mut(&mut self) -> &mut dyn Any { self }
 }

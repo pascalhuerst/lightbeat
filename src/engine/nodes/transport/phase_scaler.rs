@@ -55,6 +55,24 @@ pub struct PhaseScalerProcessNode {
     outputs: Vec<PortDef>,
 }
 
+/// The ports, stated once: the widget builds its own from this, so the two
+/// halves cannot disagree.
+/// `extra` is the number of outputs besides the first. The widget renames the
+/// outputs after their ratio on top of this.
+pub fn ports_for(extra: usize) -> (Vec<PortDef>, Vec<PortDef>) {
+    (
+        vec![
+            PortDef::new("phase", PortType::Phase),
+            PortDef::new("reset", PortType::Logic),
+            PortDef::new("exp", PortType::Untyped),
+            PortDef::new("offset", PortType::Phase),
+        ],
+        std::iter::once(PortDef::new("phase", PortType::Phase))
+            .chain((0..extra).map(|i| PortDef::new(format!("phase {}", i + 2), PortType::Phase)))
+            .collect(),
+    )
+}
+
 impl PhaseScalerProcessNode {
     pub fn new(id: NodeId) -> Self {
         Self {
@@ -73,13 +91,8 @@ impl PhaseScalerProcessNode {
             cycle_counter: 0,
             extra: Vec::new(),
             extra_out: Vec::new(),
-            inputs: vec![
-                PortDef::new("phase", PortType::Phase),
-                PortDef::new("reset", PortType::Logic),
-                PortDef::new("exp", PortType::Untyped),
-                PortDef::new("offset", PortType::Phase),
-            ],
-            outputs: vec![PortDef::new("phase", PortType::Phase)],
+            inputs: ports_for(0).0,
+            outputs: ports_for(0).1,
         }
     }
 }
@@ -177,9 +190,7 @@ impl ProcessNode for PhaseScalerProcessNode {
                 .map(|x| ExtraOutput { exponent: x.exponent.clamp(-6, 6), offset: x.offset.rem_euclid(1.0) })
                 .collect();
             self.extra_out.resize(self.extra.len(), 0.0);
-            self.outputs = std::iter::once(PortDef::new("phase", PortType::Phase))
-                .chain((0..self.extra.len()).map(|i| PortDef::new(format!("phase {}", i + 2), PortType::Phase)))
-                .collect();
+            self.outputs = ports_for(self.extra.len()).1;
         }
     }
 

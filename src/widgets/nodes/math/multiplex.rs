@@ -1,13 +1,11 @@
-use std::any::Any;
-
 use egui::{self, Ui};
 
 use crate::engine::nodes::math::multiplex::{
-    MUX_DEFAULT_SLOTS, MuxDisplay, SelectMode, clamp_slots, type_from_index, type_to_index,
+    MUX_DEFAULT_SLOTS, demux_ports, mux_ports, MuxDisplay, SelectMode, clamp_slots, type_from_index, type_to_index,
 };
 use crate::engine::types::*;
 use crate::theme;
-use crate::widgets::nodes::node::{NodeLayout, NodeWidget, labelled_layout, param_usize};
+use crate::widgets::nodes::node::{NodeLayout, NodeWidget, labelled_layout, param_usize, node_identity, with_display};
 use crate::widgets::nodes::types::UiPortDef;
 
 fn push_type(shared: &SharedState, port_type: PortType) {
@@ -38,12 +36,11 @@ impl MultiplexerWidget {
     }
 
     fn sync_from_display(&mut self) {
-        let shared = self.shared.lock().unwrap();
-        if let Some(d) = shared.display.as_ref().and_then(|d| d.downcast_ref::<MuxDisplay>()) {
+        with_display::<MuxDisplay, _>(&self.shared, |d| {
             if d.port_type != self.port_type { self.port_type = d.port_type; }
             if d.slots != self.slots { self.slots = d.slots; }
             if d.select_mode != self.select_mode { self.select_mode = d.select_mode; }
-        }
+        });
     }
 }
 
@@ -54,8 +51,7 @@ impl NodeWidget for MultiplexerWidget {
         self.select_mode = param_usize(params, 2).map(SelectMode::from_index).unwrap_or(SelectMode::Index);
     }
 
-    fn node_id(&self) -> NodeId { self.id }
-    fn type_name(&self) -> &'static str { "Multiplexer" }
+    node_identity!("Multiplexer");
     fn description(&self) -> &'static str {
         "Routes one of N typed inputs to a single output. When selecting by Index \
          (default) `select` is an integer (rounded, clamped); selecting by \
@@ -65,22 +61,16 @@ impl NodeWidget for MultiplexerWidget {
     }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> {
-        let sel_ty = self.select_mode.select_port_type();
-        let mut v = vec![UiPortDef::from_def(&PortDef::new("select", sel_ty))];
-        for i in 0..self.slots {
-            v.push(UiPortDef::from_def(&PortDef::new(format!("in {}", i + 1), self.port_type)));
-        }
-        v
+        UiPortDef::from_defs(&mux_ports(self.select_mode, self.slots, self.port_type).0)
     }
     fn ui_outputs(&self) -> Vec<UiPortDef> {
-        vec![UiPortDef::from_def(&PortDef::new("out", self.port_type))]
+        UiPortDef::from_defs(&mux_ports(self.select_mode, self.slots, self.port_type).1)
     }
 
     fn show_port_labels(&self) -> bool { true }
     fn layout(&self) -> NodeLayout { labelled_layout(&self.ui_inputs(), &self.ui_outputs()) }
     fn min_width(&self) -> f32 { 110.0 }
     fn min_content_height(&self) -> f32 { 25.0 }
-    fn shared_state(&self) -> &SharedState { &self.shared }
 
     fn on_ui_connect(&mut self, input_port: usize, source_type: PortType) {
         if input_port == 0 { return; } // select is Untyped; ignore for type detection
@@ -109,8 +99,6 @@ impl NodeWidget for MultiplexerWidget {
             ui.colored_label(theme::TEXT_DIM, format!("in {} → out", sel + 1));
         }
     }
-
-    fn as_any_mut(&mut self) -> &mut dyn Any { self }
 }
 
 // ---------------------------------------------------------------------------
@@ -136,12 +124,11 @@ impl DemultiplexerWidget {
     }
 
     fn sync_from_display(&mut self) {
-        let shared = self.shared.lock().unwrap();
-        if let Some(d) = shared.display.as_ref().and_then(|d| d.downcast_ref::<MuxDisplay>()) {
+        with_display::<MuxDisplay, _>(&self.shared, |d| {
             if d.port_type != self.port_type { self.port_type = d.port_type; }
             if d.slots != self.slots { self.slots = d.slots; }
             if d.select_mode != self.select_mode { self.select_mode = d.select_mode; }
-        }
+        });
     }
 }
 
@@ -152,29 +139,22 @@ impl NodeWidget for DemultiplexerWidget {
         self.select_mode = param_usize(params, 2).map(SelectMode::from_index).unwrap_or(SelectMode::Index);
     }
 
-    fn node_id(&self) -> NodeId { self.id }
-    fn type_name(&self) -> &'static str { "Demultiplexer" }
+    node_identity!("Demultiplexer");
     fn description(&self) -> &'static str {
         "Routes a typed input to one of N outputs. Selecting by Index (default), `select` is an integer (rounded, clamped); selecting by Phase it is a 0..1 phase swept across the outputs. Unselected outputs emit zero. Port type auto-detected from the first connection; slot count set in the inspector."
     }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> {
-        vec![
-            UiPortDef::from_def(&PortDef::new("select", self.select_mode.select_port_type())),
-            UiPortDef::from_def(&PortDef::new("in", self.port_type)),
-        ]
+        UiPortDef::from_defs(&demux_ports(self.select_mode, self.slots, self.port_type).0)
     }
     fn ui_outputs(&self) -> Vec<UiPortDef> {
-        (0..self.slots)
-            .map(|i| UiPortDef::from_def(&PortDef::new(format!("out {}", i + 1), self.port_type)))
-            .collect()
+        UiPortDef::from_defs(&demux_ports(self.select_mode, self.slots, self.port_type).1)
     }
 
     fn show_port_labels(&self) -> bool { true }
     fn layout(&self) -> NodeLayout { labelled_layout(&self.ui_inputs(), &self.ui_outputs()) }
     fn min_width(&self) -> f32 { 110.0 }
     fn min_content_height(&self) -> f32 { 25.0 }
-    fn shared_state(&self) -> &SharedState { &self.shared }
 
     fn on_ui_connect(&mut self, input_port: usize, source_type: PortType) {
         if input_port == 0 { return; } // select is Untyped
@@ -203,6 +183,4 @@ impl NodeWidget for DemultiplexerWidget {
             ui.colored_label(theme::TEXT_DIM, format!("in → out{}", sel));
         }
     }
-
-    fn as_any_mut(&mut self) -> &mut dyn Any { self }
 }

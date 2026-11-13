@@ -5,18 +5,17 @@
 //! `load_data` replaces its state on the next tick. The engine's display
 //! feeds back the `current_row` for the body preview.
 
-use std::any::Any;
 
 use egui::{self, Color32, Pos2, Ui, Vec2, Sense, Stroke, StrokeKind};
 use egui_extras::{Column, TableBuilder};
 
 use crate::color::{Gradient, GradientStop};
-use crate::engine::nodes::math::lookup::{LookupColumn, LookupDisplay, port_type_to_str};
+use crate::engine::nodes::math::lookup::{ports_for, LookupColumn, LookupDisplay, port_type_to_str};
 use crate::engine::types::*;
 use crate::widgets::setup_ui;
 use crate::theme;
 use crate::widgets::nodes::math::gradient_source::SharedGradientLibrary;
-use crate::widgets::nodes::node::NodeWidget;
+use crate::widgets::nodes::node::{NodeWidget, node_identity, with_display};
 use crate::widgets::nodes::types::UiPortDef;
 
 const MAX_COLUMNS: usize = 8;
@@ -185,10 +184,9 @@ impl LookupWidget {
     }
 
     fn sync_current_row_from_display(&mut self) {
-        let s = self.shared.lock().unwrap();
-        if let Some(d) = s.display.as_ref().and_then(|d| d.downcast_ref::<LookupDisplay>()) {
+        with_display::<LookupDisplay, _>(&self.shared, |d| {
             self.current_row = d.current_row;
-        }
+        });
     }
 }
 
@@ -216,14 +214,13 @@ impl NodeWidget for LookupWidget {
         self.fix_data_size();
     }
 
-    fn node_id(&self) -> NodeId { self.id }
-    fn type_name(&self) -> &'static str { "Lookup Table" }
+    node_identity!("Lookup Table");
     fn description(&self) -> &'static str {
         "Table of rows. The input picks a row (by number, or as a phase over the whole table), optionally blending between rows. Each column is its own typed output (Number / Logic / Phase / Color / Position / Palette / Gradient)."
     }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> {
-        vec![UiPortDef::from_def(&PortDef::new("index", PortType::Untyped))]
+        UiPortDef::from_defs(&ports_for(&self.columns).0)
     }
     fn take_removed_port(&mut self) -> Option<(PortDir, usize)> {
         // Output 0 is "rows", so column i is port i + 1.
@@ -231,19 +228,13 @@ impl NodeWidget for LookupWidget {
     }
 
     fn ui_outputs(&self) -> Vec<UiPortDef> {
-        // "rows" is always at index 0 so its position is stable when columns
-        // are added/removed — wires from it survive schema edits.
-        std::iter::once(UiPortDef::from_def(&PortDef::new("rows", PortType::Untyped)))
-            .chain(self.columns.iter()
-                .map(|c| UiPortDef::from_def(&PortDef::new(c.name.clone(), c.port_type))))
-            .collect()
+        UiPortDef::from_defs(&ports_for(&self.columns).1)
     }
 
     fn min_width(&self) -> f32 { 120.0 }
     fn min_content_height(&self) -> f32 { 30.0 }
     fn resizable(&self) -> bool { true }
 
-    fn shared_state(&self) -> &SharedState { &self.shared }
 
     fn show_content(&mut self, ui: &mut Ui, _zoom: f32) {
         self.sync_current_row_from_display();
@@ -455,8 +446,6 @@ impl NodeWidget for LookupWidget {
             self.push_config();
         }
     }
-
-    fn as_any_mut(&mut self) -> &mut dyn Any { self }
 }
 
 fn preview_color(pt: PortType, data: &[f32], base: usize) -> Color32 {

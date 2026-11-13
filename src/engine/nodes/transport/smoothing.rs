@@ -67,6 +67,12 @@ fn median_in_place(buf: &mut [f32]) -> f32 {
     }
 }
 
+/// The ports, stated once: the widget builds its own from this, so the two
+/// halves cannot disagree.
+pub fn ports_for(port_type: PortType) -> (Vec<PortDef>, Vec<PortDef>) {
+    (vec![PortDef::new("in", port_type)], vec![PortDef::new("out", port_type)])
+}
+
 impl SmoothingProcessNode {
     pub fn new(id: NodeId) -> Self {
         Self {
@@ -79,8 +85,8 @@ impl SmoothingProcessNode {
             history: vec![VecDeque::new(); MAX_CHANNELS],
             sum: vec![0.0; MAX_CHANNELS],
             scratch: Vec::new(),
-            inputs: vec![PortDef::new("in", PortType::Any)],
-            outputs: vec![PortDef::new("out", PortType::Any)],
+            inputs: ports_for(PortType::Any).0,
+            outputs: ports_for(PortType::Any).1,
         }
     }
 
@@ -200,8 +206,7 @@ impl ProcessNode for SmoothingProcessNode {
                 let pt = type_from_param(&value);
                 if pt != self.port_type {
                     self.port_type = pt;
-                    self.inputs = vec![PortDef::new("in", pt)];
-                    self.outputs = vec![PortDef::new("out", pt)];
+                    (self.inputs, self.outputs) = ports_for(pt);
                     self.value_in.fill(0.0);
                     self.value_out.fill(0.0);
                     self.reset_history();

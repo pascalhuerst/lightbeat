@@ -1,8 +1,7 @@
-use std::any::Any;
 use egui::Ui;
 
 use crate::engine::types::*;
-use crate::widgets::nodes::node::NodeWidget;
+use crate::widgets::nodes::node::{NodeWidget, node_identity};
 use crate::widgets::nodes::types::UiPortDef;
 
 pub struct PhaseAccumulatorWidget {
@@ -17,8 +16,7 @@ impl PhaseAccumulatorWidget {
 }
 
 impl NodeWidget for PhaseAccumulatorWidget {
-    fn node_id(&self) -> NodeId { self.id }
-    fn type_name(&self) -> &'static str { "Phase Accumulator" }
+    node_identity!("Phase Accumulator");
     fn description(&self) -> &'static str {
         "Unwraps a 0..1 wrapping phase input (X1 encoder, LFO phase, ...) \
          and accumulates the per-tick delta, clamped to [Min, Max]. Scale \
@@ -27,19 +25,11 @@ impl NodeWidget for PhaseAccumulatorWidget {
          click moves the output by 1."
     }
 
-    fn ui_inputs(&self) -> Vec<UiPortDef> {
-        vec![
-            UiPortDef::from_def(&PortDef::new("in", PortType::Untyped)),
-            UiPortDef::from_def(&PortDef::new("reset", PortType::Logic)),
-        ]
-    }
-    fn ui_outputs(&self) -> Vec<UiPortDef> {
-        vec![UiPortDef::from_def(&PortDef::new("value", PortType::Untyped))]
-    }
+    fn ui_inputs(&self) -> Vec<UiPortDef> { UiPortDef::from_defs(&crate::engine::nodes::math::phase_accumulator::ports().0) }
+    fn ui_outputs(&self) -> Vec<UiPortDef> { UiPortDef::from_defs(&crate::engine::nodes::math::phase_accumulator::ports().1) }
 
     fn min_width(&self) -> f32 { 120.0 }
     fn min_content_height(&self) -> f32 { 15.0 }
-    fn shared_state(&self) -> &SharedState { &self.shared }
 
     fn show_content(&mut self, ui: &mut Ui, _zoom: f32) {
         let shared = self.shared.lock().unwrap();
@@ -47,6 +37,4 @@ impl NodeWidget for PhaseAccumulatorWidget {
         drop(shared);
         ui.label(format!("{:.2}", v));
     }
-
-    fn as_any_mut(&mut self) -> &mut dyn Any { self }
 }

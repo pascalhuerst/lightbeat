@@ -18,6 +18,18 @@ pub enum PeakMeterOrientation {
     Horizontal,
 }
 
+/// The ports, stated once: the widget builds its own from this, so the two
+/// halves cannot disagree.
+pub fn ports() -> (Vec<PortDef>, Vec<PortDef>) {
+    (
+        vec![
+            PortDef::new("peak", PortType::Untyped),
+            PortDef::new("rms", PortType::Untyped),
+        ],
+        vec![],
+    )
+}
+
 impl PeakMeterOrientation {
     pub fn from_str(s: &str) -> Self {
         match s {
@@ -44,13 +56,11 @@ pub struct PeakMeterProcessNode {
 
 impl PeakMeterProcessNode {
     pub fn new(id: NodeId) -> Self {
+        let (inputs, _) = ports();
         Self {
             id,
             name: String::new(),
-            inputs: vec![
-                PortDef::new("peak", PortType::Untyped),
-                PortDef::new("rms", PortType::Untyped),
-            ],
+            inputs,
             peak: 0.0,
             rms: 0.0,
             orientation: PeakMeterOrientation::Vertical,

@@ -56,6 +56,12 @@ impl UiPortDef {
         }
     }
 
+    /// The one conversion from an engine port list; nodes build their widget
+    /// ports from the engine's `ports()` through this.
+    pub fn from_defs(defs: &[PortDef]) -> Vec<Self> {
+        defs.iter().map(Self::from_def).collect()
+    }
+
     pub fn with_fill(mut self, color: Color32) -> Self {
         self.fill_color = Some(color);
         self

@@ -248,7 +248,7 @@ impl ProcessNode for InputControllerProcessNode {
 }
 
 /// The ports every layout starts with, ahead of the learned inputs.
-fn base_outputs() -> Vec<PortDef> {
+pub fn base_outputs() -> Vec<PortDef> {
     with_status_port(vec![PortDef::new("any change", PortType::Logic)])
 }
 

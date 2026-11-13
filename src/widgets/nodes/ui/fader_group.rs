@@ -1,14 +1,12 @@
-use std::any::Any;
-
 use egui::{self, Color32, Ui, Vec2};
 
 use crate::engine::nodes::ui::common::MouseOverrideMode;
-use crate::engine::nodes::ui::fader_group::FaderGroupDisplay;
+use crate::engine::nodes::ui::fader_group::{ports_for, FaderGroupDisplay};
 use crate::engine::types::*;
 use crate::theme;
 use crate::widgets::setup_ui;
 use crate::widgets::fader::{self, highlight_alpha, FaderStyle, Orientation};
-use crate::widgets::nodes::node::{NodeLayout, NodeWidget};
+use crate::widgets::nodes::node::{NodeLayout, NodeWidget, node_identity};
 use crate::widgets::nodes::types::UiPortDef;
 use crate::widgets::nodes::ui::fader::draw_override_indicator;
 
@@ -145,37 +143,29 @@ impl NodeWidget for FaderGroupWidget {
         self.any_output_enabled = self.outputs_enabled.iter().any(|&b| b);
     }
 
-    fn node_id(&self) -> NodeId { self.id }
-    fn type_name(&self) -> &'static str { "Fader Group" }
+    node_identity!("Fader Group");
     fn title(&self) -> &str { &self.name }
     fn description(&self) -> &'static str {
         "Grid of faders. Each cell has its own input enable, mouse override mode, and bipolar setting."
     }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> {
-        if !self.any_input_enabled { return vec![]; }
-        (0..self.rows).flat_map(|r| (0..self.cols).map(move |c| {
-            let i = r * self.cols + c;
-            let enabled = self.inputs_enabled.get(i).copied().unwrap_or(false);
-            UiPortDef::from_def(&PortDef::new(format!("{},{}", r + 1, c + 1), PortType::Untyped))
-                .with_disabled(!enabled)
-        })).collect()
+        let ports = ports_for(self.rows, self.cols, self.any_input_enabled, self.any_output_enabled).0;
+        UiPortDef::from_defs(&ports).into_iter().enumerate()
+            .map(|(i, p)| p.with_disabled(!self.inputs_enabled.get(i).copied().unwrap_or(false)))
+            .collect()
     }
     fn ui_outputs(&self) -> Vec<UiPortDef> {
-        if !self.any_output_enabled { return vec![]; }
-        (0..self.rows).flat_map(|r| (0..self.cols).map(move |c| {
-            let i = r * self.cols + c;
-            let enabled = self.outputs_enabled.get(i).copied().unwrap_or(false);
-            UiPortDef::from_def(&PortDef::new(format!("{},{}", r + 1, c + 1), PortType::Untyped))
-                .with_disabled(!enabled)
-        })).collect()
+        let ports = ports_for(self.rows, self.cols, self.any_input_enabled, self.any_output_enabled).1;
+        UiPortDef::from_defs(&ports).into_iter().enumerate()
+            .map(|(i, p)| p.with_disabled(!self.outputs_enabled.get(i).copied().unwrap_or(false)))
+            .collect()
     }
 
     fn layout(&self) -> NodeLayout { NodeLayout::compact() }
     fn min_width(&self) -> f32 { (self.cols as f32 * 28.0).max(120.0) }
     fn min_content_height(&self) -> f32 { (self.rows as f32 * 60.0).max(80.0) }
     fn resizable(&self) -> bool { true }
-    fn shared_state(&self) -> &SharedState { &self.shared }
 
     fn output_highlight(&self, port_idx: usize, now: f64) -> f32 {
         let last = self.last_edit_time.get(port_idx).copied().flatten();
@@ -443,6 +433,4 @@ impl NodeWidget for FaderGroupWidget {
 
         if changed { self.push_settings(); }
     }
-
-    fn as_any_mut(&mut self) -> &mut dyn Any { self }
 }

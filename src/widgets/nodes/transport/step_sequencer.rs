@@ -1,12 +1,10 @@
-use std::any::Any;
-
 use egui::{self, Rect, Sense, StrokeKind, Ui, Vec2};
 
-use crate::engine::nodes::transport::step_sequencer::{StepMode, StepSequencerDisplay};
+use crate::engine::nodes::transport::step_sequencer::{ports_for, StepMode, StepSequencerDisplay};
 use crate::engine::types::*;
 use crate::theme;
 use crate::widgets::fader::{self, FaderStyle, Orientation};
-use crate::widgets::nodes::node::NodeWidget;
+use crate::widgets::nodes::node::{NodeWidget, node_identity, with_display};
 use crate::widgets::nodes::types::UiPortDef;
 
 pub struct StepSequencerWidget {
@@ -14,7 +12,6 @@ pub struct StepSequencerWidget {
     shared: SharedState,
     /// Mirror of engine mode — drives `ui_inputs` so the input port matches.
     mode: StepMode,
-    outputs: Vec<PortDef>,
 }
 
 impl StepSequencerWidget {
@@ -23,52 +20,24 @@ impl StepSequencerWidget {
             id,
             shared,
             mode: StepMode::Phase,
-            outputs: vec![
-                PortDef::new("trigger", PortType::Logic),
-                PortDef::new("out", PortType::Untyped),
-                PortDef::new("step", PortType::Untyped),
-            ],
         }
     }
 }
 
 impl NodeWidget for StepSequencerWidget {
-    fn node_id(&self) -> NodeId { self.id }
-    fn type_name(&self) -> &'static str { "Step Sequencer" }
+    node_identity!("Step Sequencer");
     fn description(&self) -> &'static str { "N-step pattern of values. In Phase mode a phase wire picks the step; in Trigger mode each trigger advances it and a rising edge on reset goes back to step 0. Outputs the current step value, its index and a per-step trigger." }
 
-    fn ui_inputs(&self) -> Vec<UiPortDef> {
-        match self.mode {
-            StepMode::Phase => vec![
-                UiPortDef::from_def(&PortDef::new("phase", PortType::Phase)),
-            ],
-            StepMode::Trigger => vec![
-                UiPortDef::from_def(&PortDef::new("trigger", PortType::Logic)),
-                UiPortDef::from_def(&PortDef::new("reset", PortType::Logic)),
-            ],
-        }
-    }
-    fn ui_outputs(&self) -> Vec<UiPortDef> {
-        self.outputs.iter().map(UiPortDef::from_def).collect()
-    }
+    fn ui_inputs(&self) -> Vec<UiPortDef> { UiPortDef::from_defs(&ports_for(self.mode).0) }
+    fn ui_outputs(&self) -> Vec<UiPortDef> { UiPortDef::from_defs(&ports_for(self.mode).1) }
 
     fn min_width(&self) -> f32 { 160.0 }
     fn min_content_height(&self) -> f32 { 80.0 }
     fn resizable(&self) -> bool { true }
 
-    fn shared_state(&self) -> &SharedState { &self.shared }
 
     fn show_content(&mut self, ui: &mut Ui, _zoom: f32) {
-        let shared = self.shared.lock().unwrap();
-        let display = shared.display.as_ref()
-            .and_then(|d| d.downcast_ref::<StepSequencerDisplay>());
-
-        let (values, current_step, active, mode) = if let Some(d) = display {
-            (d.values.clone(), d.current_step, d.active, d.mode)
-        } else {
-            (vec![0.0; 8], 0, false, StepMode::Phase)
-        };
-        drop(shared);
+        let (values, current_step, active, mode) = with_display::<StepSequencerDisplay, _>(&self.shared, |d| (d.values.clone(), d.current_step, d.active, d.mode)).unwrap_or((vec![0.0; 8], 0, false, StepMode::Phase));
         self.mode = mode;
 
         let num_steps = values.len();
@@ -151,6 +120,4 @@ impl NodeWidget for StepSequencerWidget {
                 }
             }
     }
-
-    fn as_any_mut(&mut self) -> &mut dyn Any { self }
 }

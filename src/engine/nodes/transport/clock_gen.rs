@@ -12,16 +12,26 @@ pub struct ClockGenProcessNode {
     outputs: Vec<PortDef>,
 }
 
+/// The ports, stated once: the widget builds its own from this, so the two
+/// halves cannot disagree.
+pub fn ports() -> (Vec<PortDef>, Vec<PortDef>) {
+    (
+        vec![PortDef::new("phase", PortType::Phase)],
+        vec![PortDef::new("trigger", PortType::Logic)],
+    )
+}
+
 impl ClockGenProcessNode {
     pub fn new(id: NodeId) -> Self {
+        let (inputs, outputs) = ports();
         Self {
             id,
             count: 4,
             phase_in: 0.0,
             prev_phase: 0.0,
             trigger_out: 0.0,
-            inputs: vec![PortDef::new("phase", PortType::Phase)],
-            outputs: vec![PortDef::new("trigger", PortType::Logic)],
+            inputs,
+            outputs,
         }
     }
 }

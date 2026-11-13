@@ -7,7 +7,6 @@
 //! (`set_stack_members`); the stack keeps their order and per-layer settings.
 //! A stack that is sent nowhere is a root and writes to its groups.
 
-use std::any::Any;
 
 use egui::{self, Color32, Sense, Ui, Vec2};
 
@@ -18,7 +17,7 @@ use crate::engine::types::*;
 use crate::objects::channel::ChannelKind;
 use crate::theme;
 use crate::widgets::setup_ui;
-use crate::widgets::nodes::node::{NodeWidget, StackMember};
+use crate::widgets::nodes::node::{NodeWidget, StackMember, node_identity};
 use crate::widgets::group_context::SharedGroupContext;
 use crate::widgets::nodes::output::effect::SharedStackNames;
 use crate::widgets::nodes::types::UiPortDef;
@@ -261,8 +260,7 @@ impl NodeWidget for EffectStackWidget {
         }
     }
 
-    fn node_id(&self) -> NodeId { self.id }
-    fn type_name(&self) -> &'static str { "Effect Stack" }
+    node_identity!("Effect Stack");
     fn title(&self) -> &str { &self.config.name }
     fn description(&self) -> &'static str {
         "Blends the effects and stacks sent to it, bottom to top. A stack that is sent to no other stack writes the result to its groups; the others blend into the stack they are sent to."
@@ -280,7 +278,6 @@ impl NodeWidget for EffectStackWidget {
     fn min_width(&self) -> f32 { 200.0 }
     fn min_content_height(&self) -> f32 { 28.0 }
     fn resizable(&self) -> bool { true }
-    fn shared_state(&self) -> &SharedState { &self.shared }
 
     fn accent_color(&self) -> Option<Color32> {
         Some(theme::link_color(&self.config.name))
@@ -585,8 +582,6 @@ impl NodeWidget for EffectStackWidget {
             self.push_config();
         }
     }
-
-    fn as_any_mut(&mut self) -> &mut dyn Any { self }
 }
 
 #[cfg(test)]

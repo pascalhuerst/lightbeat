@@ -1,16 +1,15 @@
-use std::any::Any;
 use std::collections::BTreeMap;
 
 use egui::{self, Ui, Vec2};
 
 use crate::engine::nodes::ui::button::ButtonMode;
-use crate::engine::nodes::ui::button_group::ButtonGroupDisplay;
+use crate::engine::nodes::ui::button_group::{ports_for, ButtonGroupDisplay};
 use crate::engine::nodes::ui::common::MouseOverrideMode;
 use crate::engine::types::*;
 use crate::theme;
 use crate::widgets::setup_ui;
 use crate::widgets::fader::highlight_alpha;
-use crate::widgets::nodes::node::{NodeLayout, NodeWidget};
+use crate::widgets::nodes::node::{NodeLayout, NodeWidget, node_identity};
 use crate::widgets::nodes::types::UiPortDef;
 
 const HIGHLIGHT_DURATION: f64 = 0.5;
@@ -120,30 +119,23 @@ impl NodeWidget for ButtonGroupWidget {
         self.resize();
     }
 
-    fn node_id(&self) -> NodeId { self.id }
-    fn type_name(&self) -> &'static str { "Button Group" }
+    node_identity!("Button Group");
     fn title(&self) -> &str { &self.name }
     fn description(&self) -> &'static str {
         "Grid of buttons with one Logic output per cell. Trigger or Toggle mode applies to all."
     }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> {
-        if !self.inputs_enabled { return vec![]; }
-        (0..self.rows).flat_map(|r| (0..self.cols).map(move |c| {
-            UiPortDef::from_def(&PortDef::new(format!("{},{}", r + 1, c + 1), PortType::Logic))
-        })).collect()
+        UiPortDef::from_defs(&ports_for(self.rows, self.cols, self.inputs_enabled).0)
     }
     fn ui_outputs(&self) -> Vec<UiPortDef> {
-        (0..self.rows).flat_map(|r| (0..self.cols).map(move |c| {
-            UiPortDef::from_def(&PortDef::new(format!("{},{}", r + 1, c + 1), PortType::Logic))
-        })).collect()
+        UiPortDef::from_defs(&ports_for(self.rows, self.cols, self.inputs_enabled).1)
     }
 
     fn layout(&self) -> NodeLayout { NodeLayout::compact() }
     fn min_width(&self) -> f32 { (self.cols as f32 * 40.0).max(120.0) }
     fn min_content_height(&self) -> f32 { (self.rows as f32 * 32.0).max(60.0) }
     fn resizable(&self) -> bool { true }
-    fn shared_state(&self) -> &SharedState { &self.shared }
 
     fn output_highlight(&self, port_idx: usize, now: f64) -> f32 {
         let last = self.last_click_time.get(port_idx).copied().flatten();
@@ -358,6 +350,4 @@ impl NodeWidget for ButtonGroupWidget {
         }
         if changed { self.push_settings(); }
     }
-
-    fn as_any_mut(&mut self) -> &mut dyn Any { self }
 }

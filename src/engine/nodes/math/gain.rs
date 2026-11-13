@@ -18,15 +18,25 @@ pub struct GainProcessNode {
     outputs: Vec<PortDef>,
 }
 
+/// The ports, stated once: the widget builds its own from this, so the two
+/// halves cannot disagree.
+pub fn ports() -> (Vec<PortDef>, Vec<PortDef>) {
+    (
+        vec![PortDef::new("in", PortType::Untyped)],
+        vec![PortDef::new("out", PortType::Untyped)],
+    )
+}
+
 impl GainProcessNode {
     pub fn new(id: NodeId) -> Self {
+        let (inputs, outputs) = ports();
         Self {
             id,
             input: 0.0,
             gain: 1.0,
             output: 0.0,
-            inputs: vec![PortDef::new("in", PortType::Untyped)],
-            outputs: vec![PortDef::new("out", PortType::Untyped)],
+            inputs,
+            outputs,
         }
     }
 }

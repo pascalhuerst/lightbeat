@@ -113,6 +113,21 @@ pub struct EnvelopeProcessNode {
     outputs: Vec<PortDef>,
 }
 
+/// The ports, stated once: the widget builds its own from this, so the two
+/// halves cannot disagree.
+pub fn ports() -> (Vec<PortDef>, Vec<PortDef>) {
+    (
+        vec![
+            PortDef::new("in", PortType::Untyped),
+            PortDef::new("gate", PortType::Logic),
+        ],
+        vec![
+            PortDef::new("out", PortType::Untyped),
+            PortDef::new("signal", PortType::Untyped),
+        ],
+    )
+}
+
 impl EnvelopeProcessNode {
     pub fn new(id: NodeId) -> Self {
         // Defaults tuned for beat-triggered use at ~110..140 BPM (beat
@@ -134,14 +149,8 @@ impl EnvelopeProcessNode {
             prev_gate: false,
             gate_in: 0.0,
             signal_in: 0.0,
-            inputs: vec![
-                PortDef::new("in", PortType::Untyped),
-                PortDef::new("gate", PortType::Logic),
-            ],
-            outputs: vec![
-                PortDef::new("out", PortType::Untyped),
-                PortDef::new("signal", PortType::Untyped),
-            ],
+            inputs: ports().0,
+            outputs: ports().1,
         }
     }
 

@@ -1,8 +1,8 @@
-use std::any::Any;
 use egui::Ui;
 
+use crate::engine::nodes::transport::smoothing::ports_for;
 use crate::engine::types::*;
-use crate::widgets::nodes::node::NodeWidget;
+use crate::widgets::nodes::node::{NodeWidget, node_identity};
 use crate::widgets::nodes::transport::signal_type::SignalTypeSetting;
 use crate::widgets::nodes::types::UiPortDef;
 
@@ -23,8 +23,7 @@ impl NodeWidget for SmoothingWidget {
         self.value_type.restore(params);
     }
 
-    fn node_id(&self) -> NodeId { self.id }
-    fn type_name(&self) -> &'static str { "Smoothing" }
+    node_identity!("Smoothing");
     fn description(&self) -> &'static str {
         "Low-pass smoothing for noisy control signals. Modes: Exponential \
          (one-pole IIR, α derived from window length), Moving Average \
@@ -33,15 +32,14 @@ impl NodeWidget for SmoothingWidget {
     }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> {
-        vec![UiPortDef::from_def(&PortDef::new("in", self.value_type.port_type))]
+        UiPortDef::from_defs(&ports_for(self.value_type.port_type).0)
     }
     fn ui_outputs(&self) -> Vec<UiPortDef> {
-        vec![UiPortDef::from_def(&PortDef::new("out", self.value_type.port_type))]
+        UiPortDef::from_defs(&ports_for(self.value_type.port_type).1)
     }
 
     fn min_width(&self) -> f32 { 110.0 }
     fn min_content_height(&self) -> f32 { 15.0 }
-    fn shared_state(&self) -> &SharedState { &self.shared }
 
     fn on_ui_connect(&mut self, input_port: usize, source_type: PortType) {
         if input_port == 0 { self.value_type.adopt(&self.shared, source_type); }
@@ -57,6 +55,4 @@ impl NodeWidget for SmoothingWidget {
         drop(shared);
         ui.label(self.value_type.summary(out));
     }
-
-    fn as_any_mut(&mut self) -> &mut dyn Any { self }
 }

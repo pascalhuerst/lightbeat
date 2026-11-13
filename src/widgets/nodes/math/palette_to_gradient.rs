@@ -1,11 +1,9 @@
-use std::any::Any;
-
 use egui::{self, Color32, Pos2, Sense, Stroke, StrokeKind, Ui};
 
 use crate::color::Gradient;
 use crate::engine::types::*;
 use crate::theme;
-use crate::widgets::nodes::node::NodeWidget;
+use crate::widgets::nodes::node::{NodeWidget, node_identity};
 use crate::widgets::nodes::types::UiPortDef;
 
 const N: usize = 4;
@@ -22,30 +20,18 @@ impl PaletteToGradientWidget {
 }
 
 impl NodeWidget for PaletteToGradientWidget {
-    fn node_id(&self) -> NodeId { self.id }
-    fn type_name(&self) -> &'static str { "Palette to Gradient" }
+    node_identity!("Palette to Gradient");
     fn description(&self) -> &'static str {
         "Builds a 4-stop gradient from a palette and one position per palette colour. \
          Wire `pos1..pos4` to drive stop positions from the graph, or set them in the inspector."
     }
 
-    fn ui_inputs(&self) -> Vec<UiPortDef> {
-        vec![
-            UiPortDef::from_def(&PortDef::new("palette", PortType::Palette)),
-            UiPortDef::from_def(&PortDef::new("pos1", PortType::Untyped)),
-            UiPortDef::from_def(&PortDef::new("pos2", PortType::Untyped)),
-            UiPortDef::from_def(&PortDef::new("pos3", PortType::Untyped)),
-            UiPortDef::from_def(&PortDef::new("pos4", PortType::Untyped)),
-        ]
-    }
-    fn ui_outputs(&self) -> Vec<UiPortDef> {
-        vec![UiPortDef::from_def(&PortDef::new("gradient", PortType::Gradient))]
-    }
+    fn ui_inputs(&self) -> Vec<UiPortDef> { UiPortDef::from_defs(&crate::engine::nodes::math::palette_to_gradient::ports().0) }
+    fn ui_outputs(&self) -> Vec<UiPortDef> { UiPortDef::from_defs(&crate::engine::nodes::math::palette_to_gradient::ports().1) }
 
     fn min_width(&self) -> f32 { 150.0 }
     fn min_content_height(&self) -> f32 { 40.0 }
     fn resizable(&self) -> bool { true }
-    fn shared_state(&self) -> &SharedState { &self.shared }
 
     fn overridden_param_indices(&self) -> Vec<usize> {
         // Inspector params are Pos 1..Pos 4 at indices 0..=3; each is
@@ -99,7 +85,5 @@ impl NodeWidget for PaletteToGradientWidget {
         }
         painter.rect_stroke(rect, 2.0, Stroke::new(1.0_f32, theme::STROKE), StrokeKind::Inside);
     }
-
-    fn as_any_mut(&mut self) -> &mut dyn Any { self }
 }
 

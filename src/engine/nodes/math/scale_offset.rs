@@ -20,8 +20,22 @@ pub struct ScaleOffsetProcessNode {
     outputs: Vec<PortDef>,
 }
 
+/// The ports, stated once: the widget builds its own from this, so the two
+/// halves cannot disagree.
+pub fn ports() -> (Vec<PortDef>, Vec<PortDef>) {
+    (
+        vec![
+            PortDef::new("in", PortType::Untyped),
+            PortDef::new("scale", PortType::Untyped),
+            PortDef::new("offset", PortType::Untyped),
+        ],
+        vec![PortDef::new("out", PortType::Untyped)],
+    )
+}
+
 impl ScaleOffsetProcessNode {
     pub fn new(id: NodeId) -> Self {
+        let (inputs, outputs) = ports();
         Self {
             id,
             in_value: 0.0,
@@ -32,12 +46,8 @@ impl ScaleOffsetProcessNode {
             scale_connected: false,
             offset_connected: false,
             out_value: 0.0,
-            inputs: vec![
-                PortDef::new("in", PortType::Untyped),
-                PortDef::new("scale", PortType::Untyped),
-                PortDef::new("offset", PortType::Untyped),
-            ],
-            outputs: vec![PortDef::new("out", PortType::Untyped)],
+            inputs,
+            outputs,
         }
     }
 

@@ -1,14 +1,12 @@
-use std::any::Any;
-
 use egui::{self, Color32, Ui};
 
 use crate::engine::nodes::ui::common::MouseOverrideMode;
-use crate::engine::nodes::ui::fader::{FaderDisplay, FaderOrientation};
+use crate::engine::nodes::ui::fader::{ports_for, FaderDisplay, FaderOrientation};
 use crate::engine::types::*;
 use crate::theme;
 use crate::widgets::setup_ui;
 use crate::widgets::fader::{self, highlight_alpha, FaderStyle};
-use crate::widgets::nodes::node::{param_usize, NodeLayout, NodeWidget};
+use crate::widgets::nodes::node::{param_usize, NodeLayout, NodeWidget, node_identity, with_display};
 use crate::widgets::nodes::types::UiPortDef;
 
 const HIGHLIGHT_DURATION: f64 = 0.5;
@@ -113,8 +111,7 @@ impl NodeWidget for FaderWidget {
         };
     }
 
-    fn node_id(&self) -> NodeId { self.id }
-    fn type_name(&self) -> &'static str { "Fader" }
+    node_identity!("Fader");
     fn title(&self) -> &str { &self.name }
     fn set_name(&mut self, name: &str) {
         self.name = name.to_string();
@@ -125,21 +122,16 @@ impl NodeWidget for FaderWidget {
     }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> {
-        if self.inputs_enabled {
-            vec![UiPortDef::from_def(&PortDef::new("in", PortType::Untyped))]
-        } else {
-            vec![]
-        }
+        UiPortDef::from_defs(&ports_for(self.inputs_enabled).0)
     }
     fn ui_outputs(&self) -> Vec<UiPortDef> {
-        vec![UiPortDef::from_def(&PortDef::new("out", PortType::Untyped))]
+        UiPortDef::from_defs(&ports_for(self.inputs_enabled).1)
     }
 
     fn layout(&self) -> NodeLayout { NodeLayout::compact() }
     fn min_width(&self) -> f32 { 80.0 }
     fn min_content_height(&self) -> f32 { 80.0 }
     fn resizable(&self) -> bool { true }
-    fn shared_state(&self) -> &SharedState { &self.shared }
 
     fn output_highlight(&self, port_idx: usize, now: f64) -> f32 {
         if port_idx != 0 { return 0.0; }
@@ -153,20 +145,17 @@ impl NodeWidget for FaderWidget {
 
     fn show_content(&mut self, ui: &mut Ui, _zoom: f32) {
         // Sync from engine display.
-        {
-            let shared = self.shared.lock().unwrap();
-            if let Some(d) = shared.display.as_ref().and_then(|d| d.downcast_ref::<FaderDisplay>()) {
-                self.name = d.name.clone();
-                self.orientation = d.orientation;
-                self.output_value = d.output;
-                self.input_value = d.input;
-                self.inputs_enabled = d.inputs_enabled;
-                self.mouse_override = d.mouse_override;
-                self.override_active = d.override_active;
-                self.override_value = d.override_value;
-                self.bipolar = d.bipolar;
-            }
-        }
+        with_display::<FaderDisplay, _>(&self.shared, |d| {
+            self.name = d.name.clone();
+            self.orientation = d.orientation;
+            self.output_value = d.output;
+            self.input_value = d.input;
+            self.inputs_enabled = d.inputs_enabled;
+            self.mouse_override = d.mouse_override;
+            self.override_active = d.override_active;
+            self.override_value = d.override_value;
+            self.bipolar = d.bipolar;
+        });
 
         let avail = ui.available_size();
         if avail.x <= 0.0 || avail.y <= 0.0 { return; }
@@ -273,8 +262,6 @@ impl NodeWidget for FaderWidget {
 
         if changed { self.push_settings(); }
     }
-
-    fn as_any_mut(&mut self) -> &mut dyn Any { self }
 }
 
 #[cfg(test)]

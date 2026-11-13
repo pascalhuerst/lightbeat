@@ -108,6 +108,16 @@ pub struct MultiplexerProcessNode {
     outputs: Vec<PortDef>,
 }
 
+/// The ports, stated once: the widget builds its own from this, so the two
+/// halves cannot disagree.
+pub fn mux_ports(select_mode: SelectMode, slots: usize, port_type: PortType) -> (Vec<PortDef>, Vec<PortDef>) {
+    let mut ins = vec![PortDef::new("select", select_mode.select_port_type())];
+    for i in 0..slots {
+        ins.push(PortDef::new(format!("in {}", i + 1), port_type));
+    }
+    (ins, vec![PortDef::new("out", port_type)])
+}
+
 impl MultiplexerProcessNode {
     pub fn new(id: NodeId) -> Self {
         let mut node = Self {
@@ -127,12 +137,7 @@ impl MultiplexerProcessNode {
 
     fn rebuild(&mut self) {
         let pt = self.port_type;
-        let mut ins = vec![PortDef::new("select", self.select_mode.select_port_type())];
-        for i in 0..self.slots {
-            ins.push(PortDef::new(format!("in {}", i + 1), pt));
-        }
-        self.inputs = ins;
-        self.outputs = vec![PortDef::new("out", pt)];
+        (self.inputs, self.outputs) = mux_ports(self.select_mode, self.slots, pt);
         for v in self.input_values.iter_mut() { *v = 0.0; }
         for v in self.output_values.iter_mut() { *v = 0.0; }
         self.selected = 0;
@@ -253,6 +258,18 @@ pub struct DemultiplexerProcessNode {
     outputs: Vec<PortDef>,
 }
 
+/// The ports, stated once: the widget builds its own from this, so the two
+/// halves cannot disagree.
+pub fn demux_ports(select_mode: SelectMode, slots: usize, port_type: PortType) -> (Vec<PortDef>, Vec<PortDef>) {
+    (
+        vec![
+            PortDef::new("select", select_mode.select_port_type()),
+            PortDef::new("in", port_type),
+        ],
+        (0..slots).map(|i| PortDef::new(format!("out {}", i + 1), port_type)).collect(),
+    )
+}
+
 impl DemultiplexerProcessNode {
     pub fn new(id: NodeId) -> Self {
         let mut node = Self {
@@ -272,13 +289,7 @@ impl DemultiplexerProcessNode {
 
     fn rebuild(&mut self) {
         let pt = self.port_type;
-        self.inputs = vec![
-            PortDef::new("select", self.select_mode.select_port_type()),
-            PortDef::new("in", pt),
-        ];
-        self.outputs = (0..self.slots)
-            .map(|i| PortDef::new(format!("out {}", i + 1), pt))
-            .collect();
+        (self.inputs, self.outputs) = demux_ports(self.select_mode, self.slots, pt);
         for v in self.input_values.iter_mut() { *v = 0.0; }
         for v in self.output_values.iter_mut() { *v = 0.0; }
         self.selected = 0;

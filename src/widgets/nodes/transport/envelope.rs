@@ -1,11 +1,9 @@
-use std::any::Any;
-
 use egui::{self, Pos2, Sense, Stroke, StrokeKind, Ui, Vec2};
 
-use crate::engine::nodes::transport::envelope::{EnvelopeDisplay, EnvelopeKind, curve_for_mid, shape};
+use crate::engine::nodes::transport::envelope::{ports, EnvelopeDisplay, EnvelopeKind, curve_for_mid, shape};
 use crate::engine::types::*;
 use crate::theme;
-use crate::widgets::nodes::node::{NodeWidget, param_usize};
+use crate::widgets::nodes::node::{NodeWidget, param_usize, node_identity};
 use crate::widgets::nodes::types::UiPortDef;
 
 const HANDLE_RADIUS: f32 = 5.0;
@@ -53,8 +51,7 @@ impl NodeWidget for EnvelopeWidget {
         self.kind = param_usize(params, 4).map(EnvelopeKind::from_index).unwrap_or(EnvelopeKind::Adsr);
     }
 
-    fn node_id(&self) -> NodeId { self.id }
-    fn type_name(&self) -> &'static str { "Envelope" }
+    node_identity!("Envelope");
     fn description(&self) -> &'static str {
         "Shapes a value over time. Mode picks the flavor: ADSR/AD/AR \
          trigger from a gate; Follower / Follower-RF extract an envelope \
@@ -65,18 +62,13 @@ impl NodeWidget for EnvelopeWidget {
     fn ui_inputs(&self) -> Vec<UiPortDef> {
         // The gate port keeps its index in every mode so wires from other
         // modes survive a mode switch; only the label flips.
-        let gate_name = if self.kind.uses_gate() { "gate" } else { "(unused)" };
-        vec![
-            UiPortDef::from_def(&PortDef::new("in", PortType::Untyped)),
-            UiPortDef::from_def(&PortDef::new(gate_name, PortType::Logic)),
-        ]
+        let mut ports = UiPortDef::from_defs(&ports().0);
+        if !self.kind.uses_gate() {
+            ports[1].def.name = "(unused)".into();
+        }
+        ports
     }
-    fn ui_outputs(&self) -> Vec<UiPortDef> {
-        vec![
-            UiPortDef::from_def(&PortDef::new("out", PortType::Untyped)),
-            UiPortDef::from_def(&PortDef::new("signal", PortType::Untyped)),
-        ]
-    }
+    fn ui_outputs(&self) -> Vec<UiPortDef> { UiPortDef::from_defs(&ports().1) }
 
     fn overridden_param_indices(&self) -> Vec<usize> {
         // Hide params that don't apply to the current mode. Indices:
@@ -97,7 +89,6 @@ impl NodeWidget for EnvelopeWidget {
     fn min_content_height(&self) -> f32 { 80.0 }
     fn resizable(&self) -> bool { true }
 
-    fn shared_state(&self) -> &SharedState { &self.shared }
 
     fn show_content(&mut self, ui: &mut Ui, zoom: f32) {
         self.sync_from_display();
@@ -168,8 +159,6 @@ impl NodeWidget for EnvelopeWidget {
             );
         }
     }
-
-    fn as_any_mut(&mut self) -> &mut dyn Any { self }
 }
 
 // ---------------------------------------------------------------------------

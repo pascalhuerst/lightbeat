@@ -1,10 +1,9 @@
-use std::any::Any;
 use egui::Ui;
 
-use crate::engine::nodes::math::counter::CounterDisplay;
+use crate::engine::nodes::math::counter::{ports_for, CounterDisplay};
 use crate::engine::nodes::math::multiplex::SelectMode;
 use crate::engine::types::*;
-use crate::widgets::nodes::node::{NodeWidget, param_usize};
+use crate::widgets::nodes::node::{NodeWidget, param_usize, node_identity};
 use crate::widgets::nodes::types::UiPortDef;
 
 pub struct CounterWidget {
@@ -32,8 +31,7 @@ impl NodeWidget for CounterWidget {
         self.select_mode = param_usize(params, 2).map(SelectMode::from_index).unwrap_or(SelectMode::Index);
     }
 
-    fn node_id(&self) -> NodeId { self.id }
-    fn type_name(&self) -> &'static str { "Counter" }
+    node_identity!("Counter");
     fn description(&self) -> &'static str {
         "Counts through 0..Max-1. In Index mode (default) each trigger \
          rising edge advances the count. In Phase mode `count = floor(phase \
@@ -42,15 +40,7 @@ impl NodeWidget for CounterWidget {
     }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> {
-        let port0 = match self.select_mode {
-            SelectMode::Index => PortDef::new("trigger", PortType::Logic),
-            SelectMode::Phase => PortDef::new("phase", PortType::Phase),
-        };
-        vec![
-            UiPortDef::from_def(&port0),
-            UiPortDef::from_def(&PortDef::new("reset", PortType::Logic)),
-            UiPortDef::from_def(&PortDef::new("max", PortType::Untyped)),
-        ]
+        UiPortDef::from_defs(&ports_for(self.select_mode).0)
     }
 
     fn overridden_param_indices(&self) -> Vec<usize> {
@@ -64,15 +54,11 @@ impl NodeWidget for CounterWidget {
         }
     }
     fn ui_outputs(&self) -> Vec<UiPortDef> {
-        vec![
-            UiPortDef::from_def(&PortDef::new("count", PortType::Untyped)),
-            UiPortDef::from_def(&PortDef::new("wrap", PortType::Logic)),
-        ]
+        UiPortDef::from_defs(&ports_for(self.select_mode).1)
     }
 
     fn min_width(&self) -> f32 { 80.0 }
     fn min_content_height(&self) -> f32 { 15.0 }
-    fn shared_state(&self) -> &SharedState { &self.shared }
 
     fn show_content(&mut self, ui: &mut Ui, _zoom: f32) {
         self.sync_from_display();
@@ -81,6 +67,4 @@ impl NodeWidget for CounterWidget {
         drop(shared);
         ui.label(format!("{}", count as i64));
     }
-
-    fn as_any_mut(&mut self) -> &mut dyn Any { self }
 }

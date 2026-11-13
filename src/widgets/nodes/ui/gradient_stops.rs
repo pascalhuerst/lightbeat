@@ -1,12 +1,10 @@
-use std::any::Any;
-
 use egui::{self, Color32, Pos2, Sense, Stroke, StrokeKind, Ui, Vec2};
 
 use crate::engine::nodes::ui::gradient_stops::GradientStopsDisplay;
 use crate::engine::types::*;
 use crate::theme;
 use crate::widgets::fader;
-use crate::widgets::nodes::node::{NodeLayout, NodeWidget};
+use crate::widgets::nodes::node::{NodeLayout, NodeWidget, node_identity, with_display};
 use crate::widgets::nodes::types::UiPortDef;
 
 const STRIP_HEIGHT: f32 = 22.0;
@@ -36,12 +34,11 @@ impl GradientStopsWidget {
     }
 
     fn sync_from_display(&mut self) {
-        let s = self.shared.lock().unwrap();
-        if let Some(d) = s.display.as_ref().and_then(|d| d.downcast_ref::<GradientStopsDisplay>()) {
+        with_display::<GradientStopsDisplay, _>(&self.shared, |d| {
             self.name = d.name.clone();
             self.positions = d.positions;
             self.palette = d.palette;
-        }
+        });
     }
 
     fn push_position(&self, idx: usize, v: f32) {
@@ -64,8 +61,7 @@ impl GradientStopsWidget {
 }
 
 impl NodeWidget for GradientStopsWidget {
-    fn node_id(&self) -> NodeId { self.id }
-    fn type_name(&self) -> &'static str { "Gradient Stops" }
+    node_identity!("Gradient Stops");
     fn title(&self) -> &str { &self.name }
     fn description(&self) -> &'static str {
         "Four draggable stop positions (0..1) for the Palette to Gradient node. \
@@ -73,23 +69,13 @@ impl NodeWidget for GradientStopsWidget {
          gradient; drag the handles to move each stop, Shift for fine steps, double-click a handle to reset it."
     }
 
-    fn ui_inputs(&self) -> Vec<UiPortDef> {
-        vec![UiPortDef::from_def(&PortDef::new("palette", PortType::Palette))]
-    }
-    fn ui_outputs(&self) -> Vec<UiPortDef> {
-        vec![
-            UiPortDef::from_def(&PortDef::new("pos1", PortType::Untyped)),
-            UiPortDef::from_def(&PortDef::new("pos2", PortType::Untyped)),
-            UiPortDef::from_def(&PortDef::new("pos3", PortType::Untyped),),
-            UiPortDef::from_def(&PortDef::new("pos4", PortType::Untyped)),
-        ]
-    }
+    fn ui_inputs(&self) -> Vec<UiPortDef> { UiPortDef::from_defs(&crate::engine::nodes::ui::gradient_stops::ports().0) }
+    fn ui_outputs(&self) -> Vec<UiPortDef> { UiPortDef::from_defs(&crate::engine::nodes::ui::gradient_stops::ports().1) }
 
     fn layout(&self) -> NodeLayout { NodeLayout::compact() }
     fn min_width(&self) -> f32 { 220.0 }
     fn min_content_height(&self) -> f32 { STRIP_HEIGHT + HANDLE_TRACK_HEIGHT + 4.0 }
     fn resizable(&self) -> bool { true }
-    fn shared_state(&self) -> &SharedState { &self.shared }
 
     fn show_content(&mut self, ui: &mut Ui, _zoom: f32) {
         self.sync_from_display();
@@ -226,8 +212,6 @@ impl NodeWidget for GradientStopsWidget {
             }
         });
     }
-
-    fn as_any_mut(&mut self) -> &mut dyn Any { self }
 }
 
 fn sample_stops(stops: &[(f32, Color32)], t: f32) -> Color32 {

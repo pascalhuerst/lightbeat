@@ -32,8 +32,18 @@ pub struct RandomProcessNode {
     outputs: Vec<PortDef>,
 }
 
+/// The ports, stated once: the widget builds its own from this, so the two
+/// halves cannot disagree.
+pub fn ports() -> (Vec<PortDef>, Vec<PortDef>) {
+    (
+        vec![PortDef::new("trigger", PortType::Logic)],
+        vec![PortDef::new("out", PortType::Untyped)],
+    )
+}
+
 impl RandomProcessNode {
     pub fn new(id: NodeId) -> Self {
+        let (inputs, outputs) = ports();
         Self {
             id,
             trigger_in: 0.0,
@@ -50,8 +60,8 @@ impl RandomProcessNode {
             // Different nodes should not draw the same sequence.
             rng: 0x9E37_79B9_7F4A_7C15 ^ id.0.wrapping_mul(0xBF58_476D_1CE4_E5B9),
             last_tick: None,
-            inputs: vec![PortDef::new("trigger", PortType::Logic)],
-            outputs: vec![PortDef::new("out", PortType::Untyped)],
+            inputs,
+            outputs,
         }
     }
 

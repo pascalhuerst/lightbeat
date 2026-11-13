@@ -24,8 +24,21 @@ pub struct TriggerHoldProcessNode {
     outputs: Vec<PortDef>,
 }
 
+/// The ports, stated once: the widget builds its own from this, so the two
+/// halves cannot disagree.
+pub fn ports() -> (Vec<PortDef>, Vec<PortDef>) {
+    (
+        vec![
+            PortDef::new("trigger", PortType::Logic),
+            PortDef::new("duration", PortType::Untyped),
+        ],
+        vec![PortDef::new("out", PortType::Logic)],
+    )
+}
+
 impl TriggerHoldProcessNode {
     pub fn new(id: NodeId) -> Self {
+        let (inputs, outputs) = ports();
         Self {
             id,
             trigger_in: 0.0,
@@ -35,11 +48,8 @@ impl TriggerHoldProcessNode {
             default_duration: 100,
             remaining: 0.0,
             output: 0.0,
-            inputs: vec![
-                PortDef::new("trigger", PortType::Logic),
-                PortDef::new("duration", PortType::Untyped),
-            ],
-            outputs: vec![PortDef::new("out", PortType::Logic)],
+            inputs,
+            outputs,
         }
     }
 

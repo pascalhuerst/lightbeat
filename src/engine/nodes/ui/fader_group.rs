@@ -52,6 +52,22 @@ pub struct FaderGroupProcessNode {
     outputs: Vec<PortDef>,
 }
 
+/// The ports, stated once: the widget builds its own from this, so the two
+/// halves cannot disagree.
+/// A side with no enabled cell has no ports at all; otherwise every cell has
+/// one and the widget grays out the disabled ones.
+pub fn ports_for(rows: usize, cols: usize, any_input: bool, any_output: bool) -> (Vec<PortDef>, Vec<PortDef>) {
+    let cells = |any: bool| {
+        if !any {
+            return Vec::new();
+        }
+        (0..rows)
+            .flat_map(move |r| (0..cols).map(move |c| PortDef::new(format!("{},{}", r + 1, c + 1), PortType::Untyped)))
+            .collect::<Vec<_>>()
+    };
+    (cells(any_input), cells(any_output))
+}
+
 impl FaderGroupProcessNode {
     pub fn new(id: NodeId) -> Self {
         let rows = 1;
@@ -91,24 +107,8 @@ impl FaderGroupProcessNode {
         let n = self.cell_count();
         // Same gating rule as inputs: if any output is enabled, expose all
         // output ports (widget gray-disables the rest); otherwise none.
-        self.outputs = if self.any_output_enabled() {
-            (0..self.rows)
-                .flat_map(|r| (0..self.cols).map(move |c| PortDef::new(
-                    format!("{},{}", r + 1, c + 1), PortType::Untyped,
-                )))
-                .collect()
-        } else {
-            Vec::new()
-        };
-        self.inputs = if self.any_input_enabled() {
-            (0..self.rows)
-                .flat_map(|r| (0..self.cols).map(move |c| PortDef::new(
-                    format!("{},{}", r + 1, c + 1), PortType::Untyped,
-                )))
-                .collect()
-        } else {
-            Vec::new()
-        };
+        (self.inputs, self.outputs) =
+            ports_for(self.rows, self.cols, self.any_input_enabled(), self.any_output_enabled());
         self.mouse_values.resize(n, 0.0);
         self.input_values.resize(n, 0.0);
         self.prev_input_values.resize(n, 0.0);

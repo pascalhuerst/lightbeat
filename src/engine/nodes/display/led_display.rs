@@ -14,13 +14,23 @@ pub struct LedDisplayProcessNode {
     inputs: Vec<PortDef>,
 }
 
+/// The ports, stated once: the widget builds its own from this, so the two
+/// halves cannot disagree.
+pub fn ports() -> (Vec<PortDef>, Vec<PortDef>) {
+    (
+        vec![PortDef::new("in", PortType::Any)],
+        vec![],
+    )
+}
+
 impl LedDisplayProcessNode {
     pub fn new(id: NodeId) -> Self {
+        let (inputs, _) = ports();
         Self {
             id,
             name: String::new(),
             value: 0.0,
-            inputs: vec![PortDef::new("in", PortType::Any)],
+            inputs,
         }
     }
 

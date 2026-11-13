@@ -1,13 +1,11 @@
-use std::any::Any;
-
 use egui::{self, Ui};
 
-use crate::engine::nodes::io::input_controller::InputControllerDisplay;
+use crate::engine::nodes::io::input_controller::{base_outputs, InputControllerDisplay};
 use crate::engine::types::*;
 use crate::input_controller::SharedControllers;
 use crate::theme;
 use crate::widgets::setup_ui;
-use crate::widgets::nodes::node::NodeWidget;
+use crate::widgets::nodes::node::{NodeWidget, node_identity};
 use crate::widgets::nodes::types::UiPortDef;
 
 pub struct InputControllerWidget {
@@ -31,7 +29,7 @@ impl InputControllerWidget {
             id,
             shared,
             controller_id: 0,
-            outputs: Vec::new(),
+            outputs: base_outputs().into_iter().map(|p| (p.name, p.port_type, 0.0)).collect(),
             feedback_inputs: Vec::new(),
             controllers,
         }
@@ -58,13 +56,8 @@ impl NodeWidget for InputControllerWidget {
         let state = self.controllers.lock().unwrap();
         if let Some(c) = state.iter().find(|c| c.id == self.controller_id) {
             // Match what `InputControllerProcessNode::process` builds: the
-            // "any change" trigger at index 0, then one port per learned
-            // input, typed by source.
-            self.outputs = std::iter::once((
-                "any change".to_string(),
-                PortType::Logic,
-                0.0,
-            )).chain(c.inputs.iter().map(|i| {
+            // base ports, then one port per learned input, typed by source.
+            self.outputs = base_outputs().into_iter().map(|p| (p.name, p.port_type, 0.0)).chain(c.inputs.iter().map(|i| {
                 let ty = if i.source.is_binary() { PortType::Logic } else { PortType::Untyped };
                 (i.name.clone(), ty, 0.0)
             })).collect();
@@ -79,8 +72,7 @@ impl NodeWidget for InputControllerWidget {
         }
     }
 
-    fn node_id(&self) -> NodeId { self.id }
-    fn type_name(&self) -> &'static str { "Input Controller" }
+    node_identity!("Input Controller");
     fn description(&self) -> &'static str {
         "Outputs the current value of each learned input on the selected controller."
     }
@@ -105,7 +97,6 @@ impl NodeWidget for InputControllerWidget {
     }
     fn min_width(&self) -> f32 { 160.0 }
     fn min_content_height(&self) -> f32 { 24.0 }
-    fn shared_state(&self) -> &SharedState { &self.shared }
 
     fn show_content(&mut self, ui: &mut Ui, _zoom: f32) {
         let snapshot: Option<(u32, String, Vec<(String, PortType, f32)>, Vec<(String, PortType)>)> = {
@@ -184,6 +175,4 @@ impl NodeWidget for InputControllerWidget {
             }
         }
     }
-
-    fn as_any_mut(&mut self) -> &mut dyn Any { self }
 }

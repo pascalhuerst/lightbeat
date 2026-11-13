@@ -1,17 +1,14 @@
-use std::any::Any;
-
 use egui::{self, Ui};
 
-use crate::engine::nodes::transport::phase_scaler::{ExtraOutput, MAX_EXTRA_OUTPUTS, PhaseScalerDisplay};
+use crate::engine::nodes::transport::phase_scaler::{ports_for, ExtraOutput, MAX_EXTRA_OUTPUTS, PhaseScalerDisplay};
 use crate::engine::types::*;
-use crate::widgets::nodes::node::NodeWidget;
+use crate::widgets::nodes::node::{NodeWidget, node_identity};
 use crate::widgets::setup_ui;
 use crate::widgets::nodes::types::UiPortDef;
 
 pub struct PhaseScalerWidget {
     id: NodeId,
     shared: SharedState,
-    inputs: Vec<PortDef>,
     /// Outputs besides the first, each with its own ratio. The widget owns
     /// them and sends the list to the engine whenever it changes.
     extra: Vec<ExtraOutput>,
@@ -22,12 +19,6 @@ impl PhaseScalerWidget {
         Self {
             id,
             shared,
-            inputs: vec![
-                PortDef::new("phase", PortType::Phase),
-                PortDef::new("reset", PortType::Logic),
-                PortDef::new("exp", PortType::Untyped),
-                PortDef::new("offset", PortType::Phase),
-            ],
             extra: Vec::new(),
         }
     }
@@ -60,8 +51,7 @@ impl NodeWidget for PhaseScalerWidget {
         }
     }
 
-    fn node_id(&self) -> NodeId { self.id }
-    fn type_name(&self) -> &'static str { "Phase Scaler" }
+    node_identity!("Phase Scaler");
     fn description(&self) -> &'static str {
         "Multiplies or divides phase rate by a power of two to speed up or \
          slow down cycles. A rising edge on `reset` resyncs the sub-cycle \
@@ -75,20 +65,21 @@ impl NodeWidget for PhaseScalerWidget {
     }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> {
-        self.inputs.iter().map(UiPortDef::from_def).collect()
+        UiPortDef::from_defs(&ports_for(self.extra.len()).0)
     }
     fn ui_outputs(&self) -> Vec<UiPortDef> {
         // Each output is named by what it does to the phase.
-        std::iter::once(self.first_exponent())
-            .chain(self.extra.iter().map(|x| x.exponent))
-            .map(|e| UiPortDef::from_def(&PortDef::new(exponent_label(e), PortType::Phase)))
-            .collect()
+        let mut ports = UiPortDef::from_defs(&ports_for(self.extra.len()).1);
+        let exponents = std::iter::once(self.first_exponent()).chain(self.extra.iter().map(|x| x.exponent));
+        for (port, e) in ports.iter_mut().zip(exponents) {
+            port.def.name = exponent_label(e);
+        }
+        ports
     }
 
     fn min_width(&self) -> f32 { 120.0 }
     fn min_content_height(&self) -> f32 { 20.0 }
 
-    fn shared_state(&self) -> &SharedState { &self.shared }
 
     /// When the `exp` / `offset` inputs are wired the corresponding params
     /// are overridden by the engine. Hide them from the auto-inspector so
@@ -174,8 +165,6 @@ impl NodeWidget for PhaseScalerWidget {
             self.push_extra();
         }
     }
-
-    fn as_any_mut(&mut self) -> &mut dyn Any { self }
 }
 
 #[cfg(test)]

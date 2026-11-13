@@ -70,6 +70,23 @@ pub struct ColorModifierProcessNode {
     outputs: Vec<PortDef>,
 }
 
+/// The ports, stated once: the widget builds its own from this, so the two
+/// halves cannot disagree.
+pub fn ports_for(port_type: PortType) -> (Vec<PortDef>, Vec<PortDef>) {
+    let main_name = match port_type {
+        PortType::Color => "color",
+        PortType::Gradient => "gradient",
+        _ => "?",
+    };
+    (
+        vec![
+            PortDef::new(main_name, port_type),
+            PortDef::new("amount", PortType::Untyped),
+        ],
+        vec![PortDef::new(main_name, port_type)],
+    )
+}
+
 impl ColorModifierProcessNode {
     pub fn new(id: NodeId) -> Self {
         let mut node = Self {
@@ -87,16 +104,7 @@ impl ColorModifierProcessNode {
 
     fn rebuild(&mut self) {
         let pt = self.port_type;
-        let main_name = match pt {
-            PortType::Color => "color",
-            PortType::Gradient => "gradient",
-            _ => "?",
-        };
-        self.inputs = vec![
-            PortDef::new(main_name, pt),
-            PortDef::new("amount", PortType::Untyped),
-        ];
-        self.outputs = vec![PortDef::new(main_name, pt)];
+        (self.inputs, self.outputs) = ports_for(pt);
 
         for v in self.input_values.iter_mut() { *v = 0.0; }
         for v in self.output_values.iter_mut() { *v = 0.0; }

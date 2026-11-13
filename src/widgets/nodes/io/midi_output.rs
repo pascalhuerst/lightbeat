@@ -1,5 +1,3 @@
-use std::any::Any;
-
 use egui::{self, Ui};
 
 use crate::engine::nodes::io::midi_input::InMode;
@@ -10,7 +8,7 @@ use crate::midi_io::{MidiHub, MsgKind};
 use crate::widgets::setup_ui;
 use crate::theme;
 use crate::widgets::nodes::io::midi_common::{LearnedControl, MAX_ENTRIES, SharedLearned, device_picker, next_id};
-use crate::widgets::nodes::node::NodeWidget;
+use crate::widgets::nodes::node::{NodeWidget, node_identity};
 use crate::widgets::nodes::types::UiPortDef;
 
 /// Point an output at the control a MIDI Input has learned.
@@ -71,8 +69,7 @@ impl NodeWidget for MidiOutputWidget {
         }
     }
 
-    fn node_id(&self) -> NodeId { self.id }
-    fn type_name(&self) -> &'static str { "MIDI Output" }
+    node_identity!("MIDI Output");
     fn description(&self) -> &'static str {
         "Sends its inputs to a MIDI device. Add an input in the inspector and choose the message it sends: a CC, a note or the pitch wheel. Only wired inputs are sent, and only when they change. Copy from fills in a control that a MIDI Input has learned, for example to drive the motor of a fader you read."
     }
@@ -92,7 +89,6 @@ impl NodeWidget for MidiOutputWidget {
     }
     fn min_width(&self) -> f32 { 160.0 }
     fn min_content_height(&self) -> f32 { 24.0 }
-    fn shared_state(&self) -> &SharedState { &self.shared }
 
     fn take_removed_port(&mut self) -> Option<(PortDir, usize)> {
         self.removed.take().map(|i| (PortDir::Input, i))
@@ -198,8 +194,6 @@ impl NodeWidget for MidiOutputWidget {
             self.push_config();
         }
     }
-
-    fn as_any_mut(&mut self) -> &mut dyn Any { self }
 }
 
 #[cfg(test)]

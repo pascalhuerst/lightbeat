@@ -28,8 +28,22 @@ pub struct BipolarProcessNode {
     outputs: Vec<PortDef>,
 }
 
+/// The ports, stated once: the widget builds its own from this, so the two
+/// halves cannot disagree.
+pub fn ports() -> (Vec<PortDef>, Vec<PortDef>) {
+    (
+        vec![
+            PortDef::new("in", PortType::Untyped),
+            PortDef::new("range", PortType::Untyped),
+            PortDef::new("center", PortType::Untyped),
+        ],
+        vec![PortDef::new("out", PortType::Untyped)],
+    )
+}
+
 impl BipolarProcessNode {
     pub fn new(id: NodeId) -> Self {
+        let (inputs, outputs) = ports();
         Self {
             id,
             in_value: 0.5,
@@ -40,12 +54,8 @@ impl BipolarProcessNode {
             range_connected: false,
             center_connected: false,
             out_value: 0.0,
-            inputs: vec![
-                PortDef::new("in", PortType::Untyped),
-                PortDef::new("range", PortType::Untyped),
-                PortDef::new("center", PortType::Untyped),
-            ],
-            outputs: vec![PortDef::new("out", PortType::Untyped)],
+            inputs,
+            outputs,
         }
     }
 

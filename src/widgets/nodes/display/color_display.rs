@@ -1,15 +1,13 @@
-use std::any::Any;
-
 use egui::{self, Color32, Pos2, Sense, Stroke, StrokeKind, Ui, Vec2};
 
 use crate::color::Gradient;
 use crate::engine::nodes::display::color_display::{
-    ColorDisplayData, MODE_COLOR, MODE_GRADIENT, MODE_NEUTRAL, MODE_PALETTE,
+    ports_for, ColorDisplayData, MODE_COLOR, MODE_GRADIENT, MODE_NEUTRAL, MODE_PALETTE,
 };
 use crate::engine::types::*;
 use crate::objects::color_palette::PALETTE_SIZE;
 use crate::theme;
-use crate::widgets::nodes::node::NodeWidget;
+use crate::widgets::nodes::node::{NodeWidget, node_identity, with_display};
 use crate::widgets::nodes::types::UiPortDef;
 
 pub struct ColorDisplayWidget {
@@ -23,15 +21,6 @@ impl ColorDisplayWidget {
         Self { id, shared, mode: MODE_NEUTRAL }
     }
 
-    fn input_defs(&self) -> Vec<PortDef> {
-        match self.mode {
-            MODE_PALETTE => vec![PortDef::new("palette", PortType::Palette)],
-            MODE_COLOR => vec![PortDef::new("color", PortType::Color)],
-            MODE_GRADIENT => vec![PortDef::new("gradient", PortType::Gradient)],
-            _ => vec![PortDef::new("?", PortType::Any)],
-        }
-    }
-
     fn push_mode(&self, mode: usize) {
         let mut s = self.shared.lock().unwrap();
         s.pending_params.push((0, ParamValue::Choice(mode)));
@@ -39,14 +28,13 @@ impl ColorDisplayWidget {
 }
 
 impl NodeWidget for ColorDisplayWidget {
-    fn node_id(&self) -> NodeId { self.id }
-    fn type_name(&self) -> &'static str { "Color Display" }
+    node_identity!("Color Display");
     fn description(&self) -> &'static str {
         "Shows a color swatch, palette (4-color set), or gradient preview. Type auto-detected from the first connected wire."
     }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> {
-        self.input_defs().iter().map(UiPortDef::from_def).collect()
+        UiPortDef::from_defs(&ports_for(self.mode).0)
     }
     fn ui_outputs(&self) -> Vec<UiPortDef> { vec![] }
 
@@ -54,7 +42,6 @@ impl NodeWidget for ColorDisplayWidget {
     fn min_content_height(&self) -> f32 { 60.0 }
     fn resizable(&self) -> bool { true }
 
-    fn shared_state(&self) -> &SharedState { &self.shared }
 
     fn on_ui_connect(&mut self, _input_port: usize, source_type: PortType) {
         if self.mode != MODE_NEUTRAL { return; }
@@ -69,16 +56,7 @@ impl NodeWidget for ColorDisplayWidget {
     }
 
     fn show_content(&mut self, ui: &mut Ui, zoom: f32) {
-        let shared = self.shared.lock().unwrap();
-        let display = shared.display.as_ref()
-            .and_then(|d| d.downcast_ref::<ColorDisplayData>());
-
-        let (mode, channels) = if let Some(d) = display {
-            (d.mode, d.channels)
-        } else {
-            (MODE_NEUTRAL, [0.0; GRADIENT_STOP_COUNT * GRADIENT_STOP_FLOATS])
-        };
-        drop(shared);
+        let (mode, channels) = with_display::<ColorDisplayData, _>(&self.shared, |d| (d.mode, d.channels)).unwrap_or((MODE_NEUTRAL, [0.0; GRADIENT_STOP_COUNT * GRADIENT_STOP_FLOATS]));
 
         self.mode = mode;
 
@@ -185,7 +163,5 @@ impl NodeWidget for ColorDisplayWidget {
             }
         }
     }
-
-    fn as_any_mut(&mut self) -> &mut dyn Any { self }
 }
 

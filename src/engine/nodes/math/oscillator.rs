@@ -6,6 +6,18 @@ pub enum OscFunc {
     Cos,
 }
 
+/// The ports, stated once: the widget builds its own from this, so the two
+/// halves cannot disagree.
+pub fn ports() -> (Vec<PortDef>, Vec<PortDef>) {
+    (
+        vec![
+            PortDef::new("phase", PortType::Phase),
+            PortDef::new("amp", PortType::Untyped),
+        ],
+        vec![PortDef::new("out", PortType::Untyped)],
+    )
+}
+
 impl OscFunc {
     pub fn label(&self) -> &'static str {
         match self {
@@ -30,17 +42,15 @@ pub struct OscillatorProcessNode {
 
 impl OscillatorProcessNode {
     pub fn new(id: NodeId, func: OscFunc) -> Self {
+        let (inputs, outputs) = ports();
         Self {
             id,
             func,
             phase_in: 0.0,
             amp_in: 1.0,
             out: 0.0,
-            inputs: vec![
-                PortDef::new("phase", PortType::Phase),
-                PortDef::new("amp", PortType::Untyped),
-            ],
-            outputs: vec![PortDef::new("out", PortType::Untyped)],
+            inputs,
+            outputs,
         }
     }
 }

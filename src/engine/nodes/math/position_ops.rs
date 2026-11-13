@@ -9,15 +9,25 @@ pub struct PositionMergeProcessNode {
     outputs: Vec<PortDef>,
 }
 
+/// The ports, stated once: the widget builds its own from this, so the two
+/// halves cannot disagree.
+pub fn merge_ports() -> (Vec<PortDef>, Vec<PortDef>) {
+    (
+        vec![
+            PortDef::new("pan", PortType::Untyped),
+            PortDef::new("tilt", PortType::Untyped),
+        ],
+        vec![PortDef::new("position", PortType::Position)],
+    )
+}
+
 impl PositionMergeProcessNode {
     pub fn new(id: NodeId) -> Self {
+        let (inputs, outputs) = merge_ports();
         Self {
             id, pan: 0.0, tilt: 0.0,
-            inputs: vec![
-                PortDef::new("pan", PortType::Untyped),
-                PortDef::new("tilt", PortType::Untyped),
-            ],
-            outputs: vec![PortDef::new("position", PortType::Position)],
+            inputs,
+            outputs,
         }
     }
 }
@@ -49,15 +59,25 @@ pub struct PositionSplitProcessNode {
     outputs: Vec<PortDef>,
 }
 
+/// The ports, stated once: the widget builds its own from this, so the two
+/// halves cannot disagree.
+pub fn split_ports() -> (Vec<PortDef>, Vec<PortDef>) {
+    (
+        vec![PortDef::new("position", PortType::Position)],
+        vec![
+            PortDef::new("pan", PortType::Untyped),
+            PortDef::new("tilt", PortType::Untyped),
+        ],
+    )
+}
+
 impl PositionSplitProcessNode {
     pub fn new(id: NodeId) -> Self {
+        let (inputs, outputs) = split_ports();
         Self {
             id, pan: 0.0, tilt: 0.0,
-            inputs: vec![PortDef::new("position", PortType::Position)],
-            outputs: vec![
-                PortDef::new("pan", PortType::Untyped),
-                PortDef::new("tilt", PortType::Untyped),
-            ],
+            inputs,
+            outputs,
         }
     }
 }

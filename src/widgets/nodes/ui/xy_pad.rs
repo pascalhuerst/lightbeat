@@ -1,12 +1,10 @@
-use std::any::Any;
-
 use egui::{self, Pos2, Sense, Stroke, StrokeKind, Ui, Vec2};
 
-use crate::engine::nodes::ui::xy_pad::XyPadDisplay;
+use crate::engine::nodes::ui::xy_pad::{ports, XyPadDisplay};
 use crate::engine::types::*;
 use crate::theme;
 use crate::widgets::fader;
-use crate::widgets::nodes::node::{NodeLayout, NodeWidget};
+use crate::widgets::nodes::node::{NodeLayout, NodeWidget, node_identity, with_display};
 use crate::widgets::nodes::types::UiPortDef;
 
 pub struct XyPadWidget {
@@ -30,12 +28,11 @@ impl XyPadWidget {
     }
 
     fn sync_from_display(&mut self) {
-        let s = self.shared.lock().unwrap();
-        if let Some(d) = s.display.as_ref().and_then(|d| d.downcast_ref::<XyPadDisplay>()) {
+        with_display::<XyPadDisplay, _>(&self.shared, |d| {
             self.name = d.name.clone();
             self.x = d.x;
             self.y = d.y;
-        }
+        });
     }
 
     fn push_position(&self) {
@@ -52,27 +49,20 @@ impl XyPadWidget {
 }
 
 impl NodeWidget for XyPadWidget {
-    fn node_id(&self) -> NodeId { self.id }
-    fn type_name(&self) -> &'static str { "XY Pad" }
+    node_identity!("XY Pad");
     fn title(&self) -> &str { &self.name }
     fn description(&self) -> &'static str {
         "Draggable point inside a unit square. Outputs the point's x and y \
          coordinates, each clamped to 0..1."
     }
 
-    fn ui_inputs(&self) -> Vec<UiPortDef> { vec![] }
-    fn ui_outputs(&self) -> Vec<UiPortDef> {
-        vec![
-            UiPortDef::from_def(&PortDef::new("x", PortType::Untyped)),
-            UiPortDef::from_def(&PortDef::new("y", PortType::Untyped)),
-        ]
-    }
+    fn ui_inputs(&self) -> Vec<UiPortDef> { UiPortDef::from_defs(&ports().0) }
+    fn ui_outputs(&self) -> Vec<UiPortDef> { UiPortDef::from_defs(&ports().1) }
 
     fn layout(&self) -> NodeLayout { NodeLayout::compact() }
     fn min_width(&self) -> f32 { 120.0 }
     fn min_content_height(&self) -> f32 { 120.0 }
     fn resizable(&self) -> bool { true }
-    fn shared_state(&self) -> &SharedState { &self.shared }
 
     fn show_content(&mut self, ui: &mut Ui, _zoom: f32) {
         self.sync_from_display();
@@ -141,6 +131,4 @@ impl NodeWidget for XyPadWidget {
             }
         });
     }
-
-    fn as_any_mut(&mut self) -> &mut dyn Any { self }
 }

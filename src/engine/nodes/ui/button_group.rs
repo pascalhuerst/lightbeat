@@ -46,6 +46,17 @@ pub struct ButtonGroupProcessNode {
     output_values: Vec<f32>,
 }
 
+/// The ports, stated once: the widget builds its own from this, so the two
+/// halves cannot disagree.
+pub fn ports_for(rows: usize, cols: usize, inputs_enabled: bool) -> (Vec<PortDef>, Vec<PortDef>) {
+    let cells = || {
+        (0..rows)
+            .flat_map(move |r| (0..cols).map(move |c| PortDef::new(format!("{},{}", r + 1, c + 1), PortType::Logic)))
+            .collect::<Vec<_>>()
+    };
+    (if inputs_enabled { cells() } else { Vec::new() }, cells())
+}
+
 impl ButtonGroupProcessNode {
     pub fn new(id: NodeId) -> Self {
         let rows = 2;
@@ -69,20 +80,7 @@ impl ButtonGroupProcessNode {
 
     fn rebuild_ports(&mut self) {
         let n = self.cell_count();
-        self.outputs = (0..self.rows)
-            .flat_map(|r| (0..self.cols).map(move |c| PortDef::new(
-                format!("{},{}", r + 1, c + 1), PortType::Logic,
-            )))
-            .collect();
-        self.inputs = if self.inputs_enabled {
-            (0..self.rows)
-                .flat_map(|r| (0..self.cols).map(move |c| PortDef::new(
-                    format!("{},{}", r + 1, c + 1), PortType::Logic,
-                )))
-                .collect()
-        } else {
-            Vec::new()
-        };
+        (self.inputs, self.outputs) = ports_for(self.rows, self.cols, self.inputs_enabled);
         self.output_values.resize(n, 0.0);
         self.cells.resize(n, CellState::default());
     }

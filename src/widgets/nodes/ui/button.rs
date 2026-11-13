@@ -1,13 +1,11 @@
-use std::any::Any;
-
 use egui::{self, Ui};
 
-use crate::engine::nodes::ui::button::{ButtonDisplay, ButtonMode};
+use crate::engine::nodes::ui::button::{ports_for, ButtonDisplay, ButtonMode};
 use crate::engine::nodes::ui::common::MouseOverrideMode;
 use crate::engine::types::*;
 use crate::theme;
 use crate::widgets::fader::highlight_alpha;
-use crate::widgets::nodes::node::{param_usize, NodeLayout, NodeWidget};
+use crate::widgets::nodes::node::{param_usize, NodeLayout, NodeWidget, node_identity, with_display};
 use crate::widgets::nodes::types::UiPortDef;
 
 const HIGHLIGHT_DURATION: f64 = 0.5;
@@ -96,22 +94,17 @@ impl NodeWidget for ButtonWidget {
         hidden
     }
 
-    fn node_id(&self) -> NodeId { self.id }
-    fn type_name(&self) -> &'static str { "Button" }
+    node_identity!("Button");
     fn title(&self) -> &str { &self.label }
     fn description(&self) -> &'static str {
         "Clickable button outputting a trigger pulse or persistent toggle state."
     }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> {
-        if self.inputs_enabled {
-            vec![UiPortDef::from_def(&PortDef::new("in", PortType::Logic))]
-        } else {
-            vec![]
-        }
+        UiPortDef::from_defs(&ports_for(self.inputs_enabled).0)
     }
     fn ui_outputs(&self) -> Vec<UiPortDef> {
-        vec![UiPortDef::from_def(&PortDef::new("out", PortType::Logic))]
+        UiPortDef::from_defs(&ports_for(self.inputs_enabled).1)
     }
 
     // The button is the node: no header, it is moved by dragging it, and its
@@ -124,7 +117,6 @@ impl NodeWidget for ButtonWidget {
     fn min_width(&self) -> f32 { 90.0 }
     fn min_content_height(&self) -> f32 { 26.0 }
     fn resizable(&self) -> bool { true }
-    fn shared_state(&self) -> &SharedState { &self.shared }
 
     fn output_highlight(&self, port_idx: usize, now: f64) -> f32 {
         if port_idx != 0 { return 0.0; }
@@ -137,19 +129,16 @@ impl NodeWidget for ButtonWidget {
 
     fn show_content(&mut self, ui: &mut Ui, zoom: f32) {
         // Sync state and label from engine display.
-        {
-            let shared = self.shared.lock().unwrap();
-            if let Some(d) = shared.display.as_ref().and_then(|d| d.downcast_ref::<ButtonDisplay>()) {
-                self.label = d.label.clone();
-                self.mode = d.mode;
-                self.state = d.state;
-                self.input_value = d.input_value;
-                self.inputs_enabled = d.inputs_enabled;
-                self.override_enabled = d.override_enabled;
-                self.override_active = d.override_active;
-                self.reset_mode = d.reset_mode;
-            }
-        }
+        with_display::<ButtonDisplay, _>(&self.shared, |d| {
+            self.label = d.label.clone();
+            self.mode = d.mode;
+            self.state = d.state;
+            self.input_value = d.input_value;
+            self.inputs_enabled = d.inputs_enabled;
+            self.override_enabled = d.override_enabled;
+            self.override_active = d.override_active;
+            self.reset_mode = d.reset_mode;
+        });
 
         let pressed = matches!(self.mode, ButtonMode::Toggle) && self.state;
         let fill = if pressed {
@@ -245,8 +234,6 @@ impl NodeWidget for ButtonWidget {
 
         if changed { self.push_settings(); }
     }
-
-    fn as_any_mut(&mut self) -> &mut dyn Any { self }
 }
 
 #[cfg(test)]

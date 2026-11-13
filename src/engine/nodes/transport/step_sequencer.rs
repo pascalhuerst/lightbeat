@@ -55,6 +55,26 @@ pub struct StepSequencerProcessNode {
     outputs: Vec<PortDef>,
 }
 
+/// The ports, stated once: the widget builds its own from this, so the two
+/// halves cannot disagree.
+pub fn ports_for(mode: StepMode) -> (Vec<PortDef>, Vec<PortDef>) {
+    let inputs = match mode {
+        StepMode::Phase => vec![PortDef::new("phase", PortType::Phase)],
+        StepMode::Trigger => vec![
+            PortDef::new("trigger", PortType::Logic),
+            PortDef::new("reset", PortType::Logic),
+        ],
+    };
+    (
+        inputs,
+        vec![
+            PortDef::new("trigger", PortType::Logic),
+            PortDef::new("out", PortType::Untyped),
+            PortDef::new("step", PortType::Untyped),
+        ],
+    )
+}
+
 impl StepSequencerProcessNode {
     pub fn new(id: NodeId) -> Self {
         let mut node = Self {
@@ -71,11 +91,7 @@ impl StepSequencerProcessNode {
             prev_reset_in: 0.0,
             trigger_out: 0.0,
             inputs: Vec::new(),
-            outputs: vec![
-                PortDef::new("trigger", PortType::Logic),
-                PortDef::new("out", PortType::Untyped),
-                PortDef::new("step", PortType::Untyped),
-            ],
+            outputs: ports_for(StepMode::Phase).1,
         };
         node.rebuild_inputs();
         node
@@ -95,13 +111,7 @@ impl StepSequencerProcessNode {
     }
 
     fn rebuild_inputs(&mut self) {
-        self.inputs = match self.mode {
-            StepMode::Phase => vec![PortDef::new("phase", PortType::Phase)],
-            StepMode::Trigger => vec![
-                PortDef::new("trigger", PortType::Logic),
-                PortDef::new("reset", PortType::Logic),
-            ],
-        };
+        self.inputs = ports_for(self.mode).0;
     }
 
     fn set_mode(&mut self, m: StepMode) {

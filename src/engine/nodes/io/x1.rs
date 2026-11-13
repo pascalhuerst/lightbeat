@@ -58,6 +58,12 @@ pub struct X1ProcessNode {
     controller_name: String,
 }
 
+/// The ports, stated once: the widget builds its own from this, so the two
+/// halves cannot disagree.
+pub fn ports() -> (Vec<PortDef>, Vec<PortDef>) {
+    (build_inputs(), with_status_port(build_outputs()))
+}
+
 impl X1ProcessNode {
     pub fn new(id: NodeId, controllers: SharedControllers) -> Self {
         let outputs = build_outputs();

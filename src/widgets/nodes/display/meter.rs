@@ -1,11 +1,9 @@
-use std::any::Any;
-
 use egui::{self, Align2, FontId, Pos2, Rect, Sense, Shape, Stroke, Ui, Vec2};
 
 use crate::engine::nodes::display::meter::{MeterData, MeterKind};
 use crate::engine::types::*;
 use crate::theme;
-use crate::widgets::nodes::node::{NodeLayout, NodeWidget, PORT_RADIUS};
+use crate::widgets::nodes::node::{NodeLayout, NodeWidget, PORT_RADIUS, node_identity};
 use crate::widgets::nodes::types::UiPortDef;
 
 /// Seconds a level meter's peak marker stays before it falls.
@@ -177,8 +175,7 @@ fn mix(a: egui::Color32, b: egui::Color32, t: f32) -> egui::Color32 {
 }
 
 impl NodeWidget for MeterWidget {
-    fn node_id(&self) -> NodeId { self.id }
-    fn type_name(&self) -> &'static str { self.kind.type_name() }
+    node_identity!(by |w| w.kind.type_name());
     fn description(&self) -> &'static str {
         match self.kind {
             MeterKind::Level => "A segmented level bar for the input, from Min to Max, with a peak marker. Vertical or horizontal.",
@@ -186,10 +183,8 @@ impl NodeWidget for MeterWidget {
         }
     }
 
-    fn ui_inputs(&self) -> Vec<UiPortDef> {
-        vec![UiPortDef::from_def(&PortDef::new("in", PortType::Any))]
-    }
-    fn ui_outputs(&self) -> Vec<UiPortDef> { vec![] }
+    fn ui_inputs(&self) -> Vec<UiPortDef> { UiPortDef::from_defs(&crate::engine::nodes::display::meter::ports().0) }
+    fn ui_outputs(&self) -> Vec<UiPortDef> { UiPortDef::from_defs(&crate::engine::nodes::display::meter::ports().1) }
 
     fn layout(&self) -> NodeLayout { NodeLayout::compact().with_side_inset(PORT_RADIUS + 2.0) }
     fn min_width(&self) -> f32 {
@@ -205,7 +200,6 @@ impl NodeWidget for MeterWidget {
         }
     }
     fn resizable(&self) -> bool { true }
-    fn shared_state(&self) -> &SharedState { &self.shared }
 
     fn show_content(&mut self, ui: &mut Ui, _zoom: f32) {
         let Some(data) = self.data() else { return };
@@ -258,8 +252,6 @@ impl NodeWidget for MeterWidget {
             }
         });
     }
-
-    fn as_any_mut(&mut self) -> &mut dyn Any { self }
 }
 
 #[cfg(test)]

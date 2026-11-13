@@ -1,11 +1,9 @@
-use std::any::Any;
-
 use egui::{self, Ui};
 
 use crate::engine::nodes::transport::hold::TriggerHoldDisplay;
 use crate::engine::types::*;
 use crate::theme;
-use crate::widgets::nodes::node::NodeWidget;
+use crate::widgets::nodes::node::{NodeWidget, node_identity, with_display};
 use crate::widgets::nodes::types::UiPortDef;
 
 pub struct TriggerHoldWidget {
@@ -20,34 +18,20 @@ impl TriggerHoldWidget {
 }
 
 impl NodeWidget for TriggerHoldWidget {
-    fn node_id(&self) -> NodeId { self.id }
-    fn type_name(&self) -> &'static str { "Trigger Hold" }
+    node_identity!("Trigger Hold");
     fn description(&self) -> &'static str {
         "Holds a trigger high for a number of milliseconds after each rising edge. Duration via input or param."
     }
 
-    fn ui_inputs(&self) -> Vec<UiPortDef> {
-        vec![
-            UiPortDef::from_def(&PortDef::new("trigger", PortType::Logic)),
-            UiPortDef::from_def(&PortDef::new("duration", PortType::Untyped)),
-        ]
-    }
-    fn ui_outputs(&self) -> Vec<UiPortDef> {
-        vec![UiPortDef::from_def(&PortDef::new("out", PortType::Logic))]
-    }
+    fn ui_inputs(&self) -> Vec<UiPortDef> { UiPortDef::from_defs(&crate::engine::nodes::transport::hold::ports().0) }
+    fn ui_outputs(&self) -> Vec<UiPortDef> { UiPortDef::from_defs(&crate::engine::nodes::transport::hold::ports().1) }
 
     fn min_width(&self) -> f32 { 120.0 }
     fn min_content_height(&self) -> f32 { 28.0 }
-    fn shared_state(&self) -> &SharedState { &self.shared }
 
     fn show_content(&mut self, ui: &mut Ui, _zoom: f32) {
-        let (remaining, dur) = {
-            let shared = self.shared.lock().unwrap();
-            shared.display.as_ref()
-                .and_then(|d| d.downcast_ref::<TriggerHoldDisplay>())
-                .map(|d| (d.remaining_ms, d.effective_duration_ms))
-                .unwrap_or((0.0, 0))
-        };
+        let (remaining, dur) = with_display::<TriggerHoldDisplay, _>(&self.shared, |d| (d.remaining_ms, d.effective_duration_ms))
+            .unwrap_or((0.0, 0));
 
         ui.horizontal(|ui| {
             if remaining > 0.0 {
@@ -63,6 +47,4 @@ impl NodeWidget for TriggerHoldWidget {
             }
         });
     }
-
-    fn as_any_mut(&mut self) -> &mut dyn Any { self }
 }
