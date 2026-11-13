@@ -2,7 +2,15 @@
 //! Palette → Gradient node. Optional `palette` input drives a live preview
 //! in the widget (colours for each handle + interpolated strip background).
 
+use crate::engine::param_spec::{FloatParam};
 use crate::engine::types::*;
+
+const POSITIONS: [FloatParam; 4] = [
+    FloatParam::new("pos1", 0.0, 1.0, 0.01, "").clamped(),
+    FloatParam::new("pos2", 0.0, 1.0, 0.01, "").clamped(),
+    FloatParam::new("pos3", 0.0, 1.0, 0.01, "").clamped(),
+    FloatParam::new("pos4", 0.0, 1.0, 0.01, "").clamped(),
+];
 
 pub struct GradientStopsDisplay {
     pub name: String,
@@ -97,17 +105,12 @@ impl ProcessNode for GradientStopsProcessNode {
     }
 
     fn params(&self) -> Vec<ParamDef> {
-        vec![
-            ParamDef::Float { name: "pos1".into(), value: self.positions[0], min: 0.0, max: 1.0, step: 0.01, unit: "" },
-            ParamDef::Float { name: "pos2".into(), value: self.positions[1], min: 0.0, max: 1.0, step: 0.01, unit: "" },
-            ParamDef::Float { name: "pos3".into(), value: self.positions[2], min: 0.0, max: 1.0, step: 0.01, unit: "" },
-            ParamDef::Float { name: "pos4".into(), value: self.positions[3], min: 0.0, max: 1.0, step: 0.01, unit: "" },
-        ]
+        POSITIONS.iter().zip(self.positions).map(|(spec, v)| spec.def(v)).collect()
     }
 
     fn set_param(&mut self, index: usize, value: ParamValue) {
         if index < 4 {
-            self.positions[index] = value.as_f32().clamp(0.0, 1.0);
+            self.positions[index] = POSITIONS[index].apply(&value);
         }
     }
 

@@ -3,7 +3,11 @@
 
 use std::any::Any;
 
+use crate::engine::param_spec::{FloatParam};
 use crate::engine::types::*;
+
+const MIN: FloatParam = FloatParam::new("Min", -100_000.0, 100_000.0, 0.01, "");
+const MAX: FloatParam = FloatParam::new("Max", -100_000.0, 100_000.0, 0.01, "");
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MeterKind {
@@ -85,8 +89,8 @@ impl ProcessNode for MeterProcessNode {
 
     fn params(&self) -> Vec<ParamDef> {
         let mut params = vec![
-            ParamDef::Float { name: "Min".into(), value: self.min, min: -100_000.0, max: 100_000.0, step: 0.01, unit: "" },
-            ParamDef::Float { name: "Max".into(), value: self.max, min: -100_000.0, max: 100_000.0, step: 0.01, unit: "" },
+            MIN.def(self.min),
+            MAX.def(self.max),
         ];
         if self.kind == MeterKind::Level {
             params.push(ParamDef::Bool { name: "Vertical".into(), value: self.vertical });
@@ -96,8 +100,8 @@ impl ProcessNode for MeterProcessNode {
 
     fn set_param(&mut self, index: usize, value: ParamValue) {
         match index {
-            0 => self.min = value.as_f32(),
-            1 => self.max = value.as_f32(),
+            0 => self.min = MIN.apply(&value),
+            1 => self.max = MAX.apply(&value),
             2 => self.vertical = value.as_f32() >= 0.5,
             _ => {}
         }

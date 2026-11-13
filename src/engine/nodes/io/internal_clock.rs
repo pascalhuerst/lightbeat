@@ -1,6 +1,9 @@
 use std::time::Instant;
 
+use crate::engine::param_spec::{FloatParam};
 use crate::engine::types::*;
+
+const BPM: FloatParam = FloatParam::new("BPM", 20.0, 300.0, 0.1, "bpm").clamped();
 
 /// Display state sent to the UI for rendering the internal clock widget.
 pub struct InternalClockDisplay {
@@ -191,18 +194,11 @@ impl ProcessNode for InternalClockProcessNode {
     fn non_promotable_params(&self) -> &'static [&'static str] { &["BPM"] }
 
     fn params(&self) -> Vec<ParamDef> {
-        vec![ParamDef::Float {
-            name: "BPM".into(),
-            value: self.bpm,
-            min: 20.0,
-            max: 300.0,
-            step: 0.1,
-            unit: "bpm",
-        }]
+        vec![BPM.def(self.bpm)]
     }
 
     fn set_param(&mut self, index: usize, value: ParamValue) {
-        if index == 0 { self.bpm = value.as_f32().clamp(20.0, 300.0); }
+        if index == 0 { self.bpm = BPM.apply(&value); }
     }
 
     fn update_display(&self, shared: &mut NodeSharedState) {

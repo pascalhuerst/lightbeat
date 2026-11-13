@@ -1,7 +1,11 @@
 //! XY Pad: a draggable point inside a unit square, outputting its x and y
 //! coordinates (each clamped 0..=1).
 
+use crate::engine::param_spec::{FloatParam};
 use crate::engine::types::*;
+
+const X: FloatParam = FloatParam::new("X", 0.0, 1.0, 0.01, "").clamped();
+const Y: FloatParam = FloatParam::new("Y", 0.0, 1.0, 0.01, "").clamped();
 
 /// Display snapshot consumed by the widget each frame.
 pub struct XyPadDisplay {
@@ -94,30 +98,13 @@ impl ProcessNode for XyPadProcessNode {
     }
 
     fn params(&self) -> Vec<ParamDef> {
-        vec![
-            ParamDef::Float {
-                name: "X".into(),
-                value: self.x,
-                min: 0.0,
-                max: 1.0,
-                step: 0.01,
-                unit: "",
-            },
-            ParamDef::Float {
-                name: "Y".into(),
-                value: self.y,
-                min: 0.0,
-                max: 1.0,
-                step: 0.01,
-                unit: "",
-            },
-        ]
+        vec![X.def(self.x), Y.def(self.y)]
     }
 
     fn set_param(&mut self, index: usize, value: ParamValue) {
         match index {
-            0 => self.x = value.as_f32().clamp(0.0, 1.0),
-            1 => self.y = value.as_f32().clamp(0.0, 1.0),
+            0 => self.x = X.apply(&value),
+            1 => self.y = Y.apply(&value),
             _ => {}
         }
     }
