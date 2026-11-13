@@ -3,7 +3,9 @@
 
 use std::any::Any;
 
-use crate::engine::param_spec::{FloatParam};
+use serde::{Deserialize, Serialize};
+
+use crate::engine::param_spec::FloatParam;
 use crate::engine::types::*;
 
 const MIN: FloatParam = FloatParam::new("Min", -100_000.0, 100_000.0, 0.01, "");
@@ -30,6 +32,27 @@ impl MeterKind {
             MeterKind::Level => "Level Meter",
             MeterKind::Gauge => "Gauge",
         }
+    }
+}
+
+/// The node's own text settings, as saved and as the widget pushes them.
+#[derive(Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct MeterConfig {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub unit: Option<String>,
+}
+
+impl MeterConfig {
+    /// Malformed data loads as an empty update, which changes nothing.
+    pub fn from_value(v: &serde_json::Value) -> Self {
+        serde_json::from_value(v.clone()).unwrap_or_default()
+    }
+
+    pub fn to_value(&self) -> serde_json::Value {
+        serde_json::to_value(self).unwrap_or(serde_json::Value::Null)
     }
 }
 
@@ -108,15 +131,16 @@ impl ProcessNode for MeterProcessNode {
     }
 
     fn save_data(&self) -> Option<serde_json::Value> {
-        Some(serde_json::json!({ "name": self.name, "unit": self.unit }))
+        Some(MeterConfig { name: Some(self.name.clone()), unit: Some(self.unit.clone()) }.to_value())
     }
 
     fn load_data(&mut self, data: &serde_json::Value) {
-        if let Some(n) = data.get("name").and_then(|v| v.as_str()) {
-            self.name = n.to_string();
+        let cfg = MeterConfig::from_value(data);
+        if let Some(n) = cfg.name {
+            self.name = n;
         }
-        if let Some(u) = data.get("unit").and_then(|v| v.as_str()) {
-            self.unit = u.to_string();
+        if let Some(u) = cfg.unit {
+            self.unit = u;
         }
     }
 
