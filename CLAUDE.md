@@ -53,6 +53,8 @@ src/
 │   ├── graph.rs                  # EngineGraph: the root; owns an InnerGraph
 │   │                             # core, adds probe, effect flatten, DMX, the
 │   │                             # run loop. time.rs: the tick's dt.
+│   ├── param_spec.rs             # FloatParam / IntParam: a numeric param's
+│   │                             # name, range and clamp stated once.
 │   ├── types.rs                  # NodeId, PortDef, PortType, ParamDef,
 │   │                             # ParamValue, ProcessNode trait, EngineCommand,
 │   │                             # NodeSharedState, port_base_index,
@@ -63,10 +65,11 @@ src/
 │   ├── probe.rs                  # Full-rate recording for the hover scope.
 │   ├── sync_hint.rs              # "User is interacting" hint for save_data.
 │   ├── nodes/                    # ProcessNode implementations by directory.
-│   │   │                         # The directories are NOT the menu categories
-│   │   │                         # (IO, UI, Transport, Math, Color, Route,
-│   │   │                         # Compare, Logic, Display, Meta, Effects):
-│   │   │                         # math/ also holds Color, Route, Compare, Logic.
+│   │   │                         # The directories are NOT the categories a
+│   │   │                         # user sees (registry.rs `CATEGORIES`, the 14
+│   │   │                         # quick-add groups); file names kept old node
+│   │   │                         # names (latch.rs = Tick Delay, scaler.rs =
+│   │   │                         # Range to Unit, clock.rs = Link Clock).
 │   │   ├── io/                   # clock (Link), internal_clock, audio_input,
 │   │   │                         # input_controller, midi_input, midi_output,
 │   │   │                         # dmx_input, launchpad, push1, x1, status.
@@ -180,13 +183,13 @@ Menu bar (File, Edit, View, Help; version on the right). Undo/Redo is one pair
 that acts on whichever of project and setup changed last (`app/undo.rs`);
 Edit also has Preferences (`app/preferences.rs`, the settings in
 `settings.json`); Help lists the keyboard shortcuts (`app/shortcuts.rs`). Left: the "Add Nodes" panel (search, node types by
-category, macros; entries are dragged onto the canvas). Centre: the canvas.
+category, macros; an entry is clicked or dragged onto the canvas). Centre: the canvas.
 Right: the inspector (Show/Auto/Hide), with the snapshot panel under it when one
 node is selected. Bottom: the status bar (Blackout, Bypass, missing hardware +
 Rescan, Latency, update notice, perf gauges, zoom). Floating windows: **Setup**
-(View menu; tabs Interfaces, Fixture Templates, Objects, Groups, Color
-Palettes, Palette Groups, Gradients, Audio Inputs, Input Controllers, DMX
-Inputs) and **DMX Monitor** (View menu). All of this is in `app/frame.rs`
+(View menu; tabs Interfaces, Fixture templates, Objects, Groups, Color
+palettes, Palette groups, Gradient presets, Audio inputs, Input controllers,
+DMX inputs; all built from `widgets/setup_ui.rs`) and **DMX Monitor** (View menu). All of this is in `app/frame.rs`
 (`update_frame`) and `app/panels.rs`. The setup is written to `setup.json` on exit, on Ctrl+S and on
 import; the project only when saved.
 
@@ -235,12 +238,12 @@ import; the project only when saved.
   Color to Components / Components to Color deal with a single color (RGB, HSV,
   RGBW, CMY). Node names follow "X to Y" so that they read as data flow.
 - Effects take a gradient as their colour input (`Effect` nodes below). The
-  former Group Output and Group Output Preview nodes are gone; a Bar Loop with
+  former Group Output and Group Output Preview nodes are gone; a Bar with
   Position and Width promoted to inputs does the same, and a stack shows the
   picture.
 
 ### Effects and stacks (`engine/effects/`, `widgets/nodes/output/effect*.rs`)
-- An **effect** is a small node (Fill, Bar Loop, Wave Loop, Ripple Burst, Spark Burst, ...) with control
+- An **effect** is a small node (Fill, Bar, Wave Loop, Ripple Burst, Spark Burst, ...) with control
   inputs and no outputs. It picks an **Effect Stack** by name in its inspector,
   renders its own pixel layer about 60 times a second and hands it to the
   `EffectHub`. The stack blends its linked effects' layers in the order of its
@@ -271,10 +274,11 @@ import; the project only when saved.
   `READY_PATIENCE` frames), and a scenes stack keeps showing the last scene
   meanwhile, so a cut never flashes black.
 - Names: a **Burst** is spawned by a trigger and lives for a while (ripple,
-  comet); a **Loop** is a function of a phase (wave, chase, fill). Not "voices".
+  comet); a **Loop** is a function of a phase (wave, chase). Fill and Bar take
+  no phase and carry no suffix. Not "voices".
 - To add an effect: implement `EffectKind` (ports, params, `update` for state,
   `render`) in `engine/effects/`, give it an `EffectSpec` in
-  `widgets/nodes/output/effect.rs`, register widget + engine arm in `main.rs`.
+  `widgets/nodes/output/effect.rs`, add its entry to `node_table()`.
   Parameters are `ParamDef`s, so any of them can be promoted to an input.
   Triggers are edge-counted in `write_input` at the full tick rate (a 1 ms pulse
   is not lost); rendering is gated to `RENDER_HZ`.
@@ -315,7 +319,11 @@ import; the project only when saved.
 ### Mode auto-detection pattern
 - Nodes that work across multiple types (Color to Components, Components to
   Color, Color Display, Color Modifier, Transition, Scope, Multiplexer,
-  Demultiplexer) used to have a "mode" dropdown forcing the user to pick.
+  Demultiplexer, Port Hub, Sample & Hold, Tick Delay, Smoothing) used to have a
+  "mode" dropdown forcing the user to pick. The setting that picks the signal
+  type is called **"Type"** (Auto / Number / Logic / Phase / Color ...; a plain
+  number is "Number" to the user, `PortType::Untyped` in code); "Mode" is for
+  other choices. Hold/delay/smooth nodes share `transport/signal_type.rs`.
 - The convention: default `Mode = Neutral`, ports are `Any` (white ring),
   process is no-op. On the **first wire** attached to either side, the widget
   infers the mode and pushes it to the engine via `pending_params`.
@@ -411,11 +419,17 @@ import; the project only when saved.
 - Every hardware node (Input Controller, Audio Input, MIDI Input, MIDI Output,
   DMX Input, Launchpad S, Push 1, X1) has a leading **`connected`** Logic
   output (port 0): high while the device has a live session. Build layouts
-  with `io::status::with_status_port`. The Link clock ("Clock") has none.
+  with `io::status::with_status_port`; find the controller with
+  `io::status::bind_controller`, and the widgets of Launchpad, Push 1 and X1
+  share `widgets/nodes/io/controller_binding.rs`. The Link Clock has none (it
+  has `bpm` and `peers`).
 - `ProjectFile.version` records port-layout changes that would repoint saved
   wires. When you insert or reorder ports on an existing node type, bump
-  `PROJECT_VERSION` and extend `connections_for_current_layout` in
+  `PROJECT_VERSION` (now 3) and extend `connections_for_current_layout` in
   `project.rs` (it runs per level, including inner subgraphs and macros).
+  Renamed node types go into `RENAMED_NODES`, renamed settings that can be
+  promoted or sit in snapshots into `RENAMED_SETTINGS` (same file). All three
+  are temporary: entries go once the test projects have been saved again.
 - Missing hardware is looked for on setup load, on edits and on the
   status-bar **Rescan** button, never on a timer (USB/ALSA enumeration is
   slow and prints to stderr every time). Missing controllers/inputs show as
@@ -501,7 +515,7 @@ import; the project only when saved.
   every tick was ~165 of ~215 us/tick on the reference project.
 - `save_data` is rebuilt every 16th tick only while the user is interacting
   (`engine::sync_hint::set_interacting`, driven by the undo window in
-  `main.rs`) and every ~128 ticks otherwise. It is only read by save, copy,
+  `app/frame.rs`) and every ~128 ticks otherwise. It is only read by save, copy,
   move-between-levels, macros and undo snapshots, so don't read it for live
   display; use `update_display`.
 - **One graph core.** `EngineGraph` owns an `InnerGraph` (the same type every
@@ -514,8 +528,8 @@ import; the project only when saved.
 - **Time step.** The loop runs against absolute 1 ms deadlines and hands nodes
   the measured length of the tick through `engine::time::dt()` (clamped to
   0.1-10 ms, 0.001 in tests). A node that integrates time reads it and never
-  assumes 1 ms (Envelope, Time to Phase, snapshot fades do). Trigger Hold and
-  Smoothing still count ticks.
+  assumes 1 ms (Envelope, Time to Phase, snapshot fades, Trigger Hold and
+  Smoothing do; the last two take milliseconds).
 - A panic inside a tick is caught, logged once and stops the engine;
   `EngineHandle::is_running()` and `dropped_commands()` report it.
 - Because UI state is only fresh every 16 ticks, never rely on `shared.*`
@@ -555,8 +569,7 @@ import; the project only when saved.
 - Any param can be exposed as an input port from the inspector (checkbox
   `in` next to the control). The node knows nothing about it: the graph adds
   the ports after the node's own inputs and turns each incoming value into a
-  `set_param` (`engine/promoted.rs`, used by both `EngineGraph::tick` and
-  `InnerGraph::tick`). Float/Int take the raw value clamped to the param's
+  `set_param` (`engine/promoted.rs`, run from `InnerGraph::tick_with`). Float/Int take the raw value clamped to the param's
   range, Bool switches at 0.5, Choice spreads a 0..1 signal over its options.
 - The list lives in `NodeSharedState::promoted` (UI-owned, saved as
   `SavedNode.promoted`); changes reach the engine via `pending_promoted`.
@@ -568,7 +581,9 @@ import; the project only when saved.
 - A node opts params out with `ProcessNode::non_promotable_params()`: ones
   that reshape its ports or buffers (modes, types, slot counts) and ones
   already served by a native input port. New nodes with such params must list
-  them.
+  them. A new node does not hand-build "a wire overrides this setting" ports
+  (`overridden_param_indices`, as Range to Unit, Scale Offset, Counter and a
+  few older nodes do); promotion is the one mechanism.
 
 ---
 
@@ -608,24 +623,38 @@ import; the project only when saved.
 ## 4. Adding a new node — checklist
 
 1. **Engine file**: `src/engine/nodes/<dir>/<snake_name>.rs` — define struct +
-   `impl ProcessNode`. If it has runtime state to persist, implement
+   `impl ProcessNode`. State the ports ONCE as `pub fn ports()` (or
+   `ports_for(mode, n)` when settings decide them) and build the node's own
+   `inputs`/`outputs` from it. Plain numeric params: a `FloatParam`/`IntParam`
+   const (`engine/param_spec.rs`) for both `params()` and `set_param`. Real
+   config: one `#[derive(Serialize, Deserialize)] #[serde(default)]` struct
+   that the widget parses too; do not save what a param already holds. If it has runtime state to persist, implement
    `save_data()` and `load_data()`. A node that integrates time reads
    `engine::time::dt()`.
 2. **Widget file**: `src/widgets/nodes/<dir>/<snake_name>.rs` — define struct +
-   `impl NodeWidget`. Set `description()`. If its ports or looks depend on its
+   `impl NodeWidget`. `node_identity!("Name")` writes the identity methods,
+   `ui_inputs`/`ui_outputs` are `UiPortDef::from_defs(&ports().0 / .1)`, and
+   `with_display::<T, _>` reads what the engine published. Set
+   `description()`. If its ports or looks depend on its
    own state (columns, entries, size, slots, a mode), implement
    `NodeWidget::restore_from_save(data, params)`: load, paste and "Move to
    Subgraph" all call it, so nothing in `project.rs` or the graph needs an edit.
 3. Register both modules in their `mod.rs` files.
 4. Add ONE entry to `node_table()` in `src/app/registry.rs`:
-   `node(category, name, (max_in, max_out), widget_ctor, engine_ctor)`. Hubs
+   `node(category, name, (max_in, max_out), widget_ctor, engine_ctor)`. The
+   category is one of `CATEGORIES` and is also the quick-add group. Hubs
    and registries come from the `NodeContext` passed to both constructors. The
    name is also the saved `type_name`. Tests in that file check that both
-   halves build, the names agree and the channel counts are large enough.
+   halves build, the names agree, the ports of both halves are equal and the
+   channel counts are large enough.
 5. The channel counts must be at least the engine's `total_channels(inputs)`
    and `total_channels(outputs)`; for dynamic ports pass a generous max.
-6. If category and name would put the node in the wrong quick-add group, add
-   a line to `widgets/nodes/paths.rs`.
+6. Quick add finds the node as `<category>/<name>`; add a line to
+   `widgets/nodes/paths.rs` only for a shorter alias (`math/mul`).
+7. Names: edge inputs are "trigger" ("gate" for levels, "reset"), a single
+   main signal is "in" / "out" and comes before the trigger, numbered ports
+   count from 1 with a space ("in 1"), a 0..1 scaler is "amount", an effect's
+   colour input is "gradient", times are seconds or ms with a unit.
 
 ---
 
@@ -636,13 +665,15 @@ import; the project only when saved.
   `setup.json` and the default `project.json` are the ones in the working
   directory (`paths::data_file`). With `autoload_on_open` the most recent
   project (`recent_projects` in `settings.json`) is opened, not `project.json`.
-- About 290 unit tests across the crate (graph behaviour, project save/load,
+- About 430 unit tests across the crate (graph behaviour, project save/load,
   effects, analyzers, the tracker, objects, color); `cargo test` runs them. CI
-  runs only the tests, no clippy. The crate uses edition 2024, so it needs a
+  runs the tests and `cargo clippy -- -D warnings` (lints that are a matter of
+  taste here are switched off once, in `Cargo.toml` `[lints.clippy]`). The crate uses edition 2024, so it needs a
   recent stable toolchain (`rustup update stable`).
-- `cargo build` has about 18 warnings, mostly dead code; many more are hidden
-  by `#[allow(dead_code)]` on whole types. The code is not rustfmt-formatted:
-  do not run `cargo fmt` on files you touch, it rewrites them entirely.
+- `cargo build` has no warnings of ours (a future-incompat note about `nom 4`
+  / `cexpr` comes from `ableton-link`). There is no `#[allow(...)]` in `src`;
+  keep it that way. The code is not rustfmt-formatted: do not run `cargo fmt`
+  on files you touch, it rewrites them entirely.
 - We use **egui-phosphor** for icon glyphs (registered in `main.rs::new`).
   Use `egui_phosphor::regular::ARROW_UP`, `ARROW_DOWN`, `X`, `CARET_RIGHT`,
   `ARROW_SQUARE_OUT`, etc. for any icon-style buttons. The default egui font
@@ -653,9 +684,11 @@ import; the project only when saved.
 ## 6. Conventions / gotchas
 
 - **No emojis in code or files** unless the user asks for them.
-- **No inline colors in widgets** — use `theme.rs` constants. Older code still
-  has about 200 inline `Color32`s (dim greys, status colours); do not copy
-  them, and replace the ones in code you touch (`theme::TEXT_DIM`, `SEM_*`).
+- **No inline colors in widgets** — use `theme.rs` constants (`TEXT_DIM`,
+  `SEM_*`, ...). The `Color32::from_*` left outside `theme.rs` are computed
+  from data (a signal, a gradient sample, an LED, the user's frame colour).
+- **Locks are `parking_lot`** (`Mutex`, `Condvar`): `.lock()` with no
+  `unwrap`, no poisoning. Keep guards as short-lived as they are.
 - **Node shape comes from `NodeWidget::layout()`** (`NodeLayout` in `node.rs`):
   title height, content area, first port, enable switch, frame. Controls that
   are the point of their node (buttons, faders, pads, meters) return
@@ -689,9 +722,10 @@ import; the project only when saved.
   `math/mul`, `clock/divider`; a word with a slash is matched part by part, each
   part only has to begin) or by name. The path comes from
   `widgets/nodes/paths.rs`: add a node's line there when its category and name
-  would put it in the wrong group, otherwise it lands in `<group of its
-  category>/<name>` by itself. Groups: input, output, clock, signal, trigger,
-  math, compare, logic, color, position, route, portal, display, effect. Right-click on a selected node or a port opens the other
+  alone say too little (an alias), otherwise it lands in `<category>/<name>`
+  by itself. The groups are the categories of `node_table()`: input, output,
+  clock, signal, trigger, math, compare, logic, color, position, route,
+  portal, display, effect. Right-click on a selected node or a port opens the other
   menus instead.
 - **Canvas navigation**: a mouse wheel zooms at the pointer, a trackpad
   (wheel events in points) pans and Ctrl+scroll or a pinch zooms; middle drag,
@@ -721,7 +755,7 @@ import; the project only when saved.
   other). A transition ends when the phase reaches 1 (the new snapshot stands)
   or comes back to 0 after leaving it (the old one stands again); after that the
   phase no longer touches the settings. The panel sits at the bottom of the
-  inspector in a resizable `TopBottomPanel` (`main.rs`). Floats and ints
+  inspector in a resizable `TopBottomPanel` (`app/frame.rs`). Floats and ints
   blend, dropdowns and checkboxes switch at the halfway point. The engine
   publishes the active snapshot and whether a fade runs (`snapshot_active`,
   `snapshot_fading`); the list shows "modified" when the settings differ from
@@ -751,6 +785,13 @@ import; the project only when saved.
   `NodeLayout::with_gutters(left, right)` (see `label_gutter`) so the widget's
   content, which is drawn between them, does not collide with the names. The
   names are drawn at `11 * zoom`, so they shrink with the canvas.
+- **Operation switch**: Add/Sub/Mul/Div, the four compares, AND/OR/XOR and
+  the three Consts are separate node types over one engine struct each. Their
+  first setting ("Operation", "Output type") turns one into its sibling in
+  place; the widget follows the mirrored param in `NodeWidget::follow_params`,
+  so `type_name()` and the saved name are the sibling's.
+- **Button and Fader settings are params** (mode, orientation, input, mouse
+  override, bipolar), so they promote, snapshot and reset like any other.
 - **`cleanup_stale_connections`** runs every frame and now drops
   type-incompatible wires too. This is what makes mode switching "feel right".
 
@@ -774,5 +815,6 @@ easy-to-understand way** — the user's stated guiding principle.
 `findings_by_fabel/` holds an audit from 2026-11-13: UI/UX inconsistencies
 (`ui_ux_streamlining.md`), dead code and cleanups (`code_cleanups.md`), feature
 ideas, and an outlook on big graphs (buses, front panels, linked subgraphs, a
-Desk view). It is a snapshot with file:line references that go stale as items
-are worked off; check an item against the code before acting on it.
+Desk view). The first two are implemented; the status table at the top of each
+says what was done, what was dropped and why. The file:line references in them
+are stale. The feature ideas and the outlook are proposals, not started.
