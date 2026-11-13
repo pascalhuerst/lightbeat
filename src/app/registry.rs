@@ -845,6 +845,19 @@ mod tests {
     }
 
     #[test]
+    fn a_type_setting_reshapes_the_node_so_it_cannot_be_an_input() {
+        let ctx = context();
+        for desc in node_table() {
+            let engine = (desc.engine)(NodeId(1), &ctx);
+            for p in engine.params() {
+                if p.name() == "Type" {
+                    assert!(engine.non_promotable_params().contains(&"Type"), "{}", desc.name);
+                }
+            }
+        }
+    }
+
+    #[test]
     fn every_node_is_in_a_known_category_that_is_also_its_quick_add_group() {
         for desc in node_table() {
             assert!(CATEGORIES.contains(&desc.category), "{} is in {}", desc.name, desc.category);
