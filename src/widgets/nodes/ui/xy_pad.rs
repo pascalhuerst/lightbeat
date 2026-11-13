@@ -2,7 +2,7 @@ use std::any::Any;
 
 use egui::{self, Pos2, Sense, Stroke, StrokeKind, Ui, Vec2};
 
-use crate::engine::nodes::ui::xy_pad::XyPadDisplay;
+use crate::engine::nodes::ui::xy_pad::{ports, XyPadDisplay};
 use crate::engine::types::*;
 use crate::theme;
 use crate::widgets::fader;
@@ -60,13 +60,8 @@ impl NodeWidget for XyPadWidget {
          coordinates, each clamped to 0..1."
     }
 
-    fn ui_inputs(&self) -> Vec<UiPortDef> { vec![] }
-    fn ui_outputs(&self) -> Vec<UiPortDef> {
-        vec![
-            UiPortDef::from_def(&PortDef::new("x", PortType::Untyped)),
-            UiPortDef::from_def(&PortDef::new("y", PortType::Untyped)),
-        ]
-    }
+    fn ui_inputs(&self) -> Vec<UiPortDef> { UiPortDef::from_defs(&ports().0) }
+    fn ui_outputs(&self) -> Vec<UiPortDef> { UiPortDef::from_defs(&ports().1) }
 
     fn layout(&self) -> NodeLayout { NodeLayout::compact() }
     fn min_width(&self) -> f32 { 120.0 }

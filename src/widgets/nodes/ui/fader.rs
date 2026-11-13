@@ -3,7 +3,7 @@ use std::any::Any;
 use egui::{self, Color32, Ui};
 
 use crate::engine::nodes::ui::common::MouseOverrideMode;
-use crate::engine::nodes::ui::fader::{FaderDisplay, FaderOrientation};
+use crate::engine::nodes::ui::fader::{ports_for, FaderDisplay, FaderOrientation};
 use crate::engine::types::*;
 use crate::theme;
 use crate::widgets::setup_ui;
@@ -125,14 +125,10 @@ impl NodeWidget for FaderWidget {
     }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> {
-        if self.inputs_enabled {
-            vec![UiPortDef::from_def(&PortDef::new("in", PortType::Untyped))]
-        } else {
-            vec![]
-        }
+        UiPortDef::from_defs(&ports_for(self.inputs_enabled).0)
     }
     fn ui_outputs(&self) -> Vec<UiPortDef> {
-        vec![UiPortDef::from_def(&PortDef::new("out", PortType::Untyped))]
+        UiPortDef::from_defs(&ports_for(self.inputs_enabled).1)
     }
 
     fn layout(&self) -> NodeLayout { NodeLayout::compact() }

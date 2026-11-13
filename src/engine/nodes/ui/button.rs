@@ -68,6 +68,13 @@ pub struct ButtonProcessNode {
     outputs: Vec<PortDef>,
 }
 
+/// The ports, stated once: the widget builds its own from this, so the two
+/// halves cannot disagree.
+pub fn ports_for(inputs_enabled: bool) -> (Vec<PortDef>, Vec<PortDef>) {
+    let inputs = if inputs_enabled { vec![PortDef::new("in", PortType::Logic)] } else { Vec::new() };
+    (inputs, vec![PortDef::new("out", PortType::Logic)])
+}
+
 impl ButtonProcessNode {
     pub fn new(id: NodeId) -> Self {
         Self {
@@ -85,7 +92,7 @@ impl ButtonProcessNode {
             override_enabled: false,
             reset_mode: MouseOverrideMode::ClearOnReset,
             inputs: Vec::new(),
-            outputs: vec![PortDef::new("out", PortType::Logic)],
+            outputs: ports_for(false).1,
         }
     }
 
@@ -111,11 +118,7 @@ impl ButtonProcessNode {
     }
 
     fn rebuild_ports(&mut self) {
-        self.inputs = if self.inputs_enabled {
-            vec![PortDef::new("in", PortType::Logic)]
-        } else {
-            Vec::new()
-        };
+        self.inputs = ports_for(self.inputs_enabled).0;
     }
 
     fn handle_click(&mut self) {

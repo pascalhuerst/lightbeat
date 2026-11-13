@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 use egui::{self, Ui, Vec2};
 
 use crate::engine::nodes::ui::button::ButtonMode;
-use crate::engine::nodes::ui::button_group::ButtonGroupDisplay;
+use crate::engine::nodes::ui::button_group::{ports_for, ButtonGroupDisplay};
 use crate::engine::nodes::ui::common::MouseOverrideMode;
 use crate::engine::types::*;
 use crate::theme;
@@ -128,15 +128,10 @@ impl NodeWidget for ButtonGroupWidget {
     }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> {
-        if !self.inputs_enabled { return vec![]; }
-        (0..self.rows).flat_map(|r| (0..self.cols).map(move |c| {
-            UiPortDef::from_def(&PortDef::new(format!("{},{}", r + 1, c + 1), PortType::Logic))
-        })).collect()
+        UiPortDef::from_defs(&ports_for(self.rows, self.cols, self.inputs_enabled).0)
     }
     fn ui_outputs(&self) -> Vec<UiPortDef> {
-        (0..self.rows).flat_map(|r| (0..self.cols).map(move |c| {
-            UiPortDef::from_def(&PortDef::new(format!("{},{}", r + 1, c + 1), PortType::Logic))
-        })).collect()
+        UiPortDef::from_defs(&ports_for(self.rows, self.cols, self.inputs_enabled).1)
     }
 
     fn layout(&self) -> NodeLayout { NodeLayout::compact() }

@@ -2,7 +2,7 @@ use std::any::Any;
 
 use egui::{self, Ui};
 
-use crate::engine::nodes::ui::button::{ButtonDisplay, ButtonMode};
+use crate::engine::nodes::ui::button::{ports_for, ButtonDisplay, ButtonMode};
 use crate::engine::nodes::ui::common::MouseOverrideMode;
 use crate::engine::types::*;
 use crate::theme;
@@ -104,14 +104,10 @@ impl NodeWidget for ButtonWidget {
     }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> {
-        if self.inputs_enabled {
-            vec![UiPortDef::from_def(&PortDef::new("in", PortType::Logic))]
-        } else {
-            vec![]
-        }
+        UiPortDef::from_defs(&ports_for(self.inputs_enabled).0)
     }
     fn ui_outputs(&self) -> Vec<UiPortDef> {
-        vec![UiPortDef::from_def(&PortDef::new("out", PortType::Logic))]
+        UiPortDef::from_defs(&ports_for(self.inputs_enabled).1)
     }
 
     // The button is the node: no header, it is moved by dragging it, and its

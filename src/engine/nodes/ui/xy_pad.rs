@@ -19,6 +19,18 @@ pub struct XyPadProcessNode {
     outputs: Vec<PortDef>,
 }
 
+/// The ports, stated once: the widget builds its own from this, so the two
+/// halves cannot disagree.
+pub fn ports() -> (Vec<PortDef>, Vec<PortDef>) {
+    (
+        vec![],
+        vec![
+            PortDef::new("x", PortType::Untyped),
+            PortDef::new("y", PortType::Untyped),
+        ],
+    )
+}
+
 impl XyPadProcessNode {
     pub fn new(id: NodeId) -> Self {
         Self {
@@ -26,10 +38,7 @@ impl XyPadProcessNode {
             name: String::new(),
             x: 0.5,
             y: 0.5,
-            outputs: vec![
-                PortDef::new("x", PortType::Untyped),
-                PortDef::new("y", PortType::Untyped),
-            ],
+            outputs: ports().1,
         }
     }
 }

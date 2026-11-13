@@ -3,7 +3,7 @@ use std::any::Any;
 use egui::{self, Color32, Ui, Vec2};
 
 use crate::engine::nodes::ui::common::MouseOverrideMode;
-use crate::engine::nodes::ui::fader_group::FaderGroupDisplay;
+use crate::engine::nodes::ui::fader_group::{ports_for, FaderGroupDisplay};
 use crate::engine::types::*;
 use crate::theme;
 use crate::widgets::setup_ui;
@@ -153,22 +153,16 @@ impl NodeWidget for FaderGroupWidget {
     }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> {
-        if !self.any_input_enabled { return vec![]; }
-        (0..self.rows).flat_map(|r| (0..self.cols).map(move |c| {
-            let i = r * self.cols + c;
-            let enabled = self.inputs_enabled.get(i).copied().unwrap_or(false);
-            UiPortDef::from_def(&PortDef::new(format!("{},{}", r + 1, c + 1), PortType::Untyped))
-                .with_disabled(!enabled)
-        })).collect()
+        let ports = ports_for(self.rows, self.cols, self.any_input_enabled, self.any_output_enabled).0;
+        UiPortDef::from_defs(&ports).into_iter().enumerate()
+            .map(|(i, p)| p.with_disabled(!self.inputs_enabled.get(i).copied().unwrap_or(false)))
+            .collect()
     }
     fn ui_outputs(&self) -> Vec<UiPortDef> {
-        if !self.any_output_enabled { return vec![]; }
-        (0..self.rows).flat_map(|r| (0..self.cols).map(move |c| {
-            let i = r * self.cols + c;
-            let enabled = self.outputs_enabled.get(i).copied().unwrap_or(false);
-            UiPortDef::from_def(&PortDef::new(format!("{},{}", r + 1, c + 1), PortType::Untyped))
-                .with_disabled(!enabled)
-        })).collect()
+        let ports = ports_for(self.rows, self.cols, self.any_input_enabled, self.any_output_enabled).1;
+        UiPortDef::from_defs(&ports).into_iter().enumerate()
+            .map(|(i, p)| p.with_disabled(!self.outputs_enabled.get(i).copied().unwrap_or(false)))
+            .collect()
     }
 
     fn layout(&self) -> NodeLayout { NodeLayout::compact() }

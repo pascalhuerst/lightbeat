@@ -60,6 +60,13 @@ pub struct FaderProcessNode {
     outputs: Vec<PortDef>,
 }
 
+/// The ports, stated once: the widget builds its own from this, so the two
+/// halves cannot disagree.
+pub fn ports_for(inputs_enabled: bool) -> (Vec<PortDef>, Vec<PortDef>) {
+    let inputs = if inputs_enabled { vec![PortDef::new("in", PortType::Untyped)] } else { Vec::new() };
+    (inputs, vec![PortDef::new("out", PortType::Untyped)])
+}
+
 impl FaderProcessNode {
     pub fn new(id: NodeId) -> Self {
         Self {
@@ -75,7 +82,7 @@ impl FaderProcessNode {
             mouse_override: MouseOverrideMode::No,
             bipolar: false,
             inputs: Vec::new(),
-            outputs: vec![PortDef::new("out", PortType::Untyped)],
+            outputs: ports_for(false).1,
         }
     }
 
@@ -93,11 +100,7 @@ impl FaderProcessNode {
     }
 
     fn rebuild_ports(&mut self) {
-        self.inputs = if self.inputs_enabled {
-            vec![PortDef::new("in", PortType::Untyped)]
-        } else {
-            Vec::new()
-        };
+        self.inputs = ports_for(self.inputs_enabled).0;
     }
 }
 
