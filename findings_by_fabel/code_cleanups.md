@@ -56,6 +56,12 @@ Updated as items are implemented. Items not listed here are open.
 | S1 | done | 821a1a7, f033ab0: `NodeWidget::restore_from_save`, called by load, paste and move; Button Group is now restored too |
 | S2 | done | 3f299ed: one `node_table()` with both constructors per node type |
 | T6 | partly | 9dae9d4: the Formula node has its own small parser, `meval` and `nom 1.x` are gone. Open: `bindgen`/`nom 4` through `ableton-link` (needs a newer upstream) |
+| M3 | done | e3ad157 |
+| M4 | done | dfa78a4 |
+| M5 | done | f21a67f |
+| M6 | done | 856f49b |
+| M7 | done | fd018f1 |
+| M1, M2, M8 | kept | three test projects have no version, one has an "ADSR"; delete after they are re-saved or retired |
 
 Checked against your own files on 2026-11-13: `setup.json` uses the new pixel
 format only (M3 can go), no saved Fader or Fader Group uses the old keys (M4,

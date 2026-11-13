@@ -131,9 +131,8 @@ src/
 │   └── temperature.rs            # rgb_to_rgbw with Kelvin.
 ├── objects/
 │   ├── channel.rs                # ChannelKind (Dimmer, Color, PanTilt, Raw,
-│   │                             # LedStrip{count, format}). PixelFormat is now
-│   │                             # a Vec<PixelChannel> with manual deserializer
-│   │                             # accepting legacy enum forms.
+│   │                             # LedStrip{count, format}). PixelFormat is a
+│   │                             # Vec<PixelChannel>.
 │   ├── fixture.rs                # Fixture template (id, name, channels).
 │   ├── object.rs                 # Object: instance with DMX address + iface.
 │   ├── group.rs                  # Group + StripLayout (logical_start/end, y)
@@ -337,8 +336,6 @@ import; the project only when saved.
   `Green`, `Blue`, or `White { temperature_k }`. Presets: `PixelFormat::rgb()`,
   `grb()`, `rgbw(temp)`, `grbw(temp)`, `grbww(t1, t2)`. White channels are
   computed via `rgb_to_rgbw(rgb, temperature_k)` per channel.
-- Custom `Deserialize` impl on `PixelFormat` accepts the legacy enum form
-  (e.g. `{"Rgbw":{"white_temperature":6500}}`) so old setup.json files load.
 - The fixture editor lets you set pixel count (auto-resizes the value
   buffer) and pick format from a preset dropdown + per-W-temperature pickers.
 
