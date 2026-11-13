@@ -18,6 +18,9 @@ pub struct PortalEntry {
     /// The Send that publishes this name; a second Send with the same name
     /// must not take it over.
     pub owner: NodeId,
+    /// Changes whenever the owner's port list does, so a Receive only copies
+    /// the layout when it has changed.
+    pub layout: u64,
     pub ports: Vec<PortDef>,
     pub values: Vec<f32>,
 }
@@ -66,7 +69,6 @@ pub fn available_portal_names(registry: &SharedPortalRegistry) -> Vec<String> {
 
 pub struct PortalSendDisplay {
     pub name: String,
-    pub port_defs: Vec<PortDef>,
     /// Another Send already publishes this name.
     pub conflict: bool,
 }
@@ -78,6 +80,7 @@ pub struct PortalSendProcessNode {
     values: Vec<f32>,
     registry: SharedPortalRegistry,
     conflict: bool,
+    layout: u64,
 }
 
 impl PortalSendProcessNode {
@@ -89,6 +92,7 @@ impl PortalSendProcessNode {
             values: Vec::new(),
             registry,
             conflict: false,
+            layout: 0,
         }
     }
 
@@ -132,10 +136,22 @@ impl ProcessNode for PortalSendProcessNode {
                 return;
             }
             self.conflict = false;
-            reg.entries.insert(
-                self.name.clone(),
-                PortalEntry { owner: self.id, ports: self.ports.clone(), values: self.values.clone() },
-            );
+            match reg.entries.get_mut(&self.name) {
+                Some(e) if e.owner == self.id && e.layout == self.layout && e.values.len() == self.values.len() => {
+                    e.values.copy_from_slice(&self.values);
+                }
+                _ => {
+                    reg.entries.insert(
+                        self.name.clone(),
+                        PortalEntry {
+                            owner: self.id,
+                            layout: self.layout,
+                            ports: self.ports.clone(),
+                            values: self.values.clone(),
+                        },
+                    );
+                }
+            }
         }
     }
 
@@ -146,6 +162,7 @@ impl ProcessNode for PortalSendProcessNode {
 
     fn load_data(&mut self, data: &serde_json::Value) {
         self.release();
+        self.layout += 1;
         if let Some(n) = data.get("name").and_then(|v| v.as_str()) {
             self.name = n.to_string();
         }
@@ -161,7 +178,6 @@ impl ProcessNode for PortalSendProcessNode {
     fn update_display(&self, shared: &mut NodeSharedState) {
         shared.display = Some(Box::new(PortalSendDisplay {
             name: self.name.clone(),
-            port_defs: self.ports.clone(),
             conflict: self.conflict,
         }));
     }
@@ -184,6 +200,9 @@ pub struct PortalReceiveProcessNode {
     values: Vec<f32>,
     registry: SharedPortalRegistry,
     connected: bool,
+    /// Owner and layout of the entry whose ports we hold; `None` after our
+    /// own ports were set from a save.
+    seen: Option<(NodeId, u64)>,
 }
 
 impl PortalReceiveProcessNode {
@@ -195,6 +214,7 @@ impl PortalReceiveProcessNode {
             values: Vec::new(),
             registry,
             connected: false,
+            seen: None,
         }
     }
 }
@@ -209,14 +229,22 @@ impl ProcessNode for PortalReceiveProcessNode {
         if self.bound_name.is_empty() {
             self.ports.clear();
             self.values.clear();
+            self.seen = None;
             self.connected = false;
             return;
         }
         if let Ok(reg) = self.registry.lock() {
             match reg.entries.get(&self.bound_name) {
                 Some(entry) => {
-                    self.ports = entry.ports.clone();
-                    self.values = entry.values.clone();
+                    if self.seen != Some((entry.owner, entry.layout)) {
+                        self.ports = entry.ports.clone();
+                        self.seen = Some((entry.owner, entry.layout));
+                    }
+                    if self.values.len() == entry.values.len() {
+                        self.values.copy_from_slice(&entry.values);
+                    } else {
+                        self.values = entry.values.clone();
+                    }
                     self.connected = true;
                 }
                 None => {
@@ -247,6 +275,7 @@ impl ProcessNode for PortalReceiveProcessNode {
                 .filter_map(|v| serde_json::from_value::<PortalPortDef>(v.clone()).ok())
                 .map(|p| p.to_port_def())
                 .collect();
+            self.seen = None;
             self.values = vec![0.0; total_channels(&self.ports)];
         }
     }
@@ -280,6 +309,35 @@ mod tests {
         tx.process();
         rx.process();
         assert_eq!(rx.read_output(0), 0.75);
+    }
+
+    #[test]
+    fn a_value_still_arrives_after_the_port_list_changes() {
+        let reg: SharedPortalRegistry = Default::default();
+        let mut tx = send(1, &reg, "bus");
+        let mut rx = PortalReceiveProcessNode::new(NodeId(2), reg.clone());
+        rx.load_data(&serde_json::json!({"bound_name": "bus"}));
+        tx.write_input(0, 0.5);
+        tx.process();
+        rx.process();
+        assert_eq!(rx.outputs().len(), 1);
+
+        // A second port is added.
+        tx.load_data(&serde_json::json!({"name": "bus", "ports": [
+            {"name": "a", "port_type_idx": 2},
+            {"name": "b", "port_type_idx": 2},
+        ]}));
+        tx.write_input(0, 0.25);
+        tx.write_input(1, 0.75);
+        tx.process();
+        rx.process();
+        assert_eq!(rx.outputs().len(), 2, "the receive follows the new layout");
+        assert_eq!((rx.read_output(0), rx.read_output(1)), (0.25, 0.75));
+
+        tx.write_input(1, 0.9);
+        tx.process();
+        rx.process();
+        assert_eq!(rx.read_output(1), 0.9, "values keep flowing without a layout change");
     }
 
     #[test]

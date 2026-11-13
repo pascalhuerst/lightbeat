@@ -29,11 +29,8 @@ impl MathOp {
 }
 
 /// Display state for the widget.
-#[allow(dead_code)]
 pub struct MathDisplay {
     pub input_count: usize,
-    pub connected_types: Vec<Option<PortType>>,
-    pub output_type: PortType,
 }
 
 /// Variadic arithmetic node. Starts at 2 inputs; the widget grows the count
@@ -77,10 +74,6 @@ impl MathProcessNode {
         self.inputs = (0..n).map(|i| PortDef::new(port_name(i), PortType::Any)).collect();
         self.values.resize(n, 0.0);
         self.connected_types.resize(n, None);
-    }
-
-    fn resolve_output_type(&self) -> PortType {
-        self.connected_types.iter().find_map(|t| *t).unwrap_or(PortType::Any)
     }
 }
 
@@ -147,8 +140,6 @@ impl ProcessNode for MathProcessNode {
     fn update_display(&self, shared: &mut NodeSharedState) {
         shared.display = Some(Box::new(MathDisplay {
             input_count: self.inputs.len(),
-            connected_types: self.connected_types.clone(),
-            output_type: self.resolve_output_type(),
         }));
     }
 }

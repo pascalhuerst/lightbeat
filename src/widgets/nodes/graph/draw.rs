@@ -14,14 +14,63 @@ pub(super) fn port_screen_pos_from_rects(
 ) -> Option<Pos2> {
     let idx = states.iter().position(|s| s.id == port_id.node)?;
     let rect = node_rects[idx];
-    let ports = match port_id.dir {
-        PortDir::Input => nodes[idx].ui_inputs_full(),
-        PortDir::Output => nodes[idx].ui_outputs(),
-    };
-    let _ = ports;
     Some(nodes[idx].port_pos(rect, port_id.dir, port_id.index, zoom))
 }
 
+
+/// What a level's wires need to know about each node, gathered once per frame:
+/// the port types (with promoted ports), which ports are hidden and the layout.
+/// Without it every wire end rebuilds port lists and locks the node's mutex.
+pub(super) struct PortCache {
+    index: std::collections::HashMap<NodeId, usize>,
+    nodes: Vec<CachedPorts>,
+}
+
+struct CachedPorts {
+    layout: NodeLayout,
+    in_types: Vec<PortType>,
+    out_types: Vec<PortType>,
+    in_hidden: Vec<bool>,
+    out_hidden: Vec<bool>,
+}
+
+impl PortCache {
+    pub(super) fn build(level: &GraphLevel) -> Self {
+        let index = level.states.iter().enumerate().map(|(i, s)| (s.id, i)).collect();
+        let nodes = level.nodes.iter().map(|n| CachedPorts {
+            layout: n.layout(),
+            in_types: n.ui_inputs_full().iter().map(|p| p.def.port_type).collect(),
+            out_types: n.ui_outputs().iter().map(|p| p.def.port_type).collect(),
+            in_hidden: n.hidden_ports(PortDir::Input),
+            out_hidden: n.hidden_ports(PortDir::Output),
+        }).collect();
+        Self { index, nodes }
+    }
+
+    pub(super) fn index_of(&self, id: NodeId) -> Option<usize> {
+        self.index.get(&id).copied()
+    }
+
+    pub(super) fn port_type(&self, port_id: PortId) -> Option<PortType> {
+        let n = &self.nodes[self.index_of(port_id.node)?];
+        let types = match port_id.dir {
+            PortDir::Input => &n.in_types,
+            PortDir::Output => &n.out_types,
+        };
+        types.get(port_id.index).copied()
+    }
+
+    /// Same as `NodeWidget::port_pos` for the node drawn in `node_rects[i]`.
+    pub(super) fn port_pos(&self, node_rects: &[Rect], port_id: PortId, zoom: f32) -> Option<Pos2> {
+        let i = self.index_of(port_id.node)?;
+        let n = &self.nodes[i];
+        let (types, hidden) = match port_id.dir {
+            PortDir::Input => (&n.in_types, &n.in_hidden),
+            PortDir::Output => (&n.out_types, &n.out_hidden),
+        };
+        Some(port_pos_in(node_rects[i], &n.layout, port_id.dir, types, hidden, port_id.index, zoom))
+    }
+}
 
 /// Rect of the title-bar enable/disable toggle (a small button at the
 /// right edge of the title bar). Shared between the renderer and the
@@ -605,11 +654,6 @@ pub(super) fn port_screen_pos(
     let pos = Pos2::new(states[idx].pos.x * zoom, states[idx].pos.y * zoom) + origin;
     let size = node_size(nodes[idx].as_ref(), states[idx].size_override) * zoom;
     let rect = Rect::from_min_size(pos, size);
-    let ports = match port_id.dir {
-        PortDir::Input => nodes[idx].ui_inputs_full(),
-        PortDir::Output => nodes[idx].ui_outputs(),
-    };
-    let _ = ports;
     Some(nodes[idx].port_pos(rect, port_id.dir, port_id.index, zoom))
 }
 

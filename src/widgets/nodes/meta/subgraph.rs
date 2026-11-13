@@ -361,6 +361,14 @@ impl GraphInputWidget {
     pub fn update_ports(&mut self, port_defs: Vec<SubgraphPortDef>) {
         self.port_defs = port_defs;
     }
+
+    /// The subgraph lost port `i`; keep the bridge in step without waiting
+    /// for the next time the level is opened.
+    pub fn remove_port(&mut self, i: usize) {
+        if i < self.port_defs.len() {
+            self.port_defs.remove(i);
+        }
+    }
 }
 
 impl NodeWidget for GraphInputWidget {
@@ -456,6 +464,14 @@ impl GraphOutputWidget {
 
     pub fn update_ports(&mut self, port_defs: Vec<SubgraphPortDef>) {
         self.port_defs = port_defs;
+    }
+
+    /// The subgraph lost port `i`; keep the bridge in step without waiting
+    /// for the next time the level is opened.
+    pub fn remove_port(&mut self, i: usize) {
+        if i < self.port_defs.len() {
+            self.port_defs.remove(i);
+        }
     }
 }
 

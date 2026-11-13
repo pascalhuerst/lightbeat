@@ -251,7 +251,7 @@ mod tests {
         let g: Vec<f32> = (0..GRADIENT_STOP_COUNT * GRADIENT_STOP_FLOATS).map(|i| solid_gradient_channel(c, i)).collect();
         let gradient = crate::color::Gradient::from_channels(&g);
         for pos in [0.0, 0.5, 1.0] {
-            let s = gradient.sample(pos);
+            let s = gradient.sample_with_alpha(pos).0;
             assert!((s.r - 0.1).abs() < 1e-4 && (s.g - 0.2).abs() < 1e-4 && (s.b - 0.3).abs() < 1e-4);
         }
     }

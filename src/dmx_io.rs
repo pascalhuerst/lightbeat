@@ -81,8 +81,6 @@ impl UniverseOutput {
 pub struct DmxSharedState {
     /// Output data per universe, keyed by (interface_id, net, subnet, universe).
     pub universes: HashMap<UniverseKey, UniverseOutput>,
-    /// Which universe the DMX monitor is currently viewing.
-    pub monitor_key: Option<UniverseKey>,
     /// Universes forced into existence by the UI (e.g. for testing via the monitor).
     /// The engine ensures these universes exist on the corresponding interface so
     /// overrides can be sent even when no objects target them.
@@ -97,7 +95,6 @@ impl DmxSharedState {
     pub fn new() -> Self {
         Self {
             universes: HashMap::new(),
-            monitor_key: None,
             test_universes: Vec::new(),
             // Default: output is live. Override via AppConfig.dmx_bypass_on_startup
             // applied in main.rs right after the config is loaded.

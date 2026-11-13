@@ -7,7 +7,7 @@
 //! via pipewire — if the default path is misbehaving for them.
 
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use crossbeam_channel::{Receiver, Sender, bounded};
 use serde::{Deserialize, Serialize};
@@ -74,7 +74,6 @@ impl Default for StreamRequest {
 /// (samples @ stream_rate).
 #[derive(Clone)]
 pub struct AudioChunk {
-    pub start_sample: u64,
     pub mono_f32: Arc<[f32]>,
 }
 
@@ -88,8 +87,6 @@ pub struct AudioChunk {
 pub struct InputStream {
     _handle: Box<dyn std::any::Any>,
     pub sample_rate: u32,
-    pub channels: u16,
-    pub samples_produced: Arc<AtomicU64>,
     /// Most recent backend-callback buffer size (frames). 0 until first callback.
     pub last_chunk_frames: Arc<AtomicUsize>,
 }
@@ -104,15 +101,11 @@ impl InputStream {
     pub fn from_parts(
         handle: Box<dyn std::any::Any>,
         sample_rate: u32,
-        channels: u16,
-        samples_produced: Arc<AtomicU64>,
         last_chunk_frames: Arc<AtomicUsize>,
     ) -> Self {
         Self {
             _handle: handle,
             sample_rate,
-            channels,
-            samples_produced,
             last_chunk_frames,
         }
     }
@@ -157,7 +150,6 @@ pub fn dispatch_samples<T, F>(
     data: &[T],
     channels: usize,
     subs: &[Sender<AudioChunk>],
-    produced: &AtomicU64,
     mut to_f32: F,
 )
 where
@@ -173,9 +165,7 @@ where
             sum / c as f32
         })
         .collect();
-    let start = produced.fetch_add(mono.len() as u64, Ordering::Relaxed);
     let chunk = AudioChunk {
-        start_sample: start,
         mono_f32: Arc::from(mono.into_boxed_slice()),
     };
     for s in subs {

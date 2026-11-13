@@ -38,7 +38,6 @@ impl LfoWaveform {
 }
 
 pub struct LfoDisplay {
-    pub waveform: LfoWaveform,
     pub rate_hz: f32,
     pub phase: f32,
     pub value: f32,
@@ -270,7 +269,6 @@ impl ProcessNode for LfoProcessNode {
 
     fn update_display(&self, shared: &mut NodeSharedState) {
         shared.display = Some(Box::new(LfoDisplay {
-            waveform: self.waveform,
             rate_hz: self.rate_hz,
             phase: self.phase as f32,
             value: self.value_out,

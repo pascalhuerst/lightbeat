@@ -97,6 +97,7 @@ impl NodeGraph {
     // -----------------------------------------------------------------------
 
     pub(super) fn move_selection_to_subgraph(&mut self) {
+        self.stack_sig = None;
         let selected = self.selected_nodes.clone();
         if selected.is_empty() { return; }
 
@@ -462,6 +463,7 @@ impl NodeGraph {
     /// `sub_idx` (in the active level) with its inner nodes and re-route its
     /// external wires through the bridges' inner connections.
     pub(super) fn unpack_subgraph(&mut self, sub_idx: usize) {
+        self.stack_sig = None;
         // Validate selection and capture the subgraph's id/pos up front.
         let (sub_id, sub_pos) = {
             let level = self.active();

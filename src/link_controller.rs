@@ -3,11 +3,8 @@ use std::sync::{mpsc, OnceLock, Mutex};
 
 /// Events pushed from Link's internal thread via callbacks.
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub enum LinkEvent {
-    TempoChanged(f64),
     PlayStateChanged(bool),
-    NumPeersChanged(usize),
 }
 
 /// Current snapshot of the Link session state, captured at a point in time.
@@ -22,28 +19,16 @@ pub struct LinkState {
 // Global sender — the extern fn callbacks push events through this.
 static EVENT_TX: OnceLock<Mutex<mpsc::Sender<LinkEvent>>> = OnceLock::new();
 
-extern "C" fn on_tempo_changed(bpm: f64) {
-    if let Some(tx) = EVENT_TX.get() {
-        let _ = tx.lock().unwrap().send(LinkEvent::TempoChanged(bpm));
-    }
-}
-
 extern "C" fn on_play_state_changed(playing: bool) {
     if let Some(tx) = EVENT_TX.get() {
         let _ = tx.lock().unwrap().send(LinkEvent::PlayStateChanged(playing));
     }
 }
 
-extern "C" fn on_num_peers_changed(num_peers: usize) {
-    if let Some(tx) = EVENT_TX.get() {
-        let _ = tx.lock().unwrap().send(LinkEvent::NumPeersChanged(num_peers));
-    }
-}
-
 /// Reads Ableton Link session state. This is a passive observer —
 /// tempo and transport are controlled by other peers in the session.
 ///
-/// Events (tempo/play/peers changes) arrive via callbacks on Link's
+/// Play-state changes arrive via callbacks on Link's
 /// internal thread and can be drained with `events()`.
 pub struct LinkController {
     link: Link,
@@ -63,9 +48,7 @@ impl LinkController {
             .expect("LinkController already created — only one instance allowed");
 
         let mut link = Link::new(120.0);
-        link.set_tempo_callback(on_tempo_changed);
         link.set_start_stop_callback(on_play_state_changed);
-        link.set_num_peers_callback(on_num_peers_changed);
         link.enable_start_stop_sync(true);
         link.enable(true);
 

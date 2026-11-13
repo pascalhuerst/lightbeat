@@ -293,11 +293,6 @@ impl MidiHub {
         missing
     }
 
-    /// Whether the device `port` is open for listening.
-    pub fn input_connected(&self, port: &str) -> bool {
-        self.lock().in_ports.get(port).is_some_and(|p| p.connected)
-    }
-
     /// Fill `out` with the state of each binding on `port` and say whether the
     /// device is connected.
     pub fn read_controls(&self, port: &str, bindings: &[Option<Binding>], out: &mut Vec<Option<Control>>) -> bool {
@@ -322,10 +317,6 @@ impl MidiHub {
     /// The number of the latest message on `port`, to start learning from.
     pub fn latest_seq(&self, port: &str) -> u64 {
         self.lock().in_ports.get(port).map_or(0, |p| p.seq)
-    }
-
-    pub fn output_connected(&self, port: &str) -> bool {
-        self.lock().out_ports.get(port).is_some_and(|p| p.connected)
     }
 
     /// Whether the output device is open, and how many times it has been

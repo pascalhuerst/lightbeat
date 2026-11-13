@@ -112,7 +112,9 @@ impl ProcessNode for X1ProcessNode {
             for v in &mut self.out_values { *v = 0.0; }
             return;
         }
-        self.controller_name = c.name.clone();
+        if self.controller_name != c.name {
+            self.controller_name = c.name.clone();
+        }
         self.connected = c.status == ConnectionStatus::Connected;
 
         // Rebuild port-index → runtime-index maps if this is the first tick

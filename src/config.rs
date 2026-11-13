@@ -18,7 +18,9 @@ pub enum InspectorMode {
 }
 
 
+// A field added later must not wipe the saved settings of an older file.
 #[derive(Serialize, Deserialize, Clone)]
+#[serde(default)]
 pub struct AppConfig {
     /// If true, the app periodically writes a separate autosave file next to
     /// the project (for crash recovery) while there are unsaved changes. The
@@ -111,8 +113,14 @@ impl AppConfig {
         let path = Self::config_path();
         if path.exists() {
             match std::fs::read_to_string(&path) {
-                Ok(json) => serde_json::from_str(&json).unwrap_or_default(),
-                Err(_) => Self::default(),
+                Ok(json) => serde_json::from_str(&json).unwrap_or_else(|e| {
+                    eprintln!("settings: {} did not parse, using defaults: {e}", path.display());
+                    Self::default()
+                }),
+                Err(e) => {
+                    eprintln!("settings: could not read {}, using defaults: {e}", path.display());
+                    Self::default()
+                }
             }
         } else {
             Self::default()
@@ -123,7 +131,9 @@ impl AppConfig {
     pub fn save(&self) {
         let path = Self::config_path();
         if let Ok(json) = serde_json::to_string_pretty(self) {
-            let _ = std::fs::write(&path, json);
+            if let Err(e) = crate::paths::write_atomic(&path, json) {
+                eprintln!("settings: could not write {}: {e}", path.display());
+            }
         }
     }
 

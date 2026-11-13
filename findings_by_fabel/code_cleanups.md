@@ -21,6 +21,22 @@ Updated as items are implemented. Items not listed here are open.
 |---|---|---|
 | R1 | done | 8f0d27c: a setup that failed to load is never saved over and is kept as `setup.json.bad` |
 | R2 | done | 8f0d27c: file errors are shown in a "File problems" window (settings save still silent) |
+| S5 | done | ebb5af5: `widgets/nodes/graph.rs` is now `widgets/nodes/graph/` (ten files, move-only) |
+| D2 | done | 819f375 |
+| D5 | done | 94246d9 |
+| D6 | done | ad35b00: the callbacks are used by the session and stay; the run loop, `LedHandle` and the allows are gone |
+| D7 | done | 26e0159 |
+| D8 | done | f93a96f (except `_is_factory_kind` in the input controller list) |
+| D4 | partly | f2c0195: engine and colour items. Open: `StepValueEdits`, `unshape` (widgets) |
+| D9 | done | 14a6687: the branches were identical since the first commit; collapsed |
+| D12 | partly | 06398e8: `color/gradient.rs`. Open: `&Box<T>` in the inspector, manual copies in the lookup widget |
+| E5 | done | b4e5679 |
+| E6 | done | c68c9aa |
+| E7 | done | a8ea40f |
+| E9 | done | 2c1ebc9 |
+| R4 | done | 323f744 |
+| R3 | partly | 31d200d: setup and settings are written atomically. Open: project and autosave writes |
+| R7 | done | 31d200d |
 
 Checked against your own files on 2026-11-13: `setup.json` uses the new pixel
 format only (M3 can go), no saved Fader or Fader Group uses the old keys (M4,
