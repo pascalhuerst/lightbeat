@@ -5,6 +5,7 @@ use egui::{self, Color32, Pos2, Sense, Stroke, StrokeKind, Ui, Vec2};
 use crate::engine::nodes::ui::gradient_stops::GradientStopsDisplay;
 use crate::engine::types::*;
 use crate::theme;
+use crate::widgets::fader;
 use crate::widgets::nodes::node::{NodeLayout, NodeWidget};
 use crate::widgets::nodes::types::UiPortDef;
 
@@ -67,9 +68,9 @@ impl NodeWidget for GradientStopsWidget {
     fn type_name(&self) -> &'static str { "Gradient Stops" }
     fn title(&self) -> &str { &self.name }
     fn description(&self) -> &'static str {
-        "Four draggable stop positions (0..1) for the Palette → Gradient node. \
+        "Four draggable stop positions (0..1) for the Palette to Gradient node. \
          Wire a palette into the input to see a live preview of the resulting \
-         gradient; drag the handles to move each stop."
+         gradient; drag the handles to move each stop, Shift for fine steps, double-click a handle to reset it."
     }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> {
@@ -153,9 +154,29 @@ impl NodeWidget for GradientStopsWidget {
             self.drag_index = None;
         }
 
+        // Double-click on a handle puts it back where the node was made with it.
+        if resp.double_clicked()
+            && let Some(p) = ptr
+        {
+            let hit = (0..4)
+                .map(|i| (i, (p.x - (rect.min.x + self.positions[i].clamp(0.0, 1.0) * rect.width())).abs()))
+                .filter(|(_, d)| *d < HANDLE_HIT_RADIUS)
+                .min_by(|a, b| a.1.total_cmp(&b.1));
+            if let Some((i, _)) = hit {
+                let even = [0.0, 1.0 / 3.0, 2.0 / 3.0, 1.0][i];
+                let default = fader::recorded_default(&self.shared, i).unwrap_or(even);
+                self.positions[i] = default;
+                self.push_position(i, default);
+            }
+        }
+
         if let Some(idx) = self.drag_index
             && let Some(p) = ptr {
-                let new_x = ((p.x - rect.min.x) / rect.width().max(1.0)).clamp(0.0, 1.0);
+                let new_x = if ui.input(|i| i.modifiers.shift) {
+                    (self.positions[idx] + resp.drag_delta().x * fader::FINE_FACTOR / rect.width().max(1.0)).clamp(0.0, 1.0)
+                } else {
+                    ((p.x - rect.min.x) / rect.width().max(1.0)).clamp(0.0, 1.0)
+                };
                 if (new_x - self.positions[idx]).abs() > 1e-4 {
                     self.positions[idx] = new_x;
                     self.push_position(idx, new_x);

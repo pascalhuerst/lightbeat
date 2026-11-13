@@ -5,6 +5,7 @@ use egui::{self, Color32, Pos2, Sense, Stroke, StrokeKind, Ui, Vec2};
 use crate::engine::nodes::ui::xy_pad::XyPadDisplay;
 use crate::engine::types::*;
 use crate::theme;
+use crate::widgets::fader;
 use crate::widgets::nodes::node::{NodeLayout, NodeWidget};
 use crate::widgets::nodes::types::UiPortDef;
 
@@ -111,8 +112,20 @@ impl NodeWidget for XyPadWidget {
         painter.circle_filled(knob, knob_r, theme::SEM_PRIMARY);
         painter.circle_stroke(knob, knob_r, Stroke::new(1.5_f32, Color32::from_gray(20)));
 
+        // The fader's gestures: drag or click goes to the pointer, Shift-drag
+        // moves in fine steps, double-click centres.
+        let shift = ui.input(|i| i.modifiers.shift);
         let moved = resp.dragged() || resp.clicked() || resp.drag_started();
-        if moved
+        if resp.double_clicked() {
+            self.x = 0.5;
+            self.y = 0.5;
+            self.push_position();
+        } else if resp.dragged() && shift {
+            let d = resp.drag_delta() * fader::FINE_FACTOR;
+            self.x = (self.x + d.x / rect.width().max(1.0)).clamp(0.0, 1.0);
+            self.y = (self.y + d.y / rect.height().max(1.0)).clamp(0.0, 1.0);
+            self.push_position();
+        } else if moved
             && let Some(p) = resp.interact_pointer_pos() {
                 self.x = ((p.x - rect.min.x) / rect.width()).clamp(0.0, 1.0);
                 self.y = ((p.y - rect.min.y) / rect.height()).clamp(0.0, 1.0);
