@@ -18,14 +18,14 @@ impl ScalerWidget {
 
 impl NodeWidget for ScalerWidget {
     fn node_id(&self) -> NodeId { self.id }
-    fn type_name(&self) -> &'static str { "Scaler" }
-    fn description(&self) -> &'static str { "Linearly remaps an input range to an output range." }
+    fn type_name(&self) -> &'static str { "Range to Unit" }
+    fn description(&self) -> &'static str { "Maps the range from in min to in max onto 0..1, clamped. The range comes from the settings or from wires." }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> {
         vec![
             UiPortDef::from_def(&PortDef::new("in", PortType::Any)),
-            UiPortDef::from_def(&PortDef::new("min", PortType::Untyped)),
-            UiPortDef::from_def(&PortDef::new("max", PortType::Untyped)),
+            UiPortDef::from_def(&PortDef::new("in min", PortType::Untyped)),
+            UiPortDef::from_def(&PortDef::new("in max", PortType::Untyped)),
         ]
     }
     fn ui_outputs(&self) -> Vec<UiPortDef> {

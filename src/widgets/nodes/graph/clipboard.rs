@@ -307,13 +307,13 @@ mod paste_tests {
         g.register_node("Route", "Lookup Table", |id| {
             Box::new(LookupWidget::new(id, new_shared_state(1, 321), new_shared_gradient_library()))
         });
-        g.register_node("IO", "MIDI Input", |id| {
+        g.register_node("Input", "MIDI Input", |id| {
             Box::new(MidiInputWidget::new(id, new_shared_state(0, 33), MidiHub::idle(), new_shared_learned()))
         });
-        g.register_node("UI", "Fader Group", |id| Box::new(FaderGroupWidget::new(id, new_shared_state(256, 256))));
-        g.register_node("UI", "Button Group", |id| Box::new(ButtonGroupWidget::new(id, new_shared_state(256, 256))));
-        g.register_node("Math", "Multiplexer", |id| Box::new(MultiplexerWidget::new(id, new_shared_state(321, 40))));
-        g.register_node("Meta", "Subgraph", |id| Box::new(SubgraphWidget::new(id, new_shared_state(12, 12))));
+        g.register_node("Input", "Fader Group", |id| Box::new(FaderGroupWidget::new(id, new_shared_state(256, 256))));
+        g.register_node("Input", "Button Group", |id| Box::new(ButtonGroupWidget::new(id, new_shared_state(256, 256))));
+        g.register_node("Route", "Multiplexer", |id| Box::new(MultiplexerWidget::new(id, new_shared_state(321, 40))));
+        g.register_node("Route", "Subgraph", |id| Box::new(SubgraphWidget::new(id, new_shared_state(12, 12))));
         g
     }
 

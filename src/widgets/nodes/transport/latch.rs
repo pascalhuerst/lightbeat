@@ -20,7 +20,7 @@ impl LatchWidget {
 
 impl NodeWidget for LatchWidget {
     fn node_id(&self) -> NodeId { self.id }
-    fn type_name(&self) -> &'static str { "Latch" }
+    fn type_name(&self) -> &'static str { "Tick Delay" }
     fn description(&self) -> &'static str {
         "Adds one tick of delay. Useful for explicit feedback paths."
     }

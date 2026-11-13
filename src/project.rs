@@ -317,6 +317,26 @@ fn connections_for_current_layout(project: &ProjectFile) -> Vec<SavedConnection>
     connections
 }
 
+/// Names nodes were saved under before they were renamed, with the name they
+/// have now. Every path that makes nodes from saved data (project load, macros,
+/// paste of an inner graph) goes through `load_graph`, so this is the one place.
+/// Temporary: drop an entry once the test projects have been saved again.
+pub(crate) const RENAMED_NODES: [(&str, &str); 8] = [
+    // Renamed when the node gained several envelope kinds.
+    ("ADSR", "Envelope"),
+    ("Position Merge", "Pan Tilt to Position"),
+    ("Position Split", "Position to Pan Tilt"),
+    ("Latch", "Tick Delay"),
+    ("Flip-Flop", "SR Flip-Flop"),
+    ("Clock", "Link Clock"),
+    ("Scaler", "Range to Unit"),
+    ("Bar Loop", "Bar"),
+];
+
+fn current_type_name(saved: &str) -> &str {
+    RENAMED_NODES.iter().find(|(old, _)| *old == saved).map_or(saved, |(_, new)| new)
+}
+
 pub fn load_graph(graph: &mut NodeGraph, project: &ProjectFile) -> Vec<usize> {
     let mut indices = Vec::new();
 
@@ -324,13 +344,7 @@ pub fn load_graph(graph: &mut NodeGraph, project: &ProjectFile) -> Vec<usize> {
 
     for saved in &project.nodes {
         let id = NodeId(saved.id);
-        let type_name: &str = match saved.type_name.as_str() {
-            // ADSR was renamed to "Envelope" when the node gained
-            // multiple envelope kinds. Old projects still save under
-            // the former type_name.
-            "ADSR" => "Envelope",
-            other => other,
-        };
+        let type_name = current_type_name(&saved.type_name);
         if let Some(node) = graph.create_from_registry(type_name, id) {
             let idx = graph.add_node(node, egui::Pos2::new(saved.pos[0], saved.pos[1]));
 
@@ -611,10 +625,10 @@ mod tests {
             let names = new_shared_stack_names();
             let stack_names = names.clone();
             let ctx = new_shared_group_context();
-            g.register_node("Effects", "Effect Stack", move |id| {
+            g.register_node("Effect", "Effect Stack", move |id| {
                 Box::new(EffectStackWidget::new(id, crate::engine::types::new_shared_state(3, 0), ctx.clone(), stack_names.clone()))
             });
-            g.register_node("Effects", "Ripple Burst", move |id| {
+            g.register_node("Effect", "Ripple Burst", move |id| {
                 Box::new(EffectWidget::new(id, crate::engine::types::new_shared_state(48, 0), RIPPLE_BURST, names.clone()))
             });
             g
@@ -660,13 +674,13 @@ mod tests {
     }
 
     #[test]
-    fn a_bar_loop_with_promoted_inputs_loads_from_its_saved_form() {
+    fn a_bar_saved_as_bar_loop_with_promoted_inputs_loads_from_its_saved_form() {
         use crate::widgets::nodes::output::effect::{BAR_LOOP, EffectWidget, new_shared_stack_names};
         use crate::widgets::nodes::NodeGraph;
 
         let mut g = NodeGraph::new();
         let names = new_shared_stack_names();
-        g.register_node("Effects", "Bar Loop", move |id| {
+        g.register_node("Effect", "Bar", move |id| {
             Box::new(EffectWidget::new(id, crate::engine::types::new_shared_state(48, 0), BAR_LOOP, names.clone()))
         });
         // Exactly what the Group Output conversion writes.
@@ -698,7 +712,7 @@ mod tests {
         use crate::widgets::nodes::NodeGraph;
 
         let mut g = NodeGraph::new();
-        g.register_node("Transport", "Phase Scaler", |id| {
+        g.register_node("Clock", "Phase Scaler", |id| {
             Box::new(PhaseScalerWidget::new(id, crate::engine::types::new_shared_state(4, 16)))
         });
         g.register_node("Display", "Value Display", |id| {
@@ -730,10 +744,10 @@ mod tests {
         let mut g = NodeGraph::new();
         let (hub, learned) = (MidiHub::idle(), new_shared_learned());
         let (h1, l1, h2, l2) = (hub.clone(), learned.clone(), hub, learned);
-        g.register_node("IO", "MIDI Input", move |id| {
+        g.register_node("Input", "MIDI Input", move |id| {
             Box::new(MidiInputWidget::new(id, crate::engine::types::new_shared_state(0, 33), h1.clone(), l1.clone()))
         });
-        g.register_node("IO", "MIDI Output", move |id| {
+        g.register_node("Output", "MIDI Output", move |id| {
             Box::new(MidiOutputWidget::new(id, crate::engine::types::new_shared_state(32, 1), h2.clone(), l2.clone()))
         });
         g.register_node("Display", "Value Display", |id| {
@@ -772,7 +786,7 @@ mod tests {
 
         let mut g = NodeGraph::new();
         let hub = DmxInputHub::idle();
-        g.register_node("IO", "DMX Input", move |id| {
+        g.register_node("Input", "DMX Input", move |id| {
             Box::new(DmxInputWidget::new(id, crate::engine::types::new_shared_state(0, 200), hub.clone()))
         });
         g.register_node("Display", "Value Display", |id| {
@@ -800,7 +814,7 @@ mod tests {
         use crate::widgets::nodes::NodeGraph;
 
         let mut g = NodeGraph::new();
-        g.register_node("Math", "Const Value", |id| {
+        g.register_node("Signal", "Const Value", |id| {
             Box::new(ConstantWidget::new(id, crate::engine::types::PortType::Untyped, crate::engine::types::new_shared_state(0, 1)))
         });
         let project: ProjectFile = serde_json::from_str(r#"{

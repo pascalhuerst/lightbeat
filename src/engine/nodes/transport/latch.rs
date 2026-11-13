@@ -1,6 +1,6 @@
 use crate::engine::types::*;
 
-/// Latch: emits the previous tick's input value. Adds exactly one tick of
+/// Tick Delay: emits the previous tick's input value. Adds exactly one tick of
 /// delay on top of the engine's natural per-connection delay.
 ///
 /// Use this in feedback paths to make the data flow explicit (and
@@ -29,7 +29,7 @@ impl LatchProcessNode {
 
 impl ProcessNode for LatchProcessNode {
     fn node_id(&self) -> NodeId { self.id }
-    fn type_name(&self) -> &'static str { "Latch" }
+    fn type_name(&self) -> &'static str { "Tick Delay" }
     fn inputs(&self) -> &[PortDef] { &self.inputs }
     fn outputs(&self) -> &[PortDef] { &self.outputs }
 

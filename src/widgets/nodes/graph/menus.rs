@@ -329,8 +329,8 @@ mod port_menu_tests {
 
     fn graph() -> NodeGraph {
         let mut g = NodeGraph::new();
-        g.register_node("UI", "Button", |id| Box::new(ButtonWidget::new(id, new_shared_state(1, 1))));
-        g.register_node("Math", "Const Value", |id| {
+        g.register_node("Input", "Button", |id| Box::new(ButtonWidget::new(id, new_shared_state(1, 1))));
+        g.register_node("Signal", "Const Value", |id| {
             Box::new(ConstantWidget::new(id, PortType::Untyped, new_shared_state(0, 1)))
         });
         g.register_node("Display", "LED Display", |id| {

@@ -105,7 +105,7 @@ impl ProcessNode for ClockProcessNode {
     }
 
     fn type_name(&self) -> &'static str {
-        "Clock"
+        "Link Clock"
     }
 
     fn inputs(&self) -> &[PortDef] {

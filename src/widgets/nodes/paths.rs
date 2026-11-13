@@ -22,98 +22,49 @@ fn slug(label: &str) -> String {
     out.trim_end_matches('-').to_string()
 }
 
-/// The group a node with no path of its own goes in, from its category.
+/// The group is the category, lowercased: the menus and quick add share one
+/// taxonomy.
 fn group_of(category: &str) -> String {
-    match category {
-        "IO" | "UI" => "input",
-        "Transport" => "signal",
-        "Effects" => "effect",
-        "Meta" => "route",
-        other => return slug(other),
-    }
-    .to_string()
+    slug(category)
 }
 
-/// Nodes whose name alone would put them in the wrong place or say too little.
+/// Nodes with a shorter or older name than their own, as a second way in.
+/// Anything not listed is `<category>/<name>`.
 fn explicit(label: &str) -> Option<&'static str> {
     Some(match label {
-        // Where signals come from.
         "MIDI Input" => "input/midi",
         "Input Controller" => "input/controller",
         "Audio Input" => "input/audio",
         "DMX Input" => "input/dmx",
         "Push 1" => "input/push1",
-        "X1" => "input/x1",
         "Launchpad S" => "input/launchpad",
-        "Button" => "input/button",
-        "Fader" => "input/fader",
-        "Button Group" => "input/button-group",
-        "Fader Group" => "input/fader-group",
-        "XY Pad" => "input/xy-pad",
-        "Color Mixer" => "input/color-mixer",
-        "Gradient Stops" => "input/gradient-stops",
-        // Where they go.
         "MIDI Output" => "output/midi",
-        // Time and phase.
-        "Clock" => "clock/link",
+        "Link Clock" => "clock/link",
         "Internal Clock" => "clock/internal",
         "Clock Gen" => "clock/gen",
         "Clock Divider" => "clock/divider",
-        "Phase Scaler" => "clock/phase-scaler",
-        "Time to Phase" => "clock/time-to-phase",
-        "Phase Accumulator" => "clock/phase-accumulator",
-        // Making and shaping signals.
-        "LFO" => "signal/lfo",
-        "Envelope" => "signal/envelope",
-        "Step Sequencer" => "signal/step-sequencer",
-        "Smoothing" => "signal/smoothing",
-        "Transition" => "signal/transition",
-        "Sample & Hold" => "signal/sample-hold",
-        "Random" => "signal/random",
-        "Const Value" => "signal/const-value",
-        "Const Logic" => "signal/const-logic",
-        "Const Phase" => "signal/const-phase",
-        // Triggers and events.
         "Trigger Delay" => "trigger/delay",
         "Trigger Hold" => "trigger/hold",
-        "Latch" => "trigger/latch",
-        "Counter" => "trigger/counter",
-        "Change Detect" => "trigger/change-detect",
+        "Tick Delay" => "trigger/latch",
         "Schmitt Trigger" => "trigger/schmitt",
-        "Toggle Bank" => "trigger/toggle-bank",
-        "Trigger Bank" => "trigger/trigger-bank",
-        // Arithmetic.
-        "Formula" => "math/formula",
-        "Gain" => "math/gain",
-        "Scaler" => "math/scaler",
-        "Bipolar" => "math/bipolar",
+        "Range to Unit" => "math/scaler",
         "Scale Offset" => "math/scale",
-        "Lookup Table" => "route/lookup-table",
-        // Comparing: the symbols are not names.
+        // The symbols are not names.
         ">=" => "compare/gte",
         "<=" => "compare/lte",
         "==" => "compare/eq",
         "!=" => "compare/neq",
-        // Positions.
-        "Position Merge" => "position/merge",
-        "Position Split" => "position/split",
-        // Colour.
+        "Pan Tilt to Position" => "position/merge",
+        "Position to Pan Tilt" => "position/split",
         "Color Modifier" => "color/modifier",
         "Components to Color" => "color/from-components",
         "Color to Components" => "color/to-components",
-        // Looking at values.
         "Value Display" => "display/value",
         "LED Display" => "display/led",
         "Color Display" => "display/color",
         "Peak Level Meter" => "display/peak-meter",
-        // Getting signals from one place to another.
-        "Port Hub" => "route/port-hub",
-        "Multiplexer" => "route/multiplexer",
-        "Demultiplexer" => "route/demultiplexer",
-        "Subgraph" => "route/subgraph",
         "Portal Send" => "portal/send",
         "Portal Receive" => "portal/receive",
-        // Lights.
         "Effect Stack" => "effect/stack",
         _ => return None,
     })
@@ -125,11 +76,11 @@ mod tests {
 
     #[test]
     fn listed_nodes_get_their_own_path() {
-        assert_eq!(node_path("IO", "MIDI Input"), "input/midi");
-        assert_eq!(node_path("UI", "Button"), "input/button");
-        assert_eq!(node_path("Transport", "Clock Divider"), "clock/divider");
+        assert_eq!(node_path("Input", "MIDI Input"), "input/midi");
+        assert_eq!(node_path("Input", "Button"), "input/button");
+        assert_eq!(node_path("Clock", "Clock Divider"), "clock/divider");
         assert_eq!(node_path("Compare", ">="), "compare/gte");
-        assert_eq!(node_path("Math", "Const Value"), "signal/const-value");
+        assert_eq!(node_path("Signal", "Const Value"), "signal/const-value");
         assert_eq!(node_path("Color", "Color to Components"), "color/to-components");
     }
 
@@ -138,13 +89,13 @@ mod tests {
         assert_eq!(node_path("Math", "Mul"), "math/mul");
         assert_eq!(node_path("Math", "Div"), "math/div");
         assert_eq!(node_path("Logic", "JK Flip-Flop"), "logic/jk-flip-flop");
-        assert_eq!(node_path("Effects", "Spark Burst"), "effect/spark-burst");
+        assert_eq!(node_path("Effect", "Spark Burst"), "effect/spark-burst");
         assert_eq!(node_path("Color", "Palette to Gradient"), "color/palette-to-gradient");
         assert_eq!(node_path("Display", "Level Meter"), "display/level-meter");
         assert_eq!(node_path("Display", "Gauge"), "display/gauge");
         // A node nobody has listed yet still gets a sensible path.
-        assert_eq!(node_path("Transport", "Brand New Thing"), "signal/brand-new-thing");
-        assert_eq!(node_path("IO", "Some Device"), "input/some-device");
+        assert_eq!(node_path("Signal", "Brand New Thing"), "signal/brand-new-thing");
+        assert_eq!(node_path("Input", "Some Device"), "input/some-device");
     }
 
     #[test]

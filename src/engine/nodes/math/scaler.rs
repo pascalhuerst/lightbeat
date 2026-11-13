@@ -32,8 +32,8 @@ impl ScalerProcessNode {
             value_out: 0.0,
             inputs: vec![
                 PortDef::new("in", PortType::Any),
-                PortDef::new("min", PortType::Untyped),
-                PortDef::new("max", PortType::Untyped),
+                PortDef::new("in min", PortType::Untyped),
+                PortDef::new("in max", PortType::Untyped),
             ],
             outputs: vec![PortDef::new("out", PortType::Untyped)],
         }
@@ -49,7 +49,7 @@ impl ScalerProcessNode {
 
 impl ProcessNode for ScalerProcessNode {
     fn node_id(&self) -> NodeId { self.id }
-    fn type_name(&self) -> &'static str { "Scaler" }
+    fn type_name(&self) -> &'static str { "Range to Unit" }
     fn inputs(&self) -> &[PortDef] { &self.inputs }
     fn outputs(&self) -> &[PortDef] { &self.outputs }
 

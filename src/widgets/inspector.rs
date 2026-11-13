@@ -308,12 +308,14 @@ pub fn show_inspector(ui: &mut Ui, node: &mut dyn NodeWidget) {
     if !title.is_empty() {
         ui.heading(title);
     }
-    // The node type is always shown in its own muted slot so every inspector
-    // header has the same visual anchor — "what kind of thing is this".
-    ui.colored_label(
-        theme::TEXT_DIM,
-        egui::RichText::new(type_name).small().italics(),
-    );
+    // The node type sits in its own muted slot, "what kind of thing is this",
+    // unless the heading already says it (operators are titled by their symbol).
+    if title != type_name {
+        ui.colored_label(
+            theme::TEXT_DIM,
+            egui::RichText::new(type_name).small().italics(),
+        );
+    }
     let desc = node.description();
     if !desc.is_empty() {
         ui.colored_label(theme::TEXT_DIM, desc);

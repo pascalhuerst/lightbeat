@@ -26,20 +26,20 @@ impl NodeWidget for FlipFlopWidget {
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str {
         match self.kind {
-            FlipFlopKind::Sr => "Flip-Flop",
+            FlipFlopKind::Sr => "SR Flip-Flop",
             FlipFlopKind::Jk => "JK Flip-Flop",
         }
     }
     fn title(&self) -> &str {
         match self.kind {
-            FlipFlopKind::Sr => "SR FF",
-            FlipFlopKind::Jk => "JK FF",
+            FlipFlopKind::Sr => "SR Flip-Flop",
+            FlipFlopKind::Jk => "JK Flip-Flop",
         }
     }
     fn description(&self) -> &'static str {
         match self.kind {
             FlipFlopKind::Sr =>
-                "SR latch (level-sensitive). S sets Q, R resets Q (R wins ties).",
+                "SR flip-flop (level-sensitive). S sets Q, R resets Q (R wins ties).",
             FlipFlopKind::Jk =>
                 "JK flip-flop (rising-edge clk). J=K=1 toggles, J alone sets, K alone resets.",
         }

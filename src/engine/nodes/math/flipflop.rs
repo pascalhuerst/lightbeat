@@ -36,7 +36,7 @@ impl FlipFlopProcessNode {
 
 impl ProcessNode for FlipFlopProcessNode {
     fn node_id(&self) -> NodeId { self.id }
-    fn type_name(&self) -> &'static str { "Flip-Flop" }
+    fn type_name(&self) -> &'static str { "SR Flip-Flop" }
     fn inputs(&self) -> &[PortDef] { &self.inputs }
     fn outputs(&self) -> &[PortDef] { &self.outputs }
 
