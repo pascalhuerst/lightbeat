@@ -1,7 +1,7 @@
 use egui::{self, Color32, Ui};
 
 use crate::engine::nodes::meta::portal::{
-    PortalPortDef, PortalReceiveDisplay, PortalSendDisplay, SharedPortalRegistry,
+    PortalConfig, PortalPortDef, PortalReceiveDisplay, PortalSendDisplay, SharedPortalRegistry,
     available_portal_names,
 };
 use crate::engine::nodes::meta::subgraph::PORT_TYPE_NAMES;
@@ -46,10 +46,7 @@ impl PortalSendWidget {
 
     fn push_config(&self) {
         let mut shared = self.shared.lock();
-        shared.pending_config = Some(serde_json::json!({
-            "name": self.name,
-            "ports": self.port_defs,
-        }));
+        shared.pending_config = Some(PortalConfig::send_defs(&self.name, self.port_defs.clone()).to_value());
     }
 
     pub fn remove_port(&mut self, i: usize) {
@@ -63,13 +60,12 @@ impl PortalSendWidget {
 impl NodeWidget for PortalSendWidget {
     fn restore_from_save(&mut self, data: Option<&serde_json::Value>, _params: &[(usize, crate::engine::types::ParamValue)]) {
         let Some(data) = data else { return };
-        if let Some(n) = data.get("name").and_then(|v| v.as_str()) {
-            self.name = n.to_string();
+        let cfg = PortalConfig::from_value(data);
+        if let Some(n) = cfg.name {
+            self.name = n;
         }
-        if let Some(arr) = data.get("ports").and_then(|v| v.as_array()) {
-            self.port_defs = arr.iter()
-                .filter_map(|v| serde_json::from_value::<PortalPortDef>(v.clone()).ok())
-                .collect();
+        if let Some(ports) = cfg.ports {
+            self.port_defs = ports;
         }
     }
 
@@ -197,23 +193,19 @@ impl PortalReceiveWidget {
 
     fn push_config(&self) {
         let mut shared = self.shared.lock();
-        shared.pending_config = Some(serde_json::json!({
-            "bound_name": self.bound_name,
-            "ports": self.port_defs,
-        }));
+        shared.pending_config = Some(PortalConfig::receive_defs(&self.bound_name, self.port_defs.clone()).to_value());
     }
 }
 
 impl NodeWidget for PortalReceiveWidget {
     fn restore_from_save(&mut self, data: Option<&serde_json::Value>, _params: &[(usize, crate::engine::types::ParamValue)]) {
         let Some(data) = data else { return };
-        if let Some(n) = data.get("bound_name").and_then(|v| v.as_str()) {
-            self.bound_name = n.to_string();
+        let cfg = PortalConfig::from_value(data);
+        if let Some(n) = cfg.bound_name {
+            self.bound_name = n;
         }
-        if let Some(arr) = data.get("ports").and_then(|v| v.as_array()) {
-            self.port_defs = arr.iter()
-                .filter_map(|v| serde_json::from_value::<PortalPortDef>(v.clone()).ok())
-                .collect();
+        if let Some(ports) = cfg.ports {
+            self.port_defs = ports;
         }
     }
 

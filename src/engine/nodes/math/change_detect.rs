@@ -1,4 +1,7 @@
+use crate::engine::param_spec::FloatParam;
 use crate::engine::types::*;
+
+const THRESHOLD: FloatParam = FloatParam::new("Threshold", 0.0, 1.0, 0.001, "");
 
 /// Detects when an input `value` changes. Two modes, selected
 /// automatically by whether the optional `trigger` input is wired:
@@ -111,17 +114,10 @@ impl ProcessNode for ChangeDetectProcessNode {
     }
 
     fn params(&self) -> Vec<ParamDef> {
-        vec![ParamDef::Float {
-            name: "Threshold".into(),
-            value: self.threshold,
-            min: 0.0,
-            max: 1.0,
-            step: 0.001,
-            unit: "",
-        }]
+        vec![THRESHOLD.def(self.threshold)]
     }
 
     fn set_param(&mut self, index: usize, value: ParamValue) {
-        if index == 0 { self.threshold = value.as_f32(); }
+        if index == 0 { self.threshold = THRESHOLD.apply(&value); }
     }
 }

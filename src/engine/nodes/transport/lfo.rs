@@ -1,6 +1,9 @@
 use std::time::Instant;
 
+use crate::engine::param_spec::FloatParam;
 use crate::engine::types::*;
+
+const RATE: FloatParam = FloatParam::new("Rate", 0.01, 20.0, 0.01, "Hz").clamped();
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LfoWaveform {
@@ -221,14 +224,7 @@ impl ProcessNode for LfoProcessNode {
 
     fn params(&self) -> Vec<ParamDef> {
         vec![
-            ParamDef::Float {
-                name: "Rate".into(),
-                value: self.rate_hz,
-                min: 0.01,
-                max: 20.0,
-                step: 0.01,
-                unit: "Hz",
-            },
+            RATE.def(self.rate_hz),
             ParamDef::Choice {
                 name: "Waveform".into(),
                 value: self.waveform.to_index(),
@@ -254,7 +250,7 @@ impl ProcessNode for LfoProcessNode {
 
     fn set_param(&mut self, index: usize, value: ParamValue) {
         match index {
-            0 => self.rate_hz = value.as_f32().clamp(0.01, 20.0),
+            0 => self.rate_hz = RATE.apply(&value),
             1 => self.waveform = LfoWaveform::from_index(value.as_usize()),
             2 => self.unipolar = matches!(value, ParamValue::Bool(true)),
             3 => self.set_phase_input(matches!(value, ParamValue::Bool(true))),

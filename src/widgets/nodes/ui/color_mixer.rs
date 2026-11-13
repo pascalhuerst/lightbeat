@@ -1,6 +1,6 @@
 use egui::{self, Ui};
 
-use crate::engine::nodes::ui::color_mixer::{ColorMixerDisplay, MixerMode, MIXER_MODE_NAMES};
+use crate::engine::nodes::ui::color_mixer::{ColorMixerDisplay, MixerConfig, MixerMode, MIXER_MODE_NAMES};
 use crate::engine::types::*;
 use crate::widgets::nodes::node::{NodeLayout, NodeWidget, node_identity, with_display};
 use crate::widgets::nodes::types::UiPortDef;
@@ -28,11 +28,7 @@ impl ColorMixerWidget {
 
     fn push_config(&self) {
         let mut s = self.shared.lock();
-        s.pending_config = Some(serde_json::json!({
-            "name": self.name,
-            "mode": self.mode.to_index(),
-            "values": self.values,
-        }));
+        s.pending_config = Some(MixerConfig::new(&self.name, self.mode, self.values).to_value());
     }
 
     fn set_mode(&mut self, mode: MixerMode) {

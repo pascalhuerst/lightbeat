@@ -120,7 +120,7 @@ impl ProcessNode for PaletteToGradientProcessNode {
 
     fn params(&self) -> Vec<ParamDef> {
         (0..N).map(|i| ParamDef::Float {
-            name: format!("Pos {}", i + 1),
+            name: format!("Pos {}", i + 1).into(),
             value: self.pos_param[i],
             min: 0.0, max: 1.0, step: 0.01, unit: "",
         }).collect()

@@ -8,7 +8,13 @@
 //! With the default settings (`scale = 24`, matching the X1's 24-clicks-
 //! per-revolution), one encoder click bumps the output by exactly 1.
 
+use crate::engine::param_spec::FloatParam;
 use crate::engine::types::*;
+
+
+const MIN: FloatParam = FloatParam::new("Min", -1000.0, 1000.0, 0.1, "");
+const MAX: FloatParam = FloatParam::new("Max", -1000.0, 1000.0, 0.1, "");
+const SCALE: FloatParam = FloatParam::new("Scale", 0.1, 256.0, 0.1, "").at_least(0.0);
 
 pub struct PhaseAccumulatorProcessNode {
     id: NodeId,
@@ -111,18 +117,14 @@ impl ProcessNode for PhaseAccumulatorProcessNode {
     }
 
     fn params(&self) -> Vec<ParamDef> {
-        vec![
-            ParamDef::Float { name: "Min".into(), value: self.min, min: -1000.0, max: 1000.0, step: 0.1, unit: "" },
-            ParamDef::Float { name: "Max".into(), value: self.max, min: -1000.0, max: 1000.0, step: 0.1, unit: "" },
-            ParamDef::Float { name: "Scale".into(), value: self.scale, min: 0.1, max: 256.0, step: 0.1, unit: "" },
-        ]
+        vec![MIN.def(self.min), MAX.def(self.max), SCALE.def(self.scale)]
     }
 
     fn set_param(&mut self, index: usize, value: ParamValue) {
         match index {
-            0 => self.min = value.as_f32(),
-            1 => self.max = value.as_f32(),
-            2 => self.scale = value.as_f32().max(0.0),
+            0 => self.min = MIN.apply(&value),
+            1 => self.max = MAX.apply(&value),
+            2 => self.scale = SCALE.apply(&value),
             _ => {}
         }
         // Re-clamp in case the user tightened the range past the current

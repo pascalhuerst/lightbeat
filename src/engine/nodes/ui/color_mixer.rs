@@ -2,6 +2,8 @@
 //! it on a Color port.
 
 use crate::color::{ColorConvert, Hsv, Rgb};
+use serde::{Deserialize, Serialize};
+
 use crate::engine::types::*;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -71,6 +73,33 @@ impl MixerMode {
 }
 
 /// Display snapshot consumed by the widget each frame.
+/// The node's settings, as saved and as the widget pushes them.
+#[derive(Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct MixerConfig {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    mode: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    values: Option<Vec<f32>>,
+}
+
+impl MixerConfig {
+    pub fn new(name: &str, mode: MixerMode, values: [f32; 3]) -> Self {
+        Self { name: Some(name.to_string()), mode: Some(mode.to_index()), values: Some(values.to_vec()) }
+    }
+
+    /// Malformed data loads as an empty update, which changes nothing.
+    pub fn from_value(v: &serde_json::Value) -> Self {
+        serde_json::from_value(v.clone()).unwrap_or_default()
+    }
+
+    pub fn to_value(&self) -> serde_json::Value {
+        serde_json::to_value(self).unwrap_or(serde_json::Value::Null)
+    }
+}
+
 pub struct ColorMixerDisplay {
     pub name: String,
     pub mode: MixerMode,
@@ -116,25 +145,20 @@ impl ProcessNode for ColorMixerProcessNode {
     }
 
     fn save_data(&self) -> Option<serde_json::Value> {
-        Some(serde_json::json!({
-            "name": self.name,
-            "mode": self.mode.to_index(),
-            "values": self.values,
-        }))
+        Some(MixerConfig::new(&self.name, self.mode, self.values).to_value())
     }
 
     fn load_data(&mut self, data: &serde_json::Value) {
-        if let Some(n) = data.get("name").and_then(|v| v.as_str()) {
-            self.name = n.to_string();
+        let cfg = MixerConfig::from_value(data);
+        if let Some(n) = cfg.name {
+            self.name = n;
         }
-        if let Some(m) = data.get("mode").and_then(|v| v.as_u64()) {
-            self.mode = MixerMode::from_index(m as usize);
+        if let Some(m) = cfg.mode {
+            self.mode = MixerMode::from_index(m);
         }
-        if let Some(vs) = data.get("values").and_then(|v| v.as_array()) {
-            for (slot, v) in self.values.iter_mut().zip(vs) {
-                if let Some(x) = v.as_f64() {
-                    *slot = (x as f32).clamp(0.0, 1.0);
-                }
+        if let Some(vs) = cfg.values {
+            for (slot, x) in self.values.iter_mut().zip(vs) {
+                *slot = x.clamp(0.0, 1.0);
             }
         }
     }
@@ -162,6 +186,17 @@ mod tests {
         n.load_data(&serde_json::json!({ "mode": 1, "values": [0.0, 1.0, 1.0] }));
         n.process();
         assert_eq!([n.read_output(0), n.read_output(1), n.read_output(2)], [1.0, 0.0, 0.0]);
+    }
+
+    #[test]
+    fn the_hand_written_save_shape_loads_and_saves_unchanged() {
+        let saved = serde_json::json!({ "name": "Wash", "mode": 1, "values": [0.25, 0.5, 0.75] });
+        let mut n = ColorMixerProcessNode::new(NodeId(1));
+        n.load_data(&saved);
+        assert_eq!(n.name, "Wash");
+        assert_eq!(n.mode, MixerMode::Hsv);
+        assert_eq!(n.values, [0.25, 0.5, 0.75]);
+        assert_eq!(n.save_data(), Some(saved));
     }
 
     #[test]

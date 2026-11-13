@@ -1,5 +1,6 @@
 pub use super::promoted::{PromotedKind, PromotedParam};
 pub use super::snapshots::SnapshotSet;
+use std::borrow::Cow;
 use std::any::Any;
 use std::sync::Arc;
 use parking_lot::Mutex;
@@ -147,7 +148,7 @@ pub struct Connection {
 #[derive(Debug, Clone)]
 pub enum ParamDef {
     Float {
-        name: String,
+        name: Cow<'static, str>,
         value: f32,
         min: f32,
         max: f32,
@@ -155,19 +156,19 @@ pub enum ParamDef {
         unit: &'static str,
     },
     Int {
-        name: String,
+        name: Cow<'static, str>,
         value: i64,
         min: i64,
         max: i64,
     },
     Bool {
-        name: String,
+        name: Cow<'static, str>,
         value: bool,
     },
     Choice {
-        name: String,
+        name: Cow<'static, str>,
         value: usize,
-        options: Vec<String>,
+        options: Vec<Cow<'static, str>>,
     },
 }
 

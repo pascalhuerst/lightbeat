@@ -1,4 +1,7 @@
+use crate::engine::param_spec::IntParam;
 use crate::engine::types::*;
+
+const COUNT: IntParam = IntParam::new("Count", 1, 64).at_least(1);
 
 /// Generates N evenly spaced triggers per phase cycle.
 /// E.g. count=4 fires at phase 0.0, 0.25, 0.5, 0.75.
@@ -88,16 +91,11 @@ impl ProcessNode for ClockGenProcessNode {
     }
 
     fn params(&self) -> Vec<ParamDef> {
-        vec![ParamDef::Int {
-            name: "Count".into(),
-            value: self.count as i64,
-            min: 1,
-            max: 64,
-        }]
+        vec![COUNT.def(self.count as i64)]
     }
 
     fn set_param(&mut self, index: usize, value: ParamValue) {
-        if index == 0 { self.count = value.as_i64().max(1) as i32; }
+        if index == 0 { self.count = COUNT.apply(&value) as i32; }
     }
 
     fn update_display(&self, shared: &mut NodeSharedState) {

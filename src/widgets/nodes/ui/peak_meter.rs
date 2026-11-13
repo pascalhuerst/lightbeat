@@ -1,6 +1,6 @@
 use egui::{self, Color32, Pos2, Rect, Sense, Stroke, StrokeKind, Ui};
 
-use crate::engine::nodes::ui::peak_meter::{PeakMeterDisplay, PeakMeterOrientation};
+use crate::engine::nodes::ui::peak_meter::{PeakMeterConfig, PeakMeterDisplay, PeakMeterOrientation};
 use crate::engine::types::*;
 use crate::theme;
 use crate::widgets::setup_ui;
@@ -85,10 +85,7 @@ impl PeakMeterWidget {
 
     fn push_config(&self) {
         let mut shared = self.shared.lock();
-        shared.pending_config = Some(serde_json::json!({
-            "name": self.name,
-            "orientation": self.orientation.as_str(),
-        }));
+        shared.pending_config = Some(PeakMeterConfig::new(&self.name, self.orientation).to_value());
     }
 }
 

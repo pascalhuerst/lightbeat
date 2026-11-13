@@ -2,7 +2,10 @@
 //! scalar is both editable as a param and driven by a knob in the node
 //! body.
 
+use crate::engine::param_spec::FloatParam;
 use crate::engine::types::*;
+
+const GAIN: FloatParam = FloatParam::new("Gain", 0.0, 1.0, 0.01, "").clamped();
 
 pub struct GainDisplay {
     pub gain: f32,
@@ -63,29 +66,12 @@ impl ProcessNode for GainProcessNode {
     }
 
     fn params(&self) -> Vec<ParamDef> {
-        vec![ParamDef::Float {
-            name: "Gain".into(),
-            value: self.gain,
-            min: 0.0,
-            max: 1.0,
-            step: 0.01,
-            unit: "",
-        }]
+        vec![GAIN.def(self.gain)]
     }
 
     fn set_param(&mut self, index: usize, value: ParamValue) {
         if index == 0 {
-            self.gain = value.as_f32().clamp(0.0, 1.0);
-        }
-    }
-
-    fn save_data(&self) -> Option<serde_json::Value> {
-        Some(serde_json::json!({ "gain": self.gain }))
-    }
-
-    fn load_data(&mut self, data: &serde_json::Value) {
-        if let Some(v) = data.get("gain").and_then(|v| v.as_f64()) {
-            self.gain = (v as f32).clamp(0.0, 1.0);
+            self.gain = GAIN.apply(&value);
         }
     }
 
@@ -94,5 +80,22 @@ impl ProcessNode for GainProcessNode {
             gain: self.gain,
             output: self.output,
         }));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_gain_is_restored_by_its_param_alone() {
+        let mut n = GainProcessNode::new(NodeId(1));
+        assert!(n.save_data().is_none(), "the param already holds the gain");
+        n.set_param(0, ParamValue::Float(0.4));
+        n.write_input(0, 0.5);
+        n.process();
+        assert_eq!(n.read_output(0), 0.2);
+        n.set_param(0, ParamValue::Float(7.0));
+        assert!(matches!(n.params()[0], ParamDef::Float { value, .. } if value == 1.0));
     }
 }

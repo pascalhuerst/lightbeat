@@ -3,7 +3,7 @@ use std::any::Any;
 
 use crate::engine::nodes::meta::subgraph::{
     BRIDGE_IN_NODE_ID, BRIDGE_OUT_NODE_ID, InnerValueDisplay, PORT_TYPE_NAMES, SubgraphDisplay,
-    SubgraphPortDef,
+    SubgraphConfig, SubgraphPortDef,
 };
 use crate::engine::types::*;
 use crate::widgets::setup_ui;
@@ -66,14 +66,14 @@ impl SubgraphWidget {
 
     pub fn push_config(&self) {
         let mut shared = self.shared.lock();
-        shared.pending_config = Some(serde_json::json!({
-            "name": self.name,
-            "inputs": self.input_defs,
-            "outputs": self.output_defs,
-            "locked": self.locked,
-            "macro_description": self.macro_description,
-            "macro_path": self.macro_path,
-        }));
+        shared.pending_config = Some(SubgraphConfig {
+            name: Some(self.name.clone()),
+            inputs: Some(self.input_defs.clone()),
+            outputs: Some(self.output_defs.clone()),
+            locked: Some(self.locked),
+            macro_description: Some(self.macro_description.clone()),
+            macro_path: Some(self.macro_path.clone()),
+        }.to_value());
     }
 }
 
@@ -87,29 +87,24 @@ impl NodeWidget for SubgraphWidget {
     /// those ports would be lost.
     fn restore_from_save(&mut self, data: Option<&serde_json::Value>, _params: &[(usize, crate::engine::types::ParamValue)]) {
         let Some(data) = data else { return };
-        if let Some(name) = data.get("name").and_then(|v| v.as_str()) {
-            self.name = name.to_string();
+        let cfg = SubgraphConfig::from_value(data);
+        if let Some(name) = cfg.name {
+            self.name = name;
         }
-        if let Some(inputs) = data.get("inputs").and_then(|v| v.as_array()) {
-            self.input_defs = inputs
-                .iter()
-                .filter_map(|v| serde_json::from_value::<SubgraphPortDef>(v.clone()).ok())
-                .collect();
+        if let Some(inputs) = cfg.inputs {
+            self.input_defs = inputs;
         }
-        if let Some(outputs) = data.get("outputs").and_then(|v| v.as_array()) {
-            self.output_defs = outputs
-                .iter()
-                .filter_map(|v| serde_json::from_value::<SubgraphPortDef>(v.clone()).ok())
-                .collect();
+        if let Some(outputs) = cfg.outputs {
+            self.output_defs = outputs;
         }
-        if let Some(b) = data.get("locked").and_then(|v| v.as_bool()) {
+        if let Some(b) = cfg.locked {
             self.locked = b;
         }
-        if let Some(s) = data.get("macro_description").and_then(|v| v.as_str()) {
-            self.macro_description = s.to_string();
+        if let Some(s) = cfg.macro_description {
+            self.macro_description = s;
         }
-        if let Some(s) = data.get("macro_path").and_then(|v| v.as_str()) {
-            self.macro_path = s.to_string();
+        if let Some(s) = cfg.macro_path {
+            self.macro_path = s;
         }
         self.push_config();
     }

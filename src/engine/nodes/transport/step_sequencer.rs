@@ -1,3 +1,5 @@
+use serde::{Deserialize, Serialize};
+
 use crate::engine::types::*;
 
 const DEFAULT_STEPS: usize = 8;
@@ -27,6 +29,28 @@ impl StepMode {
 }
 
 /// Display state for the UI.
+/// The sequence as saved. Each key is optional so a partial update only
+/// touches what it names.
+#[derive(Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct StepSequencerConfig {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    values: Option<Vec<f32>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    mode: Option<String>,
+}
+
+impl StepSequencerConfig {
+    /// Malformed data loads as an empty update, which changes nothing.
+    pub fn from_value(v: &serde_json::Value) -> Self {
+        serde_json::from_value(v.clone()).unwrap_or_default()
+    }
+
+    pub fn to_value(&self) -> serde_json::Value {
+        serde_json::to_value(self).unwrap_or(serde_json::Value::Null)
+    }
+}
+
 pub struct StepSequencerDisplay {
     pub values: Vec<f32>,
     pub current_step: usize,
@@ -240,7 +264,7 @@ impl ProcessNode for StepSequencerProcessNode {
             ParamDef::Choice {
                 name: "Mode".into(),
                 value: self.mode.to_index(),
-                options: StepMode::ALL.iter().map(|m| m.label().to_string()).collect(),
+                options: StepMode::ALL.iter().map(|m| m.label().into()).collect(),
             },
         ]
     }
@@ -260,27 +284,25 @@ impl ProcessNode for StepSequencerProcessNode {
     }
 
     fn save_data(&self) -> Option<serde_json::Value> {
-        Some(serde_json::json!({
-            "values": self.values,
-            "mode": match self.mode {
+        Some(StepSequencerConfig {
+            values: Some(self.values.clone()),
+            mode: Some(match self.mode {
                 StepMode::Phase => "phase",
                 StepMode::Trigger => "trigger",
-            },
-        }))
+            }.to_string()),
+        }.to_value())
     }
 
     fn load_data(&mut self, data: &serde_json::Value) {
-        if let Some(vals) = data.get("values").and_then(|v| v.as_array()) {
-            self.values = vals
-                .iter()
-                .filter_map(|v| v.as_f64().map(|f| f as f32))
-                .collect();
+        let cfg = StepSequencerConfig::from_value(data);
+        if let Some(vals) = cfg.values {
+            self.values = vals;
             if self.values.is_empty() {
                 self.values = vec![0.0; DEFAULT_STEPS];
             }
         }
-        if let Some(s) = data.get("mode").and_then(|v| v.as_str()) {
-            let m = match s {
+        if let Some(s) = cfg.mode {
+            let m = match s.as_str() {
                 "trigger" => StepMode::Trigger,
                 _ => StepMode::Phase,
             };
@@ -295,5 +317,27 @@ impl ProcessNode for StepSequencerProcessNode {
             active: self.active,
             mode: self.mode,
         }));
+    }
+}
+
+#[cfg(test)]
+mod config_tests {
+    use super::*;
+
+    #[test]
+    fn the_hand_written_save_shape_loads_and_saves_unchanged() {
+        let saved = serde_json::json!({ "values": [0.0, 0.5, 1.0, 0.25], "mode": "trigger" });
+        let mut n = StepSequencerProcessNode::new(NodeId(1));
+        n.load_data(&saved);
+        assert_eq!(n.values, vec![0.0, 0.5, 1.0, 0.25]);
+        assert_eq!(n.mode, StepMode::Trigger);
+        assert_eq!(n.save_data(), Some(saved));
+    }
+
+    #[test]
+    fn an_empty_sequence_falls_back_to_the_default_length() {
+        let mut n = StepSequencerProcessNode::new(NodeId(1));
+        n.load_data(&serde_json::json!({ "values": [] }));
+        assert_eq!(n.values.len(), DEFAULT_STEPS);
     }
 }

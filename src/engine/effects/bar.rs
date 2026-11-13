@@ -59,7 +59,7 @@ impl EffectKind for Bar {
         vec![
             ParamDef::Float { name: "Position".into(), value: self.position, min: 0.0, max: 1.0, step: 0.01, unit: "" },
             ParamDef::Float { name: "Width".into(), value: self.width, min: 0.01, max: 1.0, step: 0.01, unit: "" },
-            ParamDef::Choice { name: "Anchor".into(), value: self.anchor, options: ANCHORS.iter().map(|s| s.to_string()).collect() },
+            ParamDef::Choice { name: "Anchor".into(), value: self.anchor, options: ANCHORS.iter().map(|s| (*s).into()).collect() },
             ParamDef::Float { name: "Softness".into(), value: self.softness, min: 0.0, max: 1.0, step: 0.01, unit: "" },
             ParamDef::Float { name: "amount".into(), value: self.intensity, min: 0.0, max: 1.0, step: 0.01, unit: "" },
         ]

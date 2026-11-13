@@ -3,7 +3,13 @@
 
 use std::any::Any;
 
+use serde::{Deserialize, Serialize};
+
+use crate::engine::param_spec::FloatParam;
 use crate::engine::types::*;
+
+const MIN: FloatParam = FloatParam::new("Min", -100_000.0, 100_000.0, 0.01, "");
+const MAX: FloatParam = FloatParam::new("Max", -100_000.0, 100_000.0, 0.01, "");
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MeterKind {
@@ -26,6 +32,27 @@ impl MeterKind {
             MeterKind::Level => "Level Meter",
             MeterKind::Gauge => "Gauge",
         }
+    }
+}
+
+/// The node's own text settings, as saved and as the widget pushes them.
+#[derive(Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct MeterConfig {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub unit: Option<String>,
+}
+
+impl MeterConfig {
+    /// Malformed data loads as an empty update, which changes nothing.
+    pub fn from_value(v: &serde_json::Value) -> Self {
+        serde_json::from_value(v.clone()).unwrap_or_default()
+    }
+
+    pub fn to_value(&self) -> serde_json::Value {
+        serde_json::to_value(self).unwrap_or(serde_json::Value::Null)
     }
 }
 
@@ -85,8 +112,8 @@ impl ProcessNode for MeterProcessNode {
 
     fn params(&self) -> Vec<ParamDef> {
         let mut params = vec![
-            ParamDef::Float { name: "Min".into(), value: self.min, min: -100_000.0, max: 100_000.0, step: 0.01, unit: "" },
-            ParamDef::Float { name: "Max".into(), value: self.max, min: -100_000.0, max: 100_000.0, step: 0.01, unit: "" },
+            MIN.def(self.min),
+            MAX.def(self.max),
         ];
         if self.kind == MeterKind::Level {
             params.push(ParamDef::Bool { name: "Vertical".into(), value: self.vertical });
@@ -96,23 +123,24 @@ impl ProcessNode for MeterProcessNode {
 
     fn set_param(&mut self, index: usize, value: ParamValue) {
         match index {
-            0 => self.min = value.as_f32(),
-            1 => self.max = value.as_f32(),
+            0 => self.min = MIN.apply(&value),
+            1 => self.max = MAX.apply(&value),
             2 => self.vertical = value.as_f32() >= 0.5,
             _ => {}
         }
     }
 
     fn save_data(&self) -> Option<serde_json::Value> {
-        Some(serde_json::json!({ "name": self.name, "unit": self.unit }))
+        Some(MeterConfig { name: Some(self.name.clone()), unit: Some(self.unit.clone()) }.to_value())
     }
 
     fn load_data(&mut self, data: &serde_json::Value) {
-        if let Some(n) = data.get("name").and_then(|v| v.as_str()) {
-            self.name = n.to_string();
+        let cfg = MeterConfig::from_value(data);
+        if let Some(n) = cfg.name {
+            self.name = n;
         }
-        if let Some(u) = data.get("unit").and_then(|v| v.as_str()) {
-            self.unit = u.to_string();
+        if let Some(u) = cfg.unit {
+            self.unit = u;
         }
     }
 

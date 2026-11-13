@@ -63,6 +63,36 @@ pub struct SubgraphPortDef {
     pub port_type_idx: usize, // index into PortType variants
 }
 
+/// The subgraph's own settings, as saved and as the widget pushes them. Each
+/// key is optional so a partial update only touches what it names.
+#[derive(serde::Serialize, serde::Deserialize, Default)]
+#[serde(default)]
+pub struct SubgraphConfig {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", deserialize_with = "crate::engine::config_json::lenient_vec")]
+    pub inputs: Option<Vec<SubgraphPortDef>>,
+    #[serde(skip_serializing_if = "Option::is_none", deserialize_with = "crate::engine::config_json::lenient_vec")]
+    pub outputs: Option<Vec<SubgraphPortDef>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub locked: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub macro_description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub macro_path: Option<String>,
+}
+
+impl SubgraphConfig {
+    /// Malformed data loads as an empty update, which changes nothing.
+    pub fn from_value(v: &serde_json::Value) -> Self {
+        serde_json::from_value(v.clone()).unwrap_or_default()
+    }
+
+    pub fn to_value(&self) -> serde_json::Value {
+        serde_json::to_value(self).unwrap_or(serde_json::Value::Null)
+    }
+}
+
 impl SubgraphPortDef {
     pub fn to_port_def(&self) -> PortDef {
         PortDef::new(&self.name, idx_to_port_type(self.port_type_idx))
@@ -549,31 +579,24 @@ impl ProcessNode for SubgraphProcessNode {
 
     fn load_data(&mut self, data: &serde_json::Value) {
         // Port configuration from widget.
-        if let Some(name) = data.get("name").and_then(|v| v.as_str()) {
-            self.name = name.to_string();
+        let cfg = SubgraphConfig::from_value(data);
+        if let Some(name) = cfg.name {
+            self.name = name;
         }
-        if let Some(inputs) = data.get("inputs").and_then(|v| v.as_array()) {
-            self.ext_inputs = inputs
-                .iter()
-                .filter_map(|v| serde_json::from_value::<SubgraphPortDef>(v.clone()).ok())
-                .map(|p| p.to_port_def())
-                .collect();
+        if let Some(inputs) = cfg.inputs {
+            self.ext_inputs = inputs.iter().map(SubgraphPortDef::to_port_def).collect();
         }
-        if let Some(outputs) = data.get("outputs").and_then(|v| v.as_array()) {
-            self.ext_outputs = outputs
-                .iter()
-                .filter_map(|v| serde_json::from_value::<SubgraphPortDef>(v.clone()).ok())
-                .map(|p| p.to_port_def())
-                .collect();
+        if let Some(outputs) = cfg.outputs {
+            self.ext_outputs = outputs.iter().map(SubgraphPortDef::to_port_def).collect();
         }
-        if let Some(b) = data.get("locked").and_then(|v| v.as_bool()) {
+        if let Some(b) = cfg.locked {
             self.locked = b;
         }
-        if let Some(s) = data.get("macro_description").and_then(|v| v.as_str()) {
-            self.macro_description = s.to_string();
+        if let Some(s) = cfg.macro_description {
+            self.macro_description = s;
         }
-        if let Some(s) = data.get("macro_path").and_then(|v| v.as_str()) {
-            self.macro_path = s.to_string();
+        if let Some(s) = cfg.macro_path {
+            self.macro_path = s;
         }
         self.rebuild_from_port_defs();
     }
@@ -595,14 +618,14 @@ impl ProcessNode for SubgraphProcessNode {
                 port_type_idx: port_type_to_idx(p.port_type),
             })
             .collect();
-        Some(serde_json::json!({
-            "name": self.name,
-            "inputs": inputs,
-            "outputs": outputs,
-            "locked": self.locked,
-            "macro_description": self.macro_description,
-            "macro_path": self.macro_path,
-        }))
+        Some(SubgraphConfig {
+            name: Some(self.name.clone()),
+            inputs: Some(inputs),
+            outputs: Some(outputs),
+            locked: Some(self.locked),
+            macro_description: Some(self.macro_description.clone()),
+            macro_path: Some(self.macro_path.clone()),
+        }.to_value())
     }
 
     fn update_display(&self, shared: &mut NodeSharedState) {
@@ -786,3 +809,39 @@ mod routing_tests {
         assert!(!g.plan.is_current(&g.nodes, &wider, &outs));
     }
 }
+
+#[cfg(test)]
+mod config_tests {
+    use super::*;
+
+    #[test]
+    fn the_hand_written_save_shape_loads_and_saves_unchanged() {
+        let saved = serde_json::json!({
+            "name": "Chase",
+            "inputs": [{"name": "in", "port_type_idx": 1}],
+            "outputs": [{"name": "out", "port_type_idx": 2}, {"name": "gate", "port_type_idx": 0}],
+            "locked": true,
+            "macro_description": "walks a light along",
+            "macro_path": "fx/chase",
+        });
+        let mut n = SubgraphProcessNode::new(NodeId(1));
+        n.load_data(&saved);
+        assert_eq!(n.name, "Chase");
+        assert_eq!(n.ext_inputs.len(), 1);
+        assert_eq!(n.ext_outputs.len(), 2);
+        assert!(n.locked);
+        assert_eq!(n.macro_path, "fx/chase");
+        assert_eq!(n.save_data(), Some(saved));
+    }
+
+    #[test]
+    fn a_partial_update_only_touches_what_it_names() {
+        let mut n = SubgraphProcessNode::new(NodeId(1));
+        n.load_data(&serde_json::json!({"name": "A", "locked": true}));
+        n.load_data(&serde_json::json!({"macro_path": "x"}));
+        assert_eq!(n.name, "A");
+        assert!(n.locked);
+        assert_eq!(n.macro_path, "x");
+    }
+}
+

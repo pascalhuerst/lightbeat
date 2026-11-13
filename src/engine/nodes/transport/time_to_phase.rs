@@ -3,7 +3,10 @@
 //! anything that wants a fade or a sweep takes a phase wire and this node
 //! decides how long it lasts.
 
+use crate::engine::param_spec::FloatParam;
 use crate::engine::types::*;
+
+const TIME: FloatParam = FloatParam::new("Time", 0.01, 60.0, 0.01, "s").at_least(MIN_TIME);
 
 const MIN_TIME: f32 = 0.001;
 
@@ -95,14 +98,14 @@ impl ProcessNode for TimeToPhaseProcessNode {
 
     fn params(&self) -> Vec<ParamDef> {
         vec![
-            ParamDef::Float { name: "Time".into(), value: self.time, min: 0.01, max: 60.0, step: 0.01, unit: "s" },
+            TIME.def(self.time),
             ParamDef::Bool { name: "Run continuously".into(), value: self.looping },
         ]
     }
 
     fn set_param(&mut self, index: usize, value: ParamValue) {
         match index {
-            0 => self.time = value.as_f32().max(MIN_TIME),
+            0 => self.time = TIME.apply(&value),
             1 => self.looping = matches!(value, ParamValue::Bool(true)),
             _ => {}
         }

@@ -1,6 +1,6 @@
 use egui::{self, Align2, FontId, Pos2, Rect, Sense, Shape, Stroke, Ui, Vec2};
 
-use crate::engine::nodes::display::meter::{MeterData, MeterKind};
+use crate::engine::nodes::display::meter::{MeterConfig, MeterData, MeterKind};
 use crate::engine::types::*;
 use crate::theme;
 use crate::widgets::nodes::node::{NodeLayout, NodeWidget, PORT_RADIUS, node_identity};
@@ -55,7 +55,7 @@ impl MeterWidget {
 
     fn push_config(&self) {
         self.shared.lock().pending_config =
-            Some(serde_json::json!({ "name": self.name, "unit": self.unit }));
+            Some(MeterConfig { name: Some(self.name.clone()), unit: Some(self.unit.clone()) }.to_value());
     }
 }
 

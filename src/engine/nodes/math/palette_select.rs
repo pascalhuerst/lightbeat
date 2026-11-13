@@ -1,7 +1,42 @@
+use serde::{Deserialize, Serialize};
+
 use crate::color::Rgb;
 use crate::engine::nodes::math::multiplex::SelectMode;
 use crate::engine::types::*;
 use crate::objects::color_palette::{ColorPalette, PALETTE_SIZE};
+
+/// The chosen groups with the palettes they hold, as saved and as the widget
+/// pushes them.
+#[derive(Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct PaletteSelectConfig {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    group_ids: Option<Vec<u32>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    groups: Option<Vec<GroupConfig>>,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct GroupConfig {
+    pub name: String,
+    #[serde(default)]
+    pub palettes: Vec<ColorPalette>,
+}
+
+impl PaletteSelectConfig {
+    pub fn new(group_ids: Vec<u32>, groups: Vec<GroupConfig>) -> Self {
+        Self { group_ids: Some(group_ids), groups: Some(groups) }
+    }
+
+    /// Malformed data loads as an empty update, which changes nothing.
+    pub fn from_value(v: &serde_json::Value) -> Self {
+        serde_json::from_value(v.clone()).unwrap_or_default()
+    }
+
+    pub fn to_value(&self) -> serde_json::Value {
+        serde_json::to_value(self).unwrap_or(serde_json::Value::Null)
+    }
+}
 
 pub struct PaletteSelectDisplay {
     pub group_ids: Vec<u32>,
@@ -110,31 +145,19 @@ impl ProcessNode for PaletteSelectProcessNode {
     }
 
     fn save_data(&self) -> Option<serde_json::Value> {
-        let groups: Vec<serde_json::Value> = self.groups.iter().map(|(name, palettes)| {
-            serde_json::json!({
-                "name": name,
-                "palettes": palettes,
-            })
-        }).collect();
-        Some(serde_json::json!({
-            "group_ids": self.group_ids,
-            "groups": groups,
-        }))
+        let groups = self.groups.iter()
+            .map(|(name, palettes)| GroupConfig { name: name.clone(), palettes: palettes.clone() })
+            .collect();
+        Some(PaletteSelectConfig::new(self.group_ids.clone(), groups).to_value())
     }
 
     fn load_data(&mut self, data: &serde_json::Value) {
-        if let Some(ids) = data.get("group_ids").and_then(|v| v.as_array()) {
-            self.group_ids = ids.iter().filter_map(|v| v.as_u64().map(|n| n as u32)).collect();
+        let cfg = PaletteSelectConfig::from_value(data);
+        if let Some(ids) = cfg.group_ids {
+            self.group_ids = ids;
         }
-        if let Some(arr) = data.get("groups").and_then(|v| v.as_array()) {
-            self.groups = arr.iter().filter_map(|entry| {
-                let name = entry.get("name")?.as_str()?.to_string();
-                let palettes: Vec<ColorPalette> = entry.get("palettes")
-                    .and_then(|v| v.as_array())
-                    .map(|a| a.iter().filter_map(|s| serde_json::from_value(s.clone()).ok()).collect())
-                    .unwrap_or_default();
-                Some((name, palettes))
-            }).collect();
+        if let Some(groups) = cfg.groups {
+            self.groups = groups.into_iter().map(|g| (g.name, g.palettes)).collect();
         }
     }
 
@@ -146,7 +169,7 @@ impl ProcessNode for PaletteSelectProcessNode {
         vec![ParamDef::Choice {
             name: "Select by".into(),
             value: self.select_mode.to_index(),
-            options: SelectMode::ALL.iter().map(|m| m.label().to_string()).collect(),
+            options: SelectMode::ALL.iter().map(|m| m.label().into()).collect(),
         }]
     }
 
@@ -187,5 +210,36 @@ fn resolve_index(sel: f32, mode: SelectMode, n: usize) -> usize {
             ((p * n as f32).floor() as i64)
                 .clamp(0, n as i64 - 1) as usize
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_hand_written_save_shape_loads_and_saves_unchanged() {
+        let palette = ColorPalette::new(7, "warm");
+        let saved = serde_json::json!({
+            "group_ids": [3, 5],
+            "groups": [{ "name": "Warm", "palettes": [palette] }],
+        });
+        let mut n = PaletteSelectProcessNode::new(NodeId(1));
+        n.load_data(&saved);
+        assert_eq!(n.group_ids, vec![3, 5]);
+        assert_eq!(n.groups.len(), 1);
+        assert_eq!(n.groups[0].0, "Warm");
+        assert_eq!(n.groups[0].1, vec![palette]);
+        assert_eq!(n.save_data(), Some(saved));
+    }
+
+    #[test]
+    fn a_partial_update_leaves_the_other_key_alone() {
+        let mut n = PaletteSelectProcessNode::new(NodeId(1));
+        n.load_data(&serde_json::json!({ "group_ids": [1, 2] }));
+        n.load_data(&serde_json::json!({ "groups": [{ "name": "A" }] }));
+        assert_eq!(n.group_ids, vec![1, 2]);
+        assert_eq!(n.groups[0].0, "A");
+        assert!(n.groups[0].1.is_empty());
     }
 }

@@ -206,7 +206,7 @@ impl ProcessNode for ButtonProcessNode {
             ParamDef::Choice {
                 name: "Reset".into(),
                 value: RESET_ORDER.iter().position(|m| *m == self.reset_mode).unwrap_or(0),
-                options: RESET_ORDER.iter().map(|m| m.label().to_string()).collect(),
+                options: RESET_ORDER.iter().map(|m| m.label().into()).collect(),
             },
         ]
     }

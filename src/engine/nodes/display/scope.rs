@@ -1,6 +1,11 @@
 use std::collections::VecDeque;
 
+use crate::engine::param_spec::FloatParam;
 use crate::engine::types::*;
+
+const RANGE_MIN: FloatParam = FloatParam::new("Range Min", -2.0, 2.0, 0.05, "");
+const RANGE_MAX: FloatParam = FloatParam::new("Range Max", -2.0, 2.0, 0.05, "");
+const TIME_DIV: FloatParam = FloatParam::new("Time/Div", 0.125, 4.0, 0.125, "x").clamped();
 
 const MAX_SAMPLES: usize = 512;
 
@@ -142,25 +147,25 @@ impl ProcessNode for ScopeProcessNode {
 
     fn params(&self) -> Vec<ParamDef> {
         vec![
-            ParamDef::Float { name: "Time/Div".into(), value: self.time_scale, min: 0.125, max: 4.0, step: 0.125, unit: "x" },
+            TIME_DIV.def(self.time_scale),
             ParamDef::Int { name: "Width".into(), value: self.width_samples as i64, min: 50, max: MAX_SAMPLES as i64 },
-            ParamDef::Float { name: "Range Min".into(), value: self.range_min, min: -2.0, max: 2.0, step: 0.05, unit: "" },
-            ParamDef::Float { name: "Range Max".into(), value: self.range_max, min: -2.0, max: 2.0, step: 0.05, unit: "" },
+            RANGE_MIN.def(self.range_min),
+            RANGE_MAX.def(self.range_max),
         ]
     }
 
     fn set_param(&mut self, index: usize, value: ParamValue) {
         match index {
             0 => {
-                let new_scale = value.as_f32().clamp(0.125, 4.0);
+                let new_scale = TIME_DIV.apply(&value);
                 if (new_scale - self.time_scale).abs() > f32::EPSILON {
                     self.time_scale = new_scale;
                     self.tick_counter = 0;
                 }
             }
             1 => self.width_samples = value.as_i64() as usize,
-            2 => self.range_min = value.as_f32(),
-            3 => self.range_max = value.as_f32(),
+            2 => self.range_min = RANGE_MIN.apply(&value),
+            3 => self.range_max = RANGE_MAX.apply(&value),
             _ => {}
         }
     }

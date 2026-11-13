@@ -125,7 +125,7 @@ impl ProcessNode for LogicGateProcessNode {
         vec![ParamDef::Choice {
             name: "Operation".into(),
             value: current,
-            options: LogicOp::VARIADIC.iter().map(|o| o.label().to_string()).collect(),
+            options: LogicOp::VARIADIC.iter().map(|o| o.label().into()).collect(),
         }]
     }
 

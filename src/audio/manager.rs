@@ -120,7 +120,7 @@ impl AudioInputRuntime {
                     ParamDef::Bool { name, .. } => name,
                     ParamDef::Choice { name, .. } => name,
                 };
-                *name = format!("{}{}", prefix, name);
+                *name = format!("{}{}", prefix, name).into();
                 defs.push(def);
             }
         }

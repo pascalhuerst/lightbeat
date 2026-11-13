@@ -33,6 +33,47 @@ pub struct PortalRegistry {
 
 pub type SharedPortalRegistry = Arc<Mutex<PortalRegistry>>;
 
+/// What a Portal Send (`name`) or Receive (`bound_name`) saves, and what its
+/// widget pushes. Each key is optional so a partial update only touches what
+/// it names.
+#[derive(serde::Serialize, serde::Deserialize, Default)]
+#[serde(default)]
+pub struct PortalConfig {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bound_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", deserialize_with = "crate::engine::config_json::lenient_vec")]
+    pub ports: Option<Vec<PortalPortDef>>,
+}
+
+impl PortalConfig {
+    pub fn send(name: &str, ports: &[PortDef]) -> Self {
+        Self::send_defs(name, ports.iter().map(PortalPortDef::from_port_def).collect())
+    }
+
+    pub fn send_defs(name: &str, ports: Vec<PortalPortDef>) -> Self {
+        Self { name: Some(name.to_string()), bound_name: None, ports: Some(ports) }
+    }
+
+    pub fn receive(bound_name: &str, ports: &[PortDef]) -> Self {
+        Self::receive_defs(bound_name, ports.iter().map(PortalPortDef::from_port_def).collect())
+    }
+
+    pub fn receive_defs(bound_name: &str, ports: Vec<PortalPortDef>) -> Self {
+        Self { name: None, bound_name: Some(bound_name.to_string()), ports: Some(ports) }
+    }
+
+    /// Malformed data loads as an empty update, which changes nothing.
+    pub fn from_value(v: &serde_json::Value) -> Self {
+        serde_json::from_value(v.clone()).unwrap_or_default()
+    }
+
+    pub fn to_value(&self) -> serde_json::Value {
+        serde_json::to_value(self).unwrap_or(serde_json::Value::Null)
+    }
+}
+
 /// Serialized per-port definition used by widget save/load.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct PortalPortDef {
@@ -155,21 +196,18 @@ impl ProcessNode for PortalSendProcessNode {
     }
 
     fn save_data(&self) -> Option<serde_json::Value> {
-        let ports: Vec<PortalPortDef> = self.ports.iter().map(PortalPortDef::from_port_def).collect();
-        Some(serde_json::json!({ "name": self.name, "ports": ports }))
+        Some(PortalConfig::send(&self.name, &self.ports).to_value())
     }
 
     fn load_data(&mut self, data: &serde_json::Value) {
         self.release();
         self.layout += 1;
-        if let Some(n) = data.get("name").and_then(|v| v.as_str()) {
-            self.name = n.to_string();
+        let cfg = PortalConfig::from_value(data);
+        if let Some(n) = cfg.name {
+            self.name = n;
         }
-        if let Some(arr) = data.get("ports").and_then(|v| v.as_array()) {
-            self.ports = arr.iter()
-                .filter_map(|v| serde_json::from_value::<PortalPortDef>(v.clone()).ok())
-                .map(|p| p.to_port_def())
-                .collect();
+        if let Some(ports) = cfg.ports {
+            self.ports = ports.iter().map(PortalPortDef::to_port_def).collect();
             self.values = vec![0.0; total_channels(&self.ports)];
         }
     }
@@ -262,19 +300,16 @@ impl ProcessNode for PortalReceiveProcessNode {
     }
 
     fn save_data(&self) -> Option<serde_json::Value> {
-        let ports: Vec<PortalPortDef> = self.ports.iter().map(PortalPortDef::from_port_def).collect();
-        Some(serde_json::json!({ "bound_name": self.bound_name, "ports": ports }))
+        Some(PortalConfig::receive(&self.bound_name, &self.ports).to_value())
     }
 
     fn load_data(&mut self, data: &serde_json::Value) {
-        if let Some(n) = data.get("bound_name").and_then(|v| v.as_str()) {
-            self.bound_name = n.to_string();
+        let cfg = PortalConfig::from_value(data);
+        if let Some(n) = cfg.bound_name {
+            self.bound_name = n;
         }
-        if let Some(arr) = data.get("ports").and_then(|v| v.as_array()) {
-            self.ports = arr.iter()
-                .filter_map(|v| serde_json::from_value::<PortalPortDef>(v.clone()).ok())
-                .map(|p| p.to_port_def())
-                .collect();
+        if let Some(ports) = cfg.ports {
+            self.ports = ports.iter().map(PortalPortDef::to_port_def).collect();
             self.seen = None;
             self.values = vec![0.0; total_channels(&self.ports)];
         }
@@ -353,5 +388,27 @@ mod tests {
         assert_eq!(reg.lock().entries["bus"].values[0], 1.0);
         drop(second);
         assert!(reg.lock().entries.contains_key("bus"));
+    }
+
+    #[test]
+    fn the_hand_written_save_shapes_load_and_save_unchanged() {
+        let reg: SharedPortalRegistry = Default::default();
+        let sent = serde_json::json!({"name": "bus", "ports": [{"name": "a", "port_type_idx": 2}]});
+        let tx = send(1, &reg, "bus");
+        assert_eq!(tx.save_data(), Some(sent));
+
+        let received = serde_json::json!({"bound_name": "bus", "ports": [{"name": "a", "port_type_idx": 2}]});
+        let mut rx = PortalReceiveProcessNode::new(NodeId(2), reg.clone());
+        rx.load_data(&received);
+        assert_eq!(rx.bound_name, "bus");
+        assert_eq!(rx.save_data(), Some(received));
+    }
+
+    #[test]
+    fn a_port_that_does_not_parse_is_dropped_and_the_rest_kept() {
+        let reg: SharedPortalRegistry = Default::default();
+        let mut rx = PortalReceiveProcessNode::new(NodeId(2), reg);
+        rx.load_data(&serde_json::json!({"ports": [{"name": "a", "port_type_idx": 2}, {"nonsense": true}]}));
+        assert_eq!(rx.ports.len(), 1);
     }
 }

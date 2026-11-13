@@ -95,7 +95,7 @@ impl ProcessNode for PortHubProcessNode {
             ParamDef::Choice {
                 name: "Type".into(),
                 value: type_to_index(self.port_type),
-                options: MUX_TYPE_NAMES.iter().map(|s| s.to_string()).collect(),
+                options: MUX_TYPE_NAMES.iter().map(|s| (*s).into()).collect(),
             },
             ParamDef::Int {
                 name: "Slots".into(),

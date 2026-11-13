@@ -155,7 +155,7 @@ impl ProcessNode for FaderProcessNode {
             ParamDef::Choice {
                 name: "Mouse override".into(),
                 value: MOUSE_OVERRIDE_ORDER.iter().position(|m| *m == self.mouse_override).unwrap_or(0),
-                options: MOUSE_OVERRIDE_ORDER.iter().map(|m| m.label().to_string()).collect(),
+                options: MOUSE_OVERRIDE_ORDER.iter().map(|m| m.label().into()).collect(),
             },
             ParamDef::Bool { name: "Bipolar".into(), value: self.bipolar },
         ]

@@ -12,7 +12,12 @@
 //! the corresponding input port is wired, the wire value takes over and
 //! the inspector param is hidden.
 
+use crate::engine::param_spec::FloatParam;
 use crate::engine::types::*;
+
+
+const RANGE: FloatParam = FloatParam::new("Range", -10.0, 10.0, 0.01, "");
+const CENTER: FloatParam = FloatParam::new("Center", -10.0, 10.0, 0.01, "");
 
 pub struct BipolarProcessNode {
     id: NodeId,
@@ -110,24 +115,13 @@ impl ProcessNode for BipolarProcessNode {
     }
 
     fn params(&self) -> Vec<ParamDef> {
-        vec![
-            ParamDef::Float {
-                name: "Range".into(),
-                value: self.range,
-                min: -10.0, max: 10.0, step: 0.01, unit: "",
-            },
-            ParamDef::Float {
-                name: "Center".into(),
-                value: self.center,
-                min: -10.0, max: 10.0, step: 0.01, unit: "",
-            },
-        ]
+        vec![RANGE.def(self.range), CENTER.def(self.center)]
     }
 
     fn set_param(&mut self, index: usize, value: ParamValue) {
         match index {
-            0 => self.range = value.as_f32(),
-            1 => self.center = value.as_f32(),
+            0 => self.range = RANGE.apply(&value),
+            1 => self.center = CENTER.apply(&value),
             _ => {}
         }
     }

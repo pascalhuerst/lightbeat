@@ -278,7 +278,7 @@ impl ProcessNode for EnvelopeProcessNode {
             ParamDef::Choice {
                 name: "Mode".into(),
                 value: self.kind.to_index(),
-                options: EnvelopeKind::ALL.iter().map(|k| k.label().to_string()).collect(),
+                options: EnvelopeKind::ALL.iter().map(|k| k.label().into()).collect(),
             },
             ParamDef::Float { name: "Attack curve".into(), value: self.attack_curve, min: -1.0, max: 1.0, step: 0.01, unit: "" },
             ParamDef::Float { name: "Decay curve".into(), value: self.decay_curve, min: -1.0, max: 1.0, step: 0.01, unit: "" },

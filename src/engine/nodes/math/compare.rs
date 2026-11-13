@@ -88,7 +88,7 @@ impl ProcessNode for CompareProcessNode {
         vec![ParamDef::Choice {
             name: "Operation".into(),
             value: self.op.to_index(),
-            options: CompareOp::ALL.iter().map(|o| o.label().to_string()).collect(),
+            options: CompareOp::ALL.iter().map(|o| o.label().into()).collect(),
         }]
     }
 

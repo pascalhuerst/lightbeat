@@ -192,7 +192,7 @@ impl ProcessNode for ColorModifierProcessNode {
             ParamDef::Choice {
                 name: "Op".into(),
                 value: self.op.to_index(),
-                options: MODIFIER_OP_NAMES.iter().map(|s| s.to_string()).collect(),
+                options: MODIFIER_OP_NAMES.iter().map(|s| (*s).into()).collect(),
             },
         ]
     }

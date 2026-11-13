@@ -1,5 +1,8 @@
 use crate::engine::nodes::math::multiplex::SelectMode;
+use crate::engine::param_spec::IntParam;
 use crate::engine::types::*;
+
+const MAX: IntParam = IntParam::new("Max", 1, 256).at_least(1);
 
 pub struct CounterDisplay {
     pub select_mode: SelectMode,
@@ -190,7 +193,7 @@ impl ProcessNode for CounterProcessNode {
 
     fn params(&self) -> Vec<ParamDef> {
         vec![
-            ParamDef::Int { name: "Max".into(), value: self.max_value, min: 1, max: 256 },
+            MAX.def(self.max_value),
             ParamDef::Choice {
                 name: "Direction".into(),
                 value: if self.direction > 0 { 0 } else { 1 },
@@ -199,7 +202,7 @@ impl ProcessNode for CounterProcessNode {
             ParamDef::Choice {
                 name: "Select by".into(),
                 value: self.select_mode.to_index(),
-                options: SelectMode::ALL.iter().map(|m| m.label().to_string()).collect(),
+                options: SelectMode::ALL.iter().map(|m| m.label().into()).collect(),
             },
         ]
     }
@@ -207,7 +210,7 @@ impl ProcessNode for CounterProcessNode {
     fn set_param(&mut self, index: usize, value: ParamValue) {
         match index {
             0 => {
-                self.max_value = value.as_i64().max(1);
+                self.max_value = MAX.apply(&value);
                 if self.count >= self.max_value { self.count = 0; }
             }
             1 => self.direction = if value.as_usize() == 0 { 1 } else { -1 },

@@ -1,4 +1,7 @@
+use crate::engine::param_spec::IntParam;
 use crate::engine::types::*;
+
+const EXPONENT: IntParam = IntParam::new("Exponent", -6, 6);
 
 /// Display state.
 pub struct TriggerDelayDisplay {
@@ -108,17 +111,12 @@ impl ProcessNode for TriggerDelayProcessNode {
     }
 
     fn params(&self) -> Vec<ParamDef> {
-        vec![ParamDef::Int {
-            name: "Exponent".into(),
-            value: self.exponent as i64,
-            min: -6,
-            max: 6,
-        }]
+        vec![EXPONENT.def(self.exponent as i64)]
     }
 
     fn set_param(&mut self, index: usize, value: ParamValue) {
         if index == 0 {
-            self.exponent = value.as_i64() as i32;
+            self.exponent = EXPONENT.apply(&value) as i32;
         }
     }
 

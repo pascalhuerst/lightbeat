@@ -10,7 +10,7 @@ use egui::{self, Color32, Pos2, Ui, Vec2, Sense, Stroke, StrokeKind};
 use egui_extras::{Column, TableBuilder};
 
 use crate::color::{Gradient, GradientStop};
-use crate::engine::nodes::math::lookup::{ports_for, LookupColumn, LookupDisplay, port_type_to_str};
+use crate::engine::nodes::math::lookup::{ports_for, LookupColumn, LookupConfig, LookupDisplay};
 use crate::engine::types::*;
 use crate::widgets::setup_ui;
 use crate::theme;
@@ -94,14 +94,7 @@ impl LookupWidget {
     }
 
     fn push_config(&self) {
-        let cfg = serde_json::json!({
-            "columns": self.columns.iter().map(|c| serde_json::json!({
-                "name": c.name,
-                "type": port_type_to_str(c.port_type),
-            })).collect::<Vec<_>>(),
-            "row_count": self.row_count,
-            "data": self.data,
-        });
+        let cfg = LookupConfig::of(&self.columns, self.row_count, &self.data).to_value();
         let mut s = self.shared.lock();
         s.pending_config = Some(cfg);
     }
@@ -193,23 +186,15 @@ impl LookupWidget {
 impl NodeWidget for LookupWidget {
     fn restore_from_save(&mut self, data: Option<&serde_json::Value>, _params: &[(usize, crate::engine::types::ParamValue)]) {
         let Some(data) = data else { return };
-        if let Some(arr) = data.get("columns").and_then(|v| v.as_array()) {
-            let mut cols = Vec::with_capacity(arr.len());
-            for entry in arr {
-                let name = entry.get("name").and_then(|v| v.as_str()).unwrap_or("col").to_string();
-                let port_type = entry.get("type")
-                    .and_then(|v| v.as_str())
-                    .and_then(crate::engine::nodes::math::lookup::port_type_from_str)
-                    .unwrap_or(PortType::Untyped);
-                cols.push(LookupColumn { name, port_type });
-            }
+        let cfg = LookupConfig::from_value(data);
+        if let Some(cols) = cfg.columns() {
             self.columns = cols;
         }
-        if let Some(n) = data.get("row_count").and_then(|v| v.as_u64()) {
-            self.row_count = n as usize;
+        if let Some(n) = cfg.row_count {
+            self.row_count = n;
         }
-        if let Some(arr) = data.get("data").and_then(|v| v.as_array()) {
-            self.data = arr.iter().filter_map(|v| v.as_f64().map(|f| f as f32)).collect();
+        if let Some(d) = cfg.data {
+            self.data = d;
         }
         self.fix_data_size();
     }
