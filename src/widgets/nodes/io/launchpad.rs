@@ -1,12 +1,10 @@
-use std::any::Any;
-
 use egui::Ui;
 
 use crate::engine::nodes::io::launchpad::{ports, LaunchpadDisplay};
 use crate::engine::types::*;
 use crate::input_controller::{InputControllerKind, SharedControllers};
 use crate::widgets::nodes::io::controller_binding::{ControllerBinding, ControllerSpec};
-use crate::widgets::nodes::node::{NodeLayout, NodeWidget, labelled_layout};
+use crate::widgets::nodes::node::{NodeLayout, NodeWidget, labelled_layout, node_identity};
 use crate::widgets::nodes::types::UiPortDef;
 
 static SPEC: ControllerSpec = ControllerSpec {
@@ -35,8 +33,7 @@ impl NodeWidget for LaunchpadWidget {
         self.binding.restore_from_save(data);
     }
 
-    fn node_id(&self) -> NodeId { self.id }
-    fn type_name(&self) -> &'static str { "Launchpad S" }
+    node_identity!("Launchpad S");
     fn description(&self) -> &'static str {
         "Novation Launchpad S dedicated node. 64 grid pads (velocity-sensitive) \
          + 8 side buttons + 8 top mode buttons each expose an output and an \
@@ -51,7 +48,6 @@ impl NodeWidget for LaunchpadWidget {
     fn min_width(&self) -> f32 { 200.0 }
     fn min_content_height(&self) -> f32 { 24.0 }
     fn resizable(&self) -> bool { true }
-    fn shared_state(&self) -> &SharedState { &self.shared }
 
     fn show_content(&mut self, ui: &mut Ui, _zoom: f32) {
         let snap = {
@@ -67,6 +63,4 @@ impl NodeWidget for LaunchpadWidget {
     fn show_inspector(&mut self, ui: &mut Ui) {
         self.binding.show_picker(ui, self.id, &self.shared);
     }
-
-    fn as_any_mut(&mut self) -> &mut dyn Any { self }
 }

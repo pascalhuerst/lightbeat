@@ -1,12 +1,10 @@
-use std::any::Any;
-
 use egui::Ui;
 
 use crate::engine::nodes::io::push1::{ports, Push1Display};
 use crate::engine::types::*;
 use crate::input_controller::{InputControllerKind, SharedControllers};
 use crate::widgets::nodes::io::controller_binding::{ControllerBinding, ControllerSpec};
-use crate::widgets::nodes::node::{NodeLayout, NodeWidget, labelled_layout};
+use crate::widgets::nodes::node::{NodeLayout, NodeWidget, labelled_layout, node_identity};
 use crate::widgets::nodes::types::UiPortDef;
 
 static SPEC: ControllerSpec = ControllerSpec {
@@ -35,8 +33,7 @@ impl NodeWidget for Push1Widget {
         self.binding.restore_from_save(data);
     }
 
-    fn node_id(&self) -> NodeId { self.id }
-    fn type_name(&self) -> &'static str { "Push 1" }
+    node_identity!("Push 1");
     fn description(&self) -> &'static str {
         "Ableton Push 1 dedicated node. Groups the device's controls into \
          (trigger, address, value) channels — e.g. one `pad trigger` pulse per \
@@ -52,7 +49,6 @@ impl NodeWidget for Push1Widget {
     fn layout(&self) -> NodeLayout { labelled_layout(&self.ui_inputs(), &self.ui_outputs()) }
     fn min_width(&self) -> f32 { 180.0 }
     fn min_content_height(&self) -> f32 { 24.0 }
-    fn shared_state(&self) -> &SharedState { &self.shared }
 
     fn show_content(&mut self, ui: &mut Ui, _zoom: f32) {
         let snap = {
@@ -68,6 +64,4 @@ impl NodeWidget for Push1Widget {
     fn show_inspector(&mut self, ui: &mut Ui) {
         self.binding.show_picker(ui, self.id, &self.shared);
     }
-
-    fn as_any_mut(&mut self) -> &mut dyn Any { self }
 }

@@ -5,7 +5,6 @@
 //! next. What it adds is the link to a stack: picked in the inspector, shown
 //! by the node's colour, and highlighted together with the stack.
 
-use std::any::Any;
 use std::sync::{Arc, Mutex};
 
 use egui::{self, Color32, Sense, Ui, Vec2};
@@ -18,7 +17,7 @@ use crate::engine::effects::spark::SparkBurst;
 use crate::engine::effects::wave::Wave;
 use crate::engine::types::*;
 use crate::theme;
-use crate::widgets::nodes::node::NodeWidget;
+use crate::widgets::nodes::node::{NodeWidget, node_identity};
 use crate::widgets::nodes::types::UiPortDef;
 
 /// The stacks in the graph and which stack each is sent to, kept up to date
@@ -163,8 +162,7 @@ impl NodeWidget for EffectWidget {
         }
     }
 
-    fn node_id(&self) -> NodeId { self.id }
-    fn type_name(&self) -> &'static str { self.spec.type_name }
+    node_identity!(by |w| w.spec.type_name);
     fn description(&self) -> &'static str { self.spec.description }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> {
@@ -174,7 +172,6 @@ impl NodeWidget for EffectWidget {
 
     fn min_width(&self) -> f32 { 150.0 }
     fn min_content_height(&self) -> f32 { 24.0 }
-    fn shared_state(&self) -> &SharedState { &self.shared }
 
     fn accent_color(&self) -> Option<Color32> {
         (!self.stack.is_empty()).then(|| theme::link_color(&self.stack))
@@ -238,8 +235,6 @@ impl NodeWidget for EffectWidget {
             ui.colored_label(theme::TEXT_DIM, "Blend, opacity, order, mute and solo are set in the stack.");
         }
     }
-
-    fn as_any_mut(&mut self) -> &mut dyn Any { self }
 }
 
 #[cfg(test)]

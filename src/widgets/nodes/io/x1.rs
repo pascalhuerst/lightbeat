@@ -1,12 +1,10 @@
-use std::any::Any;
-
 use egui::Ui;
 
 use crate::engine::nodes::io::x1::{ports, X1Display};
 use crate::engine::types::*;
 use crate::input_controller::{InputControllerKind, SharedControllers};
 use crate::widgets::nodes::io::controller_binding::{ControllerBinding, ControllerSpec};
-use crate::widgets::nodes::node::{NodeLayout, NodeWidget, labelled_layout};
+use crate::widgets::nodes::node::{NodeLayout, NodeWidget, labelled_layout, node_identity};
 use crate::widgets::nodes::types::UiPortDef;
 
 static SPEC: ControllerSpec = ControllerSpec {
@@ -35,8 +33,7 @@ impl NodeWidget for X1Widget {
         self.binding.restore_from_save(data);
     }
 
-    fn node_id(&self) -> NodeId { self.id }
-    fn type_name(&self) -> &'static str { "X1" }
+    node_identity!("X1");
     fn description(&self) -> &'static str {
         "Native Instruments Kontrol X1 dedicated node. Each physical button, \
          encoder, and pot gets its own output port; each button also has an \
@@ -52,7 +49,6 @@ impl NodeWidget for X1Widget {
     fn min_width(&self) -> f32 { 180.0 }
     fn min_content_height(&self) -> f32 { 24.0 }
     fn resizable(&self) -> bool { true }
-    fn shared_state(&self) -> &SharedState { &self.shared }
 
     fn show_content(&mut self, ui: &mut Ui, _zoom: f32) {
         let snap = {
@@ -68,6 +64,4 @@ impl NodeWidget for X1Widget {
     fn show_inspector(&mut self, ui: &mut Ui) {
         self.binding.show_picker(ui, self.id, &self.shared);
     }
-
-    fn as_any_mut(&mut self) -> &mut dyn Any { self }
 }

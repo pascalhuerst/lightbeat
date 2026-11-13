@@ -1,5 +1,4 @@
 use egui::{self, Color32, Ui};
-use std::any::Any;
 
 use crate::engine::nodes::meta::portal::{
     PortalPortDef, PortalReceiveDisplay, PortalSendDisplay, SharedPortalRegistry,
@@ -9,7 +8,7 @@ use crate::engine::nodes::meta::subgraph::PORT_TYPE_NAMES;
 use crate::engine::types::*;
 use crate::widgets::setup_ui;
 use crate::theme;
-use crate::widgets::nodes::node::NodeWidget;
+use crate::widgets::nodes::node::{NodeWidget, node_identity};
 use crate::widgets::nodes::types::UiPortDef;
 
 /// Index into `PORT_TYPE_NAMES` of the plain number type, which a new port starts as.
@@ -74,8 +73,7 @@ impl NodeWidget for PortalSendWidget {
         }
     }
 
-    fn node_id(&self) -> NodeId { self.id }
-    fn type_name(&self) -> &'static str { "Portal Send" }
+    node_identity!("Portal Send");
     fn title(&self) -> &str { &self.name }
     fn description(&self) -> &'static str {
         "Sends signals to any number of Portal Receive nodes with the same name, \
@@ -102,7 +100,6 @@ impl NodeWidget for PortalSendWidget {
     fn link_key(&self) -> Option<String> {
         if self.name.is_empty() { None } else { Some(format!("portal:{}", self.name)) }
     }
-    fn shared_state(&self) -> &SharedState { &self.shared }
 
     fn show_content(&mut self, ui: &mut Ui, _zoom: f32) {
         let snap = {
@@ -167,7 +164,6 @@ impl NodeWidget for PortalSendWidget {
     }
 
     fn show_port_labels(&self) -> bool { true }
-    fn as_any_mut(&mut self) -> &mut dyn Any { self }
 }
 
 // ---------------------------------------------------------------------------
@@ -221,8 +217,7 @@ impl NodeWidget for PortalReceiveWidget {
         }
     }
 
-    fn node_id(&self) -> NodeId { self.id }
-    fn type_name(&self) -> &'static str { "Portal Receive" }
+    node_identity!("Portal Receive");
     fn title(&self) -> &str { &self.bound_name }
     fn description(&self) -> &'static str {
         "Receives what a Portal Send with the same name is sent, as outputs. \
@@ -245,7 +240,6 @@ impl NodeWidget for PortalReceiveWidget {
     fn link_key(&self) -> Option<String> {
         if self.bound_name.is_empty() { None } else { Some(format!("portal:{}", self.bound_name)) }
     }
-    fn shared_state(&self) -> &SharedState { &self.shared }
 
     fn show_content(&mut self, ui: &mut Ui, _zoom: f32) {
         let snap = {
@@ -290,5 +284,4 @@ impl NodeWidget for PortalReceiveWidget {
     }
 
     fn show_port_labels(&self) -> bool { true }
-    fn as_any_mut(&mut self) -> &mut dyn Any { self }
 }

@@ -1,11 +1,9 @@
-use std::any::Any;
-
 use egui::{self, Ui};
 
 use crate::engine::nodes::io::clock::{ports, ClockDisplay};
 use crate::engine::types::*;
 use crate::theme;
-use crate::widgets::nodes::node::NodeWidget;
+use crate::widgets::nodes::node::{NodeWidget, node_identity};
 use crate::widgets::nodes::types::UiPortDef;
 
 const BEAT_FLASH_MS: u128 = 80;
@@ -25,8 +23,7 @@ impl ClockWidget {
 }
 
 impl NodeWidget for ClockWidget {
-    fn node_id(&self) -> NodeId { self.id }
-    fn type_name(&self) -> &'static str { "Link Clock" }
+    node_identity!("Link Clock");
     fn description(&self) -> &'static str { "Master clock synced to Ableton Link peers; outputs beat, play state, and phase." }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> { UiPortDef::from_defs(&ports().0) }
@@ -35,7 +32,6 @@ impl NodeWidget for ClockWidget {
     fn min_width(&self) -> f32 { 150.0 }
     fn min_content_height(&self) -> f32 { 90.0 }
 
-    fn shared_state(&self) -> &SharedState { &self.shared }
 
     fn show_content(&mut self, ui: &mut Ui, zoom: f32) {
         let shared = self.shared.lock().unwrap();
@@ -111,6 +107,4 @@ impl NodeWidget for ClockWidget {
         let beat_center = egui::pos2(row_rect.max.x - led_r - 2.0, row_rect.center().y);
         row_painter.circle_filled(beat_center, led_r, beat_color);
     }
-
-    fn as_any_mut(&mut self) -> &mut dyn Any { self }
 }
