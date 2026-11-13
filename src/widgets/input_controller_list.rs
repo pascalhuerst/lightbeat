@@ -2,14 +2,44 @@ use egui::{self, Color32, Ui};
 use egui_extras::{Column, TableBuilder};
 
 use crate::input_controller::{
-    ConnectionStatus, InputBindingMode, InputControllerKind, InputControllerManager, InputSource,
+    ConnectionStatus, ControllerRuntime, InputBindingMode, InputController, InputControllerKind,
+    InputControllerManager, InputSource,
 };
 use crate::input_controller::midi::MidiSource;
+use crate::theme;
+use crate::widgets::setup_ui::{self, ItemHeader, Status};
+
+/// One vocabulary for every controller kind. The X1 has no port to map, so
+/// "not found" means it is waiting for the device.
+fn status_of(kind: &InputControllerKind, status: ConnectionStatus) -> Status {
+    match status {
+        ConnectionStatus::Connected => Status::Connected,
+        ConnectionStatus::Waiting => Status::Waiting,
+        ConnectionStatus::Disconnected if matches!(kind, InputControllerKind::X1) => Status::Waiting,
+        ConnectionStatus::Disconnected => Status::NoMapping,
+    }
+}
+
+/// The controller to add for a duplicate: same kind, ports and inputs (the
+/// hardware configuration is copied as it is), a fresh id and "copy" in the name.
+fn copy_of(existing: &[InputController], id: u32) -> Option<InputController> {
+    let mut copy = existing.iter().find(|c| c.id == id)?.clone();
+    copy.id = existing.iter().map(|c| c.id).max().unwrap_or(0) + 1;
+    copy.name = setup_ui::copy_name(&copy.name);
+    Some(copy)
+}
+
+fn duplicate_controller(mgr: &mut InputControllerManager, id: u32) {
+    let Some(copy) = copy_of(&mgr.export(), id) else { return };
+    {
+        let mut state = mgr.shared.lock().unwrap();
+        let pos = state.iter().position(|c| c.id == id).map_or(state.len(), |p| p + 1);
+        state.insert(pos, ControllerRuntime::from_persistent(&copy));
+    }
+    mgr.rescan();
+}
 
 pub fn show(ui: &mut Ui, mgr: &mut InputControllerManager) {
-    ui.heading("Input Controllers");
-    ui.separator();
-
     let missing = mgr.missing_controllers();
     if !missing.is_empty() {
         ui.horizontal(|ui| {
@@ -17,7 +47,7 @@ pub fn show(ui: &mut Ui, mgr: &mut InputControllerManager) {
                 crate::theme::SEM_WARNING,
                 format!("Hardware not found: {}", missing.join(", ")),
             );
-            if ui.button("Rescan").clicked() {
+            if ui.button(format!("{} Rescan", egui_phosphor::regular::ARROWS_CLOCKWISE)).on_hover_text("Look for the hardware again").clicked() {
                 mgr.rescan();
             }
         });
@@ -31,6 +61,7 @@ pub fn show(ui: &mut Ui, mgr: &mut InputControllerManager) {
 
     let mut consume_learn_for: Vec<u32> = Vec::new();
     let mut remove_controller: Option<u32> = None;
+    let mut duplicate: Option<u32> = None;
     let mut remove_input: Vec<(u32, u32)> = Vec::new();
     let mut rename_input: Vec<(u32, u32, String)> = Vec::new();
     let mut set_mode: Vec<(u32, u32, InputBindingMode)> = Vec::new();
@@ -57,194 +88,178 @@ pub fn show(ui: &mut Ui, mgr: &mut InputControllerManager) {
     {
         let state = mgr.shared.lock().unwrap();
         if state.is_empty() {
-            ui.colored_label(Color32::from_gray(120), "No input controllers. Add one below.");
+            setup_ui::empty_state(ui, "No input controllers yet. Add one below.");
         }
 
-        egui::ScrollArea::vertical().show(ui, |ui| {
-            for c in state.iter() {
-                ui.push_id(c.id, |ui| {
-                    let header = format!("{} ({})", c.name, c.kind.label());
-                    egui::CollapsingHeader::new(egui::RichText::new(header).strong())
-                        .id_salt(c.id)
-                        .default_open(true)
-                        .show(ui, |ui| {
-                            // Name
-                            ui.horizontal(|ui| {
-                                ui.label("Name:");
-                                let mut name = c.name.clone();
-                                if ui.text_edit_singleline(&mut name).changed() {
-                                    rename_controller.push((c.id, name));
+        let open = setup_ui::open_by_default(state.len());
+        for c in state.iter() {
+            let title = format!("{} ({})", c.name, c.kind.label());
+            let mut header = ItemHeader::new(&title, "Delete controller");
+            header.duplicate = Some("Duplicate controller");
+            header.status = Some(status_of(&c.kind, c.status));
+            let actions = setup_ui::item_header(ui, c.id, open, header, |ui| {
+                let mut name = c.name.clone();
+                if setup_ui::name_field(ui, &mut name) {
+                    rename_controller.push((c.id, name));
+                }
+
+                // Hardware input port: only for MIDI-based kinds. The X1 is
+                // USB (found by vendor and product id), so no picker applies.
+                let is_midi_kind = !matches!(c.kind, InputControllerKind::X1);
+                if is_midi_kind {
+                    let input_port = c.kind.input_port().to_string();
+                    ui.horizontal(|ui| {
+                        ui.label("MIDI in");
+                        let label = if input_port.is_empty() {
+                            "(none)".to_string()
+                        } else {
+                            input_port.clone()
+                        };
+                        egui::ComboBox::from_id_salt(("port", c.id))
+                            .selected_text(label)
+                            .show_ui(ui, |ui| {
+                                if ui.selectable_label(input_port.is_empty(), "(none)").clicked() {
+                                    set_port.push((c.id, String::new()));
                                 }
-                            });
-
-                            // Hardware input port — only shown for MIDI-based
-                            // kinds. X1 is USB HID (auto-discovered by
-                            // VID/PID) so no port picker applies; surface
-                            // just the connection status on its own row.
-                            let is_midi_kind = !matches!(c.kind, InputControllerKind::X1);
-                            if is_midi_kind {
-                                let input_port = c.kind.input_port().to_string();
-                                ui.horizontal(|ui| {
-                                    ui.label("MIDI In:");
-                                    let label = if input_port.is_empty() {
-                                        "(none)".to_string()
-                                    } else {
-                                        input_port.clone()
-                                    };
-                                    egui::ComboBox::from_id_salt(("port", c.id))
-                                        .selected_text(label)
-                                        .show_ui(ui, |ui| {
-                                            if ui.selectable_label(input_port.is_empty(), "(none)").clicked() {
-                                                set_port.push((c.id, String::new()));
-                                            }
-                                            for p in &available_ports {
-                                                if ui.selectable_label(same_device(p, &input_port), p).clicked() {
-                                                    set_port.push((c.id, p.clone()));
-                                                }
-                                            }
-                                        });
-                                    let (status_text, status_color) = match c.status {
-                                        ConnectionStatus::Connected => ("Connected", Color32::from_rgb(80, 200, 80)),
-                                        ConnectionStatus::Waiting => ("Waiting", Color32::from_rgb(220, 180, 60)),
-                                        ConnectionStatus::Disconnected => ("No mapping", Color32::from_gray(140)),
-                                    };
-                                    ui.colored_label(status_color, status_text);
-                                });
-                            } else {
-                                // X1: just show the connection badge.
-                                ui.horizontal(|ui| {
-                                    ui.label("USB:");
-                                    let (status_text, status_color) = match c.status {
-                                        ConnectionStatus::Connected => ("Connected", Color32::from_rgb(80, 200, 80)),
-                                        ConnectionStatus::Waiting => ("Waiting for device", Color32::from_rgb(220, 180, 60)),
-                                        ConnectionStatus::Disconnected => ("Disconnected", Color32::from_gray(140)),
-                                    };
-                                    ui.colored_label(status_color, status_text);
-                                });
-                            }
-
-                            // Feedback-capable MIDI kinds (BCF2000 / Push 1)
-                            // also pick an output port. X1's feedback goes
-                            // over the same USB endpoint, so no port picker.
-                            if c.kind.has_feedback() && is_midi_kind {
-                                let output_port = c.kind.output_port().to_string();
-                                ui.horizontal(|ui| {
-                                    ui.label("MIDI Out:");
-                                    let label = if output_port.is_empty() {
-                                        "(none)".to_string()
-                                    } else {
-                                        output_port.clone()
-                                    };
-                                    egui::ComboBox::from_id_salt(("out_port", c.id))
-                                        .selected_text(label)
-                                        .show_ui(ui, |ui| {
-                                            if ui.selectable_label(output_port.is_empty(), "(none)").clicked() {
-                                                set_output_port.push((c.id, String::new()));
-                                            }
-                                            for p in &available_output_ports {
-                                                if ui.selectable_label(same_device(p, &output_port), p).clicked() {
-                                                    set_output_port.push((c.id, p.clone()));
-                                                }
-                                            }
-                                        });
-                                });
-                            }
-
-                            // For factory-preset kinds (BCF2000 / Push 1) the
-                            // shipping CC numbers are just a starting point;
-                            // the user can re-learn per row, add / delete,
-                            // or reset to factory.
-                            let is_factory_kind = matches!(
-                                c.kind,
-                                InputControllerKind::Bcf2000 { .. } | InputControllerKind::Push1 { .. },
-                            );
-                            ui.horizontal(|ui| {
-                                let mut learning = c.learning;
-                                let label = if learning { "Stop Learning" } else { "Learn" };
-                                if ui.toggle_value(&mut learning, label).changed() {
-                                    set_learning.push((c.id, learning));
-                                }
-                                if c.learning {
-                                    ui.colored_label(
-                                        Color32::from_rgb(220, 180, 60),
-                                        "Move a fader / press a button on the device...",
-                                    );
-                                    if !c.learn_buffer.is_empty() {
-                                        consume_learn_for.push(c.id);
+                                for p in &available_ports {
+                                    if ui.selectable_label(same_device(p, &input_port), p).clicked() {
+                                        set_port.push((c.id, p.clone()));
                                     }
                                 }
-                                if is_factory_kind
-                                    && ui.button("Reset to factory preset")
-                                        .on_hover_text("Replace all inputs with the shipped factory defaults.")
-                                        .clicked()
-                                    {
-                                        reset_factory.push(c.id);
-                                    }
                             });
+                    });
+                }
 
-                            ui.separator();
+                // Feedback-capable MIDI kinds (BCF2000 / Push 1)
+                // also pick an output port. X1's feedback goes
+                // over the same USB endpoint, so no port picker.
+                if c.kind.has_feedback() && is_midi_kind {
+                    let output_port = c.kind.output_port().to_string();
+                    ui.horizontal(|ui| {
+                        ui.label("MIDI out");
+                        let label = if output_port.is_empty() {
+                            "(none)".to_string()
+                        } else {
+                            output_port.clone()
+                        };
+                        egui::ComboBox::from_id_salt(("out_port", c.id))
+                            .selected_text(label)
+                            .show_ui(ui, |ui| {
+                                if ui.selectable_label(output_port.is_empty(), "(none)").clicked() {
+                                    set_output_port.push((c.id, String::new()));
+                                }
+                                for p in &available_output_ports {
+                                    if ui.selectable_label(same_device(p, &output_port), p).clicked() {
+                                        set_output_port.push((c.id, p.clone()));
+                                    }
+                                }
+                            });
+                    });
+                }
 
-                            // Inputs table — one row per input, columns are
-                            // the editable/readable properties. Wrapped in a
-                            // ScrollArea so 120+ Push-sized layouts stay
-                            // manageable.
-                            ui.label(egui::RichText::new("Inputs").strong());
-                            if c.inputs.is_empty() {
-                                ui.colored_label(Color32::from_gray(120), "No inputs yet.");
-                            } else {
-                                show_inputs_table(
-                                    ui,
-                                    c,
-                                    is_factory_kind,
-                                    &mut rename_input,
-                                    &mut set_mode,
-                                    &mut set_feedback_disabled,
-                                    &mut remove_input,
-                                    &mut set_relearn,
-                                );
-                            }
-
-                            ui.add_space(4.0);
-                            // Debug / test panel.
-                            let mut dbg_open = c.debug_open;
-                            if ui.toggle_value(&mut dbg_open, "Debug / Test").changed() {
-                                set_debug_open.push((c.id, dbg_open));
-                            }
-                            if c.debug_open {
-                                show_debug_panel(
-                                    ui,
-                                    c,
-                                    &mut debug_set_out,
-                                    &mut set_debug_flags,
-                                    &mut clear_midi_log,
-                                );
-                            }
-
-                            ui.add_space(4.0);
-                            if ui.small_button("Delete controller").clicked() {
-                                remove_controller = Some(c.id);
-                            }
-                        });
+                // For factory-preset kinds (BCF2000 / Push 1) the
+                // shipping CC numbers are just a starting point;
+                // the user can re-learn per row, add / delete,
+                // or reset to factory.
+                let is_factory_kind = matches!(
+                    c.kind,
+                    InputControllerKind::Bcf2000 { .. } | InputControllerKind::Push1 { .. },
+                );
+                ui.horizontal(|ui| {
+                    let mut learning = c.learning;
+                    let label = if learning { "Stop learning" } else { "Learn" };
+                    if ui.toggle_value(&mut learning, format!("{} {}", egui_phosphor::regular::CROSSHAIR, label))
+                            .on_hover_text("Then move a control on the device to add it as an input")
+                            .changed()
+                        {
+                        set_learning.push((c.id, learning));
+                    }
+                    if c.learning {
+                        ui.colored_label(
+                            theme::SEM_WARNING,
+                            "Move a control on the device...",
+                        );
+                        if !c.learn_buffer.is_empty() {
+                            consume_learn_for.push(c.id);
+                        }
+                    }
+                if is_factory_kind
+                        && setup_ui::confirm_button(
+                            ui,
+                            ("reset_factory", c.id),
+                            "Reset to factory preset",
+                            "Really reset?",
+                            "Replace all inputs with the shipped factory defaults.",
+                        )
+                    {
+                        reset_factory.push(c.id);
+                    }
                 });
+
+                ui.separator();
+
+                // Inputs table — one row per input, columns are
+                // the editable/readable properties. Wrapped in a
+                // ScrollArea so 120+ Push-sized layouts stay
+                // manageable.
+                setup_ui::section(ui, "Inputs");
+                if c.inputs.is_empty() {
+                    setup_ui::empty_state(ui, "No inputs yet. Use Learn to add one.");
+                } else {
+                    show_inputs_table(
+                        ui,
+                        c,
+                        is_factory_kind,
+                        &mut rename_input,
+                        &mut set_mode,
+                        &mut set_feedback_disabled,
+                        &mut remove_input,
+                        &mut set_relearn,
+                    );
+                }
+
+                ui.add_space(4.0);
+                // Debug / test panel.
+                let mut dbg_open = c.debug_open;
+                if ui.toggle_value(&mut dbg_open, "Debug and test").changed() {
+                    set_debug_open.push((c.id, dbg_open));
+                }
+                if c.debug_open {
+                    show_debug_panel(
+                        ui,
+                        c,
+                        &mut debug_set_out,
+                        &mut set_debug_flags,
+                        &mut clear_midi_log,
+                    );
+                }
+
+                ui.add_space(4.0);
+            });
+            if actions.delete {
+                remove_controller = Some(c.id);
             }
-        });
+            if actions.duplicate {
+                duplicate = Some(c.id);
+            }
+        }
     }
 
     ui.separator();
     ui.horizontal(|ui| {
-        if ui.button("+ Add MIDI Controller").clicked() {
-            mgr.add_controller("Controller".to_string());
+        if setup_ui::add_button(ui, "Add MIDI controller") {
+            mgr.add_controller("MIDI controller".to_string());
         }
-        if ui.button("+ Add BCF2000").clicked() {
+        if setup_ui::add_button(ui, "Add BCF2000") {
             mgr.add_bcf2000("BCF2000".to_string());
         }
-        if ui.button("+ Add Push 1").clicked() {
+        if setup_ui::add_button(ui, "Add Push 1") {
             mgr.add_push1("Push 1".to_string());
         }
-        if ui.button("+ Add X1").clicked() {
+        if setup_ui::add_button(ui, "Add X1") {
             mgr.add_x1("X1".to_string());
         }
-        if ui.button("+ Add Launchpad S").clicked() {
+        if setup_ui::add_button(ui, "Add Launchpad S") {
             mgr.add_launchpad("Launchpad S".to_string());
         }
     });
@@ -297,6 +312,7 @@ pub fn show(ui: &mut Ui, mgr: &mut InputControllerManager) {
             }
         }
     }
+    if let Some(id) = duplicate { duplicate_controller(mgr, id); }
     if let Some(id) = remove_controller { mgr.remove_controller(id); }
 }
 
@@ -395,8 +411,8 @@ fn show_inputs_table(
                 };
                 let hl_text_color = if hl > 0.0 {
                     Some(lerp_color(
-                        Color32::from_gray(220),
-                        Color32::from_rgb(255, 220, 90),
+                        theme::TEXT,
+                        theme::ROW_HIGHLIGHT,
                         hl,
                     ))
                 } else {
@@ -422,9 +438,9 @@ fn show_inputs_table(
                     // for relearn so it's obvious what will change.
                     row.col(|ui| {
                         let color = if this_armed {
-                            Color32::from_rgb(220, 180, 60)
+                            theme::SEM_WARNING
                         } else {
-                            hl_text_color.unwrap_or(Color32::from_gray(160))
+                            hl_text_color.unwrap_or(theme::TEXT_MUTED)
                         };
                         ui.colored_label(
                             color,
@@ -471,7 +487,7 @@ fn show_inputs_table(
                     row.col(|ui| {
                         let v = c.values.get(idx).copied().unwrap_or(0.0);
                         ui.colored_label(
-                            hl_text_color.unwrap_or(Color32::from_gray(200)),
+                            hl_text_color.unwrap_or(theme::TEXT_MUTED),
                             egui::RichText::new(format!("{:.2}", v))
                                 .monospace()
                                 .size(11.0),
@@ -496,12 +512,11 @@ fn show_inputs_table(
                     // again cancels. When any row is armed, the next MIDI
                     // message replaces that row's source (handled engine-side).
                     row.col(|ui| {
-                        let btn = egui::SelectableLabel::new(this_armed, "⟳");
-                        if ui.add(btn)
+                        if ui.selectable_label(this_armed, egui_phosphor::regular::CROSSHAIR)
                             .on_hover_text(if this_armed {
-                                "Cancel relearn"
+                                "Cancel learning"
                             } else {
-                                "Click, then move the physical control to rebind this row"
+                                "Then move a control on the device to rebind this row"
                             })
                             .clicked()
                         {
@@ -514,7 +529,7 @@ fn show_inputs_table(
                     // clean up entries added via Learn. Re-add is always
                     // possible via Learn (generic) or Reset to factory.
                     row.col(|ui| {
-                        if ui.small_button(egui_phosphor::regular::X).clicked() {
+                        if setup_ui::delete_button(ui, "Delete input") {
                             remove_input.push((c.id, input.id));
                         }
                     });
@@ -555,7 +570,7 @@ fn show_debug_panel(
                 }
             } else {
                 ui.colored_label(
-                    Color32::from_gray(140),
+                    theme::TEXT_DIM,
                     "No feedback path; test sliders disabled.",
                 );
             }
@@ -566,8 +581,8 @@ fn show_debug_panel(
         // decoded event, since there's no meaningful wire representation.
         ui.separator();
         ui.horizontal(|ui| {
-            ui.label(egui::RichText::new("Activity").strong());
-            ui.colored_label(Color32::from_gray(140), format!("{} events", c.activity_log.len()));
+            setup_ui::section(ui, "Activity");
+            ui.colored_label(theme::TEXT_DIM, format!("{} events", c.activity_log.len()));
             if ui.small_button("Clear").clicked() {
                 clear_midi_log.push(c.id);
             }
@@ -593,14 +608,14 @@ fn show_debug_panel(
                             let name = c.inputs.get(idx)
                                 .map(|i| i.name.as_str())
                                 .unwrap_or("?");
-                            (format!("{:<10} → {} = {:.3}", prefix, name, v), Color32::from_gray(220))
+                            (format!("{:<10} → {} = {:.3}", prefix, name, v), theme::TEXT)
                         }
                         (Some((src, v)), None) => {
                             (format!("{:<10} → {} = {:.3} (unmatched)", prefix, src.label(), v),
-                             Color32::from_rgb(200, 170, 90))
+                             theme::SEM_WARNING)
                         }
                         (None, _) => {
-                            (format!("{:<10} (unparsed)", prefix), Color32::from_gray(140))
+                            (format!("{:<10} (unparsed)", prefix), theme::TEXT_DIM)
                         }
                     };
                     ui.colored_label(color, egui::RichText::new(label).monospace().size(11.0));
@@ -610,7 +625,7 @@ fn show_debug_panel(
         // Test sliders.
         if has_feedback && c.debug_feedback_override {
             ui.separator();
-            ui.label(egui::RichText::new("Feedback test").strong());
+            setup_ui::section(ui, "Feedback test");
             egui::ScrollArea::vertical()
                 .id_salt(("fb_sliders", c.id))
                 .max_height(240.0)
@@ -648,4 +663,31 @@ fn show_debug_panel(
 fn same_device(a: &str, b: &str) -> bool {
     use crate::input_controller::midi::without_address;
     !b.is_empty() && (a == b || without_address(a) == without_address(b))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn copy_has_a_fresh_id_and_the_same_hardware() {
+        let a = InputController {
+            id: 2,
+            name: "Desk".into(),
+            kind: InputControllerKind::Midi { hw_port_name: "Port 1".into() },
+            inputs: Vec::new(),
+        };
+        let copy = copy_of(&[a.clone()], 2).unwrap();
+        assert_eq!(copy.id, 3);
+        assert_eq!(copy.name, "Desk copy");
+        assert_eq!(copy.kind, a.kind);
+        assert!(copy_of(&[a], 9).is_none());
+    }
+
+    #[test]
+    fn x1_that_is_not_found_is_waiting() {
+        assert_eq!(status_of(&InputControllerKind::X1, ConnectionStatus::Disconnected), Status::Waiting);
+        let midi = InputControllerKind::Midi { hw_port_name: String::new() };
+        assert_eq!(status_of(&midi, ConnectionStatus::Disconnected), Status::NoMapping);
+    }
 }
