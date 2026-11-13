@@ -257,5 +257,5 @@ fn lerp_color(a: Color32, b: Color32, k: f32) -> Color32 {
 /// palette entries.
 fn text_color_for(bg: Color32) -> Color32 {
     let y = 0.2126 * bg.r() as f32 + 0.7152 * bg.g() as f32 + 0.0722 * bg.b() as f32;
-    if y > 140.0 { Color32::BLACK } else { theme::TEXT_BRIGHT }
+    if y > 140.0 { theme::ON_LIGHT } else { theme::TEXT_BRIGHT }
 }

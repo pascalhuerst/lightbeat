@@ -278,7 +278,7 @@ fn draw_vertical(
         egui::Align2::CENTER_CENTER,
         "CLIP",
         egui::FontId::proportional(9.0),
-        if clipping { Color32::BLACK } else { theme::TEXT_DIM },
+        if clipping { theme::ON_LIGHT } else { theme::TEXT_DIM },
     );
 
     // Bar background + border.
@@ -384,7 +384,7 @@ pub fn draw_horizontal(
         egui::Align2::CENTER_CENTER,
         "C",
         egui::FontId::proportional(9.0),
-        if clipping { Color32::BLACK } else { theme::TEXT_DIM },
+        if clipping { theme::ON_LIGHT } else { theme::TEXT_DIM },
     );
 
     // Background.

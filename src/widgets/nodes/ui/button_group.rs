@@ -1,7 +1,7 @@
 use std::any::Any;
 use std::collections::BTreeMap;
 
-use egui::{self, Color32, Ui, Vec2};
+use egui::{self, Ui, Vec2};
 
 use crate::engine::nodes::ui::button::ButtonMode;
 use crate::engine::nodes::ui::button_group::ButtonGroupDisplay;
@@ -224,7 +224,7 @@ impl NodeWidget for ButtonGroupWidget {
                 } else {
                     theme::OFF_GREY
                 };
-                let text_color = if pressed { Color32::BLACK } else { theme::TEXT_BRIGHT };
+                let text_color = if pressed { theme::ON_LIGHT } else { theme::TEXT_BRIGHT };
 
                 let painter = ui.painter_at(inner);
                 painter.rect_filled(inner, 3.0, fill);

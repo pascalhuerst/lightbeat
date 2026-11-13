@@ -168,7 +168,7 @@ impl NodeGraph {
                     ui.colored_label(port_type.color(), "●");
                     ui.strong(&port_name);
                     ui.colored_label(
-                        Color32::from_gray(140),
+                        theme::TEXT_DIM,
                         match port_id.dir {
                             PortDir::Input => "(in)",
                             PortDir::Output => "(out)",

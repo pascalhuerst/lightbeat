@@ -9,7 +9,7 @@ impl NodeGraph {
         let frame = GraphFrame {
             id,
             title: "Frame".to_string(),
-            color: Color32::from_rgb(200, 160, 80),
+            color: theme::FRAME_DEFAULT,
             notes: String::new(),
             pos: world_pos,
             size: Vec2::new(280.0, 180.0),

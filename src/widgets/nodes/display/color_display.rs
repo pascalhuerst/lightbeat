@@ -153,7 +153,7 @@ impl NodeWidget for ColorDisplayWidget {
                             (s.color.b.clamp(0.0, 1.0) * 255.0) as u8,
                         );
                         painter.add(egui::Shape::convex_polygon(
-                            tri.to_vec(), marker_col, Stroke::new(0.5_f32, Color32::BLACK),
+                            tri.to_vec(), marker_col, Stroke::new(0.5_f32, theme::ON_LIGHT),
                         ));
                     }
                 }
@@ -174,7 +174,7 @@ impl NodeWidget for ColorDisplayWidget {
                 painter.rect_filled(rect, 4.0, color);
 
                 let luma = r * 0.299 + g * 0.587 + b * 0.114;
-                let text_color = if luma > 0.5 { Color32::BLACK } else { theme::TEXT_BRIGHT };
+                let text_color = if luma > 0.5 { theme::ON_LIGHT } else { theme::TEXT_BRIGHT };
                 painter.text(
                     rect.center(),
                     egui::Align2::CENTER_CENTER,

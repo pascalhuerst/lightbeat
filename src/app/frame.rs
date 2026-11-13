@@ -602,7 +602,7 @@ impl LightBeatApp {
                         egui::RichText::new("Blackout").color(theme::TEXT_DIM)
                     };
                     let blackout_btn = egui::Button::new(blackout_text)
-                        .fill(if shared.blackout { theme::SEM_DANGER } else { egui::Color32::TRANSPARENT });
+                        .fill(if shared.blackout { theme::SEM_DANGER } else { theme::CLEAR });
                     if ui.add(blackout_btn).clicked() {
                         shared.blackout = !shared.blackout;
                     }
@@ -616,7 +616,7 @@ impl LightBeatApp {
                         egui::RichText::new("Bypass").color(theme::TEXT_DIM)
                     };
                     let bypass_btn = egui::Button::new(bypass_text)
-                        .fill(if shared.bypass { theme::SEM_WARNING } else { egui::Color32::TRANSPARENT });
+                        .fill(if shared.bypass { theme::SEM_WARNING } else { theme::CLEAR });
                     if ui.add(bypass_btn).clicked() {
                         shared.bypass = !shared.bypass;
                     }
