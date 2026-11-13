@@ -1,43 +1,26 @@
-use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 use ringbuf::traits::Consumer;
 
 use super::CommandConsumer;
-use super::nodes::meta::subgraph::SubgraphProcessNode;
+use super::nodes::meta::subgraph::{InnerGraph, SubgraphProcessNode};
 use super::effects::{EffectHub, RenderGate};
-use super::promoted::PromotedInputs;
-use super::routing::RoutePlan;
-use super::sync_hint::SaveDataGate;
 use super::types::*;
 use crate::dmx_io::{DmxOutputManager, SharedDmxState, SharedObjectStore};
-use crate::perf::{EngineTickTimer, NodeProfiler, SharedPerfStats};
+use crate::perf::{EngineTickTimer, SharedPerfStats};
 
-/// The engine-side signal graph. Runs on its own thread at ~1kHz.
+/// The engine-side signal graph. Runs on its own thread at ~1kHz. The graph
+/// itself is an `InnerGraph`, the same core every subgraph runs, with empty
+/// bridges; what lives here is only what the root alone does: the hover
+/// probe, effect flattening and the DMX output.
 pub struct EngineGraph {
-    nodes: Vec<Box<dyn ProcessNode>>,
-    shared_states: Vec<SharedState>,
-    connections: Vec<Connection>,
+    core: InnerGraph,
     dmx: Option<DmxOutputManager>,
     /// Where effect layers meet; flattened into the objects once per frame.
     effect_hub: EffectHub,
     flatten_gate: RenderGate,
     object_store: SharedObjectStore,
     perf: SharedPerfStats,
-    /// NodeId to index in `nodes`. Rebuilt only when nodes are added or
-    /// removed; without it every connection cost a linear scan per tick.
-    node_index: HashMap<NodeId, usize>,
-    /// Params the user turned into input ports, parallel to `nodes`.
-    promoted: Vec<PromotedInputs>,
-    plan: RoutePlan,
-    save_data_gate: SaveDataGate,
-    /// Set by anything that can change routing or a node's ports; checked
-    /// each tick. Port counts changing on their own are caught separately.
-    plan_dirty: bool,
-    /// Scratch buffers reused across ticks so the hot loop does not allocate.
-    disabled_mask: Vec<bool>,
-    sync_counter: u32,
-    node_profile: Option<NodeProfiler>,
 }
 
 /// How often the engine mirrors its state into shared state for the UI.
@@ -54,126 +37,47 @@ impl EngineGraph {
         perf: SharedPerfStats,
     ) -> Self {
         Self {
+            core: InnerGraph::new_root(),
             effect_hub,
             flatten_gate: RenderGate::new(),
             object_store: object_store.clone(),
-            nodes: Vec::new(),
-            shared_states: Vec::new(),
-            connections: Vec::new(),
             dmx: Some(DmxOutputManager::new(dmx_shared, object_store)),
             perf,
-            node_index: HashMap::new(),
-            promoted: Vec::new(),
-            plan: RoutePlan::default(),
-            save_data_gate: SaveDataGate::default(),
-            plan_dirty: true,
-            disabled_mask: Vec::new(),
-            sync_counter: 0,
-            node_profile: NodeProfiler::from_env(),
         }
-    }
-
-    fn rebuild_node_index(&mut self) {
-        self.node_index.clear();
-        for (i, node) in self.nodes.iter().enumerate() {
-            self.node_index.insert(node.node_id(), i);
-        }
-    }
-
-    fn add_node(&mut self, node: Box<dyn ProcessNode>, shared: SharedState) {
-        shared.lock().unwrap().default_params = node.params();
-        self.shared_states.push(shared);
-        self.promoted.push(PromotedInputs::default());
-        self.node_index.insert(node.node_id(), self.nodes.len());
-        self.nodes.push(node);
-    }
-
-    fn remove_node(&mut self, id: NodeId) {
-        if let Some(idx) = self.nodes.iter().position(|n| n.node_id() == id) {
-            self.nodes.remove(idx);
-            self.shared_states.remove(idx);
-            self.promoted.remove(idx);
-            self.connections
-                .retain(|c| c.from.node != id && c.to.node != id);
-            // Every index after the removed one shifted down.
-            self.rebuild_node_index();
-        }
-    }
-
-    fn add_connection(&mut self, conn: Connection) {
-        if !self.connections.contains(&conn) {
-            self.connections.push(conn);
-        }
-    }
-
-    fn remove_connection_to(&mut self, to: PortId) {
-        self.connections.retain(|c| c.to != to);
-    }
-
-    fn rebuild_plan(&mut self) {
-        self.plan = RoutePlan::build(
-            &self.nodes,
-            &self.node_index,
-            &self.connections,
-            &self.promoted,
-            &[],
-            &[],
-            None,
-            None,
-        );
-        for (i, node) in self.nodes.iter_mut().enumerate() {
-            let native = node.inputs().len();
-            node.set_input_connections(self.plan.native_connected(i, native));
-            if self.promoted[i].len() > 0 {
-                self.promoted[i].note_wiring(self.plan.promoted_connected(i, native));
-            }
-        }
-        self.plan_dirty = false;
     }
 
     fn apply_command(&mut self, cmd: EngineCommand) {
-        self.plan_dirty = true;
         match cmd {
             EngineCommand::AddNode { node, shared } => {
-                self.add_node(node, shared);
+                self.core.apply(SubgraphInnerCmd::AddNode { node, shared });
             }
             EngineCommand::RemoveNode(id) => {
-                self.remove_node(id);
+                self.core.apply(SubgraphInnerCmd::RemoveNode(id));
             }
             EngineCommand::AddConnection(conn) => {
-                self.add_connection(conn);
+                self.core.apply(SubgraphInnerCmd::AddConnection(conn));
             }
             EngineCommand::RemoveConnectionTo(to) => {
-                self.remove_connection_to(to);
+                self.core.apply(SubgraphInnerCmd::RemoveConnectionTo(to));
             }
             EngineCommand::NotifyConnect {
                 node_id,
                 input_port,
                 source_type,
             } => {
-                if let Some(node) = self.nodes.iter_mut().find(|n| n.node_id() == node_id) {
-                    node.on_connect(input_port, source_type);
-                }
+                self.core.apply(SubgraphInnerCmd::NotifyConnect { node_id, input_port, source_type });
             }
             EngineCommand::NotifyDisconnect {
                 node_id,
                 input_port,
             } => {
-                if let Some(node) = self.nodes.iter_mut().find(|n| n.node_id() == node_id) {
-                    node.on_disconnect(input_port);
-                }
+                self.core.apply(SubgraphInnerCmd::NotifyDisconnect { node_id, input_port });
             }
             EngineCommand::LoadData { node_id, data } => {
-                if let Some(node) = self.nodes.iter_mut().find(|n| n.node_id() == node_id) {
-                    node.load_data(&data);
-                }
+                self.core.apply(SubgraphInnerCmd::LoadData { node_id, data });
             }
             EngineCommand::RemoveAllNodes => {
-                self.nodes.clear();
-                self.shared_states.clear();
-                self.promoted.clear();
-                self.connections.clear();
-                self.node_index.clear();
+                self.core.clear();
             }
             EngineCommand::SetInterfaces(interfaces) => {
                 if let Some(dmx) = &mut self.dmx {
@@ -181,6 +85,7 @@ impl EngineGraph {
                 }
             }
             EngineCommand::SubgraphInnerCommand { subgraph_path, command } => {
+                self.core.mark_plan_dirty();
                 self.apply_subgraph_inner_cmd(&subgraph_path, *command);
             }
         }
@@ -201,7 +106,7 @@ impl EngineGraph {
         }
 
         // Find the outermost target subgraph.
-        let Some(node) = self.nodes.iter_mut().find(|n| n.node_id() == path[0]) else {
+        let Some(node) = self.core.nodes.iter_mut().find(|n| n.node_id() == path[0]) else {
             return;
         };
         let Some(sg) = node.as_any_mut().and_then(|a| a.downcast_mut::<SubgraphProcessNode>()) else {
@@ -210,116 +115,20 @@ impl EngineGraph {
         sg.apply_inner_cmd_at_path(&path[1..], cmd);
     }
 
-    /// One tick of the engine: process all nodes, propagate signals, update shared state.
+    /// One tick of the engine: the shared graph core (take pending, plan,
+    /// process, propagate, UI mirror), then what only the root does.
     fn tick(&mut self) {
+        self.core.tick_with(&[], &[], |core| {
+            if let Some(t) = super::probe::target()
+                && let Some(i) = core.index_of(t.node)
+            {
+                let v = if t.output { core.nodes[i].read_output(t.channel) } else { core.nodes[i].read_input(t.channel) };
+                super::probe::record(v);
+            }
+        });
+
         let mut clock = crate::perf::PhaseClock::start();
-        // 0. Take everything the UI pushed, in a single lock per node. This
-        // runs before `process` so an edit lands on the tick it arrives, and
-        // before the connection scan below because `load_data` can rebuild a
-        // node's ports.
-        self.disabled_mask.clear();
-        for (i, node) in self.nodes.iter_mut().enumerate() {
-            let (disabled, pending, config_update, promoted_update, snapshots_update, recall) = {
-                let mut shared = self.shared_states[i].lock().unwrap();
-                (
-                    shared.disabled,
-                    std::mem::take(&mut shared.pending_params),
-                    shared.pending_config.take(),
-                    shared.pending_promoted.take(),
-                    shared.pending_snapshots.take(),
-                    shared.pending_recall.take(),
-                )
-            };
-            self.disabled_mask.push(disabled);
-            if promoted_update.is_some() || !pending.is_empty() || config_update.is_some() {
-                self.plan_dirty = true;
-            }
-            if let Some(list) = promoted_update {
-                self.promoted[i].adopt(&list, node.as_ref());
-            }
-            if let Some(set) = snapshots_update {
-                self.promoted[i].adopt_snapshots(set);
-            }
-            for (idx, val) in pending {
-                node.set_param(idx, val);
-            }
-            if let Some(config) = config_update {
-                node.load_data(&config);
-            }
-            if let Some(index) = recall {
-                self.promoted[i].recall_snapshot(index, node.as_mut());
-            }
-        }
-
-        clock.lap("[root] 0 take pending");
-
-        // 1. Re-resolve routing and the per-node "which input ports are
-        //    connected" bitmap (the "input-overrides-param" pattern) only when
-        //    something that could change them did.
-        if self.plan_dirty || !self.plan.is_current(&self.nodes, &[], &[]) {
-            self.rebuild_plan();
-        }
-
-        clock.lap("[root] 1 connected bitmap");
-
-        // 2. Process all nodes — skipping disabled ones. Disabled nodes
-        // keep their previous tick's output values, so downstream signal
-        // flow freezes instead of dropping to zero.
-        if let Some(profile) = &mut self.node_profile {
-            for (i, node) in self.nodes.iter_mut().enumerate() {
-                if self.disabled_mask.get(i).copied().unwrap_or(false) {
-                    continue;
-                }
-                let started = std::time::Instant::now();
-                node.process();
-                profile.record(node.type_name(), started.elapsed().as_nanos() as u64);
-            }
-            profile.end_tick();
-        } else {
-            for (i, node) in self.nodes.iter_mut().enumerate() {
-                if !self.disabled_mask.get(i).copied().unwrap_or(false) {
-                    node.process();
-                }
-            }
-        }
-
-        clock.lap("[root] 2 process (nodes)");
-
-        // 3. Propagate signals through connections.
-        // Multi-channel ports (Color=3, Position=2) expand to multiple float copies.
-        self.plan.run(&mut self.nodes, &mut self.promoted, &[], &mut []);
-        for (i, node) in self.nodes.iter_mut().enumerate() {
-            self.promoted[i].step_snapshots(node.as_mut());
-        }
-        clock.lap("[root] 3 propagate");
-
-        if let Some(t) = super::probe::target()
-            && let Some(&i) = self.node_index.get(&t.node)
-        {
-            let v = if t.output { self.nodes[i].read_output(t.channel) } else { self.nodes[i].read_input(t.channel) };
-            super::probe::record(v);
-        }
-
-        // 4. Update shared state for UI, at UI frame rate rather than tick
-        // rate. `params()` allocates a fresh Vec of ParamDefs with owned
-        // Strings, `save_data()` builds a serde_json tree and
-        // `update_display()` clones display buffers — all per node, and all
-        // discarded unread 15 times out of 16 when done every tick.
-        //
-        // For disabled nodes we skip update_display / save_data / shared
-        // buffer copies — their values are all frozen so repeating the
-        // work accomplishes nothing. `inputs_connected` still
-        // refreshes so the UI sees live wire state even on off nodes
-        // (so you can still see what's wired where before re-enabling).
-        self.sync_counter += 1;
-        if self.sync_counter >= UI_SYNC_EVERY_N_TICKS {
-            self.sync_counter = 0;
-            self.sync_shared_state();
-        }
-
-        clock.lap("[root] 4 ui sync");
-
-        // 5. Blend the effect stacks into the LEDs, then tick the DMX output
+        // Blend the effect stacks into the LEDs, then tick the DMX output
         // manager (merge overrides, send to interfaces).
         if self.flatten_gate.due() {
             self.effect_hub.flatten(&self.object_store);
@@ -328,42 +137,6 @@ impl EngineGraph {
             dmx.tick();
         }
         clock.lap("[root] 5 dmx");
-    }
-
-    fn sync_shared_state(&mut self) {
-        let sync_save_data = self.save_data_gate.due();
-        for (i, node) in self.nodes.iter().enumerate() {
-            let mut shared = self.shared_states[i].lock().unwrap();
-            shared.inputs_connected.clear();
-            shared
-                .inputs_connected
-                .extend_from_slice(&self.plan.connected[i]);
-            shared.non_promotable = node.non_promotable_params();
-            if self.disabled_mask.get(i).copied().unwrap_or(false) {
-                continue;
-            }
-            let total_out = total_channels(node.outputs());
-            for ch in 0..total_out.min(shared.outputs.len()) {
-                shared.outputs[ch] = node.read_output(ch);
-            }
-            let total_in = total_channels(node.inputs());
-            for ch in 0..total_in.min(shared.inputs.len()) {
-                shared.inputs[ch] = node.read_input(ch);
-            }
-            shared.current_params = node.params();
-            if sync_save_data {
-                shared.save_data = node.save_data();
-            }
-            node.update_display(&mut shared);
-        }
-        for (i, node) in self.nodes.iter().enumerate() {
-            self.promoted[i].refresh(node.as_ref());
-            let (active, fading, progress) = self.promoted[i].snapshot_state();
-            let mut shared = self.shared_states[i].lock().unwrap();
-            shared.snapshot_active = active;
-            shared.snapshot_fading = fading;
-            shared.snapshot_progress = progress;
-        }
     }
 
     /// Run the engine loop. Called from the engine thread.

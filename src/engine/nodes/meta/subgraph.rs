@@ -139,6 +139,27 @@ pub const BRIDGE_OUT_NODE_ID: NodeId = NodeId(u64::MAX);
 
 impl InnerGraph {
     pub fn new() -> Self {
+        Self::with_profiling(None, [
+            "[inner] 0 take pending",
+            "[inner] 1 connected bitmap",
+            "[inner] 2 process (nodes)",
+            "[inner] 3 propagate",
+            "[inner] 4 ui sync",
+        ])
+    }
+
+    /// The top level graph: no bridges, its own node profiler.
+    pub fn new_root() -> Self {
+        Self::with_profiling(NodeProfiler::from_env(), [
+            "[root] 0 take pending",
+            "[root] 1 connected bitmap",
+            "[root] 2 process (nodes)",
+            "[root] 3 propagate",
+            "[root] 4 ui sync",
+        ])
+    }
+
+    fn with_profiling(profiler: Option<NodeProfiler>, laps: [&'static str; 5]) -> Self {
         Self {
             nodes: Vec::new(),
             shared_states: Vec::new(),
@@ -153,14 +174,8 @@ impl InnerGraph {
             plan_dirty: true,
             disabled_mask: Vec::new(),
             sync_counter: 0,
-            profiler: None,
-            laps: [
-                "[inner] 0 take pending",
-                "[inner] 1 connected bitmap",
-                "[inner] 2 process (nodes)",
-                "[inner] 3 propagate",
-                "[inner] 4 ui sync",
-            ],
+            profiler,
+            laps,
         }
     }
 
@@ -324,6 +339,80 @@ impl InnerGraph {
             self.sync_shared_state();
         }
         clock.lap(self.laps[4]);
+    }
+
+    /// The structural edits, for the root graph and for every subgraph.
+    pub fn apply(&mut self, cmd: SubgraphInnerCmd) {
+        self.plan_dirty = true;
+        match cmd {
+            SubgraphInnerCmd::AddNode { node, shared } => {
+                shared.lock().unwrap().default_params = node.params();
+                self.shared_states.push(shared);
+                self.nodes.push(node);
+                self.promoted.push(PromotedInputs::default());
+                self.index_stale = true;
+            }
+            SubgraphInnerCmd::RemoveNode(id) => {
+                if let Some(idx) = self.nodes.iter().position(|n| n.node_id() == id) {
+                    self.nodes.remove(idx);
+                    self.shared_states.remove(idx);
+                    self.promoted.remove(idx);
+                    self.index_stale = true;
+                    self.connections
+                        .retain(|c| c.from.node != id && c.to.node != id);
+                }
+            }
+            SubgraphInnerCmd::AddConnection(conn) => {
+                if !self.connections.contains(&conn) {
+                    self.connections.push(conn);
+                }
+            }
+            SubgraphInnerCmd::RemoveConnectionTo(to) => {
+                self.connections.retain(|c| c.to != to);
+            }
+            SubgraphInnerCmd::LoadData { node_id, data } => {
+                if let Some(node) = self.nodes.iter_mut().find(|n| n.node_id() == node_id) {
+                    node.load_data(&data);
+                }
+            }
+            SubgraphInnerCmd::NotifyConnect {
+                node_id,
+                input_port,
+                source_type,
+            } => {
+                if let Some(node) = self.nodes.iter_mut().find(|n| n.node_id() == node_id) {
+                    node.on_connect(input_port, source_type);
+                }
+            }
+            SubgraphInnerCmd::NotifyDisconnect {
+                node_id,
+                input_port,
+            } => {
+                if let Some(node) = self.nodes.iter_mut().find(|n| n.node_id() == node_id) {
+                    node.on_disconnect(input_port);
+                }
+            }
+        }
+    }
+
+    /// Any command, however deep, makes the root re-resolve its routing.
+    pub fn mark_plan_dirty(&mut self) {
+        self.plan_dirty = true;
+    }
+
+    pub fn clear(&mut self) {
+        self.plan_dirty = true;
+        self.nodes.clear();
+        self.shared_states.clear();
+        self.promoted.clear();
+        self.connections.clear();
+        self.node_index.clear();
+        self.index_stale = false;
+    }
+
+    /// Where a node sits in `nodes`; only valid after a tick has rebuilt a stale index.
+    pub fn index_of(&self, id: NodeId) -> Option<usize> {
+        self.node_index.get(&id).copied()
     }
 
     pub fn tick(&mut self, input_ports: &[PortDef], output_ports: &[PortDef]) {
@@ -545,57 +634,7 @@ impl SubgraphProcessNode {
 
     /// Apply an inner command to this subgraph's inner graph.
     pub fn apply_inner_cmd(&mut self, cmd: SubgraphInnerCmd) {
-        self.inner.plan_dirty = true;
-        match cmd {
-            SubgraphInnerCmd::AddNode { node, shared } => {
-                shared.lock().unwrap().default_params = node.params();
-                self.inner.shared_states.push(shared);
-                self.inner.nodes.push(node);
-                self.inner.promoted.push(PromotedInputs::default());
-                self.inner.index_stale = true;
-            }
-            SubgraphInnerCmd::RemoveNode(id) => {
-                if let Some(idx) = self.inner.nodes.iter().position(|n| n.node_id() == id) {
-                    self.inner.nodes.remove(idx);
-                    self.inner.shared_states.remove(idx);
-                    self.inner.promoted.remove(idx);
-                    self.inner.index_stale = true;
-                    self.inner
-                        .connections
-                        .retain(|c| c.from.node != id && c.to.node != id);
-                }
-            }
-            SubgraphInnerCmd::AddConnection(conn) => {
-                if !self.inner.connections.contains(&conn) {
-                    self.inner.connections.push(conn);
-                }
-            }
-            SubgraphInnerCmd::RemoveConnectionTo(to) => {
-                self.inner.connections.retain(|c| c.to != to);
-            }
-            SubgraphInnerCmd::LoadData { node_id, data } => {
-                if let Some(node) = self.inner.nodes.iter_mut().find(|n| n.node_id() == node_id) {
-                    node.load_data(&data);
-                }
-            }
-            SubgraphInnerCmd::NotifyConnect {
-                node_id,
-                input_port,
-                source_type,
-            } => {
-                if let Some(node) = self.inner.nodes.iter_mut().find(|n| n.node_id() == node_id) {
-                    node.on_connect(input_port, source_type);
-                }
-            }
-            SubgraphInnerCmd::NotifyDisconnect {
-                node_id,
-                input_port,
-            } => {
-                if let Some(node) = self.inner.nodes.iter_mut().find(|n| n.node_id() == node_id) {
-                    node.on_disconnect(input_port);
-                }
-            }
-        }
+        self.inner.apply(cmd);
     }
 }
 
