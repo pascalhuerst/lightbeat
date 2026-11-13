@@ -74,7 +74,11 @@ Updated as items are implemented. Items not listed here are open.
 | T3 | left to the user | `overview.md` and `things.txt` are personal notes |
 | S7 | done | merge "feature/ports-once" (360a805 .. ab38a5d): 56 node types take their ports from one engine function (`ports()` / `ports_for(..)`), widgets convert with `UiPortDef::from_defs`. Not at runtime as sketched here: a widget must have its ports before the engine ticks. A test compares both halves of every node type. Found on the way: the Input Controller widget started without `connected` |
 | U4 | done | 71555bc .. 7049324: `node_identity!` (70 widgets) and `with_display` (22 uses); no base struct |
-| U5 - U7, T1 | open | in progress |
+| U7 | done | ee14615: `parking_lot::Mutex` (and `Condvar` in the MIDI hub) for all shared state; no `lock().unwrap()` left. A panic in a tick no longer poisons the UI's locks |
+| E8 (rest) | done | 21de914: `ParamDef` names and Choice options are `Cow<'static, str>`. The `Vec<ParamDef>` per call and the display re-boxing remain |
+| U5 | partly, by choice | 6c46d3a, a5cec79, 5403819: `FloatParam` / `IntParam` (`engine/param_spec.rs`) state name, range and clamp once on 24 nodes. Nodes whose `set_param` does real work keep theirs; the one-line port accessors were not turned into arrays (no gain) |
+| U6 | partly, by choice | b1b50f0 .. 122340f: Gain, Trigger Hold, XY Pad and Gradient Stops no longer save their params twice; Lookup, Gradient Source, Palette Select, Color Mixer, Peak Level Meter, Meter, Step Sequencer, Portals and Subgraph use one serde config struct on both sides, same keys. Fader/Button (null vs missing, click events) and one-key nodes are left |
+| T1 | open | in progress |
 | R2 (settings) | done | bea6940 |
 | R3 (project file) | done | 486e28d |
 | R5, R8 (UI part) | done | 41daa6d: the status bar says "Engine stopped" or "Engine busy: N changes lost" |
