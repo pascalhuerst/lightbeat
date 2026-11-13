@@ -136,10 +136,10 @@ impl EnvelopeProcessNode {
             signal_in: 0.0,
             inputs: vec![
                 PortDef::new("gate", PortType::Logic),
-                PortDef::new("signal", PortType::Untyped),
+                PortDef::new("in", PortType::Untyped),
             ],
             outputs: vec![
-                PortDef::new("envelope", PortType::Untyped),
+                PortDef::new("out", PortType::Untyped),
                 PortDef::new("signal", PortType::Untyped),
             ],
         }

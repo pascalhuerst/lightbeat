@@ -69,12 +69,12 @@ impl NodeWidget for EnvelopeWidget {
         let port0_name = if self.kind.uses_gate() { "gate" } else { "(unused)" };
         vec![
             UiPortDef::from_def(&PortDef::new(port0_name, PortType::Logic)),
-            UiPortDef::from_def(&PortDef::new("signal", PortType::Untyped)),
+            UiPortDef::from_def(&PortDef::new("in", PortType::Untyped)),
         ]
     }
     fn ui_outputs(&self) -> Vec<UiPortDef> {
         vec![
-            UiPortDef::from_def(&PortDef::new("envelope", PortType::Untyped)),
+            UiPortDef::from_def(&PortDef::new("out", PortType::Untyped)),
             UiPortDef::from_def(&PortDef::new("signal", PortType::Untyped)),
         ]
     }

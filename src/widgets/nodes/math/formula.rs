@@ -52,10 +52,10 @@ impl NodeWidget for FormulaWidget {
     }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> {
-        vec![UiPortDef::from_def(&PortDef::new("x", PortType::Untyped))]
+        vec![UiPortDef::from_def(&PortDef::new("in", PortType::Untyped))]
     }
     fn ui_outputs(&self) -> Vec<UiPortDef> {
-        vec![UiPortDef::from_def(&PortDef::new("y", PortType::Untyped))]
+        vec![UiPortDef::from_def(&PortDef::new("out", PortType::Untyped))]
     }
 
     fn min_width(&self) -> f32 { 130.0 }

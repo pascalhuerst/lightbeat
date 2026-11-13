@@ -37,7 +37,7 @@ impl ChangeDetectProcessNode {
             trigger_out: 0.0,
             threshold: 0.001,
             inputs: vec![
-                PortDef::new("value", PortType::Any),
+                PortDef::new("in", PortType::Any),
                 PortDef::new("trigger", PortType::Logic),
             ],
             outputs: vec![

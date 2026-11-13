@@ -98,7 +98,7 @@ impl LfoProcessNode {
     }
 
     fn output_ports(phase_input: bool) -> Vec<PortDef> {
-        let mut ports = vec![PortDef::new("value", PortType::Untyped)];
+        let mut ports = vec![PortDef::new("out", PortType::Untyped)];
         if !phase_input {
             ports.push(PortDef::new("phase", PortType::Phase));
         }
@@ -302,7 +302,7 @@ mod tests {
         n.set_param(3, ParamValue::Bool(true));
         assert_eq!((n.inputs().len(), n.outputs().len()), (1, 1));
         assert_eq!(n.inputs()[0].port_type, PortType::Phase);
-        assert_eq!(n.outputs()[0].name, "value");
+        assert_eq!(n.outputs()[0].name, "out");
         n.set_param(3, ParamValue::Bool(false));
         assert_eq!(n.outputs().len(), 2);
     }

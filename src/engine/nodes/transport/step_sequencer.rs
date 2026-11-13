@@ -73,7 +73,7 @@ impl StepSequencerProcessNode {
             inputs: Vec::new(),
             outputs: vec![
                 PortDef::new("trigger", PortType::Logic),
-                PortDef::new("value", PortType::Untyped),
+                PortDef::new("out", PortType::Untyped),
                 PortDef::new("step", PortType::Untyped),
             ],
         };

@@ -184,8 +184,8 @@ impl FormulaProcessNode {
             formula,
             input: 0.0,
             out: 0.0,
-            inputs: vec![PortDef::new("x", PortType::Untyped)],
-            outputs: vec![PortDef::new("y", PortType::Untyped)],
+            inputs: vec![PortDef::new("in", PortType::Untyped)],
+            outputs: vec![PortDef::new("out", PortType::Untyped)],
         }
     }
 

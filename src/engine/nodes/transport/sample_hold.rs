@@ -33,7 +33,7 @@ impl SampleHoldProcessNode {
 
     fn rebuild(&mut self) {
         self.inputs = vec![
-            PortDef::new("value", self.port_type),
+            PortDef::new("in", self.port_type),
             PortDef::new("trigger", PortType::Logic),
         ];
         self.outputs = vec![PortDef::new("out", self.port_type)];
