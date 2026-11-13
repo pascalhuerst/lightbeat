@@ -1,7 +1,7 @@
 //! XY Pad: a draggable point inside a unit square, outputting its x and y
 //! coordinates (each clamped 0..=1).
 
-use crate::engine::param_spec::{FloatParam};
+use crate::engine::param_spec::FloatParam;
 use crate::engine::types::*;
 
 const X: FloatParam = FloatParam::new("X", 0.0, 1.0, 0.01, "").clamped();

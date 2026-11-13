@@ -1,6 +1,6 @@
 use std::collections::VecDeque;
 
-use crate::engine::param_spec::{FloatParam};
+use crate::engine::param_spec::FloatParam;
 use crate::engine::types::*;
 
 const RANGE_MIN: FloatParam = FloatParam::new("Range Min", -2.0, 2.0, 0.05, "");

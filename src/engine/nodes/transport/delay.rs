@@ -1,4 +1,4 @@
-use crate::engine::param_spec::{IntParam};
+use crate::engine::param_spec::IntParam;
 use crate::engine::types::*;
 
 const EXPONENT: IntParam = IntParam::new("Exponent", -6, 6);

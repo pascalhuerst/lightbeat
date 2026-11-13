@@ -1,4 +1,4 @@
-use crate::engine::param_spec::{IntParam};
+use crate::engine::param_spec::IntParam;
 use crate::engine::types::*;
 
 const EVERY_NTH: IntParam = IntParam::new("Every Nth", 2, 64).at_least(2);

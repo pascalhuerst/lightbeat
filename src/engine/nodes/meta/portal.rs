@@ -42,14 +42,8 @@ pub struct PortalConfig {
     pub name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub bound_name: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none", deserialize_with = "lenient_ports")]
+    #[serde(skip_serializing_if = "Option::is_none", deserialize_with = "crate::engine::config_json::lenient_vec")]
     pub ports: Option<Vec<PortalPortDef>>,
-}
-
-/// A port entry that does not parse is dropped and the others kept.
-fn lenient_ports<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<Vec<PortalPortDef>>, D::Error> {
-    let raw: Option<Vec<serde_json::Value>> = serde::Deserialize::deserialize(d)?;
-    Ok(raw.map(|v| v.into_iter().filter_map(|e| serde_json::from_value(e).ok()).collect()))
 }
 
 impl PortalConfig {

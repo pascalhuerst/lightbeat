@@ -3,7 +3,7 @@
 //! `scale` and `offset` follow the "input-overrides-param" pattern: when the
 //! port is wired, the wire value takes over and the inspector param is hidden.
 
-use crate::engine::param_spec::{FloatParam};
+use crate::engine::param_spec::FloatParam;
 use crate::engine::types::*;
 
 

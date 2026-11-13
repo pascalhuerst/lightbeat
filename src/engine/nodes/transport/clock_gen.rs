@@ -1,4 +1,4 @@
-use crate::engine::param_spec::{IntParam};
+use crate::engine::param_spec::IntParam;
 use crate::engine::types::*;
 
 const COUNT: IntParam = IntParam::new("Count", 1, 64).at_least(1);

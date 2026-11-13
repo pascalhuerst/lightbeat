@@ -12,7 +12,7 @@
 //! the corresponding input port is wired, the wire value takes over and
 //! the inspector param is hidden.
 
-use crate::engine::param_spec::{FloatParam};
+use crate::engine::param_spec::FloatParam;
 use crate::engine::types::*;
 
 

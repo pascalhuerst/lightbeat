@@ -2,7 +2,7 @@
 //! Palette → Gradient node. Optional `palette` input drives a live preview
 //! in the widget (colours for each handle + interpolated strip background).
 
-use crate::engine::param_spec::{FloatParam};
+use crate::engine::param_spec::FloatParam;
 use crate::engine::types::*;
 
 const POSITIONS: [FloatParam; 4] = [

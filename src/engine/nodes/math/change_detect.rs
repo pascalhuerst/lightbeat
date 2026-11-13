@@ -1,4 +1,4 @@
-use crate::engine::param_spec::{FloatParam};
+use crate::engine::param_spec::FloatParam;
 use crate::engine::types::*;
 
 const THRESHOLD: FloatParam = FloatParam::new("Threshold", 0.0, 1.0, 0.001, "");

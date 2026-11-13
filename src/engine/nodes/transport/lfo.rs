@@ -1,6 +1,6 @@
 use std::time::Instant;
 
-use crate::engine::param_spec::{FloatParam};
+use crate::engine::param_spec::FloatParam;
 use crate::engine::types::*;
 
 const RATE: FloatParam = FloatParam::new("Rate", 0.01, 20.0, 0.01, "Hz").clamped();

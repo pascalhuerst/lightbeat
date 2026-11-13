@@ -1,5 +1,5 @@
 use crate::engine::nodes::math::multiplex::SelectMode;
-use crate::engine::param_spec::{IntParam};
+use crate::engine::param_spec::IntParam;
 use crate::engine::types::*;
 
 const MAX: IntParam = IntParam::new("Max", 1, 256).at_least(1);

@@ -3,7 +3,7 @@
 //! anything that wants a fade or a sweep takes a phase wire and this node
 //! decides how long it lasts.
 
-use crate::engine::param_spec::{FloatParam};
+use crate::engine::param_spec::FloatParam;
 use crate::engine::types::*;
 
 const TIME: FloatParam = FloatParam::new("Time", 0.01, 60.0, 0.01, "s").at_least(MIN_TIME);

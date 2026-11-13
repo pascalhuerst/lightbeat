@@ -8,7 +8,7 @@
 //! With the default settings (`scale = 24`, matching the X1's 24-clicks-
 //! per-revolution), one encoder click bumps the output by exactly 1.
 
-use crate::engine::param_spec::{FloatParam};
+use crate::engine::param_spec::FloatParam;
 use crate::engine::types::*;
 
 

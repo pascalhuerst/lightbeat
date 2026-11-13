@@ -1,3 +1,4 @@
+pub mod config_json;
 pub mod effects;
 pub mod graph;
 pub mod nodes;
