@@ -14,3 +14,4 @@ pub mod inspector;
 pub mod interface_list;
 pub mod nodes;
 pub mod object_list;
+pub mod setup_ui;
