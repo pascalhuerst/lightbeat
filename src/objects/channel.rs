@@ -32,51 +32,9 @@ impl ColorMode {
 /// Defines the byte order of one pixel on the wire as a sequence of color
 /// channels. Each W channel carries its own temperature in Kelvin (metadata
 /// describing the physical LED, used to extract a white component from RGB).
-#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct PixelFormat {
     pub channels: Vec<PixelChannel>,
-}
-
-// Manual deserializer that also accepts the legacy enum form
-// (`{"Rgb": null}`, `{"Rgbw": {"white_temperature": 6500}}`, etc.).
-impl<'de> serde::Deserialize<'de> for PixelFormat {
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let v = serde_json::Value::deserialize(deserializer)?;
-
-        // New form: {"channels": [...]}
-        if let Some(channels) = v.get("channels") {
-            let channels: Vec<PixelChannel> = serde_json::from_value(channels.clone())
-                .map_err(serde::de::Error::custom)?;
-            return Ok(PixelFormat { channels });
-        }
-
-        // Plain string form: "Rgb", "Grb"
-        if let Some(s) = v.as_str() {
-            return Ok(match s {
-                "Rgb" => PixelFormat::rgb(),
-                "Grb" => PixelFormat::grb(),
-                _ => return Err(serde::de::Error::custom(format!("unknown PixelFormat \"{}\"", s))),
-            });
-        }
-
-        // Legacy externally-tagged enum: { "Rgbw": { "white_temperature": 6500 } } etc.
-        if let Some(obj) = v.as_object()
-            && let Some((tag, body)) = obj.iter().next() {
-                let temp = body.get("white_temperature")
-                    .or_else(|| body.get("warm_temperature"))
-                    .and_then(|t| t.as_u64())
-                    .unwrap_or(6500) as u16;
-                return Ok(match tag.as_str() {
-                    "Rgb" => PixelFormat::rgb(),
-                    "Grb" => PixelFormat::grb(),
-                    "Rgbw" => PixelFormat::rgbw(temp),
-                    "Grbw" => PixelFormat::grbw(temp),
-                    "Grbww" => PixelFormat::grbww(temp, temp),
-                    other => return Err(serde::de::Error::custom(format!("unknown PixelFormat tag \"{}\"", other))),
-                });
-            }
-        Err(serde::de::Error::custom("could not parse PixelFormat"))
-    }
 }
 
 /// A single byte slot in a pixel.
@@ -422,5 +380,20 @@ mod tests {
         assert_eq!((ChannelKind::Color { mode: ColorMode::Rgbw { white_temperature: 6500 } }).dmx_channel_count(), 4);
         assert_eq!((ChannelKind::PanTilt { fine: false }).dmx_channel_count(), 2);
         assert_eq!((ChannelKind::PanTilt { fine: true }).dmx_channel_count(), 4);
+    }
+
+    #[test]
+    fn pixel_format_json_is_pinned() {
+        let cases = [
+            (PixelFormat::rgb(), r#"{"channels":["Red","Green","Blue"]}"#),
+            (PixelFormat::grb(), r#"{"channels":["Green","Red","Blue"]}"#),
+            (PixelFormat::rgbw(6500), r#"{"channels":["Red","Green","Blue",{"White":{"temperature_k":6500}}]}"#),
+            (PixelFormat::grbw(4000), r#"{"channels":["Green","Red","Blue",{"White":{"temperature_k":4000}}]}"#),
+            (PixelFormat::grbww(2700, 6500), r#"{"channels":["Green","Red","Blue",{"White":{"temperature_k":2700}},{"White":{"temperature_k":6500}}]}"#),
+        ];
+        for (fmt, json) in cases {
+            assert_eq!(serde_json::to_string(&fmt).unwrap(), json);
+            assert_eq!(serde_json::from_str::<PixelFormat>(json).unwrap(), fmt);
+        }
     }
 }

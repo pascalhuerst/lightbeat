@@ -8,13 +8,9 @@ pub struct GradientStop {
     pub position: f32,
     pub color: Rgb,
     /// 0..=1 opacity. Carried through the channel-flat representation so
-    /// downstream consumers can do alpha-blended writes. Serde defaults to
-    /// 1.0 for back-compat with old JSON that didn't have this field.
-    #[serde(default = "default_alpha")]
+    /// downstream consumers can do alpha-blended writes.
     pub alpha: f32,
 }
-
-fn default_alpha() -> f32 { 1.0 }
 
 impl GradientStop {
     pub fn opaque(position: f32, color: Rgb) -> Self {

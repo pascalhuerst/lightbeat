@@ -40,7 +40,7 @@ pub struct FaderProcessNode {
     id: NodeId,
     name: String,
     orientation: FaderOrientation,
-    /// Local mouse-driven value when inputs are disabled (legacy behavior).
+    /// Local mouse-driven value when inputs are disabled.
     mouse_value: f32,
     /// Incoming input signal value.
     input_value: f32,
@@ -144,10 +144,6 @@ impl ProcessNode for FaderProcessNode {
         if let Some(v) = data.get("mouse_value").and_then(|v| v.as_f64()) {
             self.mouse_value = (v as f32).clamp(0.0, 1.0);
         }
-        // Legacy single-field save ("value") still respected.
-        if let Some(v) = data.get("value").and_then(|v| v.as_f64()) {
-            self.mouse_value = (v as f32).clamp(0.0, 1.0);
-        }
         let mut ports_dirty = false;
         if let Some(b) = data.get("inputs_enabled").and_then(|v| v.as_bool()) {
             if b != self.inputs_enabled { ports_dirty = true; }
@@ -155,19 +151,6 @@ impl ProcessNode for FaderProcessNode {
         }
         if let Some(s) = data.get("mouse_override").and_then(|v| v.as_str()) {
             self.mouse_override = MouseOverrideMode::from_str(s);
-        } else {
-            // Backward-compat: collapse old (override_enabled + reset_mode) → new enum.
-            let override_enabled = data.get("override_enabled").and_then(|v| v.as_bool()).unwrap_or(false);
-            let reset_mode = data.get("reset_mode").and_then(|v| v.as_str()).unwrap_or("on_reset");
-            self.mouse_override = if !override_enabled {
-                MouseOverrideMode::No
-            } else {
-                match reset_mode {
-                    "pass_from_below" => MouseOverrideMode::PickupIncrease,
-                    "pass_from_above" => MouseOverrideMode::PickupDecrease,
-                    _ => MouseOverrideMode::ClearOnReset,
-                }
-            };
         }
         if let Some(b) = data.get("bipolar").and_then(|v| v.as_bool()) {
             self.bipolar = b;
@@ -198,5 +181,29 @@ impl ProcessNode for FaderProcessNode {
             override_value: self.override_value.unwrap_or(0.0),
             bipolar: self.bipolar,
         }));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn save_load_round_trip() {
+        let saved = serde_json::json!({
+            "name": "Master",
+            "orientation": "horizontal",
+            "mouse_value": 0.25,
+            "inputs_enabled": true,
+            "mouse_override": "pickup_increase",
+            "bipolar": true,
+            "override_value": 0.75,
+        });
+        let mut a = FaderProcessNode::new(NodeId(1));
+        a.load_data(&saved);
+        assert_eq!(a.save_data().unwrap(), saved);
+        let mut b = FaderProcessNode::new(NodeId(2));
+        b.load_data(&a.save_data().unwrap());
+        assert_eq!(b.save_data().unwrap(), saved);
     }
 }
