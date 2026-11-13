@@ -330,6 +330,9 @@ impl LightBeatApp {
                     if ui.checkbox(&mut self.show_library, "Add Nodes").changed() {
                         ui.close_menu();
                     }
+                    if ui.checkbox(&mut self.show_setup, "Setup").changed() {
+                        ui.close_menu();
+                    }
                     if ui.checkbox(&mut self.show_dmx_monitor, "DMX Monitor").changed() {
                         ui.close_menu();
                     }
@@ -347,11 +350,6 @@ impl LightBeatApp {
                         }
                         if changed { self.config.save(); }
                     });
-                });
-                ui.menu_button("Window", |ui| {
-                    if ui.checkbox(&mut self.show_setup, "Setup…").changed() {
-                        ui.close_menu();
-                    }
                 });
                 ui.menu_button("Help", |ui| {
                     if ui.button(format!("About LightBeat {}", version::version())).clicked() {
