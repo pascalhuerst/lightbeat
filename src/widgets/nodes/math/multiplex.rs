@@ -3,8 +3,7 @@ use std::any::Any;
 use egui::{self, Color32, Ui};
 
 use crate::engine::nodes::math::multiplex::{
-    MUX_DEFAULT_SLOTS, MUX_MAX_SLOTS, MUX_MIN_SLOTS, MUX_TYPE_NAMES, MuxDisplay, SelectMode,
-    clamp_slots, type_from_index, type_to_index,
+    MUX_DEFAULT_SLOTS, MuxDisplay, SelectMode, clamp_slots, type_to_index,
 };
 use crate::engine::types::*;
 use crate::theme;
@@ -14,16 +13,6 @@ use crate::widgets::nodes::types::UiPortDef;
 fn push_type(shared: &SharedState, port_type: PortType) {
     let mut s = shared.lock().unwrap();
     s.pending_params.push((0, ParamValue::Choice(type_to_index(port_type))));
-}
-
-fn push_slots(shared: &SharedState, slots: usize) {
-    let mut s = shared.lock().unwrap();
-    s.pending_params.push((1, ParamValue::Int(slots as i64)));
-}
-
-fn push_select_mode(shared: &SharedState, mode: SelectMode) {
-    let mut s = shared.lock().unwrap();
-    s.pending_params.push((2, ParamValue::Choice(mode.to_index())));
 }
 
 // ---------------------------------------------------------------------------
@@ -120,27 +109,6 @@ impl NodeWidget for MultiplexerWidget {
         }
     }
 
-    fn show_inspector(&mut self, ui: &mut Ui) {
-        self.sync_from_display();
-        ui.horizontal(|ui| {
-            ui.label("Select:");
-            let mut mode = self.select_mode;
-            egui::ComboBox::from_id_salt(("mux_sel_mode", self.id.0))
-                .selected_text(mode.label())
-                .show_ui(ui, |ui| {
-                    for m in SelectMode::ALL {
-                        if ui.selectable_label(mode == m, m.label()).clicked() {
-                            mode = m;
-                        }
-                    }
-                });
-            if mode != self.select_mode {
-                self.select_mode = mode;
-                push_select_mode(&self.shared, mode);
-            }
-        });
-    }
-
     fn as_any_mut(&mut self) -> &mut dyn Any { self }
 }
 
@@ -231,54 +199,6 @@ impl NodeWidget for DemultiplexerWidget {
         } else {
             ui.colored_label(theme::TEXT_DIM, format!("in → out{}", sel));
         }
-    }
-
-    fn show_inspector(&mut self, ui: &mut Ui) {
-        self.sync_from_display();
-        ui.label(egui::RichText::new("Type").strong());
-        let cur = type_to_index(self.port_type);
-        let mut new_idx = cur;
-        egui::ComboBox::from_id_salt(("demux_type", self.id.0))
-            .selected_text(MUX_TYPE_NAMES[cur])
-            .show_ui(ui, |ui| {
-                for (i, label) in MUX_TYPE_NAMES.iter().enumerate() {
-                    ui.selectable_value(&mut new_idx, i, *label);
-                }
-            });
-        if new_idx != cur {
-            self.port_type = type_from_index(new_idx);
-            push_type(&self.shared, self.port_type);
-        }
-
-        ui.separator();
-        ui.label(egui::RichText::new("Slots").strong());
-        let mut slots = self.slots;
-        if ui.add(
-            egui::Slider::new(&mut slots, MUX_MIN_SLOTS..=MUX_MAX_SLOTS)
-                .clamping(egui::SliderClamping::Always),
-        ).changed() {
-            self.slots = slots;
-            push_slots(&self.shared, self.slots);
-        }
-
-        ui.separator();
-        ui.horizontal(|ui| {
-            ui.label("Select:");
-            let mut mode = self.select_mode;
-            egui::ComboBox::from_id_salt(("demux_sel_mode", self.id.0))
-                .selected_text(mode.label())
-                .show_ui(ui, |ui| {
-                    for m in SelectMode::ALL {
-                        if ui.selectable_label(mode == m, m.label()).clicked() {
-                            mode = m;
-                        }
-                    }
-                });
-            if mode != self.select_mode {
-                self.select_mode = mode;
-                push_select_mode(&self.shared, mode);
-            }
-        });
     }
 
     fn as_any_mut(&mut self) -> &mut dyn Any { self }

@@ -58,13 +58,19 @@ impl NodeWidget for ColorReshapeWidget {
 
     fn show_content(&mut self, _ui: &mut Ui, _zoom: f32) {}
 
+    /// The slider in `show_inspector` changes the ports in the same frame; a
+    /// generic row would only move the engine's copy.
+    fn overridden_param_indices(&self) -> Vec<usize> {
+        if self.kind.has_stops() { vec![0] } else { Vec::new() }
+    }
+
     fn show_inspector(&mut self, ui: &mut Ui) {
         if !self.kind.has_stops() {
             return;
         }
         let mut stops = self.stops;
         ui.horizontal(|ui| {
-            ui.label("Stops:");
+            ui.label("Stops");
             if ui.add(egui::Slider::new(&mut stops, MIN_STOPS..=MAX_STOPS)).changed() {
                 self.stops = stops;
                 self.shared.lock().unwrap().pending_params.push((0, ParamValue::Int(stops as i64)));
