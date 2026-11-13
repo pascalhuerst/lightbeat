@@ -72,7 +72,10 @@ Updated as items are implemented. Items not listed here are open.
 | 6.6 | done | 2fa60ac: Trigger Hold picks its duration input by being wired (a wired 0 is 1 tick). A project that already promotes one of the two keeps it and can switch it off |
 | 7 (ports, params) | done | f295d56 trigger, 84bdebf in / out, 582b2de gradient, 5578f75 amount, cf4e9cb Lifetime, 981369a numbered from 1, 0d9a2c3 Trigger Hold and Smoothing in real ms (same numbers as the ticks before). Promoted or snapshot settings follow through `RENAMED_SETTINGS` (temporary). Kept: Gain, the Oscillator's amp, stack opacity, XY Pad x / y, Scope's Time/Div |
 | 7.3 | done | edf6362: `bpm` and `peers` appended to the Link Clock |
-| 5.3, 7.1, 7.2, 7.4 | open | in progress |
+| 5.3 | partly, by choice | bdafa3f: an "Operation" setting turns Add/Sub/Mul/Div, the compares, AND/OR/XOR and the three Consts into each other in place. No node was removed: Sin/Cos, Gradient Stops, the banks and the scale family stay (the banks wait for buses). NOT and Level Meter/Gauge have no switch |
+| 7.1 | done | 85a730b: Envelope is (in, gate), Transition (in, trigger, phase); `PROJECT_VERSION` 3 carries saved wires over |
+| 7.2 | dropped | port types are strict (`compatible_with`), so retyping `play` or the Toggle Bank outputs would drop saved wires |
+| 7.4 | done | 35c4dd8, 238105a: Button (mode, input, mouse override, reset) and Fader (orientation, input, mouse override, bipolar) settings are params; old files keep theirs |
 
 ---
 
