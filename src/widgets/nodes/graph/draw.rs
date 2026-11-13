@@ -85,7 +85,6 @@ pub(super) fn title_toggle_rect(node_rect: Rect, title_height: f32, zoom: f32) -
     Rect::from_center_size(Pos2::new(cx, cy), Vec2::splat(btn_size))
 }
 
-#[allow(clippy::too_many_arguments)]
 pub(super) fn draw_node_chrome(
     painter: &Painter,
     title: &str,

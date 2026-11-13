@@ -158,7 +158,6 @@ pub struct GraphLevel {
     /// Rendered behind nodes, draggable/resizable, with title and notes.
     /// No engine semantics; nodes "in" a frame are just nodes whose rect
     /// overlaps the frame's rect.
-    #[allow(dead_code)]
     pub frames: Vec<GraphFrame>,
 }
 
@@ -198,7 +197,6 @@ pub enum MacroRequest {
 }
 
 /// A copied node snapshot for clipboard operations.
-#[allow(dead_code)]
 struct ClipboardNode {
     type_name: String,
     size: Option<Vec2>,
@@ -524,7 +522,6 @@ impl NodeGraph {
         (level.nodes[index].as_ref(), &level.states[index])
     }
 
-    #[allow(dead_code)]
     pub fn set_node_size(&mut self, index: usize, size: egui::Vec2) {
         self.active_mut().states[index].size_override = Some(size);
     }

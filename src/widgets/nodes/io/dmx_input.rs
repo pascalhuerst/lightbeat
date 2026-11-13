@@ -199,7 +199,6 @@ impl DmxInputWidget {
 
 /// One source of an output: where it is read and how. Returns whether it
 /// changed and whether Learn was pressed.
-#[allow(clippy::too_many_arguments)]
 fn source_row(
     ui: &mut Ui,
     salt: (u32, usize),

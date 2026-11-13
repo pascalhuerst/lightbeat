@@ -81,7 +81,6 @@ pub struct SavedNode {
     pub size: Option<[f32; 2]>,
     pub params: Vec<SavedParam>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[allow(dead_code)]
     pub data: Option<serde_json::Value>,
     /// Inner graph for Subgraph nodes (recursive).
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -119,7 +118,6 @@ pub enum SavedParamValue {
 }
 
 impl SavedParamValue {
-    #[allow(dead_code)]
     fn as_f64(&self) -> f64 {
         match self {
             SavedParamValue::Float(v) => *v,
@@ -319,7 +317,6 @@ fn connections_for_current_layout(project: &ProjectFile) -> Vec<SavedConnection>
     connections
 }
 
-#[allow(dead_code)]
 pub fn load_graph(graph: &mut NodeGraph, project: &ProjectFile) -> Vec<usize> {
     let mut indices = Vec::new();
 

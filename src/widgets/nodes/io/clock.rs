@@ -8,7 +8,6 @@ use crate::theme;
 use crate::widgets::nodes::node::NodeWidget;
 use crate::widgets::nodes::types::UiPortDef;
 
-#[allow(dead_code)]
 const BEAT_FLASH_MS: u128 = 80;
 
 pub struct ClockWidget {
