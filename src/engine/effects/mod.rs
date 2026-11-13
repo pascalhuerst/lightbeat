@@ -118,7 +118,8 @@ mod tests {
 
     fn pixel(store: &SharedObjectStore, object: u32, i: usize) -> Rgb {
         let s = store.lock().unwrap();
-        s.objects.iter().find(|o| o.id == object).unwrap().channels[0].pixel(i)
+        let v = &s.objects.iter().find(|o| o.id == object).unwrap().channels[0].values;
+        Rgb::new(v[i * 3], v[i * 3 + 1], v[i * 3 + 2])
     }
 
     fn stack_config(name: &str, layers: &[u64], targets: &[(u32, f32, f32)]) -> serde_json::Value {

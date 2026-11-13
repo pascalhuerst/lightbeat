@@ -184,10 +184,6 @@ pub struct Channel {
     pub values: Vec<f32>,
 }
 
-// The accessors for dimmer, pan/tilt, raw and pixel channels are the fixture
-// API that moving heads and the space concept will use; several are not
-// called yet.
-#[allow(dead_code)]
 impl Channel {
     pub fn dimmer(name: impl Into<String>) -> Self {
         Self {
@@ -213,15 +209,6 @@ impl Channel {
             kind: ChannelKind::PanTilt { fine },
             offset: 0,
             values: vec![0.0, 0.0], // pan, tilt
-        }
-    }
-
-    pub fn raw(name: impl Into<String>, count: usize) -> Self {
-        Self {
-            name: name.into(),
-            kind: ChannelKind::Raw { count },
-            offset: 0,
-            values: vec![0.0; count],
         }
     }
 
@@ -254,36 +241,7 @@ impl Channel {
             }
     }
 
-    /// Get one pixel of an LED strip.
-    pub fn pixel(&self, index: usize) -> Rgb {
-        if let ChannelKind::LedStrip { count, .. } = self.kind
-            && index < count {
-                let base = index * 3;
-                return Rgb::new(self.values[base], self.values[base + 1], self.values[base + 2]);
-            }
-        Rgb::new(0.0, 0.0, 0.0)
-    }
-
-    /// Clear all pixels (set to black).
-    pub fn clear_pixels(&mut self) {
-        if matches!(self.kind, ChannelKind::LedStrip { .. }) {
-            for v in &mut self.values {
-                *v = 0.0;
-            }
-        }
-    }
-
     // -- Typed accessors --
-
-    /// Get dimmer intensity (0.0–1.0).
-    pub fn dimmer_value(&self) -> f32 {
-        self.values[0]
-    }
-
-    /// Set dimmer intensity.
-    pub fn set_dimmer(&mut self, v: f32) {
-        self.values[0] = v.clamp(0.0, 1.0);
-    }
 
     /// Get color as Rgb.
     pub fn color_rgb(&self) -> Rgb {
@@ -295,22 +253,6 @@ impl Channel {
         self.values[0] = c.r;
         self.values[1] = c.g;
         self.values[2] = c.b;
-    }
-
-    /// Get pan value (0.0–1.0).
-    pub fn pan(&self) -> f32 {
-        self.values[0]
-    }
-
-    /// Get tilt value (0.0–1.0).
-    pub fn tilt(&self) -> f32 {
-        self.values[1]
-    }
-
-    /// Set pan and tilt.
-    pub fn set_pan_tilt(&mut self, pan: f32, tilt: f32) {
-        self.values[0] = pan.clamp(0.0, 1.0);
-        self.values[1] = tilt.clamp(0.0, 1.0);
     }
 
     /// Write this channel's current value(s) into a DMX buffer at the correct offset.
@@ -440,7 +382,7 @@ mod tests {
     #[test]
     fn dimmer_writes_correct_channel() {
         let mut ch = Channel::dimmer("Dim");
-        ch.set_dimmer(0.5);
+        ch.values[0] = 0.5;
         let mut buf = [0u8; 512];
         ch.write_dmx(&mut buf, 10);
         assert_eq!(buf[10], 128); // 0.5 * 255 ≈ 128
@@ -461,7 +403,8 @@ mod tests {
     #[test]
     fn pan_tilt_fine_writes_four_channels() {
         let mut ch = Channel::pan_tilt("PT", true);
-        ch.set_pan_tilt(0.5, 1.0);
+        ch.values[0] = 0.5;
+        ch.values[1] = 1.0;
         let mut buf = [0u8; 512];
         ch.write_dmx(&mut buf, 0);
         // pan=0.5 → 32768 → coarse=128, fine=0

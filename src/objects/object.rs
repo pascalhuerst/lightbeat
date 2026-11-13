@@ -103,9 +103,9 @@ mod tests {
             ..Default::default()
         });
 
-        obj.channels.iter_mut().find(|c| c.name == "Dimmer").unwrap().set_dimmer(1.0);
+        obj.channels.iter_mut().find(|c| c.name == "Dimmer").unwrap().values[0] = 1.0;
         obj.channels.iter_mut().find(|c| c.name == "Color").unwrap().set_color(Rgb::new(1.0, 0.0, 0.5));
-        obj.channels.iter_mut().find(|c| c.name == "Pan/Tilt").unwrap().set_pan_tilt(0.5, 0.75);
+        obj.channels.iter_mut().find(|c| c.name == "Pan/Tilt").unwrap().values = vec![0.5, 0.75];
 
         let mut buf = [0u8; 512];
         obj.write_dmx(&mut buf);
