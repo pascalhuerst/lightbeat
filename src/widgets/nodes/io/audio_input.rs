@@ -270,7 +270,7 @@ impl NodeWidget for AudioInputWidget {
                                 self.set_lead(param, lead - step);
                             }
                             let mut ms = lead;
-                            let drag = egui::DragValue::new(&mut ms).speed(0.5).range(-LEAD_LIMIT_MS..=LEAD_LIMIT_MS).suffix(" ms").fixed_decimals(0);
+                            let drag = setup_ui::unit_drag(&mut ms, setup_ui::Unit::Milliseconds).speed(0.5).range(-LEAD_LIMIT_MS..=LEAD_LIMIT_MS).fixed_decimals(0);
                             if ui.add(drag).on_hover_text(hint).changed() {
                                 self.set_lead(param, ms);
                             }

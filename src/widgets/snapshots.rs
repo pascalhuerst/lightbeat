@@ -138,7 +138,7 @@ pub fn show(ui: &mut Ui, node: &dyn NodeWidget) {
             ui.add_enabled_ui(!fade_on, |ui| {
                 ui.label("Fade time");
                 let mut t = set.fade_time;
-                if ui.add(egui::DragValue::new(&mut t).range(0.0..=60.0).speed(0.01).suffix(" s")).changed() {
+                if ui.add(setup_ui::unit_drag(&mut t, setup_ui::Unit::Seconds).range(0.0..=60.0).speed(0.01)).changed() {
                     edit = Some(Edit::FadeTime(t));
                 }
             });

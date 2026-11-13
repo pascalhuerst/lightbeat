@@ -140,6 +140,33 @@ pub fn choice_combo<T: PartialEq + Copy>(
 }
 
 // ---------------------------------------------------------------------------
+// Numbers
+// ---------------------------------------------------------------------------
+
+/// The units a number field can carry, written the same way everywhere. Add
+/// kelvin or percent here when a field needs them.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Unit {
+    Milliseconds,
+    Seconds,
+}
+
+impl Unit {
+    pub fn suffix(self) -> &'static str {
+        match self {
+            Unit::Milliseconds => " ms",
+            Unit::Seconds => " s",
+        }
+    }
+}
+
+/// A drag field with a unit after the number. Returns the `DragValue` so the
+/// caller can still set range, speed and decimals.
+pub fn unit_drag<N: egui::emath::Numeric>(value: &mut N, unit: Unit) -> egui::DragValue<'_> {
+    egui::DragValue::new(value).suffix(unit.suffix())
+}
+
+// ---------------------------------------------------------------------------
 // Text
 // ---------------------------------------------------------------------------
 
@@ -348,6 +375,12 @@ mod tests {
         assert!(!apply_move(&mut v, 0, Move::Up));
         assert!(!apply_move(&mut v, 1, Move::Down));
         assert_eq!(v, [1, 2]);
+    }
+
+    #[test]
+    fn units_are_written_with_a_space_before_them() {
+        assert_eq!(Unit::Milliseconds.suffix(), " ms");
+        assert_eq!(Unit::Seconds.suffix(), " s");
     }
 
     #[test]
