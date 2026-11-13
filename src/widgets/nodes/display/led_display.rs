@@ -38,10 +38,8 @@ impl NodeWidget for LedDisplayWidget {
     fn type_name(&self) -> &'static str { "LED Display" }
     fn description(&self) -> &'static str { "Shows a value (0..1) as a glowing LED. Name appears above the LED and on parent subgraph nodes." }
 
-    fn ui_inputs(&self) -> Vec<UiPortDef> {
-        vec![UiPortDef::from_def(&PortDef::new("in", PortType::Any))]
-    }
-    fn ui_outputs(&self) -> Vec<UiPortDef> { vec![] }
+    fn ui_inputs(&self) -> Vec<UiPortDef> { UiPortDef::from_defs(&crate::engine::nodes::display::led_display::ports().0) }
+    fn ui_outputs(&self) -> Vec<UiPortDef> { UiPortDef::from_defs(&crate::engine::nodes::display::led_display::ports().1) }
 
     fn layout(&self) -> NodeLayout { NodeLayout::compact().with_side_inset(PORT_RADIUS + 2.0) }
     fn min_width(&self) -> f32 { 80.0 }

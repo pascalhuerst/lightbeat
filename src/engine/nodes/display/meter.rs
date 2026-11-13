@@ -11,6 +11,15 @@ pub enum MeterKind {
     Gauge,
 }
 
+/// The ports, stated once: the widget builds its own from this, so the two
+/// halves cannot disagree.
+pub fn ports() -> (Vec<PortDef>, Vec<PortDef>) {
+    (
+        vec![PortDef::new("in", PortType::Any)],
+        vec![],
+    )
+}
+
 impl MeterKind {
     pub fn type_name(self) -> &'static str {
         match self {
@@ -45,6 +54,7 @@ pub struct MeterProcessNode {
 
 impl MeterProcessNode {
     pub fn new(id: NodeId, kind: MeterKind) -> Self {
+        let (inputs, _) = ports();
         Self {
             id,
             kind,
@@ -54,7 +64,7 @@ impl MeterProcessNode {
             min: 0.0,
             max: 1.0,
             vertical: kind == MeterKind::Level,
-            inputs: vec![PortDef::new("in", PortType::Any)],
+            inputs,
         }
     }
 }

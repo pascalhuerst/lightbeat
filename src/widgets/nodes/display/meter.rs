@@ -186,10 +186,8 @@ impl NodeWidget for MeterWidget {
         }
     }
 
-    fn ui_inputs(&self) -> Vec<UiPortDef> {
-        vec![UiPortDef::from_def(&PortDef::new("in", PortType::Any))]
-    }
-    fn ui_outputs(&self) -> Vec<UiPortDef> { vec![] }
+    fn ui_inputs(&self) -> Vec<UiPortDef> { UiPortDef::from_defs(&crate::engine::nodes::display::meter::ports().0) }
+    fn ui_outputs(&self) -> Vec<UiPortDef> { UiPortDef::from_defs(&crate::engine::nodes::display::meter::ports().1) }
 
     fn layout(&self) -> NodeLayout { NodeLayout::compact().with_side_inset(PORT_RADIUS + 2.0) }
     fn min_width(&self) -> f32 {
