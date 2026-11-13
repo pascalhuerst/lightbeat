@@ -38,7 +38,7 @@ impl LightBeatApp {
         self.input_controllers.reap_lost_sessions();
 
         // "Add Nodes" side panel (left) — unified node-registry + macro library.
-        if self.show_library {
+        if self.show_add_nodes {
             egui::SidePanel::left("add_nodes_panel")
                 .default_width(220.0)
                 .show(ctx, |ui| {
@@ -101,6 +101,19 @@ impl LightBeatApp {
         if title != self.last_window_title {
             ctx.send_viewport_cmd(egui::ViewportCommand::Title(title.clone()));
             self.last_window_title = title;
+        }
+
+        // Remember which panels are open; only written when one changed.
+        let panels_changed = self.config.show_add_nodes != self.show_add_nodes
+            || self.config.show_setup != self.show_setup
+            || self.config.show_dmx_monitor != self.show_dmx_monitor
+            || self.config.setup_tab != self.setup_active_tab;
+        if panels_changed {
+            self.config.show_add_nodes = self.show_add_nodes;
+            self.config.show_setup = self.show_setup;
+            self.config.show_dmx_monitor = self.show_dmx_monitor;
+            self.config.setup_tab = self.setup_active_tab;
+            self.config.save();
         }
 
         // Track window size / maximized state so on_exit can persist them.
@@ -329,7 +342,7 @@ impl LightBeatApp {
                     }
                 });
                 ui.menu_button("View", |ui| {
-                    if ui.checkbox(&mut self.show_library, "Add Nodes").changed() {
+                    if ui.checkbox(&mut self.show_add_nodes, "Add Nodes").changed() {
                         ui.close_menu();
                     }
                     if ui.checkbox(&mut self.show_setup, "Setup").changed() {

@@ -187,9 +187,9 @@ impl LightBeatApp {
     }
 
     fn view_state(&self) -> project::ProjectViewState {
-        project::ProjectViewState {
-            show_library: self.show_library,
-        }
+        // Panel visibility lives in settings.json now; the field is only kept
+        // (at its old default) because the project format still has it.
+        project::ProjectViewState { show_library: true }
     }
 
     pub(crate) fn save_project_as(&mut self, ctx: &egui::Context) {
@@ -391,13 +391,6 @@ impl LightBeatApp {
         self.send_load_data_recursive(&proj.nodes, &indices, vec![]);
 
         self.graph.restore_view_state(&view);
-
-        // Restore persisted app-level view toggles (only when present —
-        // older projects without this field keep whatever the user has
-        // open at the moment, instead of jumping back to defaults).
-        if let Some(v) = &proj.view {
-            self.show_library = v.show_library;
-        }
     }
 
     pub(crate) fn load_project_from(&mut self, path: &std::path::Path) {

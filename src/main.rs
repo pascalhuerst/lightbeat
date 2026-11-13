@@ -148,7 +148,7 @@ struct LightBeatApp {
     /// Portal Sends publish here by name; Portal Receives read.
     portals: engine::nodes::meta::portal::SharedPortalRegistry,
     library: LibraryManager,
-    show_library: bool,
+    show_add_nodes: bool,
     library_search: String,
     save_macro_dialog: Option<SaveMacroDialog>,
     project_undoer: egui::util::undoer::Undoer<project::ProjectFile>,
@@ -169,6 +169,8 @@ impl LightBeatApp {
         if config.msaa_samples > 0 {
             cc.egui_ctx.tessellation_options_mut(|o| o.feathering = false);
         }
+        let (open_add_nodes, open_setup, open_monitor, setup_tab) =
+            (config.show_add_nodes, config.show_setup, config.show_dmx_monitor, config.setup_tab);
         let beat_clock = BeatClock::new(4.0);
         let snapshot = beat_clock.snapshot();
         let dmx_shared = dmx_io::new_shared_dmx_state();
@@ -228,9 +230,9 @@ impl LightBeatApp {
             last_window_title: String::new(),
             close_discarded: false,
             recover_prompt: None,
-            show_dmx_monitor: false,
-            show_setup: false,
-            setup_active_tab: SetupTab::Interfaces,
+            show_dmx_monitor: open_monitor,
+            show_setup: open_setup,
+            setup_active_tab: setup_tab,
             dmx_monitor: widgets::dmx_monitor::DmxMonitor::new(),
             dmx_shared,
             object_store,
@@ -253,7 +255,7 @@ impl LightBeatApp {
                 engine::nodes::meta::portal::PortalRegistry::default(),
             )),
             library: LibraryManager::new(macros::default_library_root()),
-            show_library: true,
+            show_add_nodes: open_add_nodes,
             library_search: String::new(),
             save_macro_dialog: None,
             project_undoer: egui::util::undoer::Undoer::default(),

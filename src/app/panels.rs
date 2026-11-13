@@ -5,8 +5,9 @@ use crate::app::macros::MacroDragPayload;
 use eframe::egui;
 
 /// Active tab in the consolidated Setup window.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 pub(crate) enum SetupTab {
+    #[default]
     Interfaces,
     FixtureTemplates,
     Objects,
