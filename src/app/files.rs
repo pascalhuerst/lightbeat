@@ -171,7 +171,7 @@ impl LightBeatApp {
         project.view = Some(self.view_state());
         match serde_json::to_string_pretty(&project) {
             Ok(json) => {
-                if let Err(e) = std::fs::write(&path, json) {
+                if let Err(e) = crate::paths::write_atomic(&path, json) {
                     self.report_error(format!("Autosave failed ({}): {e}", path.display()));
                 }
             }
@@ -479,7 +479,6 @@ impl LightBeatApp {
     }
 }
 
-/// Inline inspector for a selected decorative frame.
 /// True when `a`'s modification time is strictly newer than `b`'s. Missing
 /// metadata on either side yields `false` — we don't want to false-positive
 /// into prompting the user when we can't actually compare.
