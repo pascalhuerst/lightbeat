@@ -156,7 +156,7 @@ impl NodeWidget for DemultiplexerWidget {
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { "Demultiplexer" }
     fn description(&self) -> &'static str {
-        "Routes a typed input to one of N outputs based on the `select` index. Unselected outputs emit zero. Port type auto-detected from the first connection; slot count set in the inspector."
+        "Routes a typed input to one of N outputs. In Index select mode (default) `select` is an integer (rounded, clamped); in Phase select mode it is a 0..1 phase swept across the outputs. Unselected outputs emit zero. Port type auto-detected from the first connection; slot count set in the inspector."
     }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> {

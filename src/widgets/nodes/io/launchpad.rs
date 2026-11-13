@@ -62,7 +62,7 @@ impl NodeWidget for LaunchpadWidget {
     fn description(&self) -> &'static str {
         "Novation Launchpad S dedicated node. 64 grid pads (velocity-sensitive) \
          + 8 side buttons + 8 top mode buttons each expose an output and an \
-         LED-feedback input. LED inputs currently drive red brightness."
+         LED-feedback input. Each LED input takes a color; the Launchpad S can only show red and green (4 levels each, so amber and orange work), blue is ignored."
     }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> {

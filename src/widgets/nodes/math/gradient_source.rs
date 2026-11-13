@@ -158,7 +158,7 @@ impl NodeWidget for GradientSourceWidget {
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { "Gradient Source" }
     fn description(&self) -> &'static str {
-        "Authors an 8-stop gradient (color + alpha + position per stop). Output feeds Group Output and any other Gradient-accepting node."
+        "Authors an 8-stop gradient (color + alpha + position per stop). Wire it into an effect or any other node that takes a gradient."
     }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> { vec![] }

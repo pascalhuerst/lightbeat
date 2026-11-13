@@ -132,7 +132,7 @@ impl NodeWidget for AudioInputWidget {
         "Audio Input"
     }
     fn description(&self) -> &'static str {
-        "Outputs analyzer values from the selected audio input. Add analyzers in the Audio Inputs window."
+        "Outputs analyzer values from the selected audio input. Add analyzers in Setup, Audio Inputs."
     }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> {
