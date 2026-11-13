@@ -243,6 +243,223 @@ mod tests {
     }
 
     #[test]
+    fn operators_keep_their_precedence_and_associativity() {
+        assert_eq!(eval("1 + 2 * 3", 0.0), 7.0);
+        assert_eq!(eval("(1 + 2) * 3", 0.0), 9.0);
+        assert_eq!(eval("10 - 4 - 3", 0.0), 3.0, "minus is left associative");
+        assert_eq!(eval("64 / 8 / 2", 0.0), 4.0, "divide is left associative");
+        assert_eq!(eval("2 ^ 3 ^ 2", 0.0), 512.0, "power is right associative");
+        assert_eq!(eval("2 * 3 ^ 2", 0.0), 18.0, "power binds tighter than times");
+        assert_eq!(eval("7 % 4 * 2", 0.0), 6.0, "rem and times are equals, left to right");
+        assert_eq!(eval("1 + 7 % 4", 0.0), 4.0);
+        assert_eq!(eval("1/2", 0.0), 0.5, "literals are floats");
+        assert_eq!(eval("-7 % 4", 0.0), -3.0, "rem keeps the sign of the left side");
+        assert_eq!(eval("7.5 % 2", 0.0), 1.5);
+    }
+
+    #[test]
+    fn unary_signs_bind_between_times_and_power() {
+        assert_eq!(eval("-x", 3.0), -3.0);
+        assert_eq!(eval("--x", 3.0), 3.0);
+        assert_eq!(eval("+x", 3.0), 3.0);
+        assert_eq!(eval("-x^2", 3.0), -9.0, "power first, then the sign");
+        assert_eq!(eval("(-x)^2", 3.0), 9.0);
+        assert_eq!(eval("2^-x", 3.0), 0.125);
+        assert_eq!(eval("2^-x^2", 1.0), 0.5, "the sign covers the whole power on its right");
+        assert_eq!(eval("2*-x", 3.0), -6.0);
+        assert_eq!(eval("5 - -x", 3.0), 8.0);
+        assert_eq!(eval("-2*3", 0.0), -6.0);
+        assert_eq!(eval("-x + 1", 3.0), -2.0);
+        assert_eq!(eval("-(x + 1)", 3.0), -4.0);
+        assert_eq!(eval("-abs(x)", 3.0), -3.0);
+    }
+
+    #[test]
+    fn numbers_are_read_like_before() {
+        assert_eq!(eval("1.", 0.0), 1.0);
+        assert_eq!(eval("1.5e2", 0.0), 150.0);
+        assert_eq!(eval("2E-2", 0.0), 0.02);
+        assert_eq!(eval("1e+1", 0.0), 10.0);
+        assert_eq!(eval("0.25 * 4", 0.0), 1.0);
+        assert_eq!(eval("007", 0.0), 7.0);
+        assert!(compile(".5").is_err(), "a number needs a digit before the point");
+        assert!(compile("1e").is_err());
+        assert!(compile("1.2.3").is_err());
+        assert!(compile("2x").is_err(), "no implicit multiplication");
+    }
+
+    #[test]
+    fn whitespace_is_free_between_tokens() {
+        assert_eq!(eval("  2 *\t( x\n+ 1 )  ", 3.0), 8.0);
+        assert_eq!(eval("max (1, 2)", 0.0), 2.0, "a space before the bracket of a call");
+        assert_eq!(eval("max(  1 ,2  )", 0.0), 2.0);
+        assert_eq!(eval("y=x", 2.0), 2.0);
+        assert_eq!(eval("Y = x", 2.0), 2.0, "the output name is not case sensitive");
+    }
+
+    #[test]
+    fn constants_have_both_spellings_and_are_case_sensitive() {
+        use std::f32::consts::{E, PI, TAU};
+        assert!((eval("PI", 0.0) - PI).abs() < 1e-6);
+        assert!((eval("pi", 0.0) - PI).abs() < 1e-6);
+        assert!((eval("TAU", 0.0) - TAU).abs() < 1e-6);
+        assert!((eval("tau", 0.0) - TAU).abs() < 1e-6);
+        assert!((eval("E", 0.0) - E).abs() < 1e-6);
+        assert!((eval("e", 0.0) - E).abs() < 1e-6);
+        assert!((eval("e^1", 0.0) - E).abs() < 1e-6);
+        assert_eq!(eval("2e", 0.0), 0.0, "2e is not a product");
+        let Err(msg) = compile("Pi") else { panic!("Pi is not a constant") };
+        assert!(msg.contains("unknown name 'Pi'"), "{msg}");
+        let Err(msg) = compile("X") else { panic!("X is not the input") };
+        assert!(msg.contains("unknown name 'X'"), "{msg}");
+    }
+
+    #[test]
+    fn every_function_means_what_it_says() {
+        let one: [(&str, f64, f64); 22] = [
+            ("sin", 0.5, 0.5f64.sin()),
+            ("cos", 0.5, 0.5f64.cos()),
+            ("tan", 0.5, 0.5f64.tan()),
+            ("asin", 0.5, 0.5f64.asin()),
+            ("acos", 0.5, 0.5f64.acos()),
+            ("atan", 0.5, 0.5f64.atan()),
+            ("sinh", 0.5, 0.5f64.sinh()),
+            ("cosh", 0.5, 0.5f64.cosh()),
+            ("tanh", 0.5, 0.5f64.tanh()),
+            ("sqrt", 2.25, 1.5),
+            ("cbrt", 27.0, 3.0),
+            ("exp", 1.0, std::f64::consts::E),
+            ("ln", 8.0, 8f64.ln()),
+            ("log2", 8.0, 3.0),
+            ("log10", 1000.0, 3.0),
+            ("abs", -2.5, 2.5),
+            ("signum", -2.5, -1.0),
+            ("floor", -2.5, -3.0),
+            ("ceil", -2.5, -2.0),
+            ("round", -2.5, -3.0),
+            ("trunc", -2.5, -2.0),
+            ("fract", -2.5, -0.5),
+        ];
+        for (name, arg, want) in one {
+            let got = eval(&format!("{name}(x)"), arg as f32);
+            assert!((f64::from(got) - want).abs() < 1e-5, "{name}({arg}) = {got}, want {want}");
+        }
+        assert_eq!(eval("signum(0)", 0.0), 1.0, "signum of zero follows f64::signum");
+        assert_eq!(eval("round(2.5)", 0.0), 3.0);
+        assert!((eval("atan2(1, 2)", 0.0) - 1f32.atan2(2.0)).abs() < 1e-6);
+        assert_eq!(eval("pow(2, 10)", 0.0), 1024.0);
+        assert_eq!(eval("pow(x, 0.5)", 16.0), 4.0);
+        assert_eq!(eval("clamp(x, 0, 1)", -3.0), 0.0);
+        assert_eq!(eval("clamp(x, 0, 1)", 0.5), 0.5);
+        assert_eq!(eval("clamp(x, 0, 1)", 3.0), 1.0);
+        assert_eq!(eval("max(1)", 0.0), 1.0);
+        assert_eq!(eval("max(1, 5, 3)", 0.0), 5.0);
+        assert_eq!(eval("min(4, 2, 3, 9)", 0.0), 2.0);
+        assert_eq!(eval("max(min(x, 2), -1) * 2", 7.0), 4.0, "calls nest and take expressions");
+        assert_eq!(eval("sqrt(abs(x)) ^ 2", -9.0), 9.0);
+    }
+
+    #[test]
+    fn functions_check_their_argument_counts() {
+        for (formula, why) in [
+            ("sin()", ""),
+            ("atan2(1)", "atan2 takes 2"),
+            ("atan2(1, 2, 3)", "atan2 takes 2"),
+            ("pow(1)", "pow takes 2"),
+            ("clamp(1, 2, 3, 4)", "clamp takes 3"),
+            ("abs(1, 2)", "abs takes 1"),
+            ("max()", ""),
+            ("min()", ""),
+            ("max(1,)", ""),
+            ("max(,1)", ""),
+        ] {
+            let Err(msg) = compile(formula) else { panic!("{formula:?} should not compile") };
+            assert!(msg.contains(why), "{formula:?}: {msg}");
+            assert!(!msg.is_empty());
+        }
+    }
+
+    #[test]
+    fn names_are_case_sensitive_and_checked_in_evaluation_order() {
+        let Err(msg) = compile("SIN(x)") else { panic!("SIN is not sin") };
+        assert!(msg.contains("unknown function 'SIN'"), "{msg}");
+        let Err(msg) = compile("frob(foo)") else { panic!("should not compile") };
+        assert!(msg.contains("unknown name 'foo'"), "arguments are looked at first: {msg}");
+        let Err(msg) = compile("a + b") else { panic!("should not compile") };
+        assert!(msg.contains("unknown name 'a'"), "left to right: {msg}");
+        let Err(msg) = compile("x + frob(1) + foo") else { panic!("should not compile") };
+        assert!(msg.contains("unknown function 'frob'"), "left to right: {msg}");
+        let Err(msg) = compile("foo + (") else { panic!("should not compile") };
+        assert!(!msg.contains("unknown name"), "a syntax error is found before a name: {msg}");
+        let Err(msg) = compile("x (2)") else { panic!("should not compile") };
+        assert!(msg.contains("unknown function 'x'"), "a name before a bracket is a call: {msg}");
+        assert_eq!(eval("_a", 1.0), 0.0);
+        let Err(msg) = compile("x_1") else { panic!("should not compile") };
+        assert!(msg.contains("unknown name 'x_1'"), "{msg}");
+    }
+
+    #[test]
+    fn syntax_errors_are_errors() {
+        for formula in [
+            "2*", "*2", "(", ")", "(1", "1)", "()", "1 2", "x x", "1 +* 2", "2 ** 3", "sin(", "sin(x", "sin x",
+            "1,2", "max(1 2)", "(1,2)", "x!", "$", "1 = 2", "x = = 2", "2(3)", "x y = 3", "3 = x", "+", "-", "^2",
+        ] {
+            let Err(msg) = compile(formula) else { panic!("{formula:?} should not compile") };
+            assert!(!msg.is_empty(), "{formula:?}");
+            assert_eq!(eval(formula, 5.0), 0.0, "{formula:?}");
+        }
+    }
+
+    #[test]
+    fn a_double_equals_is_not_an_assignment() {
+        assert!(compile("y == 1").is_err());
+        assert!(compile("a = x").is_err(), "only y, o and out may stand before the equals sign");
+    }
+
+    #[test]
+    fn results_that_are_not_numbers_output_zero() {
+        assert_eq!(eval("1/0", 0.0), 0.0);
+        assert_eq!(eval("-1/0", 0.0), 0.0);
+        assert_eq!(eval("0/0", 0.0), 0.0);
+        assert_eq!(eval("x % 0", 3.0), 0.0);
+        assert_eq!(eval("sqrt(-1)", 0.0), 0.0);
+        assert_eq!(eval("ln(0)", 0.0), 0.0);
+        assert_eq!(eval("log10(-5)", 0.0), 0.0);
+        assert_eq!(eval("asin(2)", 0.0), 0.0);
+        assert_eq!(eval("exp(1000)", 0.0), 0.0);
+        assert_eq!(eval("pow(0, -1)", 0.0), 0.0);
+        assert_eq!(eval("(-8)^0.5", 0.0), 0.0);
+        assert_eq!(eval("1e300 * 1e300", 0.0), 0.0);
+        assert_eq!(eval("0 * (1/0)", 0.0), 0.0);
+        assert_eq!(eval("max(1/0, 5)", 0.0), 0.0, "the infinity wins and is then dropped");
+        assert_eq!(eval("1/x", 4.0), 0.25);
+        assert_eq!(eval("x", f32::NAN), 0.0);
+    }
+
+    #[test]
+    fn a_formula_can_be_replaced_and_repaired() {
+        let mut n = FormulaProcessNode::new(NodeId(1));
+        n.write_input(0, 2.0);
+        n.load_data(&serde_json::json!({ "formula": "x * (" }));
+        n.process();
+        assert_eq!(n.read_output(0), 0.0);
+        let mut shared = NodeSharedState::new(1, 1);
+        n.update_display(&mut shared);
+        let shown = shared.display.as_ref().and_then(|d| d.downcast_ref::<FormulaDisplay>()).unwrap();
+        assert!(shown.error.is_some());
+        n.load_data(&serde_json::json!({ "formula": "x * 4" }));
+        n.process();
+        assert_eq!(n.read_output(0), 8.0);
+        n.write_input(0, 3.0);
+        n.process();
+        assert_eq!(n.read_output(0), 12.0);
+        n.update_display(&mut shared);
+        let shown = shared.display.as_ref().and_then(|d| d.downcast_ref::<FormulaDisplay>()).unwrap();
+        assert!(shown.error.is_none());
+        assert_eq!(shown.formula, "x * 4");
+    }
+
+    #[test]
     fn the_formula_is_saved() {
         let mut n = FormulaProcessNode::new(NodeId(1));
         n.load_data(&serde_json::json!({ "formula": "x*3" }));
