@@ -592,7 +592,7 @@ pub(crate) fn node_table() -> Vec<NodeDescriptor> {
         |id, s, _| Box::new(ValueDisplayWidget::new(id, s)),
         |id, _| Box::new(ValueDisplayProcessNode::new(id)),
     ));
-    for kind in [MeterKind::Level, MeterKind::Gauge] {
+    for kind in MeterKind::ALL {
         table.push(node(
             "Display", kind.type_name(), (1, 0),
             move |id, s, _| Box::new(MeterWidget::new(id, s, kind)),

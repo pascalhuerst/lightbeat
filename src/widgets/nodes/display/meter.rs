@@ -3,7 +3,7 @@ use egui::{self, Align2, FontId, Pos2, Rect, Sense, Shape, Stroke, Ui, Vec2};
 use crate::engine::nodes::display::meter::{MeterConfig, MeterData, MeterKind};
 use crate::engine::types::*;
 use crate::theme;
-use crate::widgets::nodes::node::{NodeLayout, NodeWidget, PORT_RADIUS, node_identity};
+use crate::widgets::nodes::node::{current_choice, NodeLayout, NodeWidget, PORT_RADIUS, node_identity};
 use crate::widgets::nodes::types::UiPortDef;
 
 /// Seconds a level meter's peak marker stays before it falls.
@@ -176,6 +176,11 @@ fn mix(a: egui::Color32, b: egui::Color32, t: f32) -> egui::Color32 {
 
 impl NodeWidget for MeterWidget {
     node_identity!(by |w| w.kind.type_name());
+    fn follow_params(&mut self) {
+        if let Some(i) = current_choice(&self.shared, 3) {
+            self.kind = MeterKind::from_index(i);
+        }
+    }
     fn description(&self) -> &'static str {
         match self.kind {
             MeterKind::Level => "A segmented level bar for the input, from Min to Max, with a peak marker. Vertical or horizontal.",
