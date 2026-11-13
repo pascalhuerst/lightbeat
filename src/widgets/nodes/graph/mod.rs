@@ -891,6 +891,9 @@ impl NodeGraph {
                 .map(|k| highlighted_link_keys.contains(&k))
                 .unwrap_or(false);
             if portal_peer { any_peer_pulsing = true; }
+            // The margin covers what is drawn outside the rect: port dots, the
+            // selection outline and the pulse of a linked node.
+            if !canvas_rect.intersects(node_rects[i].expand(12.0 + 12.0 * z)) { continue; }
             let inputs = level.nodes[i].ui_inputs_full();
             let outputs = level.nodes[i].ui_outputs();
             let out_highlights: Vec<f32> = (0..outputs.len())
