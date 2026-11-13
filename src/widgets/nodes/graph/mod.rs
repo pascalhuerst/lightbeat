@@ -261,6 +261,8 @@ pub struct NodeGraph {
     /// notice a mode switch (which reshapes the ports) and let go of the
     /// selected wires of that node.
     port_signatures: std::collections::HashMap<NodeId, u64>,
+    /// Last full run of `reconcile_effect_stacks`; dropped when nodes come or go.
+    stack_sig: Option<links::StackSig>,
     /// Port currently under the cursor, and a rolling sample buffer of its
     /// scalar value. Cleared when hover moves to a different port or off
     /// any port. Populated every frame so the tooltip scope has history.
@@ -337,6 +339,7 @@ impl NodeGraph {
             selected_frames: std::collections::HashSet::new(),
             selected_connections: std::collections::HashSet::new(),
             port_signatures: std::collections::HashMap::new(),
+            stack_sig: None,
             hover_port: None,
             hover_samples: std::collections::VecDeque::with_capacity(128),
             frame_drag: None,
@@ -469,6 +472,7 @@ impl NodeGraph {
         if id.0 >= self.next_id {
             self.next_id = id.0 + 1;
         }
+        self.stack_sig = None;
         let level = self.active_mut();
         level.states.push(NodeState::new(id, pos));
         level.nodes.push(node);

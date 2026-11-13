@@ -2,6 +2,7 @@ use super::*;
 
 impl NodeGraph {
     pub(super) fn delete_selected(&mut self) {
+        self.stack_sig = None;
         // Frames have no engine-side counterpart, so just drop them.
         if !self.selected_frames.is_empty() {
             let to_drop = self.selected_frames.clone();
