@@ -329,11 +329,16 @@ impl LightBeatApp {
     /// widgets into the manager, assigning fresh ids, then re-sync the mirror
     /// so all Gradient Sources see the new preset in their dropdowns.
     fn drain_pending_gradient_saves(&mut self) {
-        let pending: Vec<widgets::nodes::math::gradient_source::PendingPresetSave> = {
+        let (pending, updates) = {
             let mut lib = self.gradient_library.lock().unwrap();
-            std::mem::take(&mut lib.pending_saves)
+            (std::mem::take(&mut lib.pending_saves), std::mem::take(&mut lib.pending_updates))
         };
-        if pending.is_empty() { return; }
+        if pending.is_empty() && updates.is_empty() { return; }
+        for up in updates {
+            if let Some(p) = self.gradient_preset_manager.presets.iter_mut().find(|p| p.id == up.id) {
+                p.stops = up.stops;
+            }
+        }
         for req in pending {
             let id = self.gradient_preset_manager.next_id();
             self.gradient_preset_manager.presets.push(

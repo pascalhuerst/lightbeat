@@ -7,6 +7,7 @@ pub mod dmx_monitor;
 pub mod fader;
 pub mod group_context;
 pub mod fixture_list;
+pub mod gradient_editor;
 pub mod gradient_preset_list;
 pub mod group_list;
 pub mod input_controller_list;
