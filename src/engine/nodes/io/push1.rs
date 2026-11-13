@@ -3,9 +3,9 @@
 //! physical control.
 //!
 //! Pads (8x8):
-//!   - Outputs: `pad trig` (1-tick pulse on any pad event), `pad x` (0..7
+//!   - Outputs: `pad trigger` (1-tick pulse on any pad event), `pad x` (0..7
 //!     column), `pad y` (0..7 row), `pad vel` (0..1 velocity; 0 means release).
-//!   - Inputs: `set pad trig` (rising-edge commit), `set pad x`, `set pad y`,
+//!   - Inputs: `set pad trigger` (rising-edge commit), `set pad x`, `set pad y`,
 //!     `set pad color` (0..1 → MIDI velocity 0..127, used as Push 1 palette
 //!     index for the pad LED).
 //!
@@ -13,7 +13,7 @@
 //! the same (trig, col, value) + (set trig, set col, set color) shape.
 //!
 //! Encoders (11 relatives — tempo / swing / track 1..8 / master): grouped as
-//! `enc trig`, `enc idx` (0..10) and `enc value` (accumulated 0..1). No LED
+//! `enc trigger`, `enc idx` (0..10) and `enc value` (accumulated 0..1). No LED
 //! feedback — Push 1 encoders have no rings.
 //!
 //! Touch strip: single 0..1 output.
@@ -260,20 +260,20 @@ fn compute_index(inputs: &[LearnedInput]) -> IndexMap {
 
 fn build_outputs() -> Vec<PortDef> {
     let mut v = Vec::with_capacity(out_idx::COUNT);
-    v.push(PortDef::new("pad trig", PortType::Logic));
+    v.push(PortDef::new("pad trigger", PortType::Logic));
     v.push(PortDef::new("pad x", PortType::Untyped));
     v.push(PortDef::new("pad y", PortType::Untyped));
     v.push(PortDef::new("pad vel", PortType::Untyped));
 
-    v.push(PortDef::new("btn top trig", PortType::Logic));
+    v.push(PortDef::new("btn top trigger", PortType::Logic));
     v.push(PortDef::new("btn top col", PortType::Untyped));
     v.push(PortDef::new("btn top val", PortType::Logic));
 
-    v.push(PortDef::new("btn bot trig", PortType::Logic));
+    v.push(PortDef::new("btn bot trigger", PortType::Logic));
     v.push(PortDef::new("btn bot col", PortType::Untyped));
     v.push(PortDef::new("btn bot val", PortType::Logic));
 
-    v.push(PortDef::new("enc trig", PortType::Logic));
+    v.push(PortDef::new("enc trigger", PortType::Logic));
     v.push(PortDef::new("enc idx", PortType::Untyped));
     v.push(PortDef::new("enc val", PortType::Untyped));
 
@@ -287,16 +287,16 @@ fn build_outputs() -> Vec<PortDef> {
 
 fn build_inputs() -> Vec<PortDef> {
     let mut v = Vec::with_capacity(in_idx::COUNT);
-    v.push(PortDef::new("set pad trig", PortType::Logic));
+    v.push(PortDef::new("set pad trigger", PortType::Logic));
     v.push(PortDef::new("set pad x", PortType::Untyped));
     v.push(PortDef::new("set pad y", PortType::Untyped));
     v.push(PortDef::new("set pad color", PortType::Untyped));
 
-    v.push(PortDef::new("set btn top trig", PortType::Logic));
+    v.push(PortDef::new("set btn top trigger", PortType::Logic));
     v.push(PortDef::new("set btn top col", PortType::Untyped));
     v.push(PortDef::new("set btn top color", PortType::Untyped));
 
-    v.push(PortDef::new("set btn bot trig", PortType::Logic));
+    v.push(PortDef::new("set btn bot trigger", PortType::Logic));
     v.push(PortDef::new("set btn bot col", PortType::Untyped));
     v.push(PortDef::new("set btn bot color", PortType::Untyped));
 

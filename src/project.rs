@@ -336,7 +336,15 @@ pub(crate) const RENAMED_NODES: [(&str, &str); 8] = [
 /// Settings that were renamed: (node, old name, new name). Promoted inputs and
 /// snapshots refer to a setting by name, so they are carried over on load.
 /// Temporary, like `RENAMED_NODES`.
-const RENAMED_SETTINGS: [(&str, &str, &str); 1] = [("Lookup Table", "Input", "Select by")];
+const RENAMED_SETTINGS: [(&str, &str, &str); 7] = [
+    ("Lookup Table", "Input", "Select by"),
+    ("Fill", "Intensity", "amount"),
+    ("Bar", "Intensity", "amount"),
+    ("Wave Loop", "Intensity", "amount"),
+    ("Ripple Burst", "Intensity", "amount"),
+    ("Spark Burst", "Intensity", "amount"),
+    ("Ripple Burst", "Decay", "Lifetime"),
+];
 
 fn current_setting_name<'a>(node: &str, saved: &'a str) -> &'a str {
     RENAMED_SETTINGS
@@ -718,7 +726,7 @@ mod tests {
         load_graph(&mut g, &project);
 
         let ports: Vec<String> = g.node_and_state(0).0.ui_inputs_full().into_iter().map(|p| p.def.name).collect();
-        assert_eq!(ports, ["color", "Position", "Width"]);
+        assert_eq!(ports, ["gradient", "Position", "Width"]);
         let n = g.node_mut(0);
         assert_eq!(n.as_any_mut().downcast_mut::<EffectWidget>().unwrap().stack(), "Record Shelf");
         let shared = n.shared_state().lock().unwrap();
@@ -853,6 +861,21 @@ mod tests {
         assert_eq!(current_setting_name("Lookup Table", "Input"), "Select by");
         assert_eq!(current_setting_name("Lookup Table", "Edge"), "Edge");
         assert_eq!(current_setting_name("Smoothing", "Input"), "Input");
+    }
+
+    #[test]
+    fn the_ripples_decay_is_now_lifetime() {
+        assert_eq!(current_setting_name("Ripple Burst", "Decay"), "Lifetime");
+        assert_eq!(current_setting_name("Envelope", "Decay"), "Decay");
+    }
+
+    #[test]
+    fn the_effects_intensity_is_now_amount() {
+        for effect in ["Fill", "Bar", "Wave Loop", "Ripple Burst", "Spark Burst"] {
+            assert_eq!(current_setting_name(effect, "Intensity"), "amount");
+        }
+        assert_eq!(current_setting_name("Fill", "Width"), "Width");
+        assert_eq!(current_setting_name("Smoothing", "Intensity"), "Intensity");
     }
 
     #[test]

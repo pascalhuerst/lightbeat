@@ -35,7 +35,7 @@ impl NodeWidget for SampleHoldWidget {
 
     fn ui_inputs(&self) -> Vec<UiPortDef> {
         vec![
-            UiPortDef::from_def(&PortDef::new("value", self.value_type.port_type)),
+            UiPortDef::from_def(&PortDef::new("in", self.value_type.port_type)),
             UiPortDef::from_def(&PortDef::new("trigger", PortType::Logic)),
         ]
     }

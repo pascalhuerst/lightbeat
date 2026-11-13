@@ -117,7 +117,7 @@ impl TransitionProcessNode {
             PortDef::new("phase", PortType::Phase),
         ];
         if mode != TransitionMode::Phase {
-            ports.push(PortDef::new("value", mode.value_type()));
+            ports.push(PortDef::new("in", mode.value_type()));
         }
         ports
     }

@@ -60,12 +60,12 @@ impl NodeWidget for PortHubWidget {
 
     fn ui_inputs(&self) -> Vec<UiPortDef> {
         (0..self.slots)
-            .map(|i| UiPortDef::from_def(&PortDef::new(format!("in{}", i + 1), self.port_type)))
+            .map(|i| UiPortDef::from_def(&PortDef::new(format!("in {}", i + 1), self.port_type)))
             .collect()
     }
     fn ui_outputs(&self) -> Vec<UiPortDef> {
         (0..self.slots)
-            .map(|i| UiPortDef::from_def(&PortDef::new(format!("out{}", i + 1), self.port_type)))
+            .map(|i| UiPortDef::from_def(&PortDef::new(format!("out {}", i + 1), self.port_type)))
             .collect()
     }
 

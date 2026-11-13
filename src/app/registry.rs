@@ -215,7 +215,7 @@ pub(crate) const CATEGORIES: [&str; 14] = [
 pub(crate) fn node_table() -> Vec<NodeDescriptor> {
     let mut table = Vec::new();
     table.push(node(
-        "Clock", "Link Clock", (0, 3),
+        "Clock", "Link Clock", (0, 5),
         |id, s, _| Box::new(ClockWidget::new(id, s)),
         |id, ctx| {
             let node = ClockProcessNode::new(id, Arc::clone(&ctx.snapshot));

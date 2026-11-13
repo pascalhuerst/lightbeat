@@ -51,10 +51,10 @@ impl PortHubProcessNode {
     fn rebuild(&mut self) {
         let pt = self.port_type;
         self.inputs = (0..self.slots)
-            .map(|i| PortDef::new(format!("in{}", i + 1), pt))
+            .map(|i| PortDef::new(format!("in {}", i + 1), pt))
             .collect();
         self.outputs = (0..self.slots)
-            .map(|i| PortDef::new(format!("out{}", i + 1), pt))
+            .map(|i| PortDef::new(format!("out {}", i + 1), pt))
             .collect();
         for v in self.values.iter_mut() { *v = 0.0; }
     }

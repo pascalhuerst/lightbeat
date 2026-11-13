@@ -20,12 +20,12 @@ fn ports_for(phase_input: bool) -> (Vec<PortDef>, Vec<PortDef>) {
     if phase_input {
         (
             vec![PortDef::new("phase", PortType::Phase)],
-            vec![PortDef::new("value", PortType::Untyped)],
+            vec![PortDef::new("out", PortType::Untyped)],
         )
     } else {
         (
-            vec![PortDef::new("sync", PortType::Logic)],
-            vec![PortDef::new("value", PortType::Untyped), PortDef::new("phase", PortType::Phase)],
+            vec![PortDef::new("trigger", PortType::Logic)],
+            vec![PortDef::new("out", PortType::Untyped), PortDef::new("phase", PortType::Phase)],
         )
     }
 }

@@ -51,7 +51,7 @@ fn port_name(i: usize) -> String {
     if i < 26 {
         ((b'a' + i as u8) as char).to_string()
     } else {
-        format!("in{}", i + 1)
+        format!("in {}", i + 1)
     }
 }
 

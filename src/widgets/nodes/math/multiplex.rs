@@ -68,7 +68,7 @@ impl NodeWidget for MultiplexerWidget {
         let sel_ty = self.select_mode.select_port_type();
         let mut v = vec![UiPortDef::from_def(&PortDef::new("select", sel_ty))];
         for i in 0..self.slots {
-            v.push(UiPortDef::from_def(&PortDef::new(format!("in{}", i), self.port_type)));
+            v.push(UiPortDef::from_def(&PortDef::new(format!("in {}", i + 1), self.port_type)));
         }
         v
     }
@@ -106,7 +106,7 @@ impl NodeWidget for MultiplexerWidget {
         if self.port_type == PortType::Any {
             ui.colored_label(theme::TEXT_DIM, "Connect to set type");
         } else {
-            ui.colored_label(theme::TEXT_DIM, format!("in{} → out", sel));
+            ui.colored_label(theme::TEXT_DIM, format!("in {} → out", sel + 1));
         }
     }
 
@@ -166,7 +166,7 @@ impl NodeWidget for DemultiplexerWidget {
     }
     fn ui_outputs(&self) -> Vec<UiPortDef> {
         (0..self.slots)
-            .map(|i| UiPortDef::from_def(&PortDef::new(format!("out{}", i), self.port_type)))
+            .map(|i| UiPortDef::from_def(&PortDef::new(format!("out {}", i + 1), self.port_type)))
             .collect()
     }
 

@@ -157,7 +157,7 @@ impl NodeWidget for FaderGroupWidget {
         (0..self.rows).flat_map(|r| (0..self.cols).map(move |c| {
             let i = r * self.cols + c;
             let enabled = self.inputs_enabled.get(i).copied().unwrap_or(false);
-            UiPortDef::from_def(&PortDef::new(format!("{},{}", r, c), PortType::Untyped))
+            UiPortDef::from_def(&PortDef::new(format!("{},{}", r + 1, c + 1), PortType::Untyped))
                 .with_disabled(!enabled)
         })).collect()
     }
@@ -166,7 +166,7 @@ impl NodeWidget for FaderGroupWidget {
         (0..self.rows).flat_map(|r| (0..self.cols).map(move |c| {
             let i = r * self.cols + c;
             let enabled = self.outputs_enabled.get(i).copied().unwrap_or(false);
-            UiPortDef::from_def(&PortDef::new(format!("{},{}", r, c), PortType::Untyped))
+            UiPortDef::from_def(&PortDef::new(format!("{},{}", r + 1, c + 1), PortType::Untyped))
                 .with_disabled(!enabled)
         })).collect()
     }
@@ -374,7 +374,7 @@ impl NodeWidget for FaderGroupWidget {
                             let idx = r * self.cols + c;
                             let salt = (self.id.0 << 16) | ((r as u64) << 8) | c as u64;
 
-                            ui.label(format!("{},{}", r, c));
+                            ui.label(format!("{},{}", r + 1, c + 1));
 
                             if ui.checkbox(&mut self.inputs_enabled[idx], "").changed() {
                                 changed = true;

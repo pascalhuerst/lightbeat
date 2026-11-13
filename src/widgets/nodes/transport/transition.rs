@@ -25,7 +25,7 @@ impl TransitionWidget {
             UiPortDef::from_def(&PortDef::new("phase", PortType::Phase)),
         ];
         if mode != TransitionMode::Phase {
-            ports.push(UiPortDef::from_def(&PortDef::new("value", mode.value_type())));
+            ports.push(UiPortDef::from_def(&PortDef::new("in", mode.value_type())));
         }
         ports
     }

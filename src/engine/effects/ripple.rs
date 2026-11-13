@@ -40,7 +40,7 @@ impl EffectKind for Ripple {
     fn type_name(&self) -> &'static str { "Ripple Burst" }
 
     fn inputs(&self) -> Vec<PortDef> {
-        vec![PortDef::new("trigger", PortType::Logic), PortDef::new("color", PortType::Gradient)]
+        vec![PortDef::new("trigger", PortType::Logic), PortDef::new("gradient", PortType::Gradient)]
     }
 
     fn trigger_ports(&self) -> Vec<usize> { vec![0] }
@@ -50,8 +50,8 @@ impl EffectKind for Ripple {
             ParamDef::Float { name: "Origin".into(), value: self.origin, min: 0.0, max: 1.0, step: 0.01, unit: "" },
             ParamDef::Float { name: "Speed".into(), value: self.speed, min: 0.1, max: 6.0, step: 0.05, unit: "" },
             ParamDef::Float { name: "Width".into(), value: self.width, min: 0.02, max: 1.0, step: 0.01, unit: "" },
-            ParamDef::Float { name: "Decay".into(), value: self.decay, min: 0.1, max: 6.0, step: 0.05, unit: "s" },
-            ParamDef::Float { name: "Intensity".into(), value: self.intensity, min: 0.0, max: 1.0, step: 0.01, unit: "" },
+            ParamDef::Float { name: "Lifetime".into(), value: self.decay, min: 0.1, max: 6.0, step: 0.05, unit: "s" },
+            ParamDef::Float { name: "amount".into(), value: self.intensity, min: 0.0, max: 1.0, step: 0.01, unit: "" },
         ]
     }
 

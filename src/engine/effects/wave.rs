@@ -37,7 +37,7 @@ impl EffectKind for Wave {
     fn type_name(&self) -> &'static str { "Wave Loop" }
 
     fn inputs(&self) -> Vec<PortDef> {
-        vec![PortDef::new("phase", PortType::Phase), PortDef::new("color", PortType::Gradient)]
+        vec![PortDef::new("phase", PortType::Phase), PortDef::new("gradient", PortType::Gradient)]
     }
 
     fn params(&self) -> Vec<ParamDef> {
@@ -45,7 +45,7 @@ impl EffectKind for Wave {
             ParamDef::Float { name: "Wavelength".into(), value: self.wavelength, min: 0.05, max: 4.0, step: 0.01, unit: "" },
             ParamDef::Choice { name: "Shape".into(), value: self.shape, options: SHAPES.iter().map(|s| s.to_string()).collect() },
             ParamDef::Choice { name: "Direction".into(), value: self.direction, options: DIRECTIONS.iter().map(|s| s.to_string()).collect() },
-            ParamDef::Float { name: "Intensity".into(), value: self.intensity, min: 0.0, max: 1.0, step: 0.01, unit: "" },
+            ParamDef::Float { name: "amount".into(), value: self.intensity, min: 0.0, max: 1.0, step: 0.01, unit: "" },
         ]
     }
 

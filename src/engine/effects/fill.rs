@@ -19,11 +19,11 @@ impl EffectKind for Fill {
     fn type_name(&self) -> &'static str { "Fill" }
 
     fn inputs(&self) -> Vec<PortDef> {
-        vec![PortDef::new("color", PortType::Gradient)]
+        vec![PortDef::new("gradient", PortType::Gradient)]
     }
 
     fn params(&self) -> Vec<ParamDef> {
-        vec![ParamDef::Float { name: "Intensity".into(), value: self.intensity, min: 0.0, max: 1.0, step: 0.01, unit: "" }]
+        vec![ParamDef::Float { name: "amount".into(), value: self.intensity, min: 0.0, max: 1.0, step: 0.01, unit: "" }]
     }
 
     fn set_param(&mut self, index: usize, value: ParamValue) {

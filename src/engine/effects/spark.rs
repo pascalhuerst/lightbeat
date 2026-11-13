@@ -103,7 +103,7 @@ impl EffectKind for SparkBurst {
     fn type_name(&self) -> &'static str { "Spark Burst" }
 
     fn inputs(&self) -> Vec<PortDef> {
-        vec![PortDef::new("trigger", PortType::Logic), PortDef::new("color", PortType::Gradient)]
+        vec![PortDef::new("trigger", PortType::Logic), PortDef::new("gradient", PortType::Gradient)]
     }
 
     fn trigger_ports(&self) -> Vec<usize> { vec![0] }
@@ -119,7 +119,7 @@ impl EffectKind for SparkBurst {
             ParamDef::Float { name: "Size".into(), value: self.size, min: 0.005, max: 0.3, step: 0.005, unit: "" },
             ParamDef::Float { name: "Tail".into(), value: self.tail, min: 0.0, max: 0.4, step: 0.005, unit: "s" },
             ParamDef::Float { name: "Vertical".into(), value: self.vertical, min: 0.0, max: 1.0, step: 0.01, unit: "" },
-            ParamDef::Float { name: "Intensity".into(), value: self.intensity, min: 0.0, max: 1.0, step: 0.01, unit: "" },
+            ParamDef::Float { name: "amount".into(), value: self.intensity, min: 0.0, max: 1.0, step: 0.01, unit: "" },
         ]
     }
 

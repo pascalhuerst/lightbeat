@@ -45,7 +45,7 @@ impl PhaseAccumulatorProcessNode {
                 PortDef::new("in", PortType::Untyped),
                 PortDef::new("reset", PortType::Logic),
             ],
-            outputs: vec![PortDef::new("value", PortType::Untyped)],
+            outputs: vec![PortDef::new("out", PortType::Untyped)],
         }
     }
 }

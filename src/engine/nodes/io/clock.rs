@@ -51,6 +51,10 @@ pub struct ClockProcessNode {
     outputs: Vec<PortDef>,
     beat_output: f32,
     phase_output: f32,
+    /// Read from the snapshot `step` already holds, so the two extra outputs
+    /// cost no extra lock per tick.
+    bpm_output: f32,
+    peers_output: f32,
     /// Whole beat the shifted clock was in at the last tick; none while stopped.
     last_beat_idx: Option<i64>,
 }
@@ -65,9 +69,13 @@ impl ClockProcessNode {
                 PortDef::new("beat", PortType::Logic),
                 PortDef::new("play", PortType::Logic),
                 PortDef::new("phase", PortType::Phase),
+                PortDef::new("bpm", PortType::Untyped),
+                PortDef::new("peers", PortType::Untyped),
             ],
             beat_output: 0.0,
             phase_output: 0.0,
+            bpm_output: 0.0,
+            peers_output: 0.0,
             last_beat_idx: None,
         }
     }
@@ -81,6 +89,8 @@ impl ClockProcessNode {
         self.beat_state.lock().unwrap().pending_beats = 0;
         let snap = self.snapshot.lock().unwrap().clone();
 
+        self.bpm_output = snap.tempo as f32;
+        self.peers_output = snap.num_peers as f32;
         self.beat_output = 0.0;
         if !snap.playing {
             self.last_beat_idx = None;
@@ -128,6 +138,8 @@ impl ProcessNode for ClockProcessNode {
                 if snap.playing { 1.0 } else { 0.0 }
             }
             2 => self.phase_output,
+            3 => self.bpm_output,
+            4 => self.peers_output,
             _ => 0.0,
         }
     }
@@ -180,6 +192,19 @@ mod tests {
         move_to(&snap, 0.7);
         c.step(250.0);
         assert_eq!(c.read_output(0), 0.0, "once per beat");
+    }
+
+    #[test]
+    fn the_session_tempo_and_peer_count_are_outputs() {
+        let (mut c, snap) = clock_at(0.3, 126.0);
+        snap.lock().unwrap().num_peers = 2;
+        c.step(0.0);
+        assert_eq!(c.outputs().len(), 5);
+        assert_eq!((c.outputs()[3].name.as_str(), c.outputs()[4].name.as_str()), ("bpm", "peers"));
+        assert_eq!((c.read_output(3), c.read_output(4)), (126.0, 2.0));
+        snap.lock().unwrap().playing = false;
+        c.step(0.0);
+        assert_eq!(c.read_output(3), 126.0, "the tempo is there while stopped too");
     }
 
     #[test]

@@ -180,7 +180,7 @@ impl NodeWidget for PaletteSelectWidget {
             let name = all_groups.iter().find(|(id, _)| id == gid)
                 .map(|(_, n)| n.as_str()).unwrap_or("???");
             ui.horizontal(|ui| {
-                ui.label(format!("{}. {}", i, name));
+                ui.label(format!("{}. {}", i + 1, name));
                 match setup_ui::move_buttons(ui, i, self.selected_group_ids.len()) {
                     Some(setup_ui::Move::Up) => swap = Some((i, i - 1)),
                     Some(setup_ui::Move::Down) => swap = Some((i, i + 1)),
