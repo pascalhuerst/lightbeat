@@ -171,9 +171,8 @@ fn show_channels(ui: &mut Ui, fixture: &mut Fixture) {
                                 w_index += 1;
                                 let mut t = *temperature_k as i32;
                                 if ui.add(
-                                    egui::DragValue::new(&mut t)
+                                    setup_ui::unit_drag(&mut t, setup_ui::Unit::Kelvin)
                                         .range(2000..=10000)
-                                        .suffix("K")
                                         .prefix(format!("W{} ", w_index))
                                 ).changed() {
                                     *temperature_k = t.clamp(2000, 10000) as u16;
@@ -184,7 +183,7 @@ fn show_channels(ui: &mut Ui, fixture: &mut Fixture) {
                     }
                     ChannelKind::Raw { count } => {
                         let mut c = *count as i32;
-                        if ui.add(egui::DragValue::new(&mut c).range(1..=512).suffix(" ch")).changed() {
+                        if ui.add(setup_ui::unit_drag(&mut c, setup_ui::Unit::Channels).range(1..=512)).changed() {
                             *count = c.max(1) as usize;
                             ch.values.resize(*count, 0.0);
                             channels_changed = true;

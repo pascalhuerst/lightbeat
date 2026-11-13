@@ -144,11 +144,14 @@ pub fn choice_combo<T: PartialEq + Copy>(
 // ---------------------------------------------------------------------------
 
 /// The units a number field can carry, written the same way everywhere. Add
-/// kelvin or percent here when a field needs them.
+/// percent here when a field needs it.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Unit {
     Milliseconds,
     Seconds,
+    Kelvin,
+    Channels,
+    FramesPerSecond,
 }
 
 impl Unit {
@@ -156,6 +159,9 @@ impl Unit {
         match self {
             Unit::Milliseconds => " ms",
             Unit::Seconds => " s",
+            Unit::Kelvin => " K",
+            Unit::Channels => " ch",
+            Unit::FramesPerSecond => " fps",
         }
     }
 }
@@ -427,6 +433,7 @@ mod tests {
     fn units_are_written_with_a_space_before_them() {
         assert_eq!(Unit::Milliseconds.suffix(), " ms");
         assert_eq!(Unit::Seconds.suffix(), " s");
+        assert_eq!(Unit::Kelvin.suffix(), " K");
     }
 
     #[test]

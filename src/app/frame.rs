@@ -668,10 +668,9 @@ impl LightBeatApp {
                     ui.separator();
                     ui.colored_label(theme::TEXT_DIM, "Latency");
                     let mut ms = self.config.latency_ms;
-                    let drag = egui::DragValue::new(&mut ms)
+                    let drag = crate::widgets::setup_ui::unit_drag(&mut ms, crate::widgets::setup_ui::Unit::Milliseconds)
                         .speed(0.5)
                         .range(-latency::LIMIT_MS..=latency::LIMIT_MS)
-                        .suffix(" ms")
                         .fixed_decimals(0);
                     let drag = ui.add(drag).on_hover_text(
                         "Runs every clock (audio beat clock, Link, internal) this far ahead of the music, to make up for the delay to the lights. Set it once for the room.",
