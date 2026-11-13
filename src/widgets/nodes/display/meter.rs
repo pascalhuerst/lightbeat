@@ -5,7 +5,7 @@ use egui::{self, Align2, FontId, Pos2, Rect, Sense, Shape, Stroke, Ui, Vec2};
 use crate::engine::nodes::display::meter::{MeterData, MeterKind};
 use crate::engine::types::*;
 use crate::theme;
-use crate::widgets::nodes::node::NodeWidget;
+use crate::widgets::nodes::node::{NodeLayout, NodeWidget, PORT_RADIUS};
 use crate::widgets::nodes::types::UiPortDef;
 
 /// Seconds a level meter's peak marker stays before it falls.
@@ -191,6 +191,7 @@ impl NodeWidget for MeterWidget {
     }
     fn ui_outputs(&self) -> Vec<UiPortDef> { vec![] }
 
+    fn layout(&self) -> NodeLayout { NodeLayout::compact().with_side_inset(PORT_RADIUS + 2.0) }
     fn min_width(&self) -> f32 {
         match self.kind {
             MeterKind::Level => 70.0,

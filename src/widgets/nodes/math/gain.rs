@@ -5,7 +5,7 @@ use egui::{self, Pos2, Sense, Stroke, Ui};
 use crate::engine::nodes::math::gain::GainDisplay;
 use crate::engine::types::*;
 use crate::theme;
-use crate::widgets::nodes::node::NodeWidget;
+use crate::widgets::nodes::node::{NodeLayout, NodeWidget, PORT_RADIUS};
 use crate::widgets::nodes::types::UiPortDef;
 
 /// Knob sweep: 0 at bottom-left, 1 at bottom-right, going the long way
@@ -44,6 +44,7 @@ impl NodeWidget for GainWidget {
         vec![UiPortDef::from_def(&PortDef::new("out", PortType::Untyped))]
     }
 
+    fn layout(&self) -> NodeLayout { NodeLayout::compact().with_side_inset(PORT_RADIUS + 2.0) }
     fn min_width(&self) -> f32 { 90.0 }
     fn min_content_height(&self) -> f32 { 70.0 }
     fn resizable(&self) -> bool { true }
