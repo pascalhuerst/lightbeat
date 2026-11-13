@@ -6,6 +6,7 @@ use crate::engine::nodes::meta::subgraph::{
     SubgraphPortDef,
 };
 use crate::engine::types::*;
+use crate::widgets::setup_ui;
 use crate::theme;
 use crate::widgets::nodes::node::NodeWidget;
 use crate::widgets::nodes::types::UiPortDef;
@@ -267,7 +268,7 @@ impl NodeWidget for SubgraphWidget {
                             }
                         }
                     });
-                if ui.small_button(egui_phosphor::regular::X).clicked() {
+                if setup_ui::delete_button(ui, "Delete this input") {
                     remove_input = Some(i);
                 }
             });
@@ -276,7 +277,7 @@ impl NodeWidget for SubgraphWidget {
             self.remove_input(i);
             input_changed = true;
         }
-        if ui.small_button("+ Add Input").clicked() {
+        if setup_ui::add_button(ui, "Add input") {
             self.input_defs.push(SubgraphPortDef {
                 name: format!("in {}", self.input_defs.len()),
                 port_type_idx: 2,
@@ -308,7 +309,7 @@ impl NodeWidget for SubgraphWidget {
                             }
                         }
                     });
-                if ui.small_button(egui_phosphor::regular::X).clicked() {
+                if setup_ui::delete_button(ui, "Delete this output") {
                     remove_output = Some(i);
                 }
             });
@@ -317,7 +318,7 @@ impl NodeWidget for SubgraphWidget {
             self.remove_output(i);
             output_changed = true;
         }
-        if ui.small_button("+ Add Output").clicked() {
+        if setup_ui::add_button(ui, "Add output") {
             self.output_defs.push(SubgraphPortDef {
                 name: format!("out {}", self.output_defs.len()),
                 port_type_idx: 2,

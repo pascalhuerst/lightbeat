@@ -13,6 +13,7 @@ use egui_extras::{Column, TableBuilder};
 use crate::color::{Gradient, GradientStop};
 use crate::engine::nodes::math::lookup::{LookupColumn, LookupDisplay, port_type_to_str};
 use crate::engine::types::*;
+use crate::widgets::setup_ui;
 use crate::theme;
 use crate::widgets::nodes::math::gradient_source::SharedGradientLibrary;
 use crate::widgets::nodes::node::NodeWidget;
@@ -320,7 +321,7 @@ impl NodeWidget for LookupWidget {
                     retype = Some((ci, new_pt));
                 }
                 ui.add_enabled_ui(self.columns.len() > 1, |ui| {
-                    if ui.small_button(egui_phosphor::regular::X).clicked() {
+                    if setup_ui::delete_button(ui, "Delete this column") {
                         remove_col = Some(ci);
                     }
                 });
@@ -334,7 +335,7 @@ impl NodeWidget for LookupWidget {
             self.remove_column(ci);
             changed = true;
         }
-        if self.columns.len() < MAX_COLUMNS && ui.button("+ Add Column").clicked() {
+        if self.columns.len() < MAX_COLUMNS && setup_ui::add_button(ui, "Add column") {
             self.add_column();
             changed = true;
         }
@@ -430,7 +431,7 @@ impl NodeWidget for LookupWidget {
                         }
                         row.col(|ui| {
                             ui.add_enabled_ui(self.row_count > MIN_ROWS, |ui| {
-                                if ui.small_button(egui_phosphor::regular::X).clicked() {
+                                if setup_ui::delete_button(ui, "Delete this row") {
                                     remove_row = Some(r);
                                 }
                             });
@@ -443,7 +444,7 @@ impl NodeWidget for LookupWidget {
             self.remove_row(r);
             changed = true;
         }
-        if self.row_count < MAX_ROWS && ui.button("+ Add Row").clicked() {
+        if self.row_count < MAX_ROWS && setup_ui::add_button(ui, "Add row") {
             self.add_row();
             changed = true;
         }

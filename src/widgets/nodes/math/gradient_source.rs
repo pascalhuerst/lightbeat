@@ -8,6 +8,7 @@ use crate::engine::nodes::math::gradient_source::GradientSourceDisplay;
 use crate::engine::types::*;
 use crate::objects::gradient_preset::GradientPreset;
 use crate::theme;
+use crate::widgets::setup_ui;
 use crate::widgets::nodes::node::NodeWidget;
 use crate::widgets::nodes::types::UiPortDef;
 
@@ -288,7 +289,7 @@ impl NodeWidget for GradientSourceWidget {
                         s.alpha = color.a() as f32 / 255.0;
                         changed = true;
                     }
-                    if ui.button(egui_phosphor::regular::X.to_string() + " Remove").clicked() {
+                    if setup_ui::delete_button(ui, "Delete this stop") {
                         delete_idx = Some(i);
                         ui.memory_mut(|m| m.close_popup());
                     }
@@ -389,51 +390,57 @@ impl NodeWidget for GradientSourceWidget {
         });
 
         ui.separator();
-        ui.label(egui::RichText::new("Stops").strong());
+        setup_ui::section(ui, "Stops");
 
-        let len = self.stops.len();
-        for (i, s) in self.stops.iter_mut().enumerate() {
+        // Unused slots are not listed: deleting a stop frees its slot, adding
+        // takes the first free one.
+        let shown: Vec<usize> = (0..self.stops.len()).filter(|&i| self.stops[i].used).collect();
+        let mut delete: Option<usize> = None;
+        for (n, &i) in shown.iter().enumerate() {
+            let s = &mut self.stops[i];
             ui.push_id(("stop", i), |ui| {
                 ui.horizontal(|ui| {
-                    if ui.checkbox(&mut s.used, "").on_hover_text("Enable this stop").changed() {
+                    let mut col = [s.r, s.g, s.b];
+                    if ui.color_edit_button_rgb(&mut col).changed() {
+                        s.r = col[0]; s.g = col[1]; s.b = col[2];
                         changed = true;
                     }
-                    ui.add_enabled_ui(s.used, |ui| {
-                        let mut col = [s.r, s.g, s.b];
-                        if ui.color_edit_button_rgb(&mut col).changed() {
-                            s.r = col[0]; s.g = col[1]; s.b = col[2];
-                            changed = true;
-                        }
-                        ui.label("pos");
-                        if ui.add(egui::Slider::new(&mut s.position, 0.0..=1.0)
-                            .step_by(0.01)
-                            .show_value(true)
-                        ).changed() { changed = true; }
-                        ui.label("α");
-                        if ui.add(egui::Slider::new(&mut s.alpha, 0.0..=1.0)
-                            .step_by(0.01)
-                            .show_value(true)
-                        ).changed() { changed = true; }
-                    });
-                    if ui.add_enabled(i > 0, egui::Button::new(egui_phosphor::regular::ARROW_UP))
-                        .on_hover_text("Move stop up")
-                        .clicked()
-                    {
-                        swap = Some((i, i - 1));
+                    ui.label("pos");
+                    if ui.add(egui::Slider::new(&mut s.position, 0.0..=1.0)
+                        .step_by(0.01)
+                        .show_value(true)
+                    ).changed() { changed = true; }
+                    ui.label("α");
+                    if ui.add(egui::Slider::new(&mut s.alpha, 0.0..=1.0)
+                        .step_by(0.01)
+                        .show_value(true)
+                    ).changed() { changed = true; }
+                    match setup_ui::move_buttons(ui, n, shown.len()) {
+                        Some(setup_ui::Move::Up) => swap = Some((i, shown[n - 1])),
+                        Some(setup_ui::Move::Down) => swap = Some((i, shown[n + 1])),
+                        None => {}
                     }
-                    if ui.add_enabled(i + 1 < len, egui::Button::new(egui_phosphor::regular::ARROW_DOWN))
-                        .on_hover_text("Move stop down")
-                        .clicked()
-                    {
-                        swap = Some((i, i + 1));
+                    if setup_ui::delete_button(ui, "Delete this stop") {
+                        delete = Some(i);
                     }
                 });
             });
         }
-
+        if let Some(i) = delete {
+            self.stops[i].used = false;
+            changed = true;
+        }
         if let Some((a, b)) = swap {
             self.stops.swap(a, b);
             changed = true;
+        }
+        if shown.len() < self.stops.len() {
+            if setup_ui::add_button(ui, "Add stop")
+                && let Some(s) = self.stops.iter_mut().find(|s| !s.used)
+            {
+                s.used = true;
+                changed = true;
+            }
         }
 
         if changed { self.push_config(); }

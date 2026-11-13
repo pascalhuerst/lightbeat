@@ -7,6 +7,7 @@ use crate::engine::nodes::meta::portal::{
 };
 use crate::engine::nodes::meta::subgraph::PORT_TYPE_NAMES;
 use crate::engine::types::*;
+use crate::widgets::setup_ui;
 use crate::theme;
 use crate::widgets::nodes::node::NodeWidget;
 use crate::widgets::nodes::types::UiPortDef;
@@ -147,14 +148,14 @@ impl NodeWidget for PortalSendWidget {
                             }
                         }
                     });
-                if ui.small_button(egui_phosphor::regular::X).clicked() { remove = Some(i); }
+                if setup_ui::delete_button(ui, "Delete this port") { remove = Some(i); }
             });
         }
         if let Some(i) = remove {
             self.remove_port(i);
             changed = true;
         }
-        if ui.small_button("+ Add Port").clicked() {
+        if setup_ui::add_button(ui, "Add port") {
             self.port_defs.push(PortalPortDef {
                 name: format!("in {}", self.port_defs.len() + 1),
                 port_type_idx: DEFAULT_PORT_TYPE,

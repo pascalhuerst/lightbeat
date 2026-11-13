@@ -7,6 +7,7 @@ use crate::engine::nodes::math::multiplex::SelectMode;
 use crate::engine::nodes::math::palette_select::PaletteSelectDisplay;
 use crate::engine::types::*;
 use crate::objects::color_palette::{ColorPalette, ColorPaletteGroup, PALETTE_SIZE};
+use crate::widgets::setup_ui;
 use crate::widgets::nodes::node::NodeWidget;
 use crate::widgets::nodes::types::UiPortDef;
 
@@ -181,13 +182,12 @@ impl NodeWidget for PaletteSelectWidget {
                 .map(|(_, n)| n.as_str()).unwrap_or("???");
             ui.horizontal(|ui| {
                 ui.label(format!("{}. {}", i, name));
-                if i > 0 && ui.small_button(egui_phosphor::regular::ARROW_UP).clicked() {
-                    swap = Some((i, i - 1));
+                match setup_ui::move_buttons(ui, i, self.selected_group_ids.len()) {
+                    Some(setup_ui::Move::Up) => swap = Some((i, i - 1)),
+                    Some(setup_ui::Move::Down) => swap = Some((i, i + 1)),
+                    None => {}
                 }
-                if i + 1 < self.selected_group_ids.len() && ui.small_button(egui_phosphor::regular::ARROW_DOWN).clicked() {
-                    swap = Some((i, i + 1));
-                }
-                if ui.small_button(egui_phosphor::regular::X).clicked() {
+                if setup_ui::delete_button(ui, "Delete this group") {
                     remove_idx = Some(i);
                 }
             });
@@ -208,15 +208,11 @@ impl NodeWidget for PaletteSelectWidget {
             .cloned()
             .collect();
         if !available.is_empty() {
-            ui.horizontal_wrapped(|ui| {
-                ui.label("Add:");
-                for (gid, name) in &available {
-                    if ui.small_button(name).clicked() {
-                        self.selected_group_ids.push(*gid);
-                        changed = true;
-                    }
-                }
-            });
+            let items = available.iter().map(|(gid, name)| (*gid, name.clone())).collect();
+            if let Some(gid) = setup_ui::add_menu(ui, ("palette_select_add", self.id.0), "Add group", items) {
+                self.selected_group_ids.push(gid);
+                changed = true;
+            }
         }
 
         if changed {
