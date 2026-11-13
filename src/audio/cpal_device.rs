@@ -5,7 +5,7 @@
 //! the shared `dispatch_samples` helper.
 
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{BufferSize, Device, Host, SampleFormat, StreamConfig, SupportedStreamConfig};
@@ -90,7 +90,6 @@ fn open_input(
         config.buffer_size = BufferSize::Fixed(bs);
     }
 
-    let produced = Arc::new(AtomicU64::new(0));
     let last_chunk = Arc::new(AtomicUsize::new(0));
 
     let err_fn = |e| eprintln!("[audio] cpal stream error: {e}");
@@ -99,14 +98,13 @@ fn open_input(
     let stream = match sample_format {
         SampleFormat::F32 => {
             let subs = subscribers;
-            let produced_cb = produced.clone();
             let last_cb = last_chunk.clone();
             device
                 .build_input_stream(
                     &config,
                     move |data: &[f32], _| {
                         last_cb.store(data.len() / ch.max(1), Ordering::Relaxed);
-                        dispatch_samples(data, ch, &subs, &produced_cb, |s| s);
+                        dispatch_samples(data, ch, &subs, |s| s);
                     },
                     err_fn,
                     None,
@@ -115,14 +113,13 @@ fn open_input(
         }
         SampleFormat::I16 => {
             let subs = subscribers;
-            let produced_cb = produced.clone();
             let last_cb = last_chunk.clone();
             device
                 .build_input_stream(
                     &config,
                     move |data: &[i16], _| {
                         last_cb.store(data.len() / ch.max(1), Ordering::Relaxed);
-                        dispatch_samples(data, ch, &subs, &produced_cb, |s| s as f32 / 32768.0);
+                        dispatch_samples(data, ch, &subs, |s| s as f32 / 32768.0);
                     },
                     err_fn,
                     None,
@@ -131,14 +128,13 @@ fn open_input(
         }
         SampleFormat::U16 => {
             let subs = subscribers;
-            let produced_cb = produced.clone();
             let last_cb = last_chunk.clone();
             device
                 .build_input_stream(
                     &config,
                     move |data: &[u16], _| {
                         last_cb.store(data.len() / ch.max(1), Ordering::Relaxed);
-                        dispatch_samples(data, ch, &subs, &produced_cb, |s| (s as f32 - 32768.0) / 32768.0);
+                        dispatch_samples(data, ch, &subs, |s| (s as f32 - 32768.0) / 32768.0);
                     },
                     err_fn,
                     None,
@@ -152,8 +148,6 @@ fn open_input(
     Ok(InputStream::from_parts(
         Box::new(stream),
         sample_rate.0,
-        channels,
-        produced,
         last_chunk,
     ))
 }

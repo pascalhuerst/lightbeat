@@ -208,7 +208,6 @@ pub struct ActivityLogEntry {
     pub decoded: Option<(InputSource, f32)>,
     /// Index into `inputs` of the learned input this matched, if any.
     pub matched_input_idx: Option<usize>,
-    pub instant: std::time::Instant,
 }
 
 /// Per-controller live state. Shared between midir callback, engine, and UI.

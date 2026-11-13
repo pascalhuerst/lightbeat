@@ -17,8 +17,6 @@ pub struct MacroEntry {
     pub name: String,
     pub description: String,
     pub tags: Vec<String>,
-    pub creator: String,
-    pub date: String,
 }
 
 pub struct LibraryManager {
@@ -70,8 +68,6 @@ impl LibraryManager {
                         name: m.name,
                         description: m.description,
                         tags: m.tags,
-                        creator: m.creator,
-                        date: m.date,
                     }),
                     Err(e) => eprintln!("Failed to read macro '{}': {}", path.display(), e),
                 }

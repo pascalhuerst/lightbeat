@@ -153,7 +153,6 @@ fn write_input_value(
         raw: None,
         decoded: Some((src.clone(), value)),
         matched_input_idx: idx,
-        instant: std::time::Instant::now(),
     };
     c.activity_log.push_back(entry);
     while c.activity_log.len() > ACTIVITY_LOG_CAPACITY {

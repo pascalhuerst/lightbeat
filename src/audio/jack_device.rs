@@ -10,7 +10,7 @@
 //! client and connect the chosen source port to it.
 
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use crossbeam_channel::Sender;
 use jack::{
@@ -74,9 +74,7 @@ impl AudioBackend for JackBackend {
             .map_err(|e| format!("register_port: {}", e))?;
         let in_port_name = in_port.name().map_err(|e| format!("port name: {}", e))?;
 
-        let produced = Arc::new(AtomicU64::new(0));
         let last_chunk = Arc::new(AtomicUsize::new(0));
-        let produced_cb = produced.clone();
         let last_cb = last_chunk.clone();
 
         let process = ClosureProcessHandler::new(move |_client: &Client, ps: &ProcessScope| {
@@ -84,9 +82,7 @@ impl AudioBackend for JackBackend {
             last_cb.store(buffer.len(), Ordering::Relaxed);
             // JACK already delivers 32-bit float mono per port, so we can
             // dispatch directly — no mono-mix needed.
-            let start = produced_cb.fetch_add(buffer.len() as u64, Ordering::Relaxed);
             let chunk = AudioChunk {
-                start_sample: start,
                 mono_f32: Arc::from(buffer.to_vec().into_boxed_slice()),
             };
             for s in &subscribers {
@@ -109,8 +105,6 @@ impl AudioBackend for JackBackend {
         Ok(InputStream::from_parts(
             Box::new(active),
             sample_rate,
-            1,
-            produced,
             last_chunk,
         ))
     }

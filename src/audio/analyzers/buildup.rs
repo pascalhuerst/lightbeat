@@ -209,7 +209,7 @@ mod tests {
         let (_h, mut p) = create(g.truth.sample_rate);
         let &(from, to) = g.truth.no_kick.first().expect("a no-kick stretch");
         let at = |t: f64| ((t * sr as f64) as usize).min(g.audio.len());
-        let mut state = |end: usize, start: usize, p: &mut Box<dyn AnalyzerProc>| {
+        let state = |end: usize, start: usize, p: &mut Box<dyn AnalyzerProc>| {
             for chunk in g.audio[start..end].chunks(512) {
                 p.step(chunk);
             }
