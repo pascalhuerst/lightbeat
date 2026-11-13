@@ -10,7 +10,7 @@ pub mod time;
 pub mod types;
 
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::thread;
 
 use ringbuf::traits::{Producer, Split};
@@ -46,6 +46,8 @@ pub struct EngineHandle {
     _thread: thread::JoinHandle<()>,
     /// Set by the engine thread when a tick panicked and it stopped ticking.
     stopped: Arc<AtomicBool>,
+    /// Commands `send` gave up on because the ring stayed full.
+    dropped: AtomicU64,
 }
 
 impl EngineHandle {
@@ -69,6 +71,7 @@ impl EngineHandle {
             command_tx,
             _thread: handle,
             stopped,
+            dropped: AtomicU64::new(0),
         }
     }
 
@@ -76,6 +79,12 @@ impl EngineHandle {
     /// hold whatever they showed last.
     pub fn is_running(&self) -> bool {
         !self.stopped.load(Ordering::Relaxed)
+    }
+
+    /// How many commands were dropped so far because the ring buffer stayed
+    /// full; any is a sign that UI and engine are out of step.
+    pub fn dropped_commands(&self) -> u64 {
+        self.dropped.load(Ordering::Relaxed)
     }
 
     /// Send a command to the engine thread. Retries briefly if the ring is
@@ -105,6 +114,10 @@ impl EngineHandle {
                 }
             }
         }
-        eprintln!("Engine command buffer full after retry, dropping command");
+        self.dropped.fetch_add(1, Ordering::Relaxed);
+        eprintln!(
+            "Engine command buffer full after retry, dropping command ({} dropped so far)",
+            self.dropped_commands(),
+        );
     }
 }
