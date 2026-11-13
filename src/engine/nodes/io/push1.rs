@@ -348,7 +348,9 @@ impl ProcessNode for Push1ProcessNode {
                 self.reset_outputs();
                 return;
             }
-            self.controller_name = c.name.clone();
+            if self.controller_name != c.name {
+                self.controller_name = c.name.clone();
+            }
             self.connected = c.status == ConnectionStatus::Connected;
 
             // Lazy index rebuild.
