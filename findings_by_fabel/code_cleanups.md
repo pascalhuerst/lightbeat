@@ -78,7 +78,7 @@ Updated as items are implemented. Items not listed here are open.
 | E8 (rest) | done | 21de914: `ParamDef` names and Choice options are `Cow<'static, str>`. The `Vec<ParamDef>` per call and the display re-boxing remain |
 | U5 | partly, by choice | 6c46d3a, a5cec79, 5403819: `FloatParam` / `IntParam` (`engine/param_spec.rs`) state name, range and clamp once on 24 nodes. Nodes whose `set_param` does real work keep theirs; the one-line port accessors were not turned into arrays (no gain) |
 | U6 | partly, by choice | b1b50f0 .. 122340f: Gain, Trigger Hold, XY Pad and Gradient Stops no longer save their params twice; Lookup, Gradient Source, Palette Select, Color Mixer, Peak Level Meter, Meter, Step Sequencer, Portals and Subgraph use one serde config struct on both sides, same keys. Fader/Button (null vs missing, click events) and one-key nodes are left |
-| T1 | open | in progress |
+| T1 | done | 669a383 .. 0283812: `cargo clippy --all-targets -- -D warnings` is clean and a CI job runs it (Linux). `type_complexity` and `too_many_arguments` are switched off in `Cargo.toml`. No format check: the code stays unformatted by decision |
 | R2 (settings) | done | bea6940 |
 | R3 (project file) | done | 486e28d |
 | R5, R8 (UI part) | done | 41daa6d: the status bar says "Engine stopped" or "Engine busy: N changes lost" |
