@@ -30,7 +30,7 @@ pub struct ToggleBankProcessNode {
 pub fn ports_for(n: usize) -> (Vec<PortDef>, Vec<PortDef>) {
     (
         (0..n).map(|i| PortDef::new(format!("trigger {}", i + 1), PortType::Logic)).collect(),
-        (0..n).map(|i| PortDef::new(format!("out {}", i + 1), PortType::Untyped)).collect(),
+        (0..n).map(|i| PortDef::new(format!("out {}", i + 1), PortType::Logic)).collect(),
     )
 }
 
@@ -51,9 +51,6 @@ impl ToggleBankProcessNode {
     }
 
     fn rebuild_ports(&mut self) {
-        // Triggers in (Logic — the rising edge is what matters), held
-        // value out (Untyped — the output is a persistent 0 or 1, not a
-        // one-tick pulse).
         (self.inputs, self.outputs) = ports_for(self.n);
         self.in_vals.resize(self.n, 0.0);
         self.prev_in.resize(self.n, 0.0);
