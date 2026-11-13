@@ -61,7 +61,7 @@ impl EffectKind for Bar {
             ParamDef::Float { name: "Width".into(), value: self.width, min: 0.01, max: 1.0, step: 0.01, unit: "" },
             ParamDef::Choice { name: "Anchor".into(), value: self.anchor, options: ANCHORS.iter().map(|s| s.to_string()).collect() },
             ParamDef::Float { name: "Softness".into(), value: self.softness, min: 0.0, max: 1.0, step: 0.01, unit: "" },
-            ParamDef::Float { name: "Intensity".into(), value: self.intensity, min: 0.0, max: 1.0, step: 0.01, unit: "" },
+            ParamDef::Float { name: "amount".into(), value: self.intensity, min: 0.0, max: 1.0, step: 0.01, unit: "" },
         ]
     }
 

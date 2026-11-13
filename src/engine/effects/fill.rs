@@ -23,7 +23,7 @@ impl EffectKind for Fill {
     }
 
     fn params(&self) -> Vec<ParamDef> {
-        vec![ParamDef::Float { name: "Intensity".into(), value: self.intensity, min: 0.0, max: 1.0, step: 0.01, unit: "" }]
+        vec![ParamDef::Float { name: "amount".into(), value: self.intensity, min: 0.0, max: 1.0, step: 0.01, unit: "" }]
     }
 
     fn set_param(&mut self, index: usize, value: ParamValue) {

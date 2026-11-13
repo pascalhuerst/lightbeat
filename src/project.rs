@@ -336,7 +336,14 @@ pub(crate) const RENAMED_NODES: [(&str, &str); 8] = [
 /// Settings that were renamed: (node, old name, new name). Promoted inputs and
 /// snapshots refer to a setting by name, so they are carried over on load.
 /// Temporary, like `RENAMED_NODES`.
-const RENAMED_SETTINGS: [(&str, &str, &str); 1] = [("Lookup Table", "Input", "Select by")];
+const RENAMED_SETTINGS: [(&str, &str, &str); 6] = [
+    ("Lookup Table", "Input", "Select by"),
+    ("Fill", "Intensity", "amount"),
+    ("Bar", "Intensity", "amount"),
+    ("Wave Loop", "Intensity", "amount"),
+    ("Ripple Burst", "Intensity", "amount"),
+    ("Spark Burst", "Intensity", "amount"),
+];
 
 fn current_setting_name<'a>(node: &str, saved: &'a str) -> &'a str {
     RENAMED_SETTINGS
@@ -853,6 +860,15 @@ mod tests {
         assert_eq!(current_setting_name("Lookup Table", "Input"), "Select by");
         assert_eq!(current_setting_name("Lookup Table", "Edge"), "Edge");
         assert_eq!(current_setting_name("Smoothing", "Input"), "Input");
+    }
+
+    #[test]
+    fn the_effects_intensity_is_now_amount() {
+        for effect in ["Fill", "Bar", "Wave Loop", "Ripple Burst", "Spark Burst"] {
+            assert_eq!(current_setting_name(effect, "Intensity"), "amount");
+        }
+        assert_eq!(current_setting_name("Fill", "Width"), "Width");
+        assert_eq!(current_setting_name("Smoothing", "Intensity"), "Intensity");
     }
 
     #[test]
