@@ -1,4 +1,9 @@
+use crate::engine::param_spec::{FloatParam};
 use crate::engine::types::*;
+
+
+const THRESHOLD: FloatParam = FloatParam::new("Threshold", -1.0, 1.0, 0.01, "");
+const HYSTERESIS: FloatParam = FloatParam::new("Hysteresis", 0.0, 1.0, 0.01, "").at_least(0.0);
 
 /// Schmitt trigger — a comparator with hysteresis. Output flips HIGH when
 /// the input rises above `threshold + hysteresis` and flips LOW when it
@@ -70,24 +75,13 @@ impl ProcessNode for SchmittTriggerProcessNode {
     }
 
     fn params(&self) -> Vec<ParamDef> {
-        vec![
-            ParamDef::Float {
-                name: "Threshold".into(),
-                value: self.threshold,
-                min: -1.0, max: 1.0, step: 0.01, unit: "",
-            },
-            ParamDef::Float {
-                name: "Hysteresis".into(),
-                value: self.hysteresis,
-                min: 0.0, max: 1.0, step: 0.01, unit: "",
-            },
-        ]
+        vec![THRESHOLD.def(self.threshold), HYSTERESIS.def(self.hysteresis)]
     }
 
     fn set_param(&mut self, index: usize, value: ParamValue) {
         match index {
-            0 => self.threshold = value.as_f32(),
-            1 => self.hysteresis = value.as_f32().max(0.0),
+            0 => self.threshold = THRESHOLD.apply(&value),
+            1 => self.hysteresis = HYSTERESIS.apply(&value),
             _ => {}
         }
     }

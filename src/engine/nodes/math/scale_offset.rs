@@ -3,7 +3,12 @@
 //! `scale` and `offset` follow the "input-overrides-param" pattern: when the
 //! port is wired, the wire value takes over and the inspector param is hidden.
 
+use crate::engine::param_spec::{FloatParam};
 use crate::engine::types::*;
+
+
+const SCALE: FloatParam = FloatParam::new("Scale", -10.0, 10.0, 0.01, "");
+const OFFSET: FloatParam = FloatParam::new("Offset", -10.0, 10.0, 0.01, "");
 
 
 pub struct ScaleOffsetProcessNode {
@@ -102,24 +107,13 @@ impl ProcessNode for ScaleOffsetProcessNode {
     }
 
     fn params(&self) -> Vec<ParamDef> {
-        vec![
-            ParamDef::Float {
-                name: "Scale".into(),
-                value: self.scale,
-                min: -10.0, max: 10.0, step: 0.01, unit: "",
-            },
-            ParamDef::Float {
-                name: "Offset".into(),
-                value: self.offset,
-                min: -10.0, max: 10.0, step: 0.01, unit: "",
-            },
-        ]
+        vec![SCALE.def(self.scale), OFFSET.def(self.offset)]
     }
 
     fn set_param(&mut self, index: usize, value: ParamValue) {
         match index {
-            0 => self.scale = value.as_f32(),
-            1 => self.offset = value.as_f32(),
+            0 => self.scale = SCALE.apply(&value),
+            1 => self.offset = OFFSET.apply(&value),
             _ => {}
         }
     }

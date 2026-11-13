@@ -1,4 +1,9 @@
+use crate::engine::param_spec::{FloatParam};
 use crate::engine::types::*;
+
+
+const IN_MIN: FloatParam = FloatParam::new("In Min", -100.0, 100.0, 0.1, "");
+const IN_MAX: FloatParam = FloatParam::new("In Max", -100.0, 100.0, 0.1, "");
 
 /// Maps an input from [in_min, in_max] to [0, 1]. `in_min` and `in_max`
 /// can be overridden by wiring their input ports — follows the
@@ -105,16 +110,13 @@ impl ProcessNode for ScalerProcessNode {
     }
 
     fn params(&self) -> Vec<ParamDef> {
-        vec![
-            ParamDef::Float { name: "In Min".into(), value: self.in_min, min: -100.0, max: 100.0, step: 0.1, unit: "" },
-            ParamDef::Float { name: "In Max".into(), value: self.in_max, min: -100.0, max: 100.0, step: 0.1, unit: "" },
-        ]
+        vec![IN_MIN.def(self.in_min), IN_MAX.def(self.in_max)]
     }
 
     fn set_param(&mut self, index: usize, value: ParamValue) {
         match index {
-            0 => self.in_min = value.as_f32(),
-            1 => self.in_max = value.as_f32(),
+            0 => self.in_min = IN_MIN.apply(&value),
+            1 => self.in_max = IN_MAX.apply(&value),
             _ => {}
         }
     }

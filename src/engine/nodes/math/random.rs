@@ -1,6 +1,13 @@
 use std::time::Instant;
 
+use crate::engine::param_spec::{FloatParam, IntParam};
 use crate::engine::types::*;
+
+
+const MIN: FloatParam = FloatParam::new("Min", -1000.0, 1000.0, 0.01, "");
+const MAX: FloatParam = FloatParam::new("Max", -1000.0, 1000.0, 0.01, "");
+const STEPS: IntParam = IntParam::new("Steps", 0, 64).at_least(0);
+const GLIDE: FloatParam = FloatParam::new("Glide", 0.0, 5000.0, 1.0, "ms").at_least(0.0);
 
 /// Longest step the glide takes in one go; a stalled engine must not make
 /// the output jump straight to its target.
@@ -132,21 +139,21 @@ impl ProcessNode for RandomProcessNode {
 
     fn params(&self) -> Vec<ParamDef> {
         vec![
-            ParamDef::Float { name: "Min".into(), value: self.min, min: -1000.0, max: 1000.0, step: 0.01, unit: "" },
-            ParamDef::Float { name: "Max".into(), value: self.max, min: -1000.0, max: 1000.0, step: 0.01, unit: "" },
-            ParamDef::Int { name: "Steps".into(), value: self.steps as i64, min: 0, max: 64 },
+            MIN.def(self.min),
+            MAX.def(self.max),
+            STEPS.def(self.steps as i64),
             ParamDef::Bool { name: "No repeat".into(), value: self.no_repeat },
-            ParamDef::Float { name: "Glide".into(), value: self.glide_ms, min: 0.0, max: 5000.0, step: 1.0, unit: "ms" },
+            GLIDE.def(self.glide_ms),
         ]
     }
 
     fn set_param(&mut self, index: usize, value: ParamValue) {
         match index {
-            0 => self.min = value.as_f32(),
-            1 => self.max = value.as_f32(),
-            2 => self.steps = value.as_f32().max(0.0) as usize,
+            0 => self.min = MIN.apply(&value),
+            1 => self.max = MAX.apply(&value),
+            2 => self.steps = STEPS.apply(&value) as usize,
             3 => self.no_repeat = value.as_f32() >= 0.5,
-            4 => self.glide_ms = value.as_f32().max(0.0),
+            4 => self.glide_ms = GLIDE.apply(&value),
             _ => {}
         }
     }

@@ -2,7 +2,10 @@
 //! scalar is both editable as a param and driven by a knob in the node
 //! body.
 
+use crate::engine::param_spec::FloatParam;
 use crate::engine::types::*;
+
+const GAIN: FloatParam = FloatParam::new("Gain", 0.0, 1.0, 0.01, "").clamped();
 
 pub struct GainDisplay {
     pub gain: f32,
@@ -63,19 +66,12 @@ impl ProcessNode for GainProcessNode {
     }
 
     fn params(&self) -> Vec<ParamDef> {
-        vec![ParamDef::Float {
-            name: "Gain".into(),
-            value: self.gain,
-            min: 0.0,
-            max: 1.0,
-            step: 0.01,
-            unit: "",
-        }]
+        vec![GAIN.def(self.gain)]
     }
 
     fn set_param(&mut self, index: usize, value: ParamValue) {
         if index == 0 {
-            self.gain = value.as_f32().clamp(0.0, 1.0);
+            self.gain = GAIN.apply(&value);
         }
     }
 
