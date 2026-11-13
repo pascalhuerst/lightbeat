@@ -67,7 +67,10 @@ Updated as items are implemented. Items not listed here are open.
 | D12 | done | 679d718 (rest) |
 | D11 | done | b5a13bb (descriptions) |
 | D1, U2 - U7, S7, E11, T1, T3, T5 | open | not started |
-| R2 (settings), R3 (project file), R5/R8 (UI part) | in progress | branch `feature/shell-leftovers`, not merged |
+| R2 (settings) | done | bea6940 |
+| R3 (project file) | done | 486e28d |
+| R5, R8 (UI part) | done | 41daa6d: the status bar says "Engine stopped" or "Engine busy: N changes lost" |
+| D8 (rest) | done | 8595998 |
 
 Checked against your own files on 2026-11-13: `setup.json` uses the new pixel
 format only (M3 can go), no saved Fader or Fader Group uses the old keys (M4,

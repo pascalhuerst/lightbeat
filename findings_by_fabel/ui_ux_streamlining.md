@@ -57,7 +57,10 @@ Updated as items are implemented. Items not listed here are open.
 | 10.4 | done | 10e86f5 |
 | 10.5 | partly | ab42e63: one helper for ms and s fields |
 | 10.6 | done | b8b5759 for node widgets; what remains is computed from data |
-| 2.2 (rest), 3.10 (rest), 3.12 | in progress | branch `feature/shell-leftovers`, not merged |
+| 2.2 (rest) | done | 861674b: delete buttons say what uses the thing |
+| 3.10 (rest) | done | 5c3cf3d: one Rescan and one banner |
+| 3.12 | done | 18f19bf: presets are edited in their tab; "Update preset" on the Gradient Source (until the project is reloaded, the node does not remember the preset) |
+| 4.5 (rest) | done | b8254bb |
 | 5.1 - 5.4, 6.x, 7 (ports, params), 7.1 - 7.4 | open | the node catalogue: not started |
 
 ---
