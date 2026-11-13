@@ -65,11 +65,10 @@ impl X1State {
         }
 
         let bit = |group: usize, offset: u8| -> bool {
-            if let Some(byte) = buf.get(1 + group) {
-                if let Some(mask) = (1u8).checked_shl(offset as u32) {
+            if let Some(byte) = buf.get(1 + group)
+                && let Some(mask) = (1u8).checked_shl(offset as u32) {
                     return (*byte & mask) != 0;
                 }
-            }
             false
         };
 

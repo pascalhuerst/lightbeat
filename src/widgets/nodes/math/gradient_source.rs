@@ -443,14 +443,13 @@ impl NodeWidget for GradientSourceWidget {
             self.stops.swap(a, b);
             changed = true;
         }
-        if shown.len() < self.stops.len() {
-            if setup_ui::add_button(ui, "Add stop")
+        if shown.len() < self.stops.len()
+            && setup_ui::add_button(ui, "Add stop")
                 && let Some(s) = self.stops.iter_mut().find(|s| !s.used)
             {
                 s.used = true;
                 changed = true;
             }
-        }
 
         if changed { self.push_config(); }
     }

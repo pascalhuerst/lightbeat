@@ -456,8 +456,8 @@ pub fn load_graph(graph: &mut NodeGraph, project: &ProjectFile) -> Vec<usize> {
             // saved wires are attached.
             graph.node_mut(idx).restore_from_save(saved.data.as_ref(), &restore_params);
 
-            if saved.type_name == "Subgraph" {
-                if let Some(inner_project) = &saved.inner_graph {
+            if saved.type_name == "Subgraph"
+                && let Some(inner_project) = &saved.inner_graph {
                     // Save the active level explicitly — `navigate_up` just
                     // decrements by one, which picks the wrong level when
                     // sibling subgraphs have pushed levels above us in the
@@ -480,7 +480,6 @@ pub fn load_graph(graph: &mut NodeGraph, project: &ProjectFile) -> Vec<usize> {
                     let _inner_indices = load_graph(graph, inner_project);
                     graph.navigate_to_level(parent_level);
                 }
-            }
 
             indices.push(idx);
         }

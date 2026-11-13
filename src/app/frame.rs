@@ -680,9 +680,8 @@ impl LightBeatApp {
                         self.config.latency_ms = ms;
                         latency::set_lead_ms(ms);
                     }
-                    if drag.drag_stopped() || drag.lost_focus() {
-                        if let Err(e) = self.config.save() { self.settings_save_error = Some(e); }
-                    }
+                    if (drag.drag_stopped() || drag.lost_focus())
+                        && let Err(e) = self.config.save() { self.settings_save_error = Some(e); }
 
                     match self.updater.state() {
                         update::State::Available(release) => {

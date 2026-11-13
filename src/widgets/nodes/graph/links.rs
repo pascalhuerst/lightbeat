@@ -130,8 +130,8 @@ impl NodeGraph {
 
         let hash = self.stack_links_hash();
         let registry_set = self.stack_names.is_some();
-        if let Some(prev) = self.stack_sig.take() {
-            if prev.hash == hash && prev.registry_set == registry_set {
+        if let Some(prev) = self.stack_sig.take()
+            && prev.hash == hash && prev.registry_set == registry_set {
                 // Nothing that links or lists changed. A stack still gets its
                 // members again: that call also notices edits to the groups it
                 // writes to, which are not part of the signature.
@@ -141,7 +141,6 @@ impl NodeGraph {
                 self.stack_sig = Some(prev);
                 return;
             }
-        }
 
         let mut stacks: Vec<String> = Vec::new();
         let mut parent_of: std::collections::HashMap<String, String> = std::collections::HashMap::new();
