@@ -17,6 +17,7 @@ use crate::engine::effects::stack::{LayerConfig, PreviewStrip, StackConfig, Stac
 use crate::engine::types::*;
 use crate::objects::channel::ChannelKind;
 use crate::theme;
+use crate::widgets::setup_ui;
 use crate::widgets::nodes::node::{NodeWidget, StackMember};
 use crate::widgets::group_context::SharedGroupContext;
 use crate::widgets::nodes::output::effect::SharedStackNames;
@@ -473,7 +474,7 @@ impl NodeWidget for EffectStackWidget {
         let mut changed = false;
 
         ui.horizontal(|ui| {
-            ui.label("Name:");
+            ui.label("Name");
             let mut name = self.config.name.clone();
             if ui.text_edit_singleline(&mut name).changed() && !name.is_empty() {
                 if self.renamed_from.is_none() {
@@ -483,20 +484,14 @@ impl NodeWidget for EffectStackWidget {
                 changed = true;
             }
         });
+        if setup_ui::choice_combo(ui, ("stack_mode", self.id.0), "Mode", &mut self.config.mode, &[
+            (StackMode::Layers, "Layers", "Blend everything sent here, bottom to top"),
+            (StackMode::Scenes, "Scenes", "Show one at a time; the scene input picks it (the first in the list is 0) and the fade input fades to it"),
+        ]) {
+            changed = true;
+        }
         ui.horizontal(|ui| {
-            ui.label("Mode:");
-            for (mode, label, hint) in [
-                (StackMode::Layers, "Layers", "Blend everything sent here, bottom to top"),
-                (StackMode::Scenes, "Scenes", "Show one at a time; the scene input picks it (the first in the list is 0) and the fade input fades to it"),
-            ] {
-                if ui.selectable_label(self.config.mode == mode, label).on_hover_text(hint).clicked() {
-                    self.config.mode = mode;
-                    changed = true;
-                }
-            }
-        });
-        ui.horizontal(|ui| {
-            ui.label("Send to:");
+            ui.label("Send to");
             let choices = self.names.lock().unwrap().parents_for(&self.config.name);
             let current = if self.is_root() { "(write to groups)".to_string() } else { self.config.parent.clone() };
             let mut picked: Option<String> = None;
@@ -522,7 +517,7 @@ impl NodeWidget for EffectStackWidget {
 
         if self.is_root() {
             ui.horizontal(|ui| {
-                ui.label("Blend:");
+                ui.label("Blend");
                 if blend_combo(ui, "stack_blend", &mut self.config.blend) {
                     changed = true;
                 }
@@ -536,7 +531,7 @@ impl NodeWidget for EffectStackWidget {
             }
 
             ui.add_space(4.0);
-            ui.label(egui::RichText::new("Groups").strong());
+            setup_ui::section(ui, "Groups");
             let groups: Vec<(u32, String)> =
                 self.group_ctx.lock().unwrap().groups.iter().map(|g| (g.id, g.name.clone())).collect();
             for (gid, name) in &groups {
@@ -557,7 +552,7 @@ impl NodeWidget for EffectStackWidget {
 
         ui.add_space(6.0);
         ui.separator();
-        ui.label(egui::RichText::new("Selected layer").strong());
+        setup_ui::section(ui, "Selected layer");
         match self.selected.and_then(|n| self.config.layers.iter().position(|l| l.node_id == n)) {
             None => {
                 ui.colored_label(theme::TEXT_DIM, "Click a layer in the stack.");
@@ -568,13 +563,13 @@ impl NodeWidget for EffectStackWidget {
                 ui.colored_label(theme::TEXT, format!("{label}  ({kind})"));
                 let layer = &mut self.config.layers[i];
                 ui.horizontal(|ui| {
-                    ui.label("Blend:");
+                    ui.label("Blend");
                     if blend_combo(ui, ("layer_blend", i), &mut layer.blend) {
                         changed = true;
                     }
                 });
                 ui.horizontal(|ui| {
-                    ui.label("Opacity:");
+                    ui.label("Opacity");
                     if ui.add(egui::Slider::new(&mut layer.opacity, 0.0..=1.0).fixed_decimals(2)).changed() {
                         changed = true;
                     }

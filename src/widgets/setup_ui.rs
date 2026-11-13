@@ -109,6 +109,63 @@ pub fn add_menu<T>(ui: &mut Ui, id: impl Hash, caption: &str, items: Vec<(T, Str
     picked
 }
 
+/// A labelled dropdown for a mode setting, like the generic Choice rows of the
+/// inspector. Each option is (value, caption, hover text); an empty hover text
+/// shows none. Returns true when another option was picked.
+pub fn choice_combo<T: PartialEq + Copy>(
+    ui: &mut Ui,
+    id: impl Hash,
+    label: &str,
+    current: &mut T,
+    options: &[(T, &str, &str)],
+) -> bool {
+    let mut changed = false;
+    ui.horizontal(|ui| {
+        ui.label(label);
+        let shown = options.iter().find(|o| o.0 == *current).map_or("?", |o| o.1);
+        egui::ComboBox::from_id_salt(id).selected_text(shown).show_ui(ui, |ui| {
+            for (value, caption, hover) in options {
+                let mut r = ui.selectable_label(*current == *value, *caption);
+                if !hover.is_empty() {
+                    r = r.on_hover_text(*hover);
+                }
+                if r.clicked() && *current != *value {
+                    *current = *value;
+                    changed = true;
+                }
+            }
+        });
+    });
+    changed
+}
+
+// ---------------------------------------------------------------------------
+// Numbers
+// ---------------------------------------------------------------------------
+
+/// The units a number field can carry, written the same way everywhere. Add
+/// kelvin or percent here when a field needs them.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Unit {
+    Milliseconds,
+    Seconds,
+}
+
+impl Unit {
+    pub fn suffix(self) -> &'static str {
+        match self {
+            Unit::Milliseconds => " ms",
+            Unit::Seconds => " s",
+        }
+    }
+}
+
+/// A drag field with a unit after the number. Returns the `DragValue` so the
+/// caller can still set range, speed and decimals.
+pub fn unit_drag<N: egui::emath::Numeric>(value: &mut N, unit: Unit) -> egui::DragValue<'_> {
+    egui::DragValue::new(value).suffix(unit.suffix())
+}
+
 // ---------------------------------------------------------------------------
 // Text
 // ---------------------------------------------------------------------------
@@ -318,6 +375,12 @@ mod tests {
         assert!(!apply_move(&mut v, 0, Move::Up));
         assert!(!apply_move(&mut v, 1, Move::Down));
         assert_eq!(v, [1, 2]);
+    }
+
+    #[test]
+    fn units_are_written_with_a_space_before_them() {
+        assert_eq!(Unit::Milliseconds.suffix(), " ms");
+        assert_eq!(Unit::Seconds.suffix(), " s");
     }
 
     #[test]

@@ -8,6 +8,7 @@ use egui::{self, Ui};
 use egui_phosphor::regular as icon;
 
 use super::nodes::node::NodeWidget;
+use super::setup_ui;
 use crate::engine::snapshots::{FADE_NAME, SELECT_NAME, SnapshotSet, capture, storable};
 use crate::engine::types::{PromotedKind, PromotedParam};
 use crate::theme;
@@ -137,7 +138,7 @@ pub fn show(ui: &mut Ui, node: &dyn NodeWidget) {
             ui.add_enabled_ui(!fade_on, |ui| {
                 ui.label("Fade time");
                 let mut t = set.fade_time;
-                if ui.add(egui::DragValue::new(&mut t).range(0.0..=60.0).speed(0.01).suffix(" s")).changed() {
+                if ui.add(setup_ui::unit_drag(&mut t, setup_ui::Unit::Seconds).range(0.0..=60.0).speed(0.01)).changed() {
                     edit = Some(Edit::FadeTime(t));
                 }
             });
@@ -148,7 +149,7 @@ pub fn show(ui: &mut Ui, node: &dyn NodeWidget) {
     });
 
     ui.add_space(4.0);
-    ui.label(egui::RichText::new("Snapshots").strong());
+    setup_ui::section(ui, "Snapshots");
     let list_fill = ui.visuals().extreme_bg_color;
     egui::Frame::NONE
         .fill(list_fill)
@@ -170,7 +171,7 @@ pub fn show(ui: &mut Ui, node: &dyn NodeWidget) {
                         let row_fill = if is_active {
                             theme::SEM_PRIMARY_FILL
                         } else if i % 2 == 1 {
-                            egui::Color32::from_white_alpha(6)
+                            theme::ROW_STRIPE
                         } else {
                             egui::Color32::TRANSPARENT
                         };

@@ -1,5 +1,8 @@
 use egui::{Color32, Pos2, Rect, Response, StrokeKind, Ui};
 
+use crate::engine::types::{ParamValue, SharedState};
+use crate::theme;
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Orientation {
     Vertical,
@@ -18,12 +21,24 @@ pub struct FaderStyle {
 impl Default for FaderStyle {
     fn default() -> Self {
         Self {
-            bg: Color32::from_gray(30),
-            fill: Color32::from_rgb(80, 180, 240),
-            fill_active: Color32::from_rgb(240, 160, 40),
-            border: Some(Color32::from_gray(60)),
+            bg: theme::BG_GRID,
+            fill: theme::FADER_FILL,
+            fill_active: theme::FADER_ACTIVE,
+            border: Some(theme::PLOT_BORDER),
             corner_radius: 2.0,
         }
+    }
+}
+
+/// How much slower a Shift-drag moves a control than a plain drag.
+pub const FINE_FACTOR: f32 = 0.1;
+
+/// The float the node was made with for its param at `index`, for a control
+/// whose double-click puts the setting back. None when nothing was recorded.
+pub fn recorded_default(shared: &SharedState, index: usize) -> Option<f32> {
+    match shared.lock().unwrap().default_params.get(index)?.as_value() {
+        ParamValue::Float(v) => Some(v),
+        _ => None,
     }
 }
 
@@ -203,7 +218,7 @@ pub fn handle_fader_interaction(
                 Orientation::Vertical => -delta.y / rect.height().max(1.0),
                 Orientation::Horizontal => delta.x / rect.width().max(1.0),
             };
-            *value = (*value + norm_delta * 0.1).clamp(0.0, 1.0);
+            *value = (*value + norm_delta * FINE_FACTOR).clamp(0.0, 1.0);
             changed = true;
         } else if let Some(pos) = response.interact_pointer_pos() {
             *value = value_from_pos(pos, rect, orient);

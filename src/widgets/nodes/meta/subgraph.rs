@@ -6,6 +6,7 @@ use crate::engine::nodes::meta::subgraph::{
     SubgraphPortDef,
 };
 use crate::engine::types::*;
+use crate::widgets::setup_ui;
 use crate::theme;
 use crate::widgets::nodes::node::NodeWidget;
 use crate::widgets::nodes::types::UiPortDef;
@@ -183,12 +184,12 @@ impl NodeWidget for SubgraphWidget {
         ui.horizontal(|ui| {
             if self.locked {
                 ui.colored_label(
-                    Color32::from_rgb(180, 160, 220),
+                    theme::MACRO_LOCK,
                     egui_phosphor::regular::LOCK,
                 )
                 .on_hover_text("Macro (locked). Right-click → Embed to edit.");
             }
-            ui.colored_label(Color32::from_gray(100), format!("{} nodes", inner_count));
+            ui.colored_label(theme::TEXT_DIM, format!("{} nodes", inner_count));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 // Open button is hidden when locked — match navigation gating.
                 if !self.locked
@@ -213,18 +214,18 @@ impl NodeWidget for SubgraphWidget {
         // you can't without unlocking via the context menu's "Embed" action).
         if self.locked {
             ui.horizontal(|ui| {
-                ui.label("Name:");
+                ui.label("Name");
                 ui.colored_label(theme::TEXT, &self.name);
             });
             ui.separator();
-            ui.label(egui::RichText::new("Description").strong());
+            setup_ui::section(ui, "Description");
             if self.macro_description.is_empty() {
                 ui.colored_label(theme::TEXT_DIM, "(no description)");
             } else {
                 ui.label(&self.macro_description);
             }
             ui.separator();
-            ui.label(egui::RichText::new("Path").strong());
+            setup_ui::section(ui, "Path");
             if self.macro_path.is_empty() {
                 ui.colored_label(theme::TEXT_DIM, "(unknown)");
             } else {
@@ -235,7 +236,7 @@ impl NodeWidget for SubgraphWidget {
 
         // Name.
         ui.horizontal(|ui| {
-            ui.label("Name:");
+            ui.label("Name");
             if ui.text_edit_singleline(&mut self.name).changed() {
                 self.push_config();
             }
@@ -244,7 +245,7 @@ impl NodeWidget for SubgraphWidget {
         ui.separator();
 
         // Input ports.
-        ui.label(egui::RichText::new("Inputs").strong());
+        setup_ui::section(ui, "Inputs");
         let mut input_changed = false;
         let mut remove_input = None;
         for (i, port) in self.input_defs.iter_mut().enumerate() {
@@ -265,7 +266,7 @@ impl NodeWidget for SubgraphWidget {
                             }
                         }
                     });
-                if ui.small_button(egui_phosphor::regular::X).clicked() {
+                if setup_ui::delete_button(ui, "Delete this input") {
                     remove_input = Some(i);
                 }
             });
@@ -274,7 +275,7 @@ impl NodeWidget for SubgraphWidget {
             self.remove_input(i);
             input_changed = true;
         }
-        if ui.small_button("+ Add Input").clicked() {
+        if setup_ui::add_button(ui, "Add input") {
             self.input_defs.push(SubgraphPortDef {
                 name: format!("in {}", self.input_defs.len()),
                 port_type_idx: 2,
@@ -285,7 +286,7 @@ impl NodeWidget for SubgraphWidget {
         ui.separator();
 
         // Output ports.
-        ui.label(egui::RichText::new("Outputs").strong());
+        setup_ui::section(ui, "Outputs");
         let mut output_changed = false;
         let mut remove_output = None;
         for (i, port) in self.output_defs.iter_mut().enumerate() {
@@ -306,7 +307,7 @@ impl NodeWidget for SubgraphWidget {
                             }
                         }
                     });
-                if ui.small_button(egui_phosphor::regular::X).clicked() {
+                if setup_ui::delete_button(ui, "Delete this output") {
                     remove_output = Some(i);
                 }
             });
@@ -315,7 +316,7 @@ impl NodeWidget for SubgraphWidget {
             self.remove_output(i);
             output_changed = true;
         }
-        if ui.small_button("+ Add Output").clicked() {
+        if setup_ui::add_button(ui, "Add output") {
             self.output_defs.push(SubgraphPortDef {
                 name: format!("out {}", self.output_defs.len()),
                 port_type_idx: 2,
@@ -413,7 +414,7 @@ fn draw_inner_display_row(ui: &mut Ui, d: &InnerValueDisplay) {
         } else {
             d.name.as_str()
         };
-        ui.colored_label(Color32::from_gray(160), label);
+        ui.colored_label(theme::TEXT_MUTED, label);
         ui.with_layout(
             egui::Layout::right_to_left(egui::Align::Center),
             |ui| match d.mode {

@@ -7,6 +7,7 @@ use crate::engine::nodes::meta::portal::{
 };
 use crate::engine::nodes::meta::subgraph::PORT_TYPE_NAMES;
 use crate::engine::types::*;
+use crate::widgets::setup_ui;
 use crate::theme;
 use crate::widgets::nodes::node::NodeWidget;
 use crate::widgets::nodes::types::UiPortDef;
@@ -124,7 +125,7 @@ impl NodeWidget for PortalSendWidget {
     fn show_inspector(&mut self, ui: &mut Ui) {
         let mut changed = false;
         ui.horizontal(|ui| {
-            ui.label("Name:");
+            ui.label("Name");
             if ui.text_edit_singleline(&mut self.name).changed() { changed = true; }
         });
         if self.name.is_empty() {
@@ -133,7 +134,7 @@ impl NodeWidget for PortalSendWidget {
             ui.colored_label(theme::SEM_DANGER, "Another Portal Send already uses this name.");
         }
         ui.separator();
-        ui.label(egui::RichText::new("Ports").strong());
+        setup_ui::section(ui, "Ports");
         let mut remove: Option<usize> = None;
         for (i, port) in self.port_defs.iter_mut().enumerate() {
             ui.horizontal(|ui| {
@@ -148,14 +149,14 @@ impl NodeWidget for PortalSendWidget {
                             }
                         }
                     });
-                if ui.small_button(egui_phosphor::regular::X).clicked() { remove = Some(i); }
+                if setup_ui::delete_button(ui, "Delete this port") { remove = Some(i); }
             });
         }
         if let Some(i) = remove {
             self.remove_port(i);
             changed = true;
         }
-        if ui.small_button("+ Add Port").clicked() {
+        if setup_ui::add_button(ui, "Add port") {
             self.port_defs.push(PortalPortDef {
                 name: format!("in {}", self.port_defs.len() + 1),
                 port_type_idx: DEFAULT_PORT_TYPE,
@@ -268,7 +269,7 @@ impl NodeWidget for PortalReceiveWidget {
     fn show_inspector(&mut self, ui: &mut Ui) {
         let names = available_portal_names(&self.registry);
         ui.horizontal(|ui| {
-            ui.label("Portal Send:");
+            ui.label("Portal Send");
             let current = if self.bound_name.is_empty() { "(none)".to_string() } else { self.bound_name.clone() };
             egui::ComboBox::from_id_salt(("portal_receive_bind", self.id.0))
                 .selected_text(current)

@@ -5,7 +5,8 @@ use egui::{self, Pos2, Sense, Stroke, Ui};
 use crate::engine::nodes::math::gain::GainDisplay;
 use crate::engine::types::*;
 use crate::theme;
-use crate::widgets::nodes::node::NodeWidget;
+use crate::widgets::fader;
+use crate::widgets::nodes::node::{NodeLayout, NodeWidget, PORT_RADIUS};
 use crate::widgets::nodes::types::UiPortDef;
 
 /// Knob sweep: 0 at bottom-left, 1 at bottom-right, going the long way
@@ -34,7 +35,7 @@ impl NodeWidget for GainWidget {
     fn type_name(&self) -> &'static str { "Gain" }
     fn description(&self) -> &'static str {
         "Multiplies the input by a 0..1 scalar. Drag the knob to adjust; \
-         double-click to reset to unity (1.0)."
+         hold Shift for fine steps; double-click to reset."
     }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> {
@@ -44,6 +45,7 @@ impl NodeWidget for GainWidget {
         vec![UiPortDef::from_def(&PortDef::new("out", PortType::Untyped))]
     }
 
+    fn layout(&self) -> NodeLayout { NodeLayout::compact().with_side_inset(PORT_RADIUS + 2.0) }
     fn min_width(&self) -> f32 { 90.0 }
     fn min_content_height(&self) -> f32 { 70.0 }
     fn resizable(&self) -> bool { true }
@@ -118,14 +120,17 @@ impl NodeWidget for GainWidget {
             theme::TEXT_MUTED,
         );
 
-        // Interaction: vertical drag changes value (up = louder).
+        // Interaction: vertical drag changes value (up = louder), Shift for
+        // fine steps, double-click for what the node was made with.
         if resp.double_clicked() {
+            let default = fader::recorded_default(&self.shared, 0).unwrap_or(1.0);
             self.shared.lock().unwrap()
-                .pending_params.push((0, ParamValue::Float(1.0)));
+                .pending_params.push((0, ParamValue::Float(default)));
         } else if resp.dragged() {
             let dy = resp.drag_delta().y;
             if dy.abs() > 0.0 {
-                let delta_v = -dy / (DRAG_PIXELS_FOR_FULL_SWEEP * zoom.max(0.5));
+                let fine = if ui.input(|i| i.modifiers.shift) { fader::FINE_FACTOR } else { 1.0 };
+                let delta_v = -dy * fine / (DRAG_PIXELS_FOR_FULL_SWEEP * zoom.max(0.5));
                 let new_v = (self.gain + delta_v).clamp(0.0, 1.0);
                 self.shared.lock().unwrap()
                     .pending_params.push((0, ParamValue::Float(new_v)));

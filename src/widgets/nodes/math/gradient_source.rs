@@ -8,6 +8,7 @@ use crate::engine::nodes::math::gradient_source::GradientSourceDisplay;
 use crate::engine::types::*;
 use crate::objects::gradient_preset::GradientPreset;
 use crate::theme;
+use crate::widgets::setup_ui;
 use crate::widgets::nodes::node::NodeWidget;
 use crate::widgets::nodes::types::UiPortDef;
 
@@ -158,7 +159,7 @@ impl NodeWidget for GradientSourceWidget {
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { "Gradient Source" }
     fn description(&self) -> &'static str {
-        "Authors an 8-stop gradient (color + alpha + position per stop). Output feeds Group Output and any other Gradient-accepting node."
+        "Authors an 8-stop gradient (color + alpha + position per stop). Wire it into an effect or any other node that takes a gradient."
     }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> { vec![] }
@@ -199,7 +200,7 @@ impl NodeWidget for GradientSourceWidget {
         let bar_rect = egui::Rect::from_min_size(resp.rect.min, Vec2::new(resp.rect.width(), bar_h));
 
         // Checkerboard so alpha is visible.
-        draw_checker(&painter, bar_rect);
+        theme::draw_checkerboard(&painter, bar_rect, 6.0);
 
         // Sample the gradient at many points across width.
         let samples = (bar_rect.width() as usize).max(16).min(512);
@@ -289,7 +290,7 @@ impl NodeWidget for GradientSourceWidget {
                         s.alpha = color.a() as f32 / 255.0;
                         changed = true;
                     }
-                    if ui.button(egui_phosphor::regular::X.to_string() + " Remove").clicked() {
+                    if setup_ui::delete_button(ui, "Delete this stop") {
                         delete_idx = Some(i);
                         ui.memory_mut(|m| m.close_popup());
                     }
@@ -305,7 +306,7 @@ impl NodeWidget for GradientSourceWidget {
             let stroke = if h_resp.hovered() || h_resp.dragged() {
                 Stroke::new(1.5_f32, theme::TEXT_BRIGHT)
             } else {
-                Stroke::new(1.0_f32, Color32::from_gray(120))
+                Stroke::new(1.0_f32, theme::TEXT_DIM)
             };
             // Tick connecting handle to its position on the bar.
             painter.line_segment(
@@ -346,7 +347,7 @@ impl NodeWidget for GradientSourceWidget {
         let mut swap: Option<(usize, usize)> = None;
 
         // -- Preset library: load and save -------------------------------
-        ui.label(egui::RichText::new("Preset Library").strong());
+        setup_ui::section(ui, "Preset Library");
         let presets: Vec<(u32, String, Vec<GradientStop>)> = {
             let lib = self.library.lock().unwrap();
             lib.presets.iter().map(|p| (p.id, p.name.clone(), p.stops.clone())).collect()
@@ -358,7 +359,7 @@ impl NodeWidget for GradientSourceWidget {
             let mut load_stops: Option<Vec<GradientStop>> = None;
             combo.show_ui(ui, |ui| {
                 if presets.is_empty() {
-                    ui.colored_label(Color32::from_gray(120), "No presets yet");
+                    ui.colored_label(theme::TEXT_DIM, "No presets yet");
                 }
                 for (_id, name, stops) in &presets {
                     if ui.selectable_label(false, name).clicked() {
@@ -390,51 +391,57 @@ impl NodeWidget for GradientSourceWidget {
         });
 
         ui.separator();
-        ui.label(egui::RichText::new("Stops").strong());
+        setup_ui::section(ui, "Stops");
 
-        let len = self.stops.len();
-        for (i, s) in self.stops.iter_mut().enumerate() {
+        // Unused slots are not listed: deleting a stop frees its slot, adding
+        // takes the first free one.
+        let shown: Vec<usize> = (0..self.stops.len()).filter(|&i| self.stops[i].used).collect();
+        let mut delete: Option<usize> = None;
+        for (n, &i) in shown.iter().enumerate() {
+            let s = &mut self.stops[i];
             ui.push_id(("stop", i), |ui| {
                 ui.horizontal(|ui| {
-                    if ui.checkbox(&mut s.used, "").on_hover_text("Enable this stop").changed() {
+                    let mut col = [s.r, s.g, s.b];
+                    if ui.color_edit_button_rgb(&mut col).changed() {
+                        s.r = col[0]; s.g = col[1]; s.b = col[2];
                         changed = true;
                     }
-                    ui.add_enabled_ui(s.used, |ui| {
-                        let mut col = [s.r, s.g, s.b];
-                        if ui.color_edit_button_rgb(&mut col).changed() {
-                            s.r = col[0]; s.g = col[1]; s.b = col[2];
-                            changed = true;
-                        }
-                        ui.label("pos");
-                        if ui.add(egui::Slider::new(&mut s.position, 0.0..=1.0)
-                            .step_by(0.01)
-                            .show_value(true)
-                        ).changed() { changed = true; }
-                        ui.label("α");
-                        if ui.add(egui::Slider::new(&mut s.alpha, 0.0..=1.0)
-                            .step_by(0.01)
-                            .show_value(true)
-                        ).changed() { changed = true; }
-                    });
-                    if ui.add_enabled(i > 0, egui::Button::new(egui_phosphor::regular::ARROW_UP))
-                        .on_hover_text("Move stop up")
-                        .clicked()
-                    {
-                        swap = Some((i, i - 1));
+                    ui.label("pos");
+                    if ui.add(egui::Slider::new(&mut s.position, 0.0..=1.0)
+                        .step_by(0.01)
+                        .show_value(true)
+                    ).changed() { changed = true; }
+                    ui.label("α");
+                    if ui.add(egui::Slider::new(&mut s.alpha, 0.0..=1.0)
+                        .step_by(0.01)
+                        .show_value(true)
+                    ).changed() { changed = true; }
+                    match setup_ui::move_buttons(ui, n, shown.len()) {
+                        Some(setup_ui::Move::Up) => swap = Some((i, shown[n - 1])),
+                        Some(setup_ui::Move::Down) => swap = Some((i, shown[n + 1])),
+                        None => {}
                     }
-                    if ui.add_enabled(i + 1 < len, egui::Button::new(egui_phosphor::regular::ARROW_DOWN))
-                        .on_hover_text("Move stop down")
-                        .clicked()
-                    {
-                        swap = Some((i, i + 1));
+                    if setup_ui::delete_button(ui, "Delete this stop") {
+                        delete = Some(i);
                     }
                 });
             });
         }
-
+        if let Some(i) = delete {
+            self.stops[i].used = false;
+            changed = true;
+        }
         if let Some((a, b)) = swap {
             self.stops.swap(a, b);
             changed = true;
+        }
+        if shown.len() < self.stops.len() {
+            if setup_ui::add_button(ui, "Add stop")
+                && let Some(s) = self.stops.iter_mut().find(|s| !s.used)
+            {
+                s.used = true;
+                changed = true;
+            }
         }
 
         if changed { self.push_config(); }
@@ -443,23 +450,6 @@ impl NodeWidget for GradientSourceWidget {
     fn as_any_mut(&mut self) -> &mut dyn Any { self }
 }
 
-fn draw_checker(painter: &egui::Painter, rect: egui::Rect) {
-    let cell = 6.0;
-    let cols = (rect.width() / cell).ceil() as i32;
-    let rows = (rect.height() / cell).ceil() as i32;
-    let c1 = theme::BG;
-    let c2 = Color32::from_gray(70);
-    for y in 0..rows {
-        for x in 0..cols {
-            let color = if (x + y) % 2 == 0 { c1 } else { c2 };
-            let cell_rect = egui::Rect::from_min_size(
-                Pos2::new(rect.min.x + x as f32 * cell, rect.min.y + y as f32 * cell),
-                Vec2::splat(cell),
-            ).intersect(rect);
-            painter.rect_filled(cell_rect, 0.0, color);
-        }
-    }
-}
 
 /// Minimal preview-side sampler: linear interpolation in sRGB+alpha.
 fn sample_preview(stops: &[(f32, Color32, f32)], t: f32) -> Color32 {

@@ -1,6 +1,6 @@
 use std::any::Any;
 
-use egui::{self, Color32, Ui};
+use egui::{self, Ui};
 
 use crate::engine::nodes::transport::hold::TriggerHoldDisplay;
 use crate::engine::types::*;
@@ -57,7 +57,7 @@ impl NodeWidget for TriggerHoldWidget {
                 );
             } else {
                 ui.colored_label(
-                    Color32::from_gray(120),
+                    theme::TEXT_DIM,
                     format!("idle ({})", dur),
                 );
             }

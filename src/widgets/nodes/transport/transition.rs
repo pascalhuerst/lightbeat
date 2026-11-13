@@ -1,5 +1,5 @@
 use std::any::Any;
-use egui::{self, Color32, Pos2, Sense, Stroke, Ui, Vec2};
+use egui::{self, Pos2, Sense, Stroke, Ui, Vec2};
 
 use crate::engine::nodes::transport::easing::EasingCurve;
 use crate::engine::nodes::transport::transition::{TransitionDisplay, TransitionMode};
@@ -102,10 +102,10 @@ impl NodeWidget for TransitionWidget {
         let (response, painter) = ui.allocate_painter(Vec2::new(w, h), Sense::hover());
         let rect = response.rect;
 
-        painter.rect_filled(rect, 2.0, Color32::from_gray(25));
+        painter.rect_filled(rect, 2.0, theme::PLOT_BG);
 
         // Draw curve.
-        let curve_color = Color32::from_rgb(80, 200, 160);
+        let curve_color = theme::CURVE;
         let mut prev: Option<Pos2> = None;
         for i in 0..=CURVE_SEGMENTS {
             let t = i as f32 / CURVE_SEGMENTS as f32;

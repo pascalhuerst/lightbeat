@@ -5,6 +5,7 @@ use egui::{self, Ui};
 use crate::engine::nodes::transport::phase_scaler::{ExtraOutput, MAX_EXTRA_OUTPUTS, PhaseScalerDisplay};
 use crate::engine::types::*;
 use crate::widgets::nodes::node::NodeWidget;
+use crate::widgets::setup_ui;
 use crate::widgets::nodes::types::UiPortDef;
 
 pub struct PhaseScalerWidget {
@@ -160,7 +161,7 @@ impl NodeWidget for PhaseScalerWidget {
         if self.extra.is_empty() {
             return;
         }
-        ui.label(egui::RichText::new("Extra outputs").strong());
+        setup_ui::section(ui, "Extra outputs");
         let mut changed = false;
         for (i, x) in self.extra.iter_mut().enumerate() {
             ui.horizontal(|ui| {

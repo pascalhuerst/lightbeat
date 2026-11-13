@@ -13,6 +13,7 @@ use egui_extras::{Column, TableBuilder};
 use crate::color::{Gradient, GradientStop};
 use crate::engine::nodes::math::lookup::{LookupColumn, LookupDisplay, port_type_to_str};
 use crate::engine::types::*;
+use crate::widgets::setup_ui;
 use crate::theme;
 use crate::widgets::nodes::math::gradient_source::SharedGradientLibrary;
 use crate::widgets::nodes::node::NodeWidget;
@@ -137,12 +138,9 @@ impl LookupWidget {
         for r in 0..self.row_count {
             let src = r * old_stride;
             let dst = r * new_stride;
-            for k in 0..off {
-                new_data[dst + k] = self.data[src + k];
-            }
-            for k in 0..(old_stride - off - cc) {
-                new_data[dst + off + k] = self.data[src + off + cc + k];
-            }
+            new_data[dst..dst + off].copy_from_slice(&self.data[src..src + off]);
+            let tail = old_stride - off - cc;
+            new_data[dst + off..dst + off + tail].copy_from_slice(&self.data[src + off + cc..src + off + cc + tail]);
         }
         self.columns.remove(col_idx);
         self.data = new_data;
@@ -161,15 +159,12 @@ impl LookupWidget {
         for r in 0..self.row_count {
             let src = r * old_stride;
             let dst = r * new_stride;
-            for k in 0..off {
-                new_data[dst + k] = self.data[src + k];
-            }
+            new_data[dst..dst + off].copy_from_slice(&self.data[src..src + off]);
             // Cells for the retyped column are cleared — old values don't
             // carry meaningful semantics in the new type.
             let tail = old_stride - off - old_cc;
-            for k in 0..tail {
-                new_data[dst + off + new_cc + k] = self.data[src + off + old_cc + k];
-            }
+            new_data[dst + off + new_cc..dst + off + new_cc + tail]
+                .copy_from_slice(&self.data[src + off + old_cc..src + off + old_cc + tail]);
         }
         self.columns[col_idx].port_type = new_type;
         self.data = new_data;
@@ -299,7 +294,7 @@ impl NodeWidget for LookupWidget {
         let mut changed = false;
 
         // -- Columns --
-        ui.label(egui::RichText::new("Columns").strong());
+        setup_ui::section(ui, "Columns");
         let mut remove_col: Option<usize> = None;
         let mut retype: Option<(usize, PortType)> = None;
         let cols_snapshot: Vec<(String, PortType)> =
@@ -327,7 +322,7 @@ impl NodeWidget for LookupWidget {
                     retype = Some((ci, new_pt));
                 }
                 ui.add_enabled_ui(self.columns.len() > 1, |ui| {
-                    if ui.small_button(egui_phosphor::regular::X).clicked() {
+                    if setup_ui::delete_button(ui, "Delete this column") {
                         remove_col = Some(ci);
                     }
                 });
@@ -341,7 +336,7 @@ impl NodeWidget for LookupWidget {
             self.remove_column(ci);
             changed = true;
         }
-        if self.columns.len() < MAX_COLUMNS && ui.button("+ Add Column").clicked() {
+        if self.columns.len() < MAX_COLUMNS && setup_ui::add_button(ui, "Add column") {
             self.add_column();
             changed = true;
         }
@@ -349,7 +344,7 @@ impl NodeWidget for LookupWidget {
         ui.separator();
 
         // -- Rows table --
-        ui.label(egui::RichText::new("Rows").strong());
+        setup_ui::section(ui, "Rows");
         let stride = self.row_stride();
         let cur = self.current_row;
         let mut remove_row: Option<usize> = None;
@@ -384,7 +379,7 @@ impl NodeWidget for LookupWidget {
                     header.col(|ui| {
                         ui.strong(
                             egui::RichText::new(name)
-                                .color(Color32::from_gray(200))
+                                .color(theme::TEXT)
                                 .size(11.0),
                         );
                     });
@@ -403,7 +398,7 @@ impl NodeWidget for LookupWidget {
                             if is_current {
                                 ui.painter().rect_filled(
                                     rect, 2.0,
-                                    Color32::from_rgba_unmultiplied(80, 200, 240, 60),
+                                    theme::HIGHLIGHT.gamma_multiply(0.24),
                                 );
                             }
                             let txt = egui::RichText::new(format!("{:>3}", r))
@@ -422,7 +417,7 @@ impl NodeWidget for LookupWidget {
                                     let rect = ui.available_rect_before_wrap();
                                     ui.painter().rect_filled(
                                         rect, 2.0,
-                                        Color32::from_rgba_unmultiplied(80, 200, 240, 30),
+                                        theme::HIGHLIGHT.gamma_multiply(0.12),
                                     );
                                 }
                                 let off = self.column_channel_offset(ci);
@@ -437,7 +432,7 @@ impl NodeWidget for LookupWidget {
                         }
                         row.col(|ui| {
                             ui.add_enabled_ui(self.row_count > MIN_ROWS, |ui| {
-                                if ui.small_button(egui_phosphor::regular::X).clicked() {
+                                if setup_ui::delete_button(ui, "Delete this row") {
                                     remove_row = Some(r);
                                 }
                             });
@@ -450,7 +445,7 @@ impl NodeWidget for LookupWidget {
             self.remove_row(r);
             changed = true;
         }
-        if self.row_count < MAX_ROWS && ui.button("+ Add Row").clicked() {
+        if self.row_count < MAX_ROWS && setup_ui::add_button(ui, "Add row") {
             self.add_row();
             changed = true;
         }
@@ -536,7 +531,7 @@ fn edit_cell(
                     Sense::click(),
                 );
                 let rect = resp.rect;
-                draw_checker(&painter, rect, 4.0);
+                theme::draw_checkerboard(&painter, rect, 4.0);
                 let g = Gradient::from_channels(
                     data.get(base..base + span).unwrap_or(&[]),
                 );
@@ -590,14 +585,14 @@ fn edit_cell(
                             );
                             return;
                         }
-                        ui.label(egui::RichText::new("Pick a preset").strong());
+                        setup_ui::section(ui, "Pick a preset");
                         for (_id, name, stops) in &presets {
                             let row_resp = ui.horizontal(|ui| {
                                 let bar = ui.allocate_response(
                                     Vec2::new(80.0, 14.0), Sense::hover(),
                                 );
                                 let painter = ui.painter();
-                                draw_checker(painter, bar.rect, 3.0);
+                                theme::draw_checkerboard(painter, bar.rect, 3.0);
                                 let g = Gradient::new(stops.clone());
                                 let samples = 64usize;
                                 for i in 0..samples {
@@ -717,19 +712,3 @@ fn edit_cell(
     changed
 }
 
-fn draw_checker(painter: &egui::Painter, rect: egui::Rect, cell: f32) {
-    let cols = (rect.width() / cell).ceil() as i32;
-    let rows = (rect.height() / cell).ceil() as i32;
-    let c1 = theme::BG;
-    let c2 = Color32::from_gray(70);
-    for y in 0..rows {
-        for x in 0..cols {
-            let color = if (x + y) % 2 == 0 { c1 } else { c2 };
-            let cell_rect = egui::Rect::from_min_size(
-                Pos2::new(rect.min.x + x as f32 * cell, rect.min.y + y as f32 * cell),
-                Vec2::splat(cell),
-            ).intersect(rect);
-            painter.rect_filled(cell_rect, 0.0, color);
-        }
-    }
-}

@@ -33,7 +33,7 @@ pub fn new_shared_learned() -> SharedLearned {
 pub fn device_picker(ui: &mut Ui, salt: impl std::hash::Hash, port: &mut String, available: &[String], hub: &MidiHub) -> bool {
     let mut changed = false;
     ui.horizontal(|ui| {
-        ui.label("Device:");
+        ui.label("Device");
         let shown = if port.is_empty() {
             "(none)".to_string()
         } else if available.iter().any(|a| a == port || without_address(a) == without_address(port)) {

@@ -1,11 +1,12 @@
 use std::any::Any;
 
-use egui::{self, Color32, Ui};
+use egui::{self, Ui};
 
 use crate::engine::nodes::io::input_controller::InputControllerDisplay;
 use crate::engine::types::*;
 use crate::input_controller::SharedControllers;
 use crate::theme;
+use crate::widgets::setup_ui;
 use crate::widgets::nodes::node::NodeWidget;
 use crate::widgets::nodes::types::UiPortDef;
 
@@ -125,9 +126,9 @@ impl NodeWidget for InputControllerWidget {
         }
 
         if self.controller_id == 0 {
-            ui.colored_label(Color32::from_gray(120), "No controller selected");
+            ui.colored_label(theme::TEXT_DIM, "No controller selected");
         } else if self.outputs.is_empty() {
-            ui.colored_label(Color32::from_gray(120), "Controller has no inputs");
+            ui.colored_label(theme::TEXT_DIM, "Controller has no inputs");
         } else {
             ui.colored_label(
                 theme::TEXT_DIM,
@@ -151,7 +152,7 @@ impl NodeWidget for InputControllerWidget {
         };
 
         ui.horizontal(|ui| {
-            ui.label("Controller:");
+            ui.label("Controller");
             let current_label = controllers.iter()
                 .find(|(id, _)| *id == self.controller_id)
                 .map(|(_, n)| n.clone())
@@ -174,7 +175,7 @@ impl NodeWidget for InputControllerWidget {
 
         if !self.outputs.is_empty() {
             ui.separator();
-            ui.label(egui::RichText::new("Live Values").strong());
+            setup_ui::section(ui, "Live Values");
             for (name, _ty, value) in &self.outputs {
                 ui.horizontal(|ui| {
                     ui.label(name);

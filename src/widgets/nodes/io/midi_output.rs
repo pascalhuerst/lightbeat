@@ -7,6 +7,7 @@ use crate::engine::nodes::io::midi_output::{MidiOutputConfig, OutEntry, OutMode,
 use crate::engine::nodes::io::status::status_port;
 use crate::engine::types::*;
 use crate::midi_io::{MidiHub, MsgKind};
+use crate::widgets::setup_ui;
 use crate::theme;
 use crate::widgets::nodes::io::midi_common::{LearnedControl, MAX_ENTRIES, SharedLearned, device_picker, next_id};
 use crate::widgets::nodes::node::NodeWidget;
@@ -119,7 +120,7 @@ impl NodeWidget for MidiOutputWidget {
             self.push_config();
         }
         ui.add_space(4.0);
-        ui.label(egui::RichText::new("Inputs").strong());
+        setup_ui::section(ui, "Inputs");
 
         let learned: Vec<(String, LearnedControl)> = {
             let map = self.learned.lock().unwrap();
@@ -179,7 +180,7 @@ impl NodeWidget for MidiOutputWidget {
                         }
                     });
                 }
-                if ui.small_button(egui_phosphor::regular::X).on_hover_text("Remove this input").clicked() {
+                if setup_ui::delete_button(ui, "Delete this input") {
                     remove = Some(i);
                 }
             });
@@ -188,7 +189,7 @@ impl NodeWidget for MidiOutputWidget {
             self.remove_entry(i);
             changed = false;
         }
-        if self.config.entries.len() < MAX_ENTRIES && ui.button(format!("{} Add input", egui_phosphor::regular::PLUS)).clicked() {
+        if self.config.entries.len() < MAX_ENTRIES && setup_ui::add_button(ui, "Add input") {
             let id = next_id(self.config.entries.iter().map(|e| e.id));
             self.config.entries.push(OutEntry::new(id));
             changed = true;

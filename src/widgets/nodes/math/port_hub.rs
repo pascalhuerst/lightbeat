@@ -2,24 +2,12 @@ use std::any::Any;
 
 use egui::{self, Ui};
 
-use crate::engine::nodes::math::multiplex::{
-    MUX_MAX_SLOTS, MUX_MIN_SLOTS, MUX_TYPE_NAMES, clamp_slots, type_from_index, type_to_index,
-};
+use crate::engine::nodes::math::multiplex::{MUX_TYPE_NAMES, clamp_slots, type_from_index, type_to_index};
 use crate::engine::nodes::math::port_hub::{HUB_DEFAULT_SLOTS, PortHubDisplay};
 use crate::engine::types::*;
 use crate::theme;
-use crate::widgets::nodes::node::{NodeWidget, param_usize};
+use crate::widgets::nodes::node::{NodeLayout, NodeWidget, labelled_layout, param_usize};
 use crate::widgets::nodes::types::UiPortDef;
-
-fn push_type(shared: &SharedState, port_type: PortType) {
-    let mut s = shared.lock().unwrap();
-    s.pending_params.push((0, ParamValue::Choice(type_to_index(port_type))));
-}
-
-fn push_slots(shared: &SharedState, slots: usize) {
-    let mut s = shared.lock().unwrap();
-    s.pending_params.push((1, ParamValue::Int(slots as i64)));
-}
 
 pub struct PortHubWidget {
     id: NodeId,
@@ -73,6 +61,8 @@ impl NodeWidget for PortHubWidget {
             .collect()
     }
 
+    fn show_port_labels(&self) -> bool { true }
+    fn layout(&self) -> NodeLayout { labelled_layout(&self.ui_inputs(), &self.ui_outputs()) }
     fn min_width(&self) -> f32 { 100.0 }
     fn min_content_height(&self) -> f32 { 14.0 }
     fn shared_state(&self) -> &SharedState { &self.shared }
@@ -83,36 +73,6 @@ impl NodeWidget for PortHubWidget {
             theme::TEXT_DIM,
             format!("{} × {}", self.slots, MUX_TYPE_NAMES[type_to_index(self.port_type)]),
         );
-    }
-
-    fn show_inspector(&mut self, ui: &mut Ui) {
-        self.sync_from_display();
-
-        ui.label(egui::RichText::new("Type").strong());
-        let cur = type_to_index(self.port_type);
-        let mut new_idx = cur;
-        egui::ComboBox::from_id_salt(("hub_type", self.id.0))
-            .selected_text(MUX_TYPE_NAMES[cur])
-            .show_ui(ui, |ui| {
-                for (i, label) in MUX_TYPE_NAMES.iter().enumerate() {
-                    ui.selectable_value(&mut new_idx, i, *label);
-                }
-            });
-        if new_idx != cur {
-            self.port_type = type_from_index(new_idx);
-            push_type(&self.shared, self.port_type);
-        }
-
-        ui.separator();
-        ui.label(egui::RichText::new("Slots").strong());
-        let mut slots = self.slots;
-        if ui.add(
-            egui::Slider::new(&mut slots, MUX_MIN_SLOTS..=MUX_MAX_SLOTS)
-                .clamping(egui::SliderClamping::Always),
-        ).changed() {
-            self.slots = slots;
-            push_slots(&self.shared, self.slots);
-        }
     }
 
     fn as_any_mut(&mut self) -> &mut dyn Any { self }

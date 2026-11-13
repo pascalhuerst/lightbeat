@@ -6,6 +6,7 @@ use egui::{self, Sense, Ui, Vec2};
 use crate::dmx_input::{Change, DmxInputHub, format_address};
 use crate::engine::nodes::io::dmx_input::{ColorModel, DmxInputNodeConfig, DmxKind, DmxOutput, Source, output_ports};
 use crate::engine::types::*;
+use crate::widgets::setup_ui;
 use crate::theme;
 use crate::widgets::nodes::node::NodeWidget;
 use crate::widgets::nodes::types::UiPortDef;
@@ -320,7 +321,7 @@ impl NodeWidget for DmxInputWidget {
 
         let choices = self.hub.input_choices();
         ui.horizontal(|ui| {
-            ui.label("Input:");
+            ui.label("Input");
             let current = choices.iter().find(|(id, _)| *id == self.config.input).map(|(_, n)| n.clone()).unwrap_or_else(|| "(none)".into());
             egui::ComboBox::from_id_salt(("dmx_in_pick", self.id.0)).selected_text(current).show_ui(ui, |ui| {
                 if ui.selectable_label(self.config.input == 0, "(none)").clicked() && self.config.input != 0 {
@@ -341,7 +342,7 @@ impl NodeWidget for DmxInputWidget {
         let universes = self.hub.input_universes(self.config.input);
 
         ui.add_space(4.0);
-        ui.label(egui::RichText::new("Outputs").strong());
+        setup_ui::section(ui, "Outputs");
         let bases = self.bases();
         let live = self.source_values();
         let shared_outputs = self.shared.lock().unwrap().outputs.clone();
@@ -361,7 +362,7 @@ impl NodeWidget for DmxInputWidget {
                     ui.colored_label(theme::TEXT_DIM, o.kind.short());
                     let value = |k: usize| shared_outputs.get(bases[i] + k).copied().unwrap_or(0.0).clamp(0.0, 1.0);
                     preview(ui, o.kind, &value);
-                    if ui.small_button(egui_phosphor::regular::X).on_hover_text("Remove this output").clicked() {
+                    if setup_ui::delete_button(ui, "Delete this output") {
                         remove = Some(i);
                     }
                 })
@@ -421,15 +422,8 @@ impl NodeWidget for DmxInputWidget {
         }
 
         if self.config.outputs.len() < MAX_OUTPUTS {
-            let mut add: Option<DmxKind> = None;
-            ui.menu_button(format!("{} Add output", egui_phosphor::regular::PLUS), |ui| {
-                for kind in DmxKind::ALL {
-                    if ui.button(kind.label()).clicked() {
-                        add = Some(kind);
-                        ui.close_menu();
-                    }
-                }
-            });
+            let kinds = DmxKind::ALL.into_iter().map(|k| (k, k.label().to_string())).collect();
+            let add = setup_ui::add_menu(ui, ("dmx_add_output", self.id.0), "Add output", kinds);
             if let Some(kind) = add {
                 self.add_output(kind);
             }
@@ -437,7 +431,7 @@ impl NodeWidget for DmxInputWidget {
 
         if self.config.outputs.iter().any(|o| !o.sources.is_empty()) {
             ui.add_space(6.0);
-            ui.label(egui::RichText::new("Channels used, for patching the desk").strong());
+            setup_ui::section(ui, "Channels used, for patching the desk");
             let text = patch_text(&self.config.outputs);
             ui.colored_label(theme::TEXT_DIM, &text);
             if ui.small_button("Copy").clicked() {

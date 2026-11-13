@@ -1,6 +1,6 @@
 use std::any::Any;
 
-use egui::{self, Color32, Ui};
+use egui::{self, Ui};
 
 use crate::engine::nodes::math::toggle_bank::{
     MAX_CHANNELS, MIN_CHANNELS, ToggleBankDisplay,
@@ -78,8 +78,8 @@ impl NodeWidget for ToggleBankWidget {
         for i in 0..n {
             let y = rect.min.y + row_h * (i as f32 + 0.5);
             let on = self.states.get(i).copied().unwrap_or(false);
-            let fill = if on { theme::SEM_PRIMARY } else { Color32::from_gray(60) };
-            let stroke_col = if on { theme::TEXT } else { Color32::from_gray(120) };
+            let fill = if on { theme::SEM_PRIMARY } else { theme::OFF_GREY };
+            let stroke_col = if on { theme::TEXT } else { theme::TEXT_DIM };
 
             let center = egui::pos2(rect.center().x - row_h * 0.9, y);
             painter.circle_filled(center, dot_r, fill);

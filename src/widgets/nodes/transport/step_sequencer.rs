@@ -1,18 +1,13 @@
 use std::any::Any;
 
-use egui::{self, Color32, Rect, Sense, StrokeKind, Ui, Vec2};
+use egui::{self, Rect, Sense, StrokeKind, Ui, Vec2};
 
 use crate::engine::nodes::transport::step_sequencer::{StepMode, StepSequencerDisplay};
 use crate::engine::types::*;
+use crate::theme;
 use crate::widgets::fader::{self, FaderStyle, Orientation};
 use crate::widgets::nodes::node::NodeWidget;
 use crate::widgets::nodes::types::UiPortDef;
-
-/// Custom shared data for step value edits from UI.
-#[allow(dead_code)]
-pub struct StepValueEdits {
-    pub edits: Vec<(usize, f32)>,
-}
 
 pub struct StepSequencerWidget {
     id: NodeId,
@@ -40,7 +35,7 @@ impl StepSequencerWidget {
 impl NodeWidget for StepSequencerWidget {
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { "Step Sequencer" }
-    fn description(&self) -> &'static str { "N-step pattern advanced by phase; outputs current step value, index, and per-step trigger." }
+    fn description(&self) -> &'static str { "N-step pattern of values. In Phase mode a phase wire picks the step; in Trigger mode each trigger advances it and a rising edge on reset goes back to step 0. Outputs the current step value, its index and a per-step trigger." }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> {
         match self.mode {
@@ -91,7 +86,7 @@ impl NodeWidget for StepSequencerWidget {
             ..FaderStyle::default()
         };
         let active_fill = style.fill_active;
-        let line_color = Color32::from_gray(90);
+        let line_color = theme::PLOT_FRAME;
 
         // Use rounded pixel-aligned x boundaries so separator lines render
         // crisply for any step count (sub-pixel `line_segment` lines were
@@ -137,8 +132,7 @@ impl NodeWidget for StepSequencerWidget {
         }
 
         // Handle fader interaction — send value edits to engine via shared state.
-        // Uses the shared fader gesture conventions: double-click to reset,
-        // shift+drag for fine-grained (delta-based) adjustment, else absolute.
+        // The gestures are the fader's own (`handle_fader_interaction`).
         // No "pointer inside" test: once a press started here the drag keeps
         // following the pointer, and the clamps below pin it to the first or
         // last step and to 0..1, so pulling a step to zero can overshoot.
@@ -146,25 +140,12 @@ impl NodeWidget for StepSequencerWidget {
                 let step_index = (((pos.x - rect.min.x) / step_width).floor().max(0.0) as usize)
                     .min(num_steps - 1);
 
-                let shift = ui.input(|i| i.modifiers.shift);
-                if response.double_clicked() {
-                    let mut shared = self.shared.lock().unwrap();
-                    shared.pending_params.push((100 + step_index, ParamValue::Float(0.0)));
-                } else if response.dragged() {
-                    if shift {
-                        let delta_y = response.drag_delta().y;
-                        let norm_delta = -delta_y / height.max(1.0) * 0.1;
-                        let current = values.get(step_index).copied().unwrap_or(0.0);
-                        let new_val = (current + norm_delta).clamp(0.0, 1.0);
-                        let mut shared = self.shared.lock().unwrap();
-                        shared.pending_params.push((100 + step_index, ParamValue::Float(new_val)));
-                    } else {
-                        let value = 1.0 - ((pos.y - rect.min.y) / height).clamp(0.0, 1.0);
-                        let mut shared = self.shared.lock().unwrap();
-                        shared.pending_params.push((100 + step_index, ParamValue::Float(value)));
-                    }
-                } else if response.clicked() && shift {
-                    let value = 1.0 - ((pos.y - rect.min.y) / height).clamp(0.0, 1.0);
+                let cell = Rect::from_min_max(
+                    egui::pos2(x_at(step_index), rect.min.y),
+                    egui::pos2(x_at(step_index + 1), rect.max.y),
+                );
+                let mut value = values.get(step_index).copied().unwrap_or(0.0);
+                if fader::handle_fader_interaction(ui, &response, cell, Orientation::Vertical, &mut value) {
                     let mut shared = self.shared.lock().unwrap();
                     shared.pending_params.push((100 + step_index, ParamValue::Float(value)));
                 }

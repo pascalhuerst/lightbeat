@@ -73,6 +73,54 @@ pub const TYPE_UNTYPED: Color32 = SEM_DANGER;
 pub const TYPE_ANY: Color32 = TEXT_DIM;
 
 // ---------------------------------------------------------------------------
+// Plots, controls and indicators drawn inside node bodies
+// ---------------------------------------------------------------------------
+
+/// Background of a plot (scope, envelope, transition, XY pad).
+pub const PLOT_BG: Color32 = Color32::from_gray(22);
+/// Frame of a plot or a meter.
+pub const PLOT_BORDER: Color32 = Color32::from_gray(60);
+/// Gridlines and scale ticks.
+pub const PLOT_GRID: Color32 = Color32::from_gray(70);
+/// A brighter outline: separators between steps, a hovered button.
+pub const PLOT_FRAME: Color32 = Color32::from_gray(90);
+/// A curve drawn in a plot (envelope, transition).
+pub const CURVE: Color32 = Color32::from_rgb(80, 200, 160);
+/// Cyan that marks the current position or selection in a plot.
+pub const HIGHLIGHT: Color32 = Color32::from_rgb(80, 200, 240);
+/// Unlit button, LED or switch.
+pub const OFF_GREY: Color32 = Color32::from_gray(60);
+/// Playing / running indicator.
+pub const PLAY_GREEN: Color32 = Color32::from_rgb(80, 240, 120);
+/// The line through the middle of a bipolar fader.
+pub const CENTER_LINE: Color32 = Color32::from_gray(110);
+/// Fill of a fader and of the controls that look like one.
+pub const FADER_FILL: Color32 = Color32::from_rgb(80, 180, 240);
+/// A fader that is being overridden by the mouse.
+pub const FADER_ACTIVE: Color32 = Color32::from_rgb(240, 160, 40);
+/// Lighter violet for the lock icon of a macro, readable on the macro tint.
+pub const MACRO_LOCK: Color32 = Color32::from_rgb(180, 160, 220);
+/// Alternate row shading in lists.
+pub const ROW_STRIPE: Color32 = Color32::from_rgba_premultiplied(6, 6, 6, 6);
+
+/// The checkerboard drawn behind translucent previews.
+pub fn draw_checkerboard(painter: &egui::Painter, rect: egui::Rect, cell: f32) {
+    let cols = (rect.width() / cell).ceil() as i32;
+    let rows = (rect.height() / cell).ceil() as i32;
+    for y in 0..rows {
+        for x in 0..cols {
+            let color = if (x + y) % 2 == 0 { CHECKER_DARK } else { CHECKER_LIGHT };
+            let cell_rect = egui::Rect::from_min_size(
+                egui::pos2(rect.min.x + x as f32 * cell, rect.min.y + y as f32 * cell),
+                egui::Vec2::splat(cell),
+            )
+            .intersect(rect);
+            painter.rect_filled(cell_rect, 0.0, color);
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Scope traces
 // ---------------------------------------------------------------------------
 

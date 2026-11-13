@@ -1,13 +1,13 @@
 use crate::engine::nodes::io::status::status_port;
 use std::any::Any;
 
-use egui::{self, Color32, Ui};
+use egui::{self, Ui};
 
 use crate::engine::nodes::io::launchpad::LaunchpadDisplay;
 use crate::engine::types::*;
 use crate::input_controller::{InputControllerKind, SharedControllers};
 use crate::theme;
-use crate::widgets::nodes::node::NodeWidget;
+use crate::widgets::nodes::node::{NodeLayout, NodeWidget, labelled_layout};
 use crate::widgets::nodes::types::UiPortDef;
 
 const N_PADS: usize = 64;
@@ -63,7 +63,7 @@ impl NodeWidget for LaunchpadWidget {
     fn description(&self) -> &'static str {
         "Novation Launchpad S dedicated node. 64 grid pads (velocity-sensitive) \
          + 8 side buttons + 8 top mode buttons each expose an output and an \
-         LED-feedback input. LED inputs currently drive red brightness."
+         LED-feedback input. Each LED input takes a color; the Launchpad S can only show red and green (4 levels each, so amber and orange work), blue is ignored."
     }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> {
@@ -109,6 +109,8 @@ impl NodeWidget for LaunchpadWidget {
         v
     }
 
+    fn show_port_labels(&self) -> bool { true }
+    fn layout(&self) -> NodeLayout { labelled_layout(&self.ui_inputs(), &self.ui_outputs()) }
     fn min_width(&self) -> f32 { 200.0 }
     fn min_content_height(&self) -> f32 { 24.0 }
     fn resizable(&self) -> bool { true }
@@ -128,7 +130,7 @@ impl NodeWidget for LaunchpadWidget {
         }
 
         if self.controller_id == 0 {
-            ui.colored_label(Color32::from_gray(120), "No Launchpad bound");
+            ui.colored_label(theme::TEXT_DIM, "No Launchpad bound");
         } else if self.connected {
             ui.colored_label(theme::SEM_SUCCESS, &self.controller_name);
         } else {
@@ -149,7 +151,7 @@ impl NodeWidget for LaunchpadWidget {
         };
 
         ui.horizontal(|ui| {
-            ui.label("Launchpad:");
+            ui.label("Launchpad");
             let current = controllers.iter()
                 .find(|(id, _)| *id == self.controller_id)
                 .map(|(_, n)| n.clone())

@@ -312,17 +312,6 @@ fn dist_to_segment(p: Pos2, a: Pos2, b: Pos2) -> f32 {
     p.distance(a + ab * t)
 }
 
-/// Time fraction at which `shape` has reached `f`; the engine only knows the
-/// height, and the running dot is drawn by where the curve is at that height.
-fn unshape(f: f32, curve: f32) -> f32 {
-    let (mut lo, mut hi) = (0.0_f32, 1.0_f32);
-    for _ in 0..24 {
-        let mid = 0.5 * (lo + hi);
-        if shape(mid, curve) < f { lo = mid } else { hi = mid }
-    }
-    0.5 * (lo + hi)
-}
-
 impl EnvelopeWidget {
     #[allow(clippy::too_many_arguments)]
     fn curve_editor(

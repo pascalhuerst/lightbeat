@@ -6,6 +6,7 @@ use crate::engine::nodes::ui::button::{ButtonDisplay, ButtonMode};
 use crate::engine::nodes::ui::common::MouseOverrideMode;
 use crate::engine::types::*;
 use crate::theme;
+use crate::widgets::setup_ui;
 use crate::widgets::fader::highlight_alpha;
 use crate::widgets::nodes::node::{NodeLayout, NodeWidget};
 use crate::widgets::nodes::types::UiPortDef;
@@ -144,7 +145,7 @@ impl NodeWidget for ButtonWidget {
         let fill = if pressed {
             theme::SEM_PRIMARY
         } else {
-            Color32::from_gray(60)
+            theme::OFF_GREY
         };
         let text_color = if pressed { Color32::BLACK } else { theme::TEXT_BRIGHT };
 
@@ -166,7 +167,7 @@ impl NodeWidget for ButtonWidget {
         } else if resp.hovered() {
             theme::TEXT_DIM
         } else {
-            Color32::from_gray(90)
+            theme::PLOT_FRAME
         };
         let border_width = if self.override_active { 2.0 } else { 1.0_f32 };
         painter.rect_stroke(
@@ -219,23 +220,20 @@ impl NodeWidget for ButtonWidget {
     fn show_inspector(&mut self, ui: &mut Ui) {
         let mut changed = false;
         ui.horizontal(|ui| {
-            ui.label("Label:");
+            ui.label("Name");
             if ui.text_edit_singleline(&mut self.label).changed() {
                 changed = true;
             }
         });
 
-        ui.horizontal(|ui| {
-            ui.label("Mode:");
-            if ui.radio_value(&mut self.mode, ButtonMode::Trigger, "Trigger").clicked() {
-                changed = true;
-            }
-            if ui.radio_value(&mut self.mode, ButtonMode::Toggle, "Toggle").clicked() {
-                changed = true;
-            }
-        });
+        if setup_ui::choice_combo(ui, ("button_mode", self.id), "Mode", &mut self.mode, &[
+            (ButtonMode::Trigger, "Trigger", ""),
+            (ButtonMode::Toggle, "Toggle", ""),
+        ]) {
+            changed = true;
+        }
 
-        if ui.checkbox(&mut self.inputs_enabled, "Enable input").changed() {
+        if ui.checkbox(&mut self.inputs_enabled, "Input enabled").changed() {
             changed = true;
         }
         if self.inputs_enabled && self.mode == ButtonMode::Toggle {
@@ -245,7 +243,7 @@ impl NodeWidget for ButtonWidget {
                 }
                 if self.override_enabled {
                     ui.horizontal(|ui| {
-                        ui.label("Reset:");
+                        ui.label("Reset");
                         egui::ComboBox::from_id_salt(("btn_reset", self.id))
                             .selected_text(self.reset_mode.label())
                             .show_ui(ui, |ui| {

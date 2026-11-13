@@ -6,7 +6,9 @@ use egui::{self, Color32, Sense, Ui, Vec2};
 use crate::engine::nodes::math::multiplex::SelectMode;
 use crate::engine::nodes::math::palette_select::PaletteSelectDisplay;
 use crate::engine::types::*;
+use crate::theme;
 use crate::objects::color_palette::{ColorPalette, ColorPaletteGroup, PALETTE_SIZE};
+use crate::widgets::setup_ui;
 use crate::widgets::nodes::node::{NodeWidget, param_usize};
 use crate::widgets::nodes::types::UiPortDef;
 
@@ -135,7 +137,7 @@ impl NodeWidget for PaletteSelectWidget {
         }
 
         if group_count == 0 {
-            ui.colored_label(Color32::from_gray(120), "No groups");
+            ui.colored_label(theme::TEXT_DIM, "No groups");
             return;
         }
 
@@ -156,7 +158,7 @@ impl NodeWidget for PaletteSelectWidget {
             );
             painter.rect_filled(rect, 1.0, color);
         }
-        ui.colored_label(Color32::from_gray(120),
+        ui.colored_label(theme::TEXT_DIM,
             format!("G:{}/{} P:{}/{}", group_idx + 1, group_count, palette_idx + 1, palette_count));
     }
 
@@ -167,7 +169,7 @@ impl NodeWidget for PaletteSelectWidget {
             .collect();
         drop(ctx);
 
-        ui.label(egui::RichText::new("Palette Groups (ordered)").strong());
+        setup_ui::section(ui, "Palette Groups (ordered)");
 
         // Show selected groups with remove + move buttons.
         let mut changed = false;
@@ -179,13 +181,12 @@ impl NodeWidget for PaletteSelectWidget {
                 .map(|(_, n)| n.as_str()).unwrap_or("???");
             ui.horizontal(|ui| {
                 ui.label(format!("{}. {}", i, name));
-                if i > 0 && ui.small_button(egui_phosphor::regular::ARROW_UP).clicked() {
-                    swap = Some((i, i - 1));
+                match setup_ui::move_buttons(ui, i, self.selected_group_ids.len()) {
+                    Some(setup_ui::Move::Up) => swap = Some((i, i - 1)),
+                    Some(setup_ui::Move::Down) => swap = Some((i, i + 1)),
+                    None => {}
                 }
-                if i + 1 < self.selected_group_ids.len() && ui.small_button(egui_phosphor::regular::ARROW_DOWN).clicked() {
-                    swap = Some((i, i + 1));
-                }
-                if ui.small_button(egui_phosphor::regular::X).clicked() {
+                if setup_ui::delete_button(ui, "Delete this group") {
                     remove_idx = Some(i);
                 }
             });
@@ -206,15 +207,11 @@ impl NodeWidget for PaletteSelectWidget {
             .cloned()
             .collect();
         if !available.is_empty() {
-            ui.horizontal_wrapped(|ui| {
-                ui.label("Add:");
-                for (gid, name) in &available {
-                    if ui.small_button(name).clicked() {
-                        self.selected_group_ids.push(*gid);
-                        changed = true;
-                    }
-                }
-            });
+            let items = available.iter().map(|(gid, name)| (*gid, name.clone())).collect();
+            if let Some(gid) = setup_ui::add_menu(ui, ("palette_select_add", self.id.0), "Add group", items) {
+                self.selected_group_ids.push(gid);
+                changed = true;
+            }
         }
 
         if changed {

@@ -8,6 +8,7 @@ use crate::engine::nodes::ui::button_group::ButtonGroupDisplay;
 use crate::engine::nodes::ui::common::MouseOverrideMode;
 use crate::engine::types::*;
 use crate::theme;
+use crate::widgets::setup_ui;
 use crate::widgets::fader::highlight_alpha;
 use crate::widgets::nodes::node::{NodeLayout, NodeWidget};
 use crate::widgets::nodes::types::UiPortDef;
@@ -221,7 +222,7 @@ impl NodeWidget for ButtonGroupWidget {
                 } else if resp.hovered() {
                     theme::STROKE
                 } else {
-                    Color32::from_gray(60)
+                    theme::OFF_GREY
                 };
                 let text_color = if pressed { Color32::BLACK } else { theme::TEXT_BRIGHT };
 
@@ -233,7 +234,7 @@ impl NodeWidget for ButtonGroupWidget {
                 } else if resp.hovered() {
                     theme::TEXT_DIM
                 } else {
-                    Color32::from_gray(90)
+                    theme::PLOT_FRAME
                 };
                 let border_width = if override_active { 2.0 } else { 1.0_f32 };
                 painter.rect_stroke(inner, 3.0,
@@ -291,21 +292,21 @@ impl NodeWidget for ButtonGroupWidget {
     fn show_inspector(&mut self, ui: &mut Ui) {
         let mut changed = false;
         ui.horizontal(|ui| {
-            ui.label("Name:");
+            ui.label("Name");
             if ui.text_edit_singleline(&mut self.name).changed() {
                 changed = true;
             }
         });
         ui.separator();
         ui.horizontal(|ui| {
-            ui.label("Rows:");
+            ui.label("Rows");
             let mut r = self.rows as i32;
             if ui.add(egui::DragValue::new(&mut r).range(1..=16)).changed() {
                 self.rows = r as usize;
                 self.resize();
                 changed = true;
             }
-            ui.label("Cols:");
+            ui.label("Cols");
             let mut c = self.cols as i32;
             if ui.add(egui::DragValue::new(&mut c).range(1..=16)).changed() {
                 self.cols = c as usize;
@@ -313,16 +314,13 @@ impl NodeWidget for ButtonGroupWidget {
                 changed = true;
             }
         });
-        ui.horizontal(|ui| {
-            ui.label("Mode:");
-            if ui.radio_value(&mut self.mode, ButtonMode::Trigger, "Trigger").clicked() {
-                changed = true;
-            }
-            if ui.radio_value(&mut self.mode, ButtonMode::Toggle, "Toggle").clicked() {
-                changed = true;
-            }
-        });
-        if ui.checkbox(&mut self.inputs_enabled, "Enable inputs").changed() {
+        if setup_ui::choice_combo(ui, ("button_mode", self.id), "Mode", &mut self.mode, &[
+            (ButtonMode::Trigger, "Trigger", ""),
+            (ButtonMode::Toggle, "Toggle", ""),
+        ]) {
+            changed = true;
+        }
+        if ui.checkbox(&mut self.inputs_enabled, "Inputs enabled").changed() {
             changed = true;
         }
         if self.inputs_enabled && self.mode == ButtonMode::Toggle {
@@ -332,7 +330,7 @@ impl NodeWidget for ButtonGroupWidget {
                 }
                 if self.override_enabled {
                     ui.horizontal(|ui| {
-                        ui.label("Reset:");
+                        ui.label("Reset");
                         egui::ComboBox::from_id_salt(("bg_reset", self.id))
                             .selected_text(self.reset_mode.label())
                             .show_ui(ui, |ui| {

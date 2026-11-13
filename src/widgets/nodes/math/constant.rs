@@ -46,7 +46,7 @@ impl NodeWidget for ConstantWidget {
         self.fresh = true;
         self.push_value();
     }
-    fn description(&self) -> &'static str { "Constant value source for any port type, edited via the inspector." }
+    fn description(&self) -> &'static str { "Constant value source: a number, a logic level (click to toggle) or a phase (0..1), edited in the node itself." }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> { vec![] }
     fn ui_outputs(&self) -> Vec<UiPortDef> {

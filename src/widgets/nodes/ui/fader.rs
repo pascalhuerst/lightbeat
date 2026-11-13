@@ -6,6 +6,7 @@ use crate::engine::nodes::ui::common::MouseOverrideMode;
 use crate::engine::nodes::ui::fader::{FaderDisplay, FaderOrientation};
 use crate::engine::types::*;
 use crate::theme;
+use crate::widgets::setup_ui;
 use crate::widgets::fader::{self, highlight_alpha, FaderStyle};
 use crate::widgets::nodes::node::{NodeLayout, NodeWidget};
 use crate::widgets::nodes::types::UiPortDef;
@@ -13,7 +14,7 @@ use crate::widgets::nodes::types::UiPortDef;
 const HIGHLIGHT_DURATION: f64 = 0.5;
 const OVERRIDE_OVERLAY_COLOR: Color32 = theme::SEM_WARNING_FILL;
 const OVERRIDE_ICON_COLOR: Color32 = theme::SEM_WARNING_BRIGHT;
-const CENTER_LINE_COLOR: Color32 = Color32::from_gray(110);
+const CENTER_LINE_COLOR: Color32 = theme::CENTER_LINE;
 
 /// Icon string indicating how the override clears for the given mode.
 pub fn override_mode_icon(mode: MouseOverrideMode) -> &'static str {
@@ -153,8 +154,6 @@ impl NodeWidget for FaderWidget {
         highlight_alpha(self.last_interact_time, now, HIGHLIGHT_DURATION)
     }
 
-    fn inspector_hides_default_ports(&self) -> bool { true }
-
     fn show_content(&mut self, ui: &mut Ui, _zoom: f32) {
         // Sync from engine display.
         {
@@ -251,24 +250,21 @@ impl NodeWidget for FaderWidget {
     fn show_inspector(&mut self, ui: &mut Ui) {
         let mut changed = false;
         ui.horizontal(|ui| {
-            ui.label("Name:");
+            ui.label("Name");
             if ui.text_edit_singleline(&mut self.name).changed() {
                 changed = true;
             }
         });
         ui.separator();
-        ui.horizontal(|ui| {
-            ui.label("Orientation:");
-            if ui.radio_value(&mut self.orientation, FaderOrientation::Vertical, "Vertical").clicked() {
-                changed = true;
-            }
-            if ui.radio_value(&mut self.orientation, FaderOrientation::Horizontal, "Horizontal").clicked() {
-                changed = true;
-            }
-        });
+        if setup_ui::choice_combo(ui, ("fader_orientation", self.id.0), "Orientation", &mut self.orientation, &[
+            (FaderOrientation::Vertical, "Vertical", ""),
+            (FaderOrientation::Horizontal, "Horizontal", ""),
+        ]) {
+            changed = true;
+        }
 
         ui.separator();
-        ui.label(egui::RichText::new("Output").strong());
+        setup_ui::section(ui, "Output");
         if cell_inspector_section(
             ui,
             self.id.0,
@@ -307,19 +303,19 @@ pub fn cell_inspector_section(
     let mut changed = false;
     egui::Frame::group(ui.style()).show(ui, |ui| {
         if let Some(l) = label {
-            ui.label(egui::RichText::new(l).strong());
+            setup_ui::section(ui, l);
         }
         if ui.checkbox(inputs_enabled, "Input enabled").changed() {
             changed = true;
         }
         if *inputs_enabled {
             ui.horizontal(|ui| {
-                ui.label("Input:");
+                ui.label("Input");
                 ui.colored_label(theme::TEXT_MUTED, format!("{:.3}", input_value));
             });
         }
         ui.horizontal(|ui| {
-            ui.label("Mouse override:");
+            ui.label("Mouse override");
             egui::ComboBox::from_id_salt(("mo", salt))
                 .selected_text(mouse_override.label())
                 .show_ui(ui, |ui| {
@@ -338,12 +334,12 @@ pub fn cell_inspector_section(
         });
         if override_active {
             ui.horizontal(|ui| {
-                ui.label("Override:");
+                ui.label("Override");
                 ui.colored_label(theme::SEM_WARNING, format!("{:.3}", override_value));
             });
         }
         ui.horizontal(|ui| {
-            ui.label("Output:");
+            ui.label("Output");
             ui.colored_label(theme::TEXT, format!("{:.3}", output_value));
         });
         if ui.checkbox(bipolar, "Bipolar").changed() {

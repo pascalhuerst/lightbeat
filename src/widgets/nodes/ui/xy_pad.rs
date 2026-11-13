@@ -1,10 +1,11 @@
 use std::any::Any;
 
-use egui::{self, Color32, Pos2, Sense, Stroke, StrokeKind, Ui, Vec2};
+use egui::{self, Pos2, Sense, Stroke, StrokeKind, Ui, Vec2};
 
 use crate::engine::nodes::ui::xy_pad::XyPadDisplay;
 use crate::engine::types::*;
 use crate::theme;
+use crate::widgets::fader;
 use crate::widgets::nodes::node::{NodeLayout, NodeWidget};
 use crate::widgets::nodes::types::UiPortDef;
 
@@ -86,15 +87,15 @@ impl NodeWidget for XyPadWidget {
         );
         let rect = resp.rect;
 
-        painter.rect_filled(rect, 4.0, Color32::from_gray(28));
+        painter.rect_filled(rect, 4.0, theme::PLOT_BG);
 
         // Crosshairs at the midpoint for visual reference.
         let mid = rect.center();
-        let grid_stroke = Stroke::new(1.0_f32, Color32::from_gray(70));
+        let grid_stroke = Stroke::new(1.0_f32, theme::PLOT_GRID);
         painter.line_segment([Pos2::new(rect.min.x, mid.y), Pos2::new(rect.max.x, mid.y)], grid_stroke);
         painter.line_segment([Pos2::new(mid.x, rect.min.y), Pos2::new(mid.x, rect.max.y)], grid_stroke);
 
-        painter.rect_stroke(rect, 4.0, Stroke::new(1.0_f32, Color32::from_gray(90)), StrokeKind::Inside);
+        painter.rect_stroke(rect, 4.0, Stroke::new(1.0_f32, theme::PLOT_FRAME), StrokeKind::Inside);
 
         let knob = Pos2::new(
             rect.min.x + self.x.clamp(0.0, 1.0) * rect.width(),
@@ -103,16 +104,28 @@ impl NodeWidget for XyPadWidget {
 
         // Guide lines from the knob to the axes so the current (x, y) reads
         // at a glance.
-        let guide = Stroke::new(1.0_f32, Color32::from_rgba_unmultiplied(80, 200, 240, 80));
+        let guide = Stroke::new(1.0_f32, theme::HIGHLIGHT.gamma_multiply(0.31));
         painter.line_segment([Pos2::new(rect.min.x, knob.y), Pos2::new(rect.max.x, knob.y)], guide);
         painter.line_segment([Pos2::new(knob.x, rect.min.y), Pos2::new(knob.x, rect.max.y)], guide);
 
         let knob_r = 6.0;
         painter.circle_filled(knob, knob_r, theme::SEM_PRIMARY);
-        painter.circle_stroke(knob, knob_r, Stroke::new(1.5_f32, Color32::from_gray(20)));
+        painter.circle_stroke(knob, knob_r, Stroke::new(1.5_f32, theme::PLOT_BG));
 
+        // The fader's gestures: drag or click goes to the pointer, Shift-drag
+        // moves in fine steps, double-click centres.
+        let shift = ui.input(|i| i.modifiers.shift);
         let moved = resp.dragged() || resp.clicked() || resp.drag_started();
-        if moved
+        if resp.double_clicked() {
+            self.x = 0.5;
+            self.y = 0.5;
+            self.push_position();
+        } else if resp.dragged() && shift {
+            let d = resp.drag_delta() * fader::FINE_FACTOR;
+            self.x = (self.x + d.x / rect.width().max(1.0)).clamp(0.0, 1.0);
+            self.y = (self.y + d.y / rect.height().max(1.0)).clamp(0.0, 1.0);
+            self.push_position();
+        } else if moved
             && let Some(p) = resp.interact_pointer_pos() {
                 self.x = ((p.x - rect.min.x) / rect.width()).clamp(0.0, 1.0);
                 self.y = ((p.y - rect.min.y) / rect.height()).clamp(0.0, 1.0);
@@ -122,7 +135,7 @@ impl NodeWidget for XyPadWidget {
 
     fn show_inspector(&mut self, ui: &mut Ui) {
         ui.horizontal(|ui| {
-            ui.label("Name:");
+            ui.label("Name");
             if ui.text_edit_singleline(&mut self.name).changed() {
                 self.push_name();
             }

@@ -108,11 +108,11 @@ impl NodeWidget for TriggerBankWidget {
                 let base = theme::SEM_PRIMARY;
                 Color32::from_rgba_unmultiplied(base.r(), base.g(), base.b(), (alpha * 255.0) as u8)
             } else {
-                Color32::from_gray(60)
+                theme::OFF_GREY
             };
             let center = egui::pos2(rect.center().x - row_h * 0.9, y);
             painter.circle_filled(center, dot_r, fill);
-            painter.circle_stroke(center, dot_r, egui::Stroke::new(1.0_f32, Color32::from_gray(120)));
+            painter.circle_stroke(center, dot_r, egui::Stroke::new(1.0_f32, theme::TEXT_DIM));
 
             let label = format!("{}", i + 1);
             painter.text(

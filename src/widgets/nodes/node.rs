@@ -2,7 +2,7 @@ use std::any::Any;
 
 use egui::{Pos2, Rect, Ui, Vec2};
 
-use crate::engine::types::{NodeId, ParamDef, ParamValue, PortDef, PortDir, SharedState};
+use crate::engine::types::{NodeId, ParamValue, PortDef, PortDir, SharedState};
 
 use super::types::UiPortDef;
 
@@ -204,7 +204,6 @@ pub trait NodeWidget: Any {
 }
 
 // Convenience methods that delegate to shared state.
-#[allow(dead_code)]
 impl dyn NodeWidget {
     /// Which of the ports on this side are hidden, by port index.
     pub fn hidden_ports(&self, dir: PortDir) -> Vec<bool> {
@@ -234,20 +233,6 @@ impl dyn NodeWidget {
         port_pos_in(rect, &self.layout(), dir, &types, &self.hidden_ports(dir), index, zoom)
     }
 
-    pub fn read_input(&self, port_index: usize) -> f32 {
-        let shared = self.shared_state().lock().unwrap();
-        shared.inputs.get(port_index).copied().unwrap_or(0.0)
-    }
-
-    pub fn read_output(&self, port_index: usize) -> f32 {
-        let shared = self.shared_state().lock().unwrap();
-        shared.outputs.get(port_index).copied().unwrap_or(0.0)
-    }
-
-    pub fn params(&self) -> Vec<ParamDef> {
-        self.shared_state().lock().unwrap().current_params.clone()
-    }
-
     /// The widget's own inputs followed by one port per promoted param. The
     /// graph must use this, not `ui_inputs`, wherever it deals with ports.
     pub fn ui_inputs_full(&self) -> Vec<UiPortDef> {
@@ -262,14 +247,6 @@ impl dyn NodeWidget {
             UiPortDef::from_def(&PortDef::new(name, p.kind.port_type()))
         }));
         ports
-    }
-
-    pub fn set_param(&self, index: usize, value: ParamValue) {
-        // Push param change into shared state; engine will pick it up.
-        // We store it in outputs temporarily — but actually we need a
-        // dedicated channel. For now, we'll use the engine command channel
-        // from the graph level. This method is here for the trait API.
-        let _ = (index, value); // handled at graph level
     }
 }
 
@@ -482,6 +459,15 @@ pub fn label_gutter<'a>(names: impl Iterator<Item = &'a str>) -> f32 {
         return 0.0;
     }
     (PORT_RADIUS + 10.0 + longest as f32 * 6.0).clamp(60.0, 190.0)
+}
+
+/// The standard layout with room kept on each side for the names of `inputs`
+/// and `outputs`, for nodes that return `show_port_labels() == true`.
+pub fn labelled_layout(inputs: &[UiPortDef], outputs: &[UiPortDef]) -> NodeLayout {
+    NodeLayout::STANDARD.with_gutters(
+        label_gutter(inputs.iter().map(|p| p.def.name.as_str())),
+        label_gutter(outputs.iter().map(|p| p.def.name.as_str())),
+    )
 }
 
 /// The title bar, which also moves the node.

@@ -1,7 +1,7 @@
 use crate::engine::nodes::io::status::status_port;
 use std::any::Any;
 
-use egui::{self, Color32, Ui};
+use egui::{self, Ui};
 
 use crate::engine::nodes::io::x1::X1Display;
 use crate::engine::types::*;
@@ -11,7 +11,7 @@ use crate::input_controller::x1::{
 };
 use crate::input_controller::{InputControllerKind, SharedControllers};
 use crate::theme;
-use crate::widgets::nodes::node::NodeWidget;
+use crate::widgets::nodes::node::{NodeLayout, NodeWidget, labelled_layout};
 use crate::widgets::nodes::types::UiPortDef;
 
 pub struct X1Widget {
@@ -89,6 +89,8 @@ impl NodeWidget for X1Widget {
         v
     }
 
+    fn show_port_labels(&self) -> bool { true }
+    fn layout(&self) -> NodeLayout { labelled_layout(&self.ui_inputs(), &self.ui_outputs()) }
     fn min_width(&self) -> f32 { 180.0 }
     fn min_content_height(&self) -> f32 { 24.0 }
     fn resizable(&self) -> bool { true }
@@ -108,7 +110,7 @@ impl NodeWidget for X1Widget {
         }
 
         if self.controller_id == 0 {
-            ui.colored_label(Color32::from_gray(120), "No X1 bound");
+            ui.colored_label(theme::TEXT_DIM, "No X1 bound");
         } else if self.connected {
             ui.colored_label(theme::SEM_SUCCESS, &self.controller_name);
         } else {
@@ -130,7 +132,7 @@ impl NodeWidget for X1Widget {
         };
 
         ui.horizontal(|ui| {
-            ui.label("X1:");
+            ui.label("X1");
             let current = controllers.iter()
                 .find(|(id, _)| *id == self.controller_id)
                 .map(|(_, n)| n.clone())

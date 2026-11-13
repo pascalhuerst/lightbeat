@@ -6,6 +6,7 @@ use crate::engine::nodes::ui::common::MouseOverrideMode;
 use crate::engine::nodes::ui::fader_group::FaderGroupDisplay;
 use crate::engine::types::*;
 use crate::theme;
+use crate::widgets::setup_ui;
 use crate::widgets::fader::{self, highlight_alpha, FaderStyle, Orientation};
 use crate::widgets::nodes::node::{NodeLayout, NodeWidget};
 use crate::widgets::nodes::types::UiPortDef;
@@ -13,7 +14,7 @@ use crate::widgets::nodes::ui::fader::draw_override_indicator;
 
 const HIGHLIGHT_DURATION: f64 = 0.5;
 const OVERRIDE_OVERLAY_COLOR: Color32 = theme::SEM_WARNING_FILL;
-const CENTER_LINE_COLOR: Color32 = Color32::from_gray(110);
+const CENTER_LINE_COLOR: Color32 = theme::CENTER_LINE;
 
 pub struct FaderGroupWidget {
     id: NodeId,
@@ -185,8 +186,6 @@ impl NodeWidget for FaderGroupWidget {
         highlight_alpha(last, now, HIGHLIGHT_DURATION)
     }
 
-    fn inspector_hides_default_ports(&self) -> bool { true }
-
     fn show_content(&mut self, ui: &mut Ui, _zoom: f32) {
         // Sync from engine display.
         let snapshot = {
@@ -327,20 +326,20 @@ impl NodeWidget for FaderGroupWidget {
     fn show_inspector(&mut self, ui: &mut Ui) {
         let mut changed = false;
         ui.horizontal(|ui| {
-            ui.label("Name:");
+            ui.label("Name");
             if ui.text_edit_singleline(&mut self.name).changed() {
                 changed = true;
             }
         });
         ui.horizontal(|ui| {
-            ui.label("Rows:");
+            ui.label("Rows");
             let mut r = self.rows as i32;
             if ui.add(egui::DragValue::new(&mut r).range(1..=16)).changed() {
                 self.rows = r as usize;
                 self.resize();
                 changed = true;
             }
-            ui.label("Cols:");
+            ui.label("Cols");
             let mut c = self.cols as i32;
             if ui.add(egui::DragValue::new(&mut c).range(1..=16)).changed() {
                 self.cols = c as usize;
@@ -350,7 +349,7 @@ impl NodeWidget for FaderGroupWidget {
         });
 
         ui.separator();
-        ui.label(egui::RichText::new("Outputs").strong());
+        setup_ui::section(ui, "Outputs");
 
         egui::ScrollArea::horizontal().show(ui, |ui| {
             egui::Grid::new(("fg_table", self.id))

@@ -1,6 +1,6 @@
 use std::any::Any;
 
-use egui::{self, Color32, Ui};
+use egui::{self, Ui};
 
 use crate::engine::nodes::math::color_modifier::{
     ColorModifierDisplay, MODIFIER_OP_NAMES, ModifierOp,
@@ -106,7 +106,7 @@ impl NodeWidget for ColorModifierWidget {
                 .map(|d| d.amount).unwrap_or(0.0)
         };
         if self.port_type == PortType::Any {
-            ui.colored_label(Color32::from_gray(120), "Connect to set type");
+            ui.colored_label(theme::TEXT_DIM, "Connect to set type");
         } else {
             ui.colored_label(
                 theme::TEXT_DIM,

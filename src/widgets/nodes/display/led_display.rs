@@ -4,7 +4,7 @@ use egui::{self, Color32, Sense, Ui, Vec2};
 use crate::engine::nodes::display::led_display::LedDisplayData;
 use crate::engine::types::*;
 use crate::theme;
-use crate::widgets::nodes::node::NodeWidget;
+use crate::widgets::nodes::node::{NodeLayout, NodeWidget, PORT_RADIUS};
 use crate::widgets::nodes::types::UiPortDef;
 
 const NAME_GAP: f32 = 2.0;
@@ -43,6 +43,7 @@ impl NodeWidget for LedDisplayWidget {
     }
     fn ui_outputs(&self) -> Vec<UiPortDef> { vec![] }
 
+    fn layout(&self) -> NodeLayout { NodeLayout::compact().with_side_inset(PORT_RADIUS + 2.0) }
     fn min_width(&self) -> f32 { 80.0 }
     fn min_content_height(&self) -> f32 { 25.0 }
     fn resizable(&self) -> bool { true }
@@ -107,7 +108,7 @@ impl NodeWidget for LedDisplayWidget {
 
     fn show_inspector(&mut self, ui: &mut Ui) {
         ui.horizontal(|ui| {
-            ui.label("Name:");
+            ui.label("Name");
             if ui.text_edit_singleline(&mut self.name).changed() {
                 self.push_config();
             }

@@ -5,6 +5,7 @@ use egui::{self, Color32, Pos2, Sense, Stroke, StrokeKind, Ui, Vec2};
 use crate::engine::nodes::ui::gradient_stops::GradientStopsDisplay;
 use crate::engine::types::*;
 use crate::theme;
+use crate::widgets::fader;
 use crate::widgets::nodes::node::{NodeLayout, NodeWidget};
 use crate::widgets::nodes::types::UiPortDef;
 
@@ -67,9 +68,9 @@ impl NodeWidget for GradientStopsWidget {
     fn type_name(&self) -> &'static str { "Gradient Stops" }
     fn title(&self) -> &str { &self.name }
     fn description(&self) -> &'static str {
-        "Four draggable stop positions (0..1) for the Palette → Gradient node. \
+        "Four draggable stop positions (0..1) for the Palette to Gradient node. \
          Wire a palette into the input to see a live preview of the resulting \
-         gradient; drag the handles to move each stop."
+         gradient; drag the handles to move each stop, Shift for fine steps, double-click a handle to reset it."
     }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> {
@@ -153,9 +154,29 @@ impl NodeWidget for GradientStopsWidget {
             self.drag_index = None;
         }
 
+        // Double-click on a handle puts it back where the node was made with it.
+        if resp.double_clicked()
+            && let Some(p) = ptr
+        {
+            let hit = (0..4)
+                .map(|i| (i, (p.x - (rect.min.x + self.positions[i].clamp(0.0, 1.0) * rect.width())).abs()))
+                .filter(|(_, d)| *d < HANDLE_HIT_RADIUS)
+                .min_by(|a, b| a.1.total_cmp(&b.1));
+            if let Some((i, _)) = hit {
+                let even = [0.0, 1.0 / 3.0, 2.0 / 3.0, 1.0][i];
+                let default = fader::recorded_default(&self.shared, i).unwrap_or(even);
+                self.positions[i] = default;
+                self.push_position(i, default);
+            }
+        }
+
         if let Some(idx) = self.drag_index
             && let Some(p) = ptr {
-                let new_x = ((p.x - rect.min.x) / rect.width().max(1.0)).clamp(0.0, 1.0);
+                let new_x = if ui.input(|i| i.modifiers.shift) {
+                    (self.positions[idx] + resp.drag_delta().x * fader::FINE_FACTOR / rect.width().max(1.0)).clamp(0.0, 1.0)
+                } else {
+                    ((p.x - rect.min.x) / rect.width().max(1.0)).clamp(0.0, 1.0)
+                };
                 if (new_x - self.positions[idx]).abs() > 1e-4 {
                     self.positions[idx] = new_x;
                     self.push_position(idx, new_x);
@@ -167,7 +188,7 @@ impl NodeWidget for GradientStopsWidget {
         let rail_y = handle_rect.center().y;
         painter.line_segment(
             [Pos2::new(rect.min.x + 4.0, rail_y), Pos2::new(rect.max.x - 4.0, rail_y)],
-            Stroke::new(1.0_f32, Color32::from_gray(60)),
+            Stroke::new(1.0_f32, theme::PLOT_BORDER),
         );
 
         for i in 0..4 {
@@ -176,7 +197,7 @@ impl NodeWidget for GradientStopsWidget {
             // Vertical line from handle track through the gradient strip.
             painter.line_segment(
                 [Pos2::new(hx, handle_rect.min.y), Pos2::new(hx, strip_rect.max.y)],
-                Stroke::new(1.0_f32, Color32::from_gray(120)),
+                Stroke::new(1.0_f32, theme::TEXT_DIM),
             );
             // Dot in the palette colour, with a dark outline so it reads on
             // any background.
@@ -184,7 +205,7 @@ impl NodeWidget for GradientStopsWidget {
             painter.circle_filled(centre, HANDLE_RADIUS, col);
             painter.circle_stroke(
                 centre, HANDLE_RADIUS,
-                Stroke::new(1.5_f32, Color32::from_gray(20)),
+                Stroke::new(1.5_f32, theme::PLOT_BG),
             );
             // Number inside the handle (1..4) for quick identification.
             painter.text(
@@ -199,7 +220,7 @@ impl NodeWidget for GradientStopsWidget {
 
     fn show_inspector(&mut self, ui: &mut Ui) {
         ui.horizontal(|ui| {
-            ui.label("Name:");
+            ui.label("Name");
             if ui.text_edit_singleline(&mut self.name).changed() {
                 self.push_name();
             }
