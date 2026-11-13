@@ -252,6 +252,14 @@ impl EffectStackWidget {
 }
 
 impl NodeWidget for EffectStackWidget {
+    fn restore_from_save(&mut self, data: Option<&serde_json::Value>, _params: &[(usize, crate::engine::types::ParamValue)]) {
+        if let Some(data) = data
+            && let Ok(config) = serde_json::from_value::<StackConfig>(data.clone())
+        {
+            self.set_config(config);
+        }
+    }
+
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { "Effect Stack" }
     fn title(&self) -> &str { &self.config.name }

@@ -35,14 +35,6 @@ impl PhaseScalerWidget {
         self.shared.lock().unwrap().pending_config = Some(serde_json::json!({ "extra": self.extra }));
     }
 
-    /// Takes the extra outputs from the saved form, before wires are
-    /// attached, so wires to them still have ports to land on.
-    pub fn restore_from_save_data(&mut self, data: &serde_json::Value) {
-        if let Some(extra) = data.get("extra").and_then(|v| serde_json::from_value::<Vec<ExtraOutput>>(v.clone()).ok()) {
-            self.extra = extra.into_iter().take(MAX_EXTRA_OUTPUTS).collect();
-        }
-    }
-
     fn first_exponent(&self) -> i32 {
         let shared = self.shared.lock().unwrap();
         shared.display.as_ref().and_then(|d| d.downcast_ref::<PhaseScalerDisplay>()).map(|d| d.exponent).unwrap_or(0)
@@ -58,6 +50,15 @@ fn exponent_label(exp: i32) -> String {
 }
 
 impl NodeWidget for PhaseScalerWidget {
+    /// Takes the extra outputs from the saved form, before wires are
+    /// attached, so wires to them still have ports to land on.
+    fn restore_from_save(&mut self, data: Option<&serde_json::Value>, _params: &[(usize, crate::engine::types::ParamValue)]) {
+        let Some(data) = data else { return };
+        if let Some(extra) = data.get("extra").and_then(|v| serde_json::from_value::<Vec<ExtraOutput>>(v.clone()).ok()) {
+            self.extra = extra.into_iter().take(MAX_EXTRA_OUTPUTS).collect();
+        }
+    }
+
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { "Phase Scaler" }
     fn description(&self) -> &'static str {
@@ -183,7 +184,7 @@ mod tests {
     #[test]
     fn outputs_are_named_by_their_ratio_and_come_back_from_the_saved_form() {
         let mut w = PhaseScalerWidget::new(NodeId(1), new_shared_state(4, 16));
-        w.restore_from_save_data(&serde_json::json!({ "extra": [{"exponent": -1, "offset": 0.0}, {"exponent": 2, "offset": 0.0}] }));
+        w.restore_from_save(Some(&serde_json::json!({ "extra": [{"exponent": -1, "offset": 0.0}, {"exponent": 2, "offset": 0.0}] })), &[]);
         let names: Vec<String> = w.ui_outputs().into_iter().map(|p| p.def.name).collect();
         assert_eq!(names, ["×1", "÷2", "×4"]);
         w.push_extra();

@@ -106,12 +106,15 @@ impl FaderGroupWidget {
         self.bipolar.resize(n, false);
         self.last_edit_time.resize(n, None);
     }
+}
 
+impl NodeWidget for FaderGroupWidget {
     /// Restore port-affecting state directly from save_data. Called by
     /// project.rs *before* connections are loaded, so that `ui_inputs` /
     /// `ui_outputs` already reflect the saved port layout when
     /// `cleanup_stale_connections` runs on the first frame.
-    pub fn restore_from_save_data(&mut self, data: &serde_json::Value) {
+    fn restore_from_save(&mut self, data: Option<&serde_json::Value>, _params: &[(usize, crate::engine::types::ParamValue)]) {
+        let Some(data) = data else { return };
         if let Some(n) = data.get("name").and_then(|v| v.as_str()) {
             self.name = n.to_string();
         }
@@ -140,9 +143,7 @@ impl FaderGroupWidget {
         self.any_input_enabled = self.inputs_enabled.iter().any(|&b| b);
         self.any_output_enabled = self.outputs_enabled.iter().any(|&b| b);
     }
-}
 
-impl NodeWidget for FaderGroupWidget {
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { "Fader Group" }
     fn title(&self) -> &str { &self.name }

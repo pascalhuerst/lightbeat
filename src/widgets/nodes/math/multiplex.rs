@@ -8,7 +8,7 @@ use crate::engine::nodes::math::multiplex::{
 };
 use crate::engine::types::*;
 use crate::theme;
-use crate::widgets::nodes::node::NodeWidget;
+use crate::widgets::nodes::node::{NodeWidget, param_usize};
 use crate::widgets::nodes::types::UiPortDef;
 
 fn push_type(shared: &SharedState, port_type: PortType) {
@@ -48,13 +48,6 @@ impl MultiplexerWidget {
         }
     }
 
-    /// Apply restored state before the first frame's stale-connection sweep.
-    pub fn set_state_from_load(&mut self, port_type: PortType, slots: usize, mode: SelectMode) {
-        self.port_type = port_type;
-        self.slots = clamp_slots(slots);
-        self.select_mode = mode;
-    }
-
     fn sync_from_display(&mut self) {
         let shared = self.shared.lock().unwrap();
         if let Some(d) = shared.display.as_ref().and_then(|d| d.downcast_ref::<MuxDisplay>()) {
@@ -66,6 +59,12 @@ impl MultiplexerWidget {
 }
 
 impl NodeWidget for MultiplexerWidget {
+    fn restore_from_save(&mut self, _data: Option<&serde_json::Value>, params: &[(usize, ParamValue)]) {
+        self.port_type = param_usize(params, 0).map(type_from_index).unwrap_or(PortType::Any);
+        self.slots = clamp_slots(param_usize(params, 1).unwrap_or(MUX_DEFAULT_SLOTS));
+        self.select_mode = param_usize(params, 2).map(SelectMode::from_index).unwrap_or(SelectMode::Index);
+    }
+
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { "Multiplexer" }
     fn description(&self) -> &'static str {
@@ -166,12 +165,6 @@ impl DemultiplexerWidget {
         }
     }
 
-    pub fn set_state_from_load(&mut self, port_type: PortType, slots: usize, mode: SelectMode) {
-        self.port_type = port_type;
-        self.slots = clamp_slots(slots);
-        self.select_mode = mode;
-    }
-
     fn sync_from_display(&mut self) {
         let shared = self.shared.lock().unwrap();
         if let Some(d) = shared.display.as_ref().and_then(|d| d.downcast_ref::<MuxDisplay>()) {
@@ -183,6 +176,12 @@ impl DemultiplexerWidget {
 }
 
 impl NodeWidget for DemultiplexerWidget {
+    fn restore_from_save(&mut self, _data: Option<&serde_json::Value>, params: &[(usize, ParamValue)]) {
+        self.port_type = param_usize(params, 0).map(type_from_index).unwrap_or(PortType::Any);
+        self.slots = clamp_slots(param_usize(params, 1).unwrap_or(MUX_DEFAULT_SLOTS));
+        self.select_mode = param_usize(params, 2).map(SelectMode::from_index).unwrap_or(SelectMode::Index);
+    }
+
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { "Demultiplexer" }
     fn description(&self) -> &'static str {

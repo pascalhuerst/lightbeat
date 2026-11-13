@@ -91,15 +91,6 @@ impl MidiInputWidget {
         self.learned.lock().unwrap().insert(self.id.0, (label, controls));
     }
 
-    /// Restore the saved list before wires are attached, so wires to its
-    /// ports still have ports to land on.
-    pub fn restore_from_save_data(&mut self, data: &serde_json::Value) {
-        if let Ok(config) = serde_json::from_value::<MidiInputConfig>(data.clone()) {
-            self.config = config;
-            self.publish();
-        }
-    }
-
     fn set_binding(&mut self, entry: u32, binding: Binding) {
         if let Some(e) = self.config.entries.iter_mut().find(|e| e.id == entry) {
             e.binding = Some(binding);
@@ -159,6 +150,16 @@ impl Drop for MidiInputWidget {
 }
 
 impl NodeWidget for MidiInputWidget {
+    /// Restore the saved list before wires are attached, so wires to its
+    /// ports still have ports to land on.
+    fn restore_from_save(&mut self, data: Option<&serde_json::Value>, _params: &[(usize, crate::engine::types::ParamValue)]) {
+        let Some(data) = data else { return };
+        if let Ok(config) = serde_json::from_value::<MidiInputConfig>(data.clone()) {
+            self.config = config;
+            self.publish();
+        }
+    }
+
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { "MIDI Input" }
     fn description(&self) -> &'static str {
@@ -357,7 +358,7 @@ mod tests {
     #[test]
     fn the_list_comes_back_from_the_saved_form_and_is_forgotten_with_the_widget() {
         let (mut w, _hub, learned) = widget();
-        w.restore_from_save_data(&serde_json::json!({ "port": PORT, "entries": [{ "id": 1, "name": "A", "binding": {"kind": "cc", "channel": 1, "number": 7}, "mode": "relative" }] }));
+        w.restore_from_save(Some(&serde_json::json!({ "port": PORT, "entries": [{ "id": 1, "name": "A", "binding": {"kind": "cc", "channel": 1, "number": 7}, "mode": "relative" }] })), &[]);
         assert_eq!(w.ui_outputs().len(), 2, "status port and one entry");
         assert_eq!(w.config().entries[0].mode, InMode::Relative);
         assert_eq!(learned.lock().unwrap().len(), 1);

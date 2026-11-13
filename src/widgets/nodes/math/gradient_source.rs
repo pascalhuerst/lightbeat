@@ -134,8 +134,11 @@ impl GradientSourceWidget {
         let mut shared = self.shared.lock().unwrap();
         shared.pending_config = Some(serde_json::json!({ "stops": stops }));
     }
+}
 
-    pub fn restore_from_save_data(&mut self, data: &serde_json::Value) {
+impl NodeWidget for GradientSourceWidget {
+    fn restore_from_save(&mut self, data: Option<&serde_json::Value>, _params: &[(usize, crate::engine::types::ParamValue)]) {
+        let Some(data) = data else { return };
         if let Some(arr) = data.get("stops").and_then(|v| v.as_array()) {
             for (i, entry) in arr.iter().take(MAX_STOPS).enumerate() {
                 let used = entry.get("used").and_then(|v| v.as_bool()).unwrap_or(false);
@@ -151,9 +154,7 @@ impl GradientSourceWidget {
             }
         }
     }
-}
 
-impl NodeWidget for GradientSourceWidget {
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { "Gradient Source" }
     fn description(&self) -> &'static str {

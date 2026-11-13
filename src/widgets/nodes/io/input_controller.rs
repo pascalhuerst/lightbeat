@@ -42,11 +42,14 @@ impl InputControllerWidget {
             "controller_id": self.controller_id,
         }));
     }
+}
 
+impl NodeWidget for InputControllerWidget {
     /// Pre-populate `controller_id` and the output-port list from save_data
     /// + the live controllers registry, so connections survive the first
     /// frame's `cleanup_stale_connections` after a project load.
-    pub fn restore_from_save_data(&mut self, data: &serde_json::Value) {
+    fn restore_from_save(&mut self, data: Option<&serde_json::Value>, _params: &[(usize, crate::engine::types::ParamValue)]) {
+        let Some(data) = data else { return };
         if let Some(id) = data.get("controller_id").and_then(|v| v.as_u64()) {
             self.controller_id = id as u32;
         }
@@ -74,9 +77,7 @@ impl InputControllerWidget {
             };
         }
     }
-}
 
-impl NodeWidget for InputControllerWidget {
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { "Input Controller" }
     fn description(&self) -> &'static str {

@@ -58,8 +58,11 @@ impl PortalSendWidget {
     }
 
     pub fn name(&self) -> &str { &self.name }
+}
 
-    pub fn restore_from_save_data(&mut self, data: &serde_json::Value) {
+impl NodeWidget for PortalSendWidget {
+    fn restore_from_save(&mut self, data: Option<&serde_json::Value>, _params: &[(usize, crate::engine::types::ParamValue)]) {
+        let Some(data) = data else { return };
         if let Some(n) = data.get("name").and_then(|v| v.as_str()) {
             self.name = n.to_string();
         }
@@ -69,9 +72,7 @@ impl PortalSendWidget {
                 .collect();
         }
     }
-}
 
-impl NodeWidget for PortalSendWidget {
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { "Portal Send" }
     fn title(&self) -> &str { &self.name }
@@ -204,8 +205,11 @@ impl PortalReceiveWidget {
             "ports": self.port_defs,
         }));
     }
+}
 
-    pub fn restore_from_save_data(&mut self, data: &serde_json::Value) {
+impl NodeWidget for PortalReceiveWidget {
+    fn restore_from_save(&mut self, data: Option<&serde_json::Value>, _params: &[(usize, crate::engine::types::ParamValue)]) {
+        let Some(data) = data else { return };
         if let Some(n) = data.get("bound_name").and_then(|v| v.as_str()) {
             self.bound_name = n.to_string();
         }
@@ -215,9 +219,7 @@ impl PortalReceiveWidget {
                 .collect();
         }
     }
-}
 
-impl NodeWidget for PortalReceiveWidget {
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { "Portal Receive" }
     fn title(&self) -> &str { &self.bound_name }

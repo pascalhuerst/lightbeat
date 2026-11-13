@@ -157,6 +157,12 @@ impl EffectWidget {
 }
 
 impl NodeWidget for EffectWidget {
+    fn restore_from_save(&mut self, data: Option<&serde_json::Value>, _params: &[(usize, crate::engine::types::ParamValue)]) {
+        if let Some(name) = data.and_then(|d| d.get("stack")).and_then(|v| v.as_str()) {
+            self.set_stack(name);
+        }
+    }
+
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { self.spec.type_name }
     fn description(&self) -> &'static str { self.spec.description }

@@ -571,7 +571,7 @@ mod removed_port_tests {
     fn input_graph() -> NodeGraph {
         let mut g = NodeGraph::new();
         let mut input = MidiInputWidget::new(NodeId(1), new_shared_state(0, 33), MidiHub::idle(), new_shared_learned());
-        input.restore_from_save_data(&three_entries());
+        input.restore_from_save(Some(&three_entries()), &[]);
         g.add_node(Box::new(input), Pos2::ZERO);
         for k in 0..3u64 {
             g.add_node(Box::new(ValueDisplayWidget::new(NodeId(10 + k), new_shared_state(1, 0))), Pos2::new(200.0, k as f32 * 50.0));
@@ -611,7 +611,7 @@ mod removed_port_tests {
     fn removing_an_output_entry_does_the_same_on_the_input_side() {
         let mut g = NodeGraph::new();
         let mut out = MidiOutputWidget::new(NodeId(1), new_shared_state(32, 1), MidiHub::idle(), new_shared_learned());
-        out.restore_from_save_data(&three_entries());
+        out.restore_from_save(Some(&three_entries()), &[]);
         g.add_node(Box::new(out), Pos2::new(200.0, 0.0));
         for k in 0..3u64 {
             g.add_node(
@@ -703,9 +703,9 @@ mod removed_port_tests {
         use crate::widgets::nodes::meta::portal::PortalSendWidget;
         let mut g = NodeGraph::new();
         let mut send = PortalSendWidget::new(NodeId(1), new_shared_state(3, 0));
-        send.restore_from_save_data(&serde_json::json!({ "name": "p", "ports": [
+        send.restore_from_save(Some(&serde_json::json!({ "name": "p", "ports": [
             { "name": "a", "port_type_idx": 2 }, { "name": "b", "port_type_idx": 2 }, { "name": "c", "port_type_idx": 2 },
-        ]}));
+        ]})), &[]);
         g.add_node(Box::new(send), Pos2::new(200.0, 0.0));
         wire_inputs_of_node_1(&mut g);
         assert_eq!(input_wires(&g), vec![(10, 0), (11, 1), (12, 2)]);
@@ -724,9 +724,9 @@ mod removed_port_tests {
             new_shared_state(1, 321),
             crate::widgets::nodes::math::gradient_source::new_shared_gradient_library(),
         );
-        lookup.restore_from_save_data(&serde_json::json!({ "columns": [
+        lookup.restore_from_save(Some(&serde_json::json!({ "columns": [
             { "name": "a" }, { "name": "b" }, { "name": "c" },
-        ]}));
+        ]})), &[]);
         g.add_node(Box::new(lookup), Pos2::ZERO);
         // Output 0 is "rows"; the columns are ports 1..=3.
         wire_outputs_of_node_1(&mut g, 1);
@@ -807,7 +807,7 @@ mod removed_port_tests {
         ]);
         let receive = |id: u64, name: &str| {
             let mut r = PortalReceiveWidget::new(NodeId(id), new_shared_state(0, 3), Default::default());
-            r.restore_from_save_data(&serde_json::json!({ "bound_name": name, "ports": ports }));
+            r.restore_from_save(Some(&serde_json::json!({ "bound_name": name, "ports": ports })), &[]);
             Box::new(r) as Box<dyn NodeWidget>
         };
         let wire_displays = |g: &mut NodeGraph, receive_id: u64, first_display: u64| {
@@ -821,7 +821,7 @@ mod removed_port_tests {
         };
         let mut g = NodeGraph::new();
         let mut send = PortalSendWidget::new(NodeId(1), new_shared_state(3, 0));
-        send.restore_from_save_data(&serde_json::json!({ "name": "p", "ports": ports }));
+        send.restore_from_save(Some(&serde_json::json!({ "name": "p", "ports": ports })), &[]);
         g.add_node(Box::new(send), Pos2::ZERO);
         g.add_node(receive(2, "p"), Pos2::new(0.0, 200.0));
         wire_displays(&mut g, 2, 10);

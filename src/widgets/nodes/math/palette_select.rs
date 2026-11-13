@@ -7,7 +7,7 @@ use crate::engine::nodes::math::multiplex::SelectMode;
 use crate::engine::nodes::math::palette_select::PaletteSelectDisplay;
 use crate::engine::types::*;
 use crate::objects::color_palette::{ColorPalette, ColorPaletteGroup, PALETTE_SIZE};
-use crate::widgets::nodes::node::NodeWidget;
+use crate::widgets::nodes::node::{NodeWidget, param_usize};
 use crate::widgets::nodes::types::UiPortDef;
 
 pub struct PaletteContext {
@@ -50,12 +50,6 @@ impl PaletteSelectWidget {
         }
     }
 
-    /// Apply restored state before the first frame's stale-connection
-    /// sweep — mirrors Mux/Demux/Counter's loader path.
-    pub fn set_state_from_load(&mut self, mode: SelectMode) {
-        self.select_mode = mode;
-    }
-
     fn sync_from_display(&mut self) {
         let shared = self.shared.lock().unwrap();
         if let Some(d) = shared.display.as_ref().and_then(|d| d.downcast_ref::<PaletteSelectDisplay>())
@@ -87,6 +81,10 @@ impl PaletteSelectWidget {
 }
 
 impl NodeWidget for PaletteSelectWidget {
+    fn restore_from_save(&mut self, _data: Option<&serde_json::Value>, params: &[(usize, ParamValue)]) {
+        self.select_mode = param_usize(params, 0).map(SelectMode::from_index).unwrap_or(SelectMode::Index);
+    }
+
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { "Palette Select" }
     fn description(&self) -> &'static str { "Picks a palette (a set of 4 colors) from a palette group, indexed by group and palette index." }

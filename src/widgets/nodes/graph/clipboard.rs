@@ -207,114 +207,27 @@ impl NodeGraph {
                     self.active_mut().states[idx].size_override = Some(size);
                 }
 
-                // Widgets with dynamic port layouts computed from params
-                // (Mux/Demux/PortHub use `port_type` + `slots`,
-                // Counter/PaletteSelect use `select_mode`) need their
-                // fields restored from the captured params *before*
-                // `cleanup_stale_connections` runs on the next frame —
-                // otherwise the duplicated node would briefly report
-                // default ports and any wire we're about to re-add in
-                // the connection-remap loop below could be culled.
-                // Mirrors the dispatch in `move_selection_to_subgraph`.
-                {
-                    use crate::engine::nodes::math::multiplex::{
-                        SelectMode, type_from_index,
-                    };
-                    let type_idx = cn.params.iter().find(|(pi, _)| *pi == 0).map(|(_, v)| v.as_usize());
-                    let slots = cn.params.iter().find(|(pi, _)| *pi == 1).map(|(_, v)| v.as_usize());
-                    let n = self.active_mut().nodes[idx].as_mut();
-                    if let Some(w) = n.as_any_mut()
-                        .downcast_mut::<crate::widgets::nodes::math::multiplex::MultiplexerWidget>()
-                    {
-                        let pt = type_idx.map(type_from_index).unwrap_or(PortType::Any);
-                        let s = slots.unwrap_or(
-                            crate::engine::nodes::math::multiplex::MUX_DEFAULT_SLOTS,
-                        );
-                        let m = cn.params.iter().find(|(pi, _)| *pi == 2)
-                            .map(|(_, v)| SelectMode::from_index(v.as_usize()))
-                            .unwrap_or(SelectMode::Index);
-                        w.set_state_from_load(pt, s, m);
-                    } else if let Some(w) = n.as_any_mut()
-                        .downcast_mut::<crate::widgets::nodes::math::multiplex::DemultiplexerWidget>()
-                    {
-                        let pt = type_idx.map(type_from_index).unwrap_or(PortType::Any);
-                        let s = slots.unwrap_or(
-                            crate::engine::nodes::math::multiplex::MUX_DEFAULT_SLOTS,
-                        );
-                        let m = cn.params.iter().find(|(pi, _)| *pi == 2)
-                            .map(|(_, v)| SelectMode::from_index(v.as_usize()))
-                            .unwrap_or(SelectMode::Index);
-                        w.set_state_from_load(pt, s, m);
-                    } else if let Some(w) = n.as_any_mut()
-                        .downcast_mut::<crate::widgets::nodes::math::port_hub::PortHubWidget>()
-                    {
-                        let pt = type_idx.map(type_from_index).unwrap_or(PortType::Untyped);
-                        let s = slots.unwrap_or(
-                            crate::engine::nodes::math::port_hub::HUB_DEFAULT_SLOTS,
-                        );
-                        w.set_state_from_load(pt, s);
-                    } else if let Some(w) = n.as_any_mut()
-                        .downcast_mut::<crate::widgets::nodes::math::counter::CounterWidget>()
-                    {
-                        let m = cn.params.iter().find(|(pi, _)| *pi == 2)
-                            .map(|(_, v)| SelectMode::from_index(v.as_usize()))
-                            .unwrap_or(SelectMode::Index);
-                        w.set_state_from_load(m);
-                    } else if let Some(w) = n.as_any_mut()
-                        .downcast_mut::<crate::widgets::nodes::math::palette_select::PaletteSelectWidget>()
-                    {
-                        let m = cn.params.iter().find(|(pi, _)| *pi == 0)
-                            .map(|(_, v)| SelectMode::from_index(v.as_usize()))
-                            .unwrap_or(SelectMode::Index);
-                        w.set_state_from_load(m);
-                    } else if let Some(w) = n.as_any_mut()
-                        .downcast_mut::<crate::widgets::nodes::transport::envelope::EnvelopeWidget>()
-                    {
-                        use crate::engine::nodes::transport::envelope::EnvelopeKind;
-                        let k = cn.params.iter().find(|(pi, _)| *pi == 4)
-                            .map(|(_, v)| EnvelopeKind::from_index(v.as_usize()))
-                            .unwrap_or(EnvelopeKind::Adsr);
-                        w.set_state_from_load(k);
+                let mut data = cn.data.clone();
+                // A Portal Send publishes under a unique name, so the copy
+                // gets the next number. A Portal Receive keeps its
+                // `bound_name` so the copy stays bound to the same Send.
+                if cn.type_name == "Portal Send"
+                    && let Some(data) = data.as_mut()
+                    && let Some(name) = data.get("name").and_then(|v| v.as_str()) {
+                        let next = Self::next_name_suffix(name);
+                        data["name"] = serde_json::Value::String(next);
                     }
-                }
+
+                // The same restore as on load, so the copy has its real
+                // ports before `navigate_into` (deep-copying a subgraph) and
+                // `cleanup_stale_connections` look at it.
+                self.active_mut().nodes[idx].restore_from_save(data.as_ref(), &cn.params);
 
                 // Dispatch the source node's save_data to the duplicate's
                 // process node so per-instance settings (fader-group rows/cols
                 // and enable flags, controller bindings, layer stacks, etc.)
-                // survive copy-paste. Widgets with dynamic ports (the two
-                // portal kinds) also need their port layout restored on the
-                // widget side BEFORE `cleanup_stale_connections` runs on
-                // the next frame — otherwise any internal wire we just
-                // duplicated into those ports would be culled.
-                if let Some(mut data) = cn.data.clone() {
-                    // A Portal Send publishes under a unique name, so the copy
-                    // gets the next number. A Portal Receive keeps its
-                    // `bound_name` so the copy stays bound to the same Send.
-                    if cn.type_name == "Portal Send"
-                        && let Some(name) = data.get("name").and_then(|v| v.as_str()) {
-                            let next = Self::next_name_suffix(name);
-                            data["name"] = serde_json::Value::String(next);
-                        }
-
-                    // Widget-side restore for the four portal kinds and
-                    // for Subgraph — makes `ui_inputs` / `ui_outputs`
-                    // immediately reflect the duplicated port layout so
-                    // `navigate_into` (used below for deep-copying a
-                    // subgraph) and `cleanup_stale_connections` see the
-                    // real ports on the first frame. Mirrors `project.rs`'s
-                    // load dispatch.
-                    {
-                        let n = self.active_mut().nodes[idx].as_mut();
-                        if let Some(w) = n.as_any_mut().downcast_mut::<PortalSendWidget>() {
-                            w.restore_from_save_data(&data);
-                        } else if let Some(w) = n.as_any_mut().downcast_mut::<PortalReceiveWidget>() {
-                            w.restore_from_save_data(&data);
-                        } else if let Some(w) = n.as_any_mut().downcast_mut::<SubgraphWidget>() {
-                            w.restore_from_save_data(&data);
-                            w.push_config();
-                        }
-                    }
-
+                // survive copy-paste.
+                if let Some(data) = data {
                     let node_id = self.active().nodes[idx].node_id();
                     self.push_engine_cmd(EngineCommand::LoadData {
                         node_id,
