@@ -40,23 +40,23 @@ impl NodeWidget for Push1Widget {
     fn type_name(&self) -> &'static str { "Push 1" }
     fn description(&self) -> &'static str {
         "Ableton Push 1 dedicated node. Groups the device's controls into \
-         (trigger, address, value) channels — e.g. one `pad trig` pulse per \
+         (trigger, address, value) channels — e.g. one `pad trigger` pulse per \
          pad event with x/y/velocity describing which pad. Feedback inputs \
-         let you light pad / button LEDs by pulsing `set pad trig` with the \
+         let you light pad / button LEDs by pulsing `set pad trigger` with the \
          latched coords and color."
     }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> {
         // Mirror the engine port layout.
         let defs = [
-            ("set pad trig", PortType::Logic),
+            ("set pad trigger", PortType::Logic),
             ("set pad x", PortType::Untyped),
             ("set pad y", PortType::Untyped),
             ("set pad color", PortType::Untyped),
-            ("set btn top trig", PortType::Logic),
+            ("set btn top trigger", PortType::Logic),
             ("set btn top col", PortType::Untyped),
             ("set btn top color", PortType::Untyped),
-            ("set btn bot trig", PortType::Logic),
+            ("set btn bot trigger", PortType::Logic),
             ("set btn bot col", PortType::Untyped),
             ("set btn bot color", PortType::Untyped),
         ];
@@ -71,17 +71,17 @@ impl NodeWidget for Push1Widget {
 
     fn ui_outputs(&self) -> Vec<UiPortDef> {
         let defs = [
-            ("pad trig", PortType::Logic),
+            ("pad trigger", PortType::Logic),
             ("pad x", PortType::Untyped),
             ("pad y", PortType::Untyped),
             ("pad vel", PortType::Untyped),
-            ("btn top trig", PortType::Logic),
+            ("btn top trigger", PortType::Logic),
             ("btn top col", PortType::Untyped),
             ("btn top val", PortType::Logic),
-            ("btn bot trig", PortType::Logic),
+            ("btn bot trigger", PortType::Logic),
             ("btn bot col", PortType::Untyped),
             ("btn bot val", PortType::Logic),
-            ("enc trig", PortType::Logic),
+            ("enc trigger", PortType::Logic),
             ("enc idx", PortType::Untyped),
             ("enc val", PortType::Untyped),
             ("slider", PortType::Untyped),

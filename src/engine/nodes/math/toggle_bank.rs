@@ -46,7 +46,7 @@ impl ToggleBankProcessNode {
         // value out (Untyped — the output is a persistent 0 or 1, not a
         // one-tick pulse).
         self.inputs = (0..self.n)
-            .map(|i| PortDef::new(format!("T{}", i + 1), PortType::Logic))
+            .map(|i| PortDef::new(format!("trigger {}", i + 1), PortType::Logic))
             .collect();
         self.outputs = (0..self.n)
             .map(|i| PortDef::new(format!("O{}", i + 1), PortType::Untyped))

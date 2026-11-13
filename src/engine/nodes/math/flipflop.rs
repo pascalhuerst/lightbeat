@@ -104,7 +104,7 @@ impl JkFlipFlopProcessNode {
             inputs: vec![
                 PortDef::new("J", PortType::Logic),
                 PortDef::new("K", PortType::Logic),
-                PortDef::new("clk", PortType::Logic),
+                PortDef::new("trigger", PortType::Logic),
             ],
             outputs: vec![
                 PortDef::new("Q", PortType::Logic),

@@ -1,12 +1,12 @@
 use crate::engine::types::*;
 
 /// Detects when an input `value` changes. Two modes, selected
-/// automatically by whether the optional `sample on` input is wired:
+/// automatically by whether the optional `trigger` input is wired:
 ///
 /// - **Continuous** (unwired): compare `value` to the previous tick's value.
 ///   Both `changed` and `trigger` outputs pulse one tick whenever the value
 ///   shifts more than `threshold`.
-/// - **Gated** (wired): on each `sample on` rising edge, compare current
+/// - **Gated** (wired): on each `trigger` rising edge, compare current
 ///   `value` to the snapshot taken on the previous edge. `changed` latches
 ///   to 1 if different, 0 if same (holds until the next edge). `trigger`
 ///   pulses one tick when a change is detected.
@@ -38,7 +38,7 @@ impl ChangeDetectProcessNode {
             threshold: 0.001,
             inputs: vec![
                 PortDef::new("value", PortType::Any),
-                PortDef::new("sample on", PortType::Logic),
+                PortDef::new("trigger", PortType::Logic),
             ],
             outputs: vec![
                 PortDef::new("changed", PortType::Logic),

@@ -54,7 +54,7 @@ impl NodeWidget for FlipFlopWidget {
             FlipFlopKind::Jk => vec![
                 UiPortDef::from_def(&PortDef::new("J", PortType::Logic)),
                 UiPortDef::from_def(&PortDef::new("K", PortType::Logic)),
-                UiPortDef::from_def(&PortDef::new("clk", PortType::Logic)),
+                UiPortDef::from_def(&PortDef::new("trigger", PortType::Logic)),
             ],
         }
     }

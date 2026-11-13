@@ -52,7 +52,7 @@ impl TriggerBankProcessNode {
             .map(|i| PortDef::new(format!("In {}", i + 1), PortType::Untyped))
             .collect();
         self.outputs = (0..self.n)
-            .map(|i| PortDef::new(format!("T{}", i + 1), PortType::Logic))
+            .map(|i| PortDef::new(format!("trigger {}", i + 1), PortType::Logic))
             .collect();
         self.in_vals.resize(self.n, 0.0);
         self.prev_in.resize(self.n, 0.0);

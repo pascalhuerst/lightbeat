@@ -93,7 +93,7 @@ impl LfoProcessNode {
         if phase_input {
             vec![PortDef::new("phase", PortType::Phase)]
         } else {
-            vec![PortDef::new("sync", PortType::Logic)]
+            vec![PortDef::new("trigger", PortType::Logic)]
         }
     }
 

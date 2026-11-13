@@ -24,7 +24,7 @@ fn ports_for(phase_input: bool) -> (Vec<PortDef>, Vec<PortDef>) {
         )
     } else {
         (
-            vec![PortDef::new("sync", PortType::Logic)],
+            vec![PortDef::new("trigger", PortType::Logic)],
             vec![PortDef::new("value", PortType::Untyped), PortDef::new("phase", PortType::Phase)],
         )
     }
