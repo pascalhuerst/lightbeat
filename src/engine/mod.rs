@@ -6,6 +6,7 @@ pub mod promoted;
 pub mod routing;
 pub mod snapshots;
 pub mod sync_hint;
+pub mod time;
 pub mod types;
 
 use std::thread;

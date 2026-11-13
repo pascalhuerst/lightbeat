@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use ringbuf::traits::Consumer;
 
@@ -371,15 +371,34 @@ impl EngineGraph {
     pub fn run(mut self, mut command_rx: CommandConsumer) {
         let perf = self.perf.clone();
         let mut timer = EngineTickTimer::default();
+        // Absolute deadlines: sleeping a fixed 1 ms after each tick would make
+        // the period tick time plus sleep overshoot, and every node that
+        // integrates time would run slow by that much.
+        const PERIOD: Duration = Duration::from_millis(1);
+        const RESYNC_AFTER: Duration = Duration::from_millis(5);
+        let mut deadline = Instant::now() + PERIOD;
+        let mut last_start = Instant::now();
         loop {
             // Drain all pending commands (non-blocking).
             while let Some(cmd) = command_rx.try_pop() {
                 self.apply_command(cmd);
             }
 
+            let started = Instant::now();
+            super::time::set_dt(started.duration_since(last_start).as_secs_f32());
+            last_start = started;
             timer.measure(&perf, || self.tick());
 
-            std::thread::sleep(Duration::from_millis(1));
+            let now = Instant::now();
+            if now > deadline + RESYNC_AFTER {
+                // Far behind (stall, suspended laptop): do not burst to catch up.
+                deadline = now + PERIOD;
+            } else {
+                deadline += PERIOD;
+                if deadline > now {
+                    std::thread::sleep(deadline - now);
+                }
+            }
         }
     }
 }
