@@ -30,7 +30,6 @@ use crate::engine::nodes::ui::fader_group::FaderGroupProcessNode;
 use crate::engine::nodes::ui::peak_meter::PeakMeterProcessNode;
 use crate::engine::nodes::ui::color_mixer::ColorMixerProcessNode;
 use crate::engine::nodes::ui::xy_pad::XyPadProcessNode;
-use crate::engine::nodes::ui::gradient_stops::GradientStopsProcessNode;
 use crate::engine::nodes::math::bipolar::BipolarProcessNode;
 use crate::engine::nodes::math::scale_offset::ScaleOffsetProcessNode;
 use crate::engine::nodes::math::change_detect::ChangeDetectProcessNode;
@@ -102,7 +101,6 @@ use crate::widgets::nodes::ui::fader_group::FaderGroupWidget;
 use crate::widgets::nodes::ui::peak_meter::PeakMeterWidget;
 use crate::widgets::nodes::ui::color_mixer::ColorMixerWidget;
 use crate::widgets::nodes::ui::xy_pad::XyPadWidget;
-use crate::widgets::nodes::ui::gradient_stops::GradientStopsWidget;
 use crate::widgets::nodes::math::bipolar::BipolarWidget;
 use crate::widgets::nodes::math::scale_offset::ScaleOffsetWidget;
 use crate::widgets::nodes::math::change_detect::ChangeDetectWidget;
@@ -313,13 +311,6 @@ pub(crate) fn node_table() -> Vec<NodeDescriptor> {
         "Input", "Color Mixer", (0, 3),
         |id, s, _| Box::new(ColorMixerWidget::new(id, s)),
         |id, _| Box::new(ColorMixerProcessNode::new(id)),
-    ));
-    // 1 Palette input (12 channels) for the live preview, 4 position
-    // outputs to feed Palette → Gradient's pos1..pos4.
-    table.push(node(
-        "Input", "Gradient Stops", (12, 4),
-        |id, s, _| Box::new(GradientStopsWidget::new(id, s)),
-        |id, _| Box::new(GradientStopsProcessNode::new(id)),
     ));
     table.push(node(
         "Display", "Peak Level Meter", (2, 0),

@@ -918,6 +918,29 @@ mod tests {
     }
 
     #[test]
+    fn an_old_gradient_stops_node_is_dropped_with_its_wires_and_the_rest_loads() {
+        use crate::widgets::nodes::math::palette_to_gradient::PaletteToGradientWidget;
+
+        let mut g = crate::widgets::nodes::NodeGraph::new();
+        g.register_node("Color", "Palette to Gradient", |id| {
+            Box::new(PaletteToGradientWidget::new(id, crate::engine::types::new_shared_state(16, 40)))
+        });
+        let old: ProjectFile = serde_json::from_str(r#"{
+            "version": 3,
+            "nodes": [
+                {"type_name": "Palette to Gradient", "id": 1, "pos": [0.0, 0.0], "params": []},
+                {"type_name": "Gradient Stops", "id": 2, "pos": [0.0, 0.0], "params": []}
+            ],
+            "connections": [{"from_node": 2, "from_port": 1, "to_node": 1, "to_port": 2}]
+        }"#).unwrap();
+        load_graph(&mut g, &old);
+        g.cleanup_stale_connections();
+        assert_eq!(g.root_level().nodes.len(), 1);
+        assert!(g.root_level().connections.is_empty());
+        assert_eq!(promoted_names(&mut g, 0), ["Pos 1", "Pos 2", "Pos 3", "Pos 4"]);
+    }
+
+    #[test]
     fn a_new_node_with_its_setting_wired_saves_and_loads_the_same() {
         let mut a = scale_offset_graph();
         let node = a.create_from_registry("Scale Offset", NodeId(1)).unwrap();
