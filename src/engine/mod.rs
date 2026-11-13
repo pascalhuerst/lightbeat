@@ -22,8 +22,6 @@ use self::types::EngineCommand;
 // Ring buffer types for lock-free command passing
 // ---------------------------------------------------------------------------
 
-#[allow(dead_code)]
-pub type CommandRingBuffer = HeapRb<EngineCommand>;
 pub type CommandProducer = ringbuf::HeapProd<EngineCommand>;
 pub type CommandConsumer = ringbuf::HeapCons<EngineCommand>;
 

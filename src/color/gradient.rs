@@ -43,13 +43,8 @@ impl Gradient {
         ])
     }
 
-    /// Sample the gradient at a position (0.0..=1.0). Clamps to edges.
-    pub fn sample(&self, t: f32) -> Rgb {
-        self.sample_with_alpha(t).0
-    }
-
-    /// Sample returning both color and alpha. Useful for alpha-blended
-    /// writes where the caller needs to know how opaque the result is.
+    /// Sample the gradient at a position (0.0..=1.0), clamping to the edges,
+    /// returning color and alpha so alpha-blended writes know how opaque it is.
     pub fn sample_with_alpha(&self, t: f32) -> (Rgb, f32) {
         if self.stops.is_empty() {
             return (Rgb::BLACK, 0.0);
@@ -77,12 +72,6 @@ impl Gradient {
         }
 
         (last.color, last.alpha)
-    }
-
-    /// Sample with wrapping (t wraps around 0..1 via modulo).
-    #[allow(dead_code)]
-    pub fn sample_wrapped(&self, t: f32) -> Rgb {
-        self.sample(t.rem_euclid(1.0))
     }
 
     pub fn stops(&self) -> &[GradientStop] {
@@ -151,7 +140,7 @@ mod tests {
     #[test]
     fn two_stop_midpoint() {
         let g = Gradient::two(Rgb::BLACK, Rgb::WHITE);
-        let mid = g.sample(0.5);
+        let mid = g.sample_with_alpha(0.5).0;
         assert!((mid.r - 0.5).abs() < 1e-5);
         assert!((mid.g - 0.5).abs() < 1e-5);
         assert!((mid.b - 0.5).abs() < 1e-5);
@@ -160,9 +149,9 @@ mod tests {
     #[test]
     fn clamps_to_edges() {
         let g = Gradient::two(Rgb::new(1.0, 0.0, 0.0), Rgb::new(0.0, 0.0, 1.0));
-        let below = g.sample(-1.0);
+        let below = g.sample_with_alpha(-1.0).0;
         assert!((below.r - 1.0).abs() < 1e-5);
-        let above = g.sample(2.0);
+        let above = g.sample_with_alpha(2.0).0;
         assert!((above.b - 1.0).abs() < 1e-5);
     }
 
@@ -173,16 +162,9 @@ mod tests {
             GradientStop::opaque(0.5, Rgb::new(0.0, 1.0, 0.0)),
             GradientStop::opaque(1.0, Rgb::new(0.0, 0.0, 1.0)),
         ]);
-        let at_quarter = g.sample(0.25);
+        let at_quarter = g.sample_with_alpha(0.25).0;
         assert!((at_quarter.r - 0.5).abs() < 1e-5);
         assert!((at_quarter.g - 0.5).abs() < 1e-5);
-    }
-
-    #[test]
-    fn wrapped_sampling() {
-        let g = Gradient::two(Rgb::BLACK, Rgb::WHITE);
-        let s = g.sample_wrapped(1.5);
-        assert!((s.r - 0.5).abs() < 1e-5);
     }
 
     #[test]

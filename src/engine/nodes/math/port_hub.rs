@@ -7,7 +7,7 @@
 //! stays simple and predictable. Slot count 1..=16.
 
 use crate::engine::nodes::math::multiplex::{
-    MUX_MAX_SLOTS, MUX_MIN_SLOTS, MUX_TYPE_NAMES, MUX_TYPES, clamp_slots, type_from_index,
+    MUX_MAX_SLOTS, MUX_MIN_SLOTS, MUX_TYPE_NAMES, clamp_slots, type_from_index,
     type_to_index,
 };
 use crate::engine::types::*;
@@ -129,9 +129,3 @@ impl ProcessNode for PortHubProcessNode {
         }));
     }
 }
-
-// Keep `MUX_TYPES` referenced here so the unused-import warning doesn't
-// flip if we later strip the import — the hub and mux share the same
-// type universe intentionally.
-#[allow(dead_code)]
-const _TYPES_REFERENCE: &[PortType] = MUX_TYPES;
