@@ -199,7 +199,6 @@ pub fn show(ui: &mut Ui, mgr: &mut InputControllerManager, missing: &[String]) -
                     show_inputs_table(
                         ui,
                         c,
-                        is_factory_kind,
                         &mut rename_input,
                         &mut set_mode,
                         &mut set_feedback_disabled,
@@ -321,7 +320,6 @@ fn lerp_color(a: Color32, b: Color32, t: f32) -> Color32 {
 fn show_inputs_table(
     ui: &mut Ui,
     c: &crate::input_controller::ControllerRuntime,
-    _is_factory_kind: bool,
     rename_input: &mut Vec<(u32, u32, String)>,
     set_mode: &mut Vec<(u32, u32, InputBindingMode)>,
     set_feedback_disabled: &mut Vec<(u32, u32, bool)>,
