@@ -200,7 +200,7 @@ impl NodeWidget for GradientSourceWidget {
         theme::draw_checkerboard(&painter, bar_rect, 6.0);
 
         // Sample the gradient at many points across width.
-        let samples = (bar_rect.width() as usize).max(16).min(512);
+        let samples = (bar_rect.width() as usize).clamp(16, 512);
         if !self.preview_stops.is_empty() {
             for i in 0..samples {
                 let t = i as f32 / (samples - 1).max(1) as f32;

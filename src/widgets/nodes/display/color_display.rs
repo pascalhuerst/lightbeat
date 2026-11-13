@@ -100,7 +100,7 @@ impl NodeWidget for ColorDisplayWidget {
                 if stops.is_empty() {
                     painter.rect_filled(rect, 2.0, theme::BG);
                 } else {
-                    let samples = (rect.width() as usize).max(16).min(512);
+                    let samples = (rect.width() as usize).clamp(16, 512);
                     for i in 0..samples {
                         let t = i as f32 / (samples - 1).max(1) as f32;
                         let x = rect.min.x + (i as f32 / samples as f32) * rect.width();
