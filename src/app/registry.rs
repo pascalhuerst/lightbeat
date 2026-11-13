@@ -1,7 +1,12 @@
 use crate::LightBeatApp;
 use crate::engine;
 use crate::widgets;
+use std::cell::RefCell;
+use std::rc::Rc;
 use std::sync::Arc;
+use crate::beat_clock::BeatListener;
+use crate::engine::types::{NodeId, SharedState};
+use crate::widgets::nodes::node::NodeWidget;
 use crate::beat_clock::BeatPattern;
 use crate::engine::types::{new_shared_state, EngineCommand, PortType, ProcessNode, SubgraphInnerCmd};
 use crate::engine::nodes::display::color_display::ColorDisplayProcessNode;
@@ -143,381 +148,602 @@ use crate::widgets::nodes::transport::lfo::LfoWidget;
 use crate::widgets::nodes::transport::phase_scaler::PhaseScalerWidget;
 use crate::widgets::nodes::transport::step_sequencer::StepSequencerWidget;
 
+/// What the constructors of a node's two halves may need from the app: the
+/// hubs and registries the nodes share. Every field is a handle, so cloning
+/// the context is cheap.
+#[derive(Clone)]
+pub(crate) struct NodeContext {
+    pub snapshot: Arc<std::sync::Mutex<crate::beat_clock::LinkSnapshot>>,
+    pub input_controllers: crate::input_controller::SharedControllers,
+    pub audio_inputs: crate::audio::manager::SharedAudioInputs,
+    pub dmx_inputs: crate::dmx_input::DmxInputHub,
+    pub midi_hub: crate::midi_io::MidiHub,
+    pub midi_learned: widgets::nodes::io::midi_common::SharedLearned,
+    pub gradient_library: widgets::nodes::math::gradient_source::SharedGradientLibrary,
+    pub palette_ctx: widgets::nodes::math::palette_select::SharedPaletteContext,
+    pub group_ctx: widgets::group_context::SharedGroupContext,
+    pub stack_names: widgets::nodes::output::effect::SharedStackNames,
+    pub portals: engine::nodes::meta::portal::SharedPortalRegistry,
+    pub effect_hub: engine::effects::EffectHub,
+    pub object_store: crate::dmx_io::SharedObjectStore,
+    /// Beat subscriptions an engine constructor asked for. The beat clock is
+    /// not a handle that can be cloned, so the app registers them afterwards.
+    wanted_beats: Rc<RefCell<Vec<(BeatPattern, Arc<std::sync::Mutex<dyn BeatListener>>)>>>,
+}
+
+impl NodeContext {
+    pub fn subscribe_beat(&self, pattern: BeatPattern, listener: Arc<std::sync::Mutex<dyn BeatListener>>) {
+        self.wanted_beats.borrow_mut().push((pattern, listener));
+    }
+
+    fn take_wanted_beats(&self) -> Vec<(BeatPattern, Arc<std::sync::Mutex<dyn BeatListener>>)> {
+        std::mem::take(&mut *self.wanted_beats.borrow_mut())
+    }
+}
+
+/// One node type: where it sits in the menus, how many channels its shared
+/// state is sized for, and how to make its two halves. A node cannot be
+/// registered on one side only, and both halves are found by the same name.
+pub(crate) struct NodeDescriptor {
+    pub category: &'static str,
+    pub name: &'static str,
+    /// Channels of the shared state (inputs, outputs): the worst case the
+    /// node can grow to, not what it starts with.
+    pub channels: (usize, usize),
+    pub widget: Box<dyn Fn(NodeId, SharedState, &NodeContext) -> Box<dyn NodeWidget>>,
+    pub engine: Box<dyn Fn(NodeId, &NodeContext) -> Box<dyn ProcessNode>>,
+}
+
+fn node(
+    category: &'static str,
+    name: &'static str,
+    channels: (usize, usize),
+    widget: impl Fn(NodeId, SharedState, &NodeContext) -> Box<dyn NodeWidget> + 'static,
+    engine: impl Fn(NodeId, &NodeContext) -> Box<dyn ProcessNode> + 'static,
+) -> NodeDescriptor {
+    NodeDescriptor { category, name, channels, widget: Box::new(widget), engine: Box::new(engine) }
+}
+
+/// Every node type, in the order of the menus.
+pub(crate) fn node_table() -> Vec<NodeDescriptor> {
+    let mut table = Vec::new();
+    table.push(node(
+        "IO", "Clock", (0, 3),
+        |id, s, _| Box::new(ClockWidget::new(id, s)),
+        |id, ctx| {
+            let node = ClockProcessNode::new(id, Arc::clone(&ctx.snapshot));
+            ctx.subscribe_beat(BeatPattern::every(1), node.beat_state.clone());
+            Box::new(node)
+        },
+    ));
+    // 4 inputs (play/stop, bpm, set bpm, reset) and 3 outputs.
+    table.push(node(
+        "IO", "Internal Clock", (4, 3),
+        |id, s, _| Box::new(InternalClockWidget::new(id, s)),
+        |id, _| Box::new(InternalClockProcessNode::new(id)),
+    ));
+    // Generous channel budget on both sides — the engine resizes its
+    // active port list as the bound controller's layout changes. 192
+    // covers generic MIDI and BCF2000 with headroom; Push 1 uses its
+    // own dedicated node.
+    table.push(node(
+        "IO", "Input Controller", (192, 192),
+        |id, s, ctx| Box::new(InputControllerWidget::new(id, s, ctx.input_controllers.clone())),
+        |id, ctx| Box::new(InputControllerProcessNode::new(id, ctx.input_controllers.clone())),
+    ));
+    // The status port and up to 64 entries of at most three channels.
+    table.push(node(
+        "IO", "DMX Input", (0, 200),
+        |id, s, ctx| Box::new(DmxInputWidget::new(id, s, ctx.dmx_inputs.clone())),
+        |id, ctx| Box::new(DmxInputProcessNode::new(id, ctx.dmx_inputs.clone())),
+    ));
+    // The status port and up to 32 controls.
+    table.push(node(
+        "IO", "MIDI Input", (0, 33),
+        |id, s, ctx| Box::new(MidiInputWidget::new(id, s, ctx.midi_hub.clone(), ctx.midi_learned.clone())),
+        |id, ctx| Box::new(MidiInputProcessNode::new(id, ctx.midi_hub.clone())),
+    ));
+    table.push(node(
+        "IO", "MIDI Output", (32, 1),
+        |id, s, ctx| Box::new(MidiOutputWidget::new(id, s, ctx.midi_hub.clone(), ctx.midi_learned.clone())),
+        |id, ctx| Box::new(MidiOutputProcessNode::new(id, ctx.midi_hub.clone())),
+    ));
+    // 26 outputs (incl. "connected"), 21 inputs (see push1.rs). 32/32 gives headroom.
+    table.push(node(
+        "IO", "Push 1", (32, 32),
+        |id, s, ctx| Box::new(Push1Widget::new(id, s, ctx.input_controllers.clone())),
+        |id, ctx| Box::new(Push1ProcessNode::new(id, ctx.input_controllers.clone())),
+    ));
+    // 34 button outputs + 4 encoder outputs + 8 pot outputs + "any change" +
+    // "connected" = 48 outputs. 34 LED feedback inputs. 56/56 leaves headroom.
+    table.push(node(
+        "IO", "X1", (56, 56),
+        |id, s, ctx| Box::new(X1Widget::new(id, s, ctx.input_controllers.clone())),
+        |id, ctx| Box::new(X1ProcessNode::new(id, ctx.input_controllers.clone())),
+    ));
+    // 82 outputs = 64 pads + 8 side + 8 top + "any change" + "connected".
+    // 80 LED feedback inputs, each `Color` (3 channels) = 240
+    // channels. 256 gives a bit of headroom.
+    table.push(node(
+        "IO", "Launchpad S", (256, 82),
+        |id, s, ctx| Box::new(LaunchpadWidget::new(id, s, ctx.input_controllers.clone())),
+        |id, ctx| Box::new(LaunchpadProcessNode::new(id, ctx.input_controllers.clone())),
+    ));
+    table.push(node(
+        "IO", "Audio Input", (0, 32),
+        |id, s, ctx| Box::new(AudioInputWidget::new(id, s, ctx.audio_inputs.clone())),
+        |id, ctx| Box::new(AudioInputProcessNode::new(id, ctx.audio_inputs.clone())),
+    ));
+    // 1 optional input (Logic), 1 output.
+    table.push(node(
+        "UI", "Button", (1, 1),
+        |id, s, _| Box::new(ButtonWidget::new(id, s)),
+        |id, _| Box::new(ButtonProcessNode::new(id)),
+    ));
+    // 1 optional input (when "Enable input" is checked), 1 output.
+    table.push(node(
+        "UI", "Fader", (1, 1),
+        |id, s, _| Box::new(FaderWidget::new(id, s)),
+        |id, _| Box::new(FaderProcessNode::new(id)),
+    ));
+    table.push(node(
+        "UI", "Button Group", (256, 256),
+        |id, s, _| Box::new(ButtonGroupWidget::new(id, s)),
+        |id, _| Box::new(ButtonGroupProcessNode::new(id)),
+    ));
+    table.push(node(
+        "UI", "Fader Group", (256, 256),
+        |id, s, _| Box::new(FaderGroupWidget::new(id, s)),
+        |id, _| Box::new(FaderGroupProcessNode::new(id)),
+    ));
+    // No inputs; outputs x and y (0..1).
+    table.push(node(
+        "UI", "XY Pad", (0, 2),
+        |id, s, _| Box::new(XyPadWidget::new(id, s)),
+        |id, _| Box::new(XyPadProcessNode::new(id)),
+    ));
+    table.push(node(
+        "UI", "Color Mixer", (0, 3),
+        |id, s, _| Box::new(ColorMixerWidget::new(id, s)),
+        |id, _| Box::new(ColorMixerProcessNode::new(id)),
+    ));
+    // 1 Palette input (12 channels) for the live preview, 4 position
+    // outputs to feed Palette → Gradient's pos1..pos4.
+    table.push(node(
+        "UI", "Gradient Stops", (12, 4),
+        |id, s, _| Box::new(GradientStopsWidget::new(id, s)),
+        |id, _| Box::new(GradientStopsProcessNode::new(id)),
+    ));
+    table.push(node(
+        "UI", "Peak Level Meter", (2, 0),
+        |id, s, _| Box::new(PeakMeterWidget::new(id, s)),
+        |id, _| Box::new(PeakMeterProcessNode::new(id)),
+    ));
+    table.push(node(
+        "Transport", "Phase Scaler", (4, 16),
+        |id, s, _| Box::new(PhaseScalerWidget::new(id, s)),
+        |id, _| Box::new(PhaseScalerProcessNode::new(id)),
+    ));
+    table.push(node(
+        "Transport", "LFO", (1, 2),
+        |id, s, _| Box::new(LfoWidget::new(id, s)),
+        |id, _| Box::new(LfoProcessNode::new(id)),
+    ));
+    table.push(node(
+        "Transport", "Step Sequencer", (2, 3),
+        |id, s, _| Box::new(StepSequencerWidget::new(id, s)),
+        |id, _| Box::new(StepSequencerProcessNode::new(id)),
+    ));
+    table.push(node(
+        "Transport", "Envelope", (2, 2),
+        |id, s, _| Box::new(EnvelopeWidget::new(id, s)),
+        |id, _| Box::new(EnvelopeProcessNode::new(id)),
+    ));
+    table.push(node(
+        "Transport", "Trigger Delay", (2, 1),
+        |id, s, _| Box::new(TriggerDelayWidget::new(id, s)),
+        |id, _| Box::new(TriggerDelayProcessNode::new(id)),
+    ));
+    table.push(node(
+        "Transport", "Trigger Hold", (2, 1),
+        |id, s, _| Box::new(TriggerHoldWidget::new(id, s)),
+        |id, _| Box::new(TriggerHoldProcessNode::new(id)),
+    ));
+    table.push(node(
+        "Math", "Formula", (1, 1),
+        |id, s, _| Box::new(FormulaWidget::new(id, s)),
+        |id, _| Box::new(FormulaProcessNode::new(id)),
+    ));
+    table.push(node(
+        "Math", "Random", (1, 1),
+        |id, s, _| Box::new(RandomWidget::new(id, s)),
+        |id, _| Box::new(RandomProcessNode::new(id)),
+    ));
+    table.push(node(
+        "Transport", "Sample & Hold", (2, 1),
+        |id, s, _| Box::new(SampleHoldWidget::new(id, s)),
+        |id, _| Box::new(SampleHoldProcessNode::new(id)),
+    ));
+    table.push(node(
+        "Transport", "Smoothing", (1, 1),
+        |id, s, _| Box::new(SmoothingWidget::new(id, s)),
+        |id, _| Box::new(SmoothingProcessNode::new(id)),
+    ));
+    table.push(node(
+        "Transport", "Latch", (1, 1),
+        |id, s, _| Box::new(LatchWidget::new(id, s)),
+        |id, _| Box::new(LatchProcessNode::new(id)),
+    ));
+    table.push(node(
+        "Transport", "Clock Divider", (1, 16),
+        |id, s, _| Box::new(ClockDividerWidget::new(id, s)),
+        |id, _| Box::new(ClockDividerProcessNode::new(id)),
+    ));
+    table.push(node(
+        "Transport", "Clock Gen", (1, 1),
+        |id, s, _| Box::new(ClockGenWidget::new(id, s)),
+        |id, _| Box::new(ClockGenProcessNode::new(id)),
+    ));
+    table.push(node(
+        "Transport", "Time to Phase", (1, 2),
+        |id, s, _| Box::new(TimeToPhaseWidget::new(id, s)),
+        |id, _| Box::new(TimeToPhaseProcessNode::new(id)),
+    ));
+    // trigger(1) + phase(1) + palette(12) = 14 input channels, 12 output channels max
+    table.push(node(
+        "Transport", "Transition", (14, 12),
+        |id, s, _| Box::new(TransitionWidget::new(id, s)),
+        |id, _| Box::new(TransitionProcessNode::new(id)),
+    ));
+    table.push(node(
+        "Math", "Add", (16, 1),
+        |id, s, _| Box::new(MathWidget::new(id, MathOp::Add, s)),
+        |id, _| Box::new(MathProcessNode::new(id, MathOp::Add)),
+    ));
+    table.push(node(
+        "Math", "Sub", (16, 1),
+        |id, s, _| Box::new(MathWidget::new(id, MathOp::Sub, s)),
+        |id, _| Box::new(MathProcessNode::new(id, MathOp::Sub)),
+    ));
+    table.push(node(
+        "Math", "Mul", (16, 1),
+        |id, s, _| Box::new(MathWidget::new(id, MathOp::Mul, s)),
+        |id, _| Box::new(MathProcessNode::new(id, MathOp::Mul)),
+    ));
+    table.push(node(
+        "Math", "Div", (16, 1),
+        |id, s, _| Box::new(MathWidget::new(id, MathOp::Div, s)),
+        |id, _| Box::new(MathProcessNode::new(id, MathOp::Div)),
+    ));
+    table.push(node(
+        "Math", "Sin", (2, 1),
+        |id, s, _| Box::new(OscillatorWidget::new(id, OscFunc::Sin, s)),
+        |id, _| Box::new(OscillatorProcessNode::new(id, OscFunc::Sin)),
+    ));
+    table.push(node(
+        "Math", "Cos", (2, 1),
+        |id, s, _| Box::new(OscillatorWidget::new(id, OscFunc::Cos, s)),
+        |id, _| Box::new(OscillatorProcessNode::new(id, OscFunc::Cos)),
+    ));
+    table.push(node(
+        "Color", "Components to Color", (4, 4),
+        |id, s, _| Box::new(ComponentsToColorWidget::new(id, s)),
+        |id, _| Box::new(ComponentsToColorProcessNode::new(id)),
+    ));
+    table.push(node(
+        "Color", "Color to Components", (4, 4),
+        |id, s, _| Box::new(ColorToComponentsWidget::new(id, s)),
+        |id, _| Box::new(ColorToComponentsProcessNode::new(id)),
+    ));
+    for kind in ReshapeKind::ALL {
+        table.push(node(
+            "Color", kind.type_name(), (48, 48),
+            // Room for a full gradient (40 channels) on either side.
+            move |id, s, _| Box::new(ColorReshapeWidget::new(id, s, kind)),
+            move |id, _| Box::new(ColorReshapeProcessNode::new(id, kind)),
+        ));
+    }
+    // Outputs: 1 (rows) + worst case 8 columns × Gradient (40 ch) = 321.
+    table.push(node(
+        "Route", "Lookup Table", (1, 321),
+        |id, s, ctx| Box::new(LookupWidget::new(id, s, ctx.gradient_library.clone())),
+        |id, _| Box::new(LookupProcessNode::new(id)),
+    ));
+    table.push(node(
+        "Math", "Const Value", (0, 1),
+        |id, s, _| Box::new(ConstantWidget::new(id, PortType::Untyped, s)),
+        |id, _| Box::new(ConstantProcessNode::new(id, PortType::Untyped, 0.0)),
+    ));
+    table.push(node(
+        "Math", "Const Logic", (0, 1),
+        |id, s, _| Box::new(ConstantWidget::new(id, PortType::Logic, s)),
+        |id, _| Box::new(ConstantProcessNode::new(id, PortType::Logic, 0.0)),
+    ));
+    table.push(node(
+        "Math", "Const Phase", (0, 1),
+        |id, s, _| Box::new(ConstantWidget::new(id, PortType::Phase, s)),
+        |id, _| Box::new(ConstantProcessNode::new(id, PortType::Phase, 0.0)),
+    ));
+    // Inputs: trigger, reset, max (3 channels). Outputs: count, wrap (2).
+    table.push(node(
+        "Math", "Counter", (3, 2),
+        |id, s, _| Box::new(CounterWidget::new(id, s)),
+        |id, _| Box::new(CounterProcessNode::new(id)),
+    ));
+    table.push(node(
+        "Math", "Change Detect", (2, 2),
+        |id, s, _| Box::new(ChangeDetectWidget::new(id, s)),
+        |id, _| Box::new(ChangeDetectProcessNode::new(id)),
+    ));
+    table.push(node(
+        "Math", "Schmitt Trigger", (1, 1),
+        |id, s, _| Box::new(SchmittTriggerWidget::new(id, s)),
+        |id, _| Box::new(SchmittTriggerProcessNode::new(id)),
+    ));
+    // Up to 16 channels, each Logic in and out.
+    table.push(node(
+        "Math", "Toggle Bank", (16, 16),
+        |id, s, _| Box::new(ToggleBankWidget::new(id, s)),
+        |id, _| Box::new(ToggleBankProcessNode::new(id)),
+    ));
+    // Up to 16 channels, each Untyped in and Logic out.
+    table.push(node(
+        "Math", "Trigger Bank", (16, 16),
+        |id, s, _| Box::new(TriggerBankWidget::new(id, s)),
+        |id, _| Box::new(TriggerBankProcessNode::new(id)),
+    ));
+    table.push(node(
+        "Math", "Gain", (1, 1),
+        |id, s, _| Box::new(GainWidget::new(id, s)),
+        |id, _| Box::new(GainProcessNode::new(id)),
+    ));
+    table.push(node(
+        "Math", "Phase Accumulator", (2, 1),
+        |id, s, _| Box::new(PhaseAccumulatorWidget::new(id, s)),
+        |id, _| Box::new(PhaseAccumulatorProcessNode::new(id)),
+    ));
+    // Max channels = MUX_MAX_SLOTS (16) × max channels per type
+    // (Gradient = 40) = 640. Round up to 1024 for headroom.
+    table.push(node(
+        "Math", "Port Hub", (1024, 1024),
+        |id, s, _| Box::new(PortHubWidget::new(id, s)),
+        |id, _| Box::new(PortHubProcessNode::new(id)),
+    ));
+    table.push(node(
+        "Compare", ">=", (2, 1),
+        |id, s, _| Box::new(CompareWidget::new(id, CompareOp::Gte, s)),
+        |id, _| Box::new(CompareProcessNode::new(id, CompareOp::Gte)),
+    ));
+    table.push(node(
+        "Compare", "<=", (2, 1),
+        |id, s, _| Box::new(CompareWidget::new(id, CompareOp::Lte, s)),
+        |id, _| Box::new(CompareProcessNode::new(id, CompareOp::Lte)),
+    ));
+    table.push(node(
+        "Compare", "==", (2, 1),
+        |id, s, _| Box::new(CompareWidget::new(id, CompareOp::Eq, s)),
+        |id, _| Box::new(CompareProcessNode::new(id, CompareOp::Eq)),
+    ));
+    table.push(node(
+        "Compare", "!=", (2, 1),
+        |id, s, _| Box::new(CompareWidget::new(id, CompareOp::Neq, s)),
+        |id, _| Box::new(CompareProcessNode::new(id, CompareOp::Neq)),
+    ));
+    table.push(node(
+        "Logic", "AND", (16, 1),
+        |id, s, _| Box::new(LogicGateWidget::new(id, LogicOp::And, s)),
+        |id, _| Box::new(LogicGateProcessNode::new(id, LogicOp::And)),
+    ));
+    table.push(node(
+        "Logic", "OR", (16, 1),
+        |id, s, _| Box::new(LogicGateWidget::new(id, LogicOp::Or, s)),
+        |id, _| Box::new(LogicGateProcessNode::new(id, LogicOp::Or)),
+    ));
+    table.push(node(
+        "Logic", "XOR", (16, 1),
+        |id, s, _| Box::new(LogicGateWidget::new(id, LogicOp::Xor, s)),
+        |id, _| Box::new(LogicGateProcessNode::new(id, LogicOp::Xor)),
+    ));
+    table.push(node(
+        "Logic", "NOT", (1, 1),
+        |id, s, _| Box::new(LogicGateWidget::new(id, LogicOp::Not, s)),
+        |id, _| Box::new(LogicGateProcessNode::new(id, LogicOp::Not)),
+    ));
+    table.push(node(
+        "Logic", "Flip-Flop", (2, 2),
+        |id, s, _| Box::new(FlipFlopWidget::new(id, s, FlipFlopKind::Sr)),
+        |id, _| Box::new(FlipFlopProcessNode::new(id)),
+    ));
+    table.push(node(
+        "Logic", "JK Flip-Flop", (3, 2),
+        |id, s, _| Box::new(FlipFlopWidget::new(id, s, FlipFlopKind::Jk)),
+        |id, _| Box::new(JkFlipFlopProcessNode::new(id)),
+    ));
+    table.push(node(
+        "Math", "Position Merge", (2, 2),
+        |id, s, _| Box::new(PositionMergeWidget::new(id, s)),
+        |id, _| Box::new(PositionMergeProcessNode::new(id)),
+    ));
+    table.push(node(
+        "Math", "Position Split", (2, 2),
+        |id, s, _| Box::new(PositionSplitWidget::new(id, s)),
+        |id, _| Box::new(PositionSplitProcessNode::new(id)),
+    ));
+    table.push(node(
+        "Display", "Scope", (8, 0),
+        |id, s, _| Box::new(ScopeWidget::new(id, s)),
+        |id, _| Box::new(ScopeProcessNode::new(id)),
+    ));
+    // Sized for the largest mode (Gradient = 40 channels).
+    table.push(node(
+        "Color", "Color Display", (40, 0),
+        |id, s, _| Box::new(ColorDisplayWidget::new(id, s)),
+        |id, _| Box::new(ColorDisplayProcessNode::new(id)),
+    ));
+    table.push(node(
+        "Display", "Value Display", (1, 0),
+        |id, s, _| Box::new(ValueDisplayWidget::new(id, s)),
+        |id, _| Box::new(ValueDisplayProcessNode::new(id)),
+    ));
+    for kind in [MeterKind::Level, MeterKind::Gauge] {
+        table.push(node(
+            "Display", kind.type_name(), (1, 0),
+            move |id, s, _| Box::new(MeterWidget::new(id, s, kind)),
+            move |id, _| Box::new(MeterProcessNode::new(id, kind)),
+        ));
+    }
+    table.push(node(
+        "Display", "LED Display", (1, 0),
+        |id, s, _| Box::new(LedDisplayWidget::new(id, s)),
+        |id, _| Box::new(LedDisplayProcessNode::new(id)),
+    ));
+    // Inputs: in, min, max (3). Output: out (1).
+    table.push(node(
+        "Math", "Scaler", (3, 1),
+        |id, s, _| Box::new(ScalerWidget::new(id, s)),
+        |id, _| Box::new(ScalerProcessNode::new(id)),
+    ));
+    // Inputs: in, scale, offset (3). Output: out (1).
+    table.push(node(
+        "Math", "Scale Offset", (3, 1),
+        |id, s, _| Box::new(ScaleOffsetWidget::new(id, s)),
+        |id, _| Box::new(ScaleOffsetProcessNode::new(id)),
+    ));
+    // Inputs: in, range, center (3). Output: out (1).
+    table.push(node(
+        "Math", "Bipolar", (3, 1),
+        |id, s, _| Box::new(BipolarWidget::new(id, s)),
+        |id, _| Box::new(BipolarProcessNode::new(id)),
+    ));
+    // 1 select + MUX_MAX_SLOTS * 40 inputs, 40 outputs.
+    table.push(node(
+        "Math", "Multiplexer", (1 + engine::nodes::math::multiplex::MUX_MAX_SLOTS * 40, 40),
+        |id, s, _| Box::new(MultiplexerWidget::new(id, s)),
+        |id, _| Box::new(MultiplexerProcessNode::new(id)),
+    ));
+    // 1 select + 40 in, MUX_MAX_SLOTS * 40 outputs.
+    table.push(node(
+        "Math", "Demultiplexer", (1 + 40, engine::nodes::math::multiplex::MUX_MAX_SLOTS * 40),
+        |id, s, _| Box::new(DemultiplexerWidget::new(id, s)),
+        |id, _| Box::new(DemultiplexerProcessNode::new(id)),
+    ));
+    // 2 inputs, Palette output = 12 channels
+    table.push(node(
+        "Color", "Palette Select", (2, 12),
+        |id, s, ctx| Box::new(PaletteSelectWidget::new(id, s, ctx.palette_ctx.clone())),
+        |id, _| Box::new(PaletteSelectProcessNode::new(id)),
+    ));
+    // No inputs, Gradient output = 40 channels (8 stops × 5 floats).
+    table.push(node(
+        "Color", "Gradient Source", (0, 40),
+        |id, s, ctx| Box::new(GradientSourceWidget::new(id, s, ctx.gradient_library.clone())),
+        |id, _| Box::new(GradientSourceProcessNode::new(id)),
+    ));
+    // Sized for the largest mode (Gradient = 40 ch main + 1 amount), same out.
+    table.push(node(
+        "Color", "Color Modifier", (40 + 1, 40),
+        |id, s, _| Box::new(ColorModifierWidget::new(id, s)),
+        |id, _| Box::new(ColorModifierProcessNode::new(id)),
+    ));
+    // Inputs: 12-ch palette + 4 position channels = 16. Output: 40-ch Gradient.
+    table.push(node(
+        "Color", "Palette to Gradient", (16, 40),
+        |id, s, _| Box::new(PaletteToGradientWidget::new(id, s)),
+        |id, _| Box::new(PaletteToGradientProcessNode::new(id)),
+    ));
+    // Start with generous shared state; will resize as ports are added.
+    table.push(node(
+        "Meta", "Subgraph", (12, 12),
+        |id, s, _| Box::new(SubgraphWidget::new(id, s)),
+        |id, _| Box::new(SubgraphProcessNode::new(id)),
+    ));
+    table.push(node(
+        "Meta", "Portal Send", (64, 0),
+        |id, s, _| Box::new(widgets::nodes::meta::portal::PortalSendWidget::new(id, s)),
+        |id, ctx| Box::new(engine::nodes::meta::portal::PortalSendProcessNode::new(id, ctx.portals.clone())),
+    ));
+    table.push(node(
+        "Meta", "Portal Receive", (0, 64),
+        |id, s, ctx| Box::new(widgets::nodes::meta::portal::PortalReceiveWidget::new(id, s, ctx.portals.clone())),
+        |id, ctx| Box::new(engine::nodes::meta::portal::PortalReceiveProcessNode::new(id, ctx.portals.clone())),
+    ));
+    table.push(node(
+        "Effects", "Effect Stack", (3, 0),
+        |id, s, ctx| Box::new(EffectStackWidget::new(id, s, ctx.group_ctx.clone(), ctx.stack_names.clone())),
+        |id, ctx| Box::new(EffectStackProcessNode::new(id, ctx.effect_hub.clone(), ctx.object_store.clone())),
+    ));
+    table.push(node(
+        "Effects", widgets::nodes::output::effect::FILL.type_name, (48, 0),
+        // Room for a trigger or phase plus the 40 gradient channels.
+        |id, s, ctx| Box::new(widgets::nodes::output::effect::EffectWidget::new(id, s, widgets::nodes::output::effect::FILL, ctx.stack_names.clone())),
+        |id, ctx| Box::new(EffectNode::new(id, Fill::default(), ctx.effect_hub.clone())),
+    ));
+    table.push(node(
+        "Effects", widgets::nodes::output::effect::BAR_LOOP.type_name, (48, 0),
+        |id, s, ctx| Box::new(widgets::nodes::output::effect::EffectWidget::new(id, s, widgets::nodes::output::effect::BAR_LOOP, ctx.stack_names.clone())),
+        |id, ctx| Box::new(EffectNode::new(id, Bar::default(), ctx.effect_hub.clone())),
+    ));
+    table.push(node(
+        "Effects", widgets::nodes::output::effect::WAVE_LOOP.type_name, (48, 0),
+        |id, s, ctx| Box::new(widgets::nodes::output::effect::EffectWidget::new(id, s, widgets::nodes::output::effect::WAVE_LOOP, ctx.stack_names.clone())),
+        |id, ctx| Box::new(EffectNode::new(id, Wave::default(), ctx.effect_hub.clone())),
+    ));
+    table.push(node(
+        "Effects", widgets::nodes::output::effect::RIPPLE_BURST.type_name, (48, 0),
+        |id, s, ctx| Box::new(widgets::nodes::output::effect::EffectWidget::new(id, s, widgets::nodes::output::effect::RIPPLE_BURST, ctx.stack_names.clone())),
+        |id, ctx| Box::new(EffectNode::new(id, Ripple::default(), ctx.effect_hub.clone())),
+    ));
+    table.push(node(
+        "Effects", widgets::nodes::output::effect::SPARK_BURST.type_name, (48, 0),
+        |id, s, ctx| Box::new(widgets::nodes::output::effect::EffectWidget::new(id, s, widgets::nodes::output::effect::SPARK_BURST, ctx.stack_names.clone())),
+        |id, ctx| Box::new(EffectNode::new(id, SparkBurst::default(), ctx.effect_hub.clone())),
+    ));
+    table
+}
+
 impl LightBeatApp {
+    fn node_context(&self) -> NodeContext {
+        NodeContext {
+            snapshot: Arc::clone(&self.snapshot),
+            input_controllers: self.input_controllers.shared.clone(),
+            audio_inputs: self.audio_inputs.shared.clone(),
+            dmx_inputs: self.dmx_inputs.clone(),
+            midi_hub: self.midi_hub.clone(),
+            midi_learned: self.midi_learned.clone(),
+            gradient_library: self.gradient_library.clone(),
+            palette_ctx: self.palette_ctx.clone(),
+            group_ctx: self.group_ctx.clone(),
+            stack_names: self.stack_names.clone(),
+            portals: self.portals.clone(),
+            effect_hub: self.effect_hub.clone(),
+            object_store: self.object_store.clone(),
+            wanted_beats: Rc::new(RefCell::new(Vec::new())),
+        }
+    }
+
     pub(crate) fn register_node_factories(&mut self) {
         // The graph is rebuilt on load and undo; the effects' stack picker
         // reads names through this link, so it has to be remade each time.
         self.graph.set_stack_names(self.stack_names.clone());
-        // IO
-        self.graph.register_node("IO", "Clock", |id| {
-            Box::new(ClockWidget::new(id, new_shared_state(0, 3)))
-        });
-        self.graph.register_node("IO", "Internal Clock", |id| {
-            // 4 inputs (play/stop, bpm, set bpm, reset) and 3 outputs.
-            Box::new(InternalClockWidget::new(id, new_shared_state(4, 3)))
-        });
-        let ic_shared = self.input_controllers.shared.clone();
-        self.graph.register_node("IO", "Input Controller", move |id| {
-            // Generous channel budget on both sides — the engine resizes its
-            // active port list as the bound controller's layout changes. 192
-            // covers generic MIDI and BCF2000 with headroom; Push 1 uses its
-            // own dedicated node.
-            Box::new(InputControllerWidget::new(id, new_shared_state(192, 192), ic_shared.clone()))
-        });
-        let dmx_hub = self.dmx_inputs.clone();
-        self.graph.register_node("IO", "DMX Input", move |id| {
-            // The status port and up to 64 entries of at most three channels.
-            Box::new(DmxInputWidget::new(id, new_shared_state(0, 200), dmx_hub.clone()))
-        });
-        let (hub, learned) = (self.midi_hub.clone(), self.midi_learned.clone());
-        self.graph.register_node("IO", "MIDI Input", move |id| {
-            // The status port and up to 32 controls.
-            Box::new(MidiInputWidget::new(id, new_shared_state(0, 33), hub.clone(), learned.clone()))
-        });
-        let (hub, learned) = (self.midi_hub.clone(), self.midi_learned.clone());
-        self.graph.register_node("IO", "MIDI Output", move |id| {
-            Box::new(MidiOutputWidget::new(id, new_shared_state(32, 1), hub.clone(), learned.clone()))
-        });
-        let ic_shared_push = self.input_controllers.shared.clone();
-        self.graph.register_node("IO", "Push 1", move |id| {
-            // 26 outputs (incl. "connected"), 21 inputs (see push1.rs). 32/32 gives headroom.
-            Box::new(Push1Widget::new(id, new_shared_state(32, 32), ic_shared_push.clone()))
-        });
-        let ic_shared_x1 = self.input_controllers.shared.clone();
-        self.graph.register_node("IO", "X1", move |id| {
-            // 34 button outputs + 4 encoder outputs + 8 pot outputs + "any change" +
-            // "connected" = 48 outputs. 34 LED feedback inputs. 56/56 leaves headroom.
-            Box::new(X1Widget::new(id, new_shared_state(56, 56), ic_shared_x1.clone()))
-        });
-        let ic_shared_lp = self.input_controllers.shared.clone();
-        self.graph.register_node("IO", "Launchpad S", move |id| {
-            // 82 outputs = 64 pads + 8 side + 8 top + "any change" + "connected".
-            // 80 LED feedback inputs, each `Color` (3 channels) = 240
-            // channels. 256 gives a bit of headroom.
-            Box::new(LaunchpadWidget::new(id, new_shared_state(256, 82), ic_shared_lp.clone()))
-        });
-        let ai_shared = self.audio_inputs.shared.clone();
-        self.graph.register_node("IO", "Audio Input", move |id| {
-            Box::new(AudioInputWidget::new(id, new_shared_state(0, 32), ai_shared.clone()))
-        });
-
-        // UI
-        self.graph.register_node("UI", "Button", |id| {
-            // 1 optional input (Logic), 1 output.
-            Box::new(ButtonWidget::new(id, new_shared_state(1, 1)))
-        });
-        self.graph.register_node("UI", "Fader", |id| {
-            // 1 optional input (when "Enable input" is checked), 1 output.
-            Box::new(FaderWidget::new(id, new_shared_state(1, 1)))
-        });
-        self.graph.register_node("UI", "Button Group", |id| {
-            Box::new(ButtonGroupWidget::new(id, new_shared_state(256, 256)))
-        });
-        self.graph.register_node("UI", "Fader Group", |id| {
-            Box::new(FaderGroupWidget::new(id, new_shared_state(256, 256)))
-        });
-        self.graph.register_node("UI", "XY Pad", |id| {
-            // No inputs; outputs x and y (0..1).
-            Box::new(XyPadWidget::new(id, new_shared_state(0, 2)))
-        });
-        self.graph.register_node("UI", "Color Mixer", |id| {
-            Box::new(ColorMixerWidget::new(id, new_shared_state(0, 3)))
-        });
-        self.graph.register_node("UI", "Gradient Stops", |id| {
-            // 1 Palette input (12 channels) for the live preview, 4 position
-            // outputs to feed Palette → Gradient's pos1..pos4.
-            Box::new(GradientStopsWidget::new(id, new_shared_state(12, 4)))
-        });
-        self.graph.register_node("UI", "Peak Level Meter", |id| {
-            Box::new(PeakMeterWidget::new(id, new_shared_state(2, 0)))
-        });
-
-        // Transport
-        self.graph.register_node("Transport", "Phase Scaler", |id| {
-            Box::new(PhaseScalerWidget::new(id, new_shared_state(4, 16)))
-        });
-        self.graph.register_node("Transport", "LFO", |id| {
-            Box::new(LfoWidget::new(id, new_shared_state(1, 2)))
-        });
-        self.graph.register_node("Transport", "Step Sequencer", |id| {
-            Box::new(StepSequencerWidget::new(id, new_shared_state(2, 3)))
-        });
-        self.graph.register_node("Transport", "Envelope", |id| {
-            Box::new(EnvelopeWidget::new(id, new_shared_state(2, 2)))
-        });
-        self.graph.register_node("Transport", "Trigger Delay", |id| {
-            Box::new(TriggerDelayWidget::new(id, new_shared_state(2, 1)))
-        });
-        self.graph.register_node("Transport", "Trigger Hold", |id| {
-            Box::new(TriggerHoldWidget::new(id, new_shared_state(2, 1)))
-        });
-        self.graph.register_node("Math", "Formula", |id| {
-            Box::new(FormulaWidget::new(id, new_shared_state(1, 1)))
-        });
-        self.graph.register_node("Math", "Random", |id| {
-            Box::new(RandomWidget::new(id, new_shared_state(1, 1)))
-        });
-        self.graph.register_node("Transport", "Sample & Hold", |id| {
-            Box::new(SampleHoldWidget::new(id, new_shared_state(2, 1)))
-        });
-        self.graph.register_node("Transport", "Smoothing", |id| {
-            Box::new(SmoothingWidget::new(id, new_shared_state(1, 1)))
-        });
-        self.graph.register_node("Transport", "Latch", |id| {
-            Box::new(LatchWidget::new(id, new_shared_state(1, 1)))
-        });
-        self.graph.register_node("Transport", "Clock Divider", |id| {
-            Box::new(ClockDividerWidget::new(id, new_shared_state(1, 16)))
-        });
-        self.graph.register_node("Transport", "Clock Gen", |id| {
-            Box::new(ClockGenWidget::new(id, new_shared_state(1, 1)))
-        });
-        self.graph.register_node("Transport", "Time to Phase", |id| {
-            Box::new(TimeToPhaseWidget::new(id, new_shared_state(1, 2)))
-        });
-        self.graph.register_node("Transport", "Transition", |id| {
-            // trigger(1) + phase(1) + palette(12) = 14 input channels, 12 output channels max
-            Box::new(TransitionWidget::new(id, new_shared_state(14, 12)))
-        });
-
-        // Math (variadic — generous initial input buffer; engine grows as ports are added).
-        self.graph.register_node("Math", "Add", |id| {
-            Box::new(MathWidget::new(id, MathOp::Add, new_shared_state(16, 1)))
-        });
-        self.graph.register_node("Math", "Sub", |id| {
-            Box::new(MathWidget::new(id, MathOp::Sub, new_shared_state(16, 1)))
-        });
-        self.graph.register_node("Math", "Mul", |id| {
-            Box::new(MathWidget::new(id, MathOp::Mul, new_shared_state(16, 1)))
-        });
-        self.graph.register_node("Math", "Div", |id| {
-            Box::new(MathWidget::new(id, MathOp::Div, new_shared_state(16, 1)))
-        });
-        self.graph.register_node("Math", "Sin", |id| {
-            Box::new(OscillatorWidget::new(id, OscFunc::Sin, new_shared_state(2, 1)))
-        });
-        self.graph.register_node("Math", "Cos", |id| {
-            Box::new(OscillatorWidget::new(id, OscFunc::Cos, new_shared_state(2, 1)))
-        });
-        self.graph.register_node("Color", "Components to Color", |id| {
-            Box::new(ComponentsToColorWidget::new(id, new_shared_state(4, 4)))
-        });
-        self.graph.register_node("Color", "Color to Components", |id| {
-            Box::new(ColorToComponentsWidget::new(id, new_shared_state(4, 4)))
-        });
-        for kind in ReshapeKind::ALL {
-            self.graph.register_node("Color", kind.type_name(), move |id| {
-                // Room for a full gradient (40 channels) on either side.
-                Box::new(ColorReshapeWidget::new(id, new_shared_state(48, 48), kind))
-            });
-        }
-        let gradient_library = self.gradient_library.clone();
-        self.graph.register_node("Route", "Lookup Table", move |id| {
-            // Outputs: 1 (rows) + worst case 8 columns × Gradient (40 ch) = 321.
-            Box::new(LookupWidget::new(id, new_shared_state(1, 321), gradient_library.clone()))
-        });
-        self.graph.register_node("Math", "Const Value", |id| {
-            Box::new(ConstantWidget::new(id, PortType::Untyped, new_shared_state(0, 1)))
-        });
-        self.graph.register_node("Math", "Const Logic", |id| {
-            Box::new(ConstantWidget::new(id, PortType::Logic, new_shared_state(0, 1)))
-        });
-        self.graph.register_node("Math", "Const Phase", |id| {
-            Box::new(ConstantWidget::new(id, PortType::Phase, new_shared_state(0, 1)))
-        });
-
-        self.graph.register_node("Math", "Counter", |id| {
-            // Inputs: trigger, reset, max (3 channels). Outputs: count, wrap (2).
-            Box::new(CounterWidget::new(id, new_shared_state(3, 2)))
-        });
-        self.graph.register_node("Math", "Change Detect", |id| {
-            Box::new(ChangeDetectWidget::new(id, new_shared_state(2, 2)))
-        });
-        self.graph.register_node("Math", "Schmitt Trigger", |id| {
-            Box::new(SchmittTriggerWidget::new(id, new_shared_state(1, 1)))
-        });
-        self.graph.register_node("Math", "Toggle Bank", |id| {
-            // Up to 16 channels, each Logic in and out.
-            Box::new(ToggleBankWidget::new(id, new_shared_state(16, 16)))
-        });
-        self.graph.register_node("Math", "Trigger Bank", |id| {
-            // Up to 16 channels, each Untyped in and Logic out.
-            Box::new(TriggerBankWidget::new(id, new_shared_state(16, 16)))
-        });
-        self.graph.register_node("Math", "Gain", |id| {
-            Box::new(GainWidget::new(id, new_shared_state(1, 1)))
-        });
-        self.graph.register_node("Math", "Phase Accumulator", |id| {
-            Box::new(PhaseAccumulatorWidget::new(id, new_shared_state(2, 1)))
-        });
-        self.graph.register_node("Math", "Port Hub", |id| {
-            // Max channels = MUX_MAX_SLOTS (16) × max channels per type
-            // (Gradient = 40) = 640. Round up to 1024 for headroom.
-            Box::new(PortHubWidget::new(id, new_shared_state(1024, 1024)))
-        });
-
-        // Compare
-        self.graph.register_node("Compare", ">=", |id| {
-            Box::new(CompareWidget::new(id, CompareOp::Gte, new_shared_state(2, 1)))
-        });
-        self.graph.register_node("Compare", "<=", |id| {
-            Box::new(CompareWidget::new(id, CompareOp::Lte, new_shared_state(2, 1)))
-        });
-        self.graph.register_node("Compare", "==", |id| {
-            Box::new(CompareWidget::new(id, CompareOp::Eq, new_shared_state(2, 1)))
-        });
-        self.graph.register_node("Compare", "!=", |id| {
-            Box::new(CompareWidget::new(id, CompareOp::Neq, new_shared_state(2, 1)))
-        });
-
-        // Logic (AND/OR/XOR variadic; NOT is unary).
-        self.graph.register_node("Logic", "AND", |id| {
-            Box::new(LogicGateWidget::new(id, LogicOp::And, new_shared_state(16, 1)))
-        });
-        self.graph.register_node("Logic", "OR", |id| {
-            Box::new(LogicGateWidget::new(id, LogicOp::Or, new_shared_state(16, 1)))
-        });
-        self.graph.register_node("Logic", "XOR", |id| {
-            Box::new(LogicGateWidget::new(id, LogicOp::Xor, new_shared_state(16, 1)))
-        });
-        self.graph.register_node("Logic", "NOT", |id| {
-            Box::new(LogicGateWidget::new(id, LogicOp::Not, new_shared_state(1, 1)))
-        });
-        self.graph.register_node("Logic", "Flip-Flop", |id| {
-            Box::new(FlipFlopWidget::new(id, new_shared_state(2, 2), FlipFlopKind::Sr))
-        });
-        self.graph.register_node("Logic", "JK Flip-Flop", |id| {
-            Box::new(FlipFlopWidget::new(id, new_shared_state(3, 2), FlipFlopKind::Jk))
-        });
-
-        // Position
-        self.graph.register_node("Math", "Position Merge", |id| {
-            Box::new(PositionMergeWidget::new(id, new_shared_state(2, 2)))
-        });
-        self.graph.register_node("Math", "Position Split", |id| {
-            Box::new(PositionSplitWidget::new(id, new_shared_state(2, 2)))
-        });
-
-        // Display
-        self.graph.register_node("Display", "Scope", |id| {
-            Box::new(ScopeWidget::new(id, new_shared_state(8, 0)))
-        });
-        self.graph.register_node("Color", "Color Display", |id| {
-            // Sized for the largest mode (Gradient = 40 channels).
-            Box::new(ColorDisplayWidget::new(id, new_shared_state(40, 0)))
-        });
-        self.graph.register_node("Display", "Value Display", |id| {
-            Box::new(ValueDisplayWidget::new(id, new_shared_state(1, 0)))
-        });
-        for kind in [MeterKind::Level, MeterKind::Gauge] {
-            self.graph.register_node("Display", kind.type_name(), move |id| {
-                Box::new(MeterWidget::new(id, new_shared_state(1, 0), kind))
-            });
-        }
-        self.graph.register_node("Display", "LED Display", |id| {
-            Box::new(LedDisplayWidget::new(id, new_shared_state(1, 0)))
-        });
-
-        // Math - Scaler
-        self.graph.register_node("Math", "Scaler", |id| {
-            // Inputs: in, min, max (3). Output: out (1).
-            Box::new(ScalerWidget::new(id, new_shared_state(3, 1)))
-        });
-        self.graph.register_node("Math", "Scale Offset", |id| {
-            // Inputs: in, scale, offset (3). Output: out (1).
-            Box::new(ScaleOffsetWidget::new(id, new_shared_state(3, 1)))
-        });
-        self.graph.register_node("Math", "Bipolar", |id| {
-            // Inputs: in, range, center (3). Output: out (1).
-            Box::new(BipolarWidget::new(id, new_shared_state(3, 1)))
-        });
-
-        // Math - Multiplexer / Demultiplexer (generic typed routing).
-        // Channel budgets sized for the worst case: MUX_MAX_SLOTS × Gradient (40 ch).
-        self.graph.register_node("Math", "Multiplexer", |id| {
-            // 1 select + MUX_MAX_SLOTS * 40 inputs, 40 outputs.
-            Box::new(MultiplexerWidget::new(
-                id,
-                new_shared_state(
-                    1 + engine::nodes::math::multiplex::MUX_MAX_SLOTS * 40,
-                    40,
-                ),
-            ))
-        });
-        self.graph.register_node("Math", "Demultiplexer", |id| {
-            // 1 select + 40 in, MUX_MAX_SLOTS * 40 outputs.
-            Box::new(DemultiplexerWidget::new(
-                id,
-                new_shared_state(
-                    1 + 40,
-                    engine::nodes::math::multiplex::MUX_MAX_SLOTS * 40,
-                ),
-            ))
-        });
-
-        // Color (palette)
-        let pctx = self.palette_ctx.clone();
-        self.graph.register_node("Color", "Palette Select", move |id| {
-            // 2 inputs, Palette output = 12 channels
-            Box::new(PaletteSelectWidget::new(id, new_shared_state(2, 12), pctx.clone()))
-        });
-        let gradient_library = self.gradient_library.clone();
-        self.graph.register_node("Color", "Gradient Source", move |id| {
-            // No inputs, Gradient output = 40 channels (8 stops × 5 floats).
-            Box::new(GradientSourceWidget::new(
-                id, new_shared_state(0, 40), gradient_library.clone(),
-            ))
-        });
-        self.graph.register_node("Color", "Color Modifier", |id| {
-            // Sized for the largest mode (Gradient = 40 ch main + 1 amount), same out.
-            Box::new(ColorModifierWidget::new(id, new_shared_state(40 + 1, 40)))
-        });
-        self.graph.register_node("Color", "Palette to Gradient", |id| {
-            // Inputs: 12-ch palette + 4 position channels = 16. Output: 40-ch Gradient.
-            Box::new(PaletteToGradientWidget::new(id, new_shared_state(16, 40)))
-        });
-
-        // Meta
-        self.graph.register_node("Meta", "Subgraph", |id| {
-            // Start with generous shared state; will resize as ports are added.
-            Box::new(SubgraphWidget::new(id, new_shared_state(12, 12)))
-        });
-        self.graph.register_node("Meta", "Portal Send", |id| {
-            Box::new(widgets::nodes::meta::portal::PortalSendWidget::new(
-                id, new_shared_state(64, 0),
-            ))
-        });
-        let portals_for_receive = self.portals.clone();
-        self.graph.register_node("Meta", "Portal Receive", move |id| {
-            Box::new(widgets::nodes::meta::portal::PortalReceiveWidget::new(
-                id, new_shared_state(0, 64), portals_for_receive.clone(),
-            ))
-        });
-
-        // Output
-        let gctx2 = self.group_ctx.clone();
-        let stack_names = self.stack_names.clone();
-        self.graph.register_node("Effects", "Effect Stack", move |id| {
-            Box::new(EffectStackWidget::new(id, new_shared_state(3, 0), gctx2.clone(), stack_names.clone()))
-        });
-        for spec in [
-            widgets::nodes::output::effect::FILL,
-            widgets::nodes::output::effect::BAR_LOOP,
-            widgets::nodes::output::effect::WAVE_LOOP,
-            widgets::nodes::output::effect::RIPPLE_BURST,
-            widgets::nodes::output::effect::SPARK_BURST,
-        ] {
-            let names = self.stack_names.clone();
-            self.graph.register_node("Effects", spec.type_name, move |id| {
-                // Room for a trigger or phase plus the 40 gradient channels.
-                Box::new(widgets::nodes::output::effect::EffectWidget::new(id, new_shared_state(48, 0), spec, names.clone()))
+        let ctx = self.node_context();
+        for desc in node_table() {
+            let (inputs, outputs) = desc.channels;
+            let ctx = ctx.clone();
+            self.graph.register_node(desc.category, desc.name, move |id| {
+                (desc.widget)(id, new_shared_state(inputs, outputs), &ctx)
             });
         }
     }
 
     pub(crate) fn wire_new_nodes(&mut self) {
         // Handle nodes created by context menu / paste / duplicate.
-        for new_node in self.graph.drain_new_nodes() {
+        let new_nodes = self.graph.drain_new_nodes();
+        if new_nodes.is_empty() {
+            return;
+        }
+        let ctx = self.node_context();
+        let table = node_table();
+        for new_node in new_nodes {
             let node = self.graph.node_mut_at_path(new_node.index, &new_node.subgraph_path);
             let type_name = node.type_name();
             let id = node.node_id();
@@ -525,139 +751,18 @@ impl LightBeatApp {
             let subgraph_path = new_node.subgraph_path;
 
             // Create corresponding engine node.
-            let engine_node: Option<Box<dyn ProcessNode>> = match type_name {
-                "Clock" => {
-                    let engine_node = ClockProcessNode::new(id, Arc::clone(&self.snapshot));
-                    let beat_state = engine_node.beat_state.clone();
-                    self._subs.push(
-                        self.beat_clock
-                            .subscribe(BeatPattern::every(1), beat_state),
-                    );
-                    Some(Box::new(engine_node))
-                }
-                "Internal Clock" => Some(Box::new(InternalClockProcessNode::new(id))),
-                "Input Controller" => Some(Box::new(InputControllerProcessNode::new(
-                    id, self.input_controllers.shared.clone(),
-                ))),
-                "DMX Input" => Some(Box::new(DmxInputProcessNode::new(id, self.dmx_inputs.clone()))),
-                "MIDI Input" => Some(Box::new(MidiInputProcessNode::new(id, self.midi_hub.clone()))),
-                "MIDI Output" => Some(Box::new(MidiOutputProcessNode::new(id, self.midi_hub.clone()))),
-                "Push 1" => Some(Box::new(Push1ProcessNode::new(
-                    id, self.input_controllers.shared.clone(),
-                ))),
-                "X1" => Some(Box::new(X1ProcessNode::new(
-                    id, self.input_controllers.shared.clone(),
-                ))),
-                "Launchpad S" => Some(Box::new(LaunchpadProcessNode::new(
-                    id, self.input_controllers.shared.clone(),
-                ))),
-                "Audio Input" => Some(Box::new(AudioInputProcessNode::new(
-                    id, self.audio_inputs.shared.clone(),
-                ))),
-                "Button" => Some(Box::new(ButtonProcessNode::new(id))),
-                "Fader" => Some(Box::new(FaderProcessNode::new(id))),
-                "Button Group" => Some(Box::new(ButtonGroupProcessNode::new(id))),
-                "Fader Group" => Some(Box::new(FaderGroupProcessNode::new(id))),
-                "Peak Level Meter" => Some(Box::new(PeakMeterProcessNode::new(id))),
-                "Color Mixer" => Some(Box::new(ColorMixerProcessNode::new(id))),
-                "XY Pad" => Some(Box::new(XyPadProcessNode::new(id))),
-                "Gradient Stops" => Some(Box::new(GradientStopsProcessNode::new(id))),
-                "Phase Scaler" => Some(Box::new(PhaseScalerProcessNode::new(id))),
-                "Time to Phase" => Some(Box::new(TimeToPhaseProcessNode::new(id))),
-                "LFO" => Some(Box::new(LfoProcessNode::new(id))),
-                "Step Sequencer" => Some(Box::new(StepSequencerProcessNode::new(id))),
-                "Scope" => Some(Box::new(ScopeProcessNode::new(id))),
-                "Envelope" => Some(Box::new(EnvelopeProcessNode::new(id))),
-                "Trigger Delay" => Some(Box::new(TriggerDelayProcessNode::new(id))),
-                "Trigger Hold" => Some(Box::new(TriggerHoldProcessNode::new(id))),
-                "Formula" => Some(Box::new(FormulaProcessNode::new(id))),
-                "Random" => Some(Box::new(RandomProcessNode::new(id))),
-                "Sample & Hold" => Some(Box::new(SampleHoldProcessNode::new(id))),
-                "Smoothing" => Some(Box::new(SmoothingProcessNode::new(id))),
-                "Latch" => Some(Box::new(LatchProcessNode::new(id))),
-                "Clock Divider" => Some(Box::new(ClockDividerProcessNode::new(id))),
-                "Clock Gen" => Some(Box::new(ClockGenProcessNode::new(id))),
-                "Transition" => Some(Box::new(TransitionProcessNode::new(id))),
-                "Add" | "Sub" | "Mul" | "Div" => {
-                    let op = match type_name {
-                        "Add" => MathOp::Add, "Sub" => MathOp::Sub,
-                        "Mul" => MathOp::Mul, "Div" => MathOp::Div,
-                        _ => unreachable!(),
-                    };
-                    Some(Box::new(MathProcessNode::new(id, op)))
-                }
-                "Color Display" => Some(Box::new(ColorDisplayProcessNode::new(id))),
-                "Value Display" => Some(Box::new(ValueDisplayProcessNode::new(id))),
-                "Level Meter" => Some(Box::new(MeterProcessNode::new(id, MeterKind::Level))),
-                "Gauge" => Some(Box::new(MeterProcessNode::new(id, MeterKind::Gauge))),
-                "LED Display" => Some(Box::new(LedDisplayProcessNode::new(id))),
-                "Palette Select" => Some(Box::new(PaletteSelectProcessNode::new(id))),
-                "Gradient Source" => Some(Box::new(GradientSourceProcessNode::new(id))),
-                "Color Modifier" => Some(Box::new(ColorModifierProcessNode::new(id))),
-                "Palette to Gradient" => Some(Box::new(PaletteToGradientProcessNode::new(id))),
-                "Multiplexer" => Some(Box::new(MultiplexerProcessNode::new(id))),
-                "Demultiplexer" => Some(Box::new(DemultiplexerProcessNode::new(id))),
-                "Scaler" => Some(Box::new(ScalerProcessNode::new(id))),
-                "Bipolar" => Some(Box::new(BipolarProcessNode::new(id))),
-                "Scale Offset" => Some(Box::new(ScaleOffsetProcessNode::new(id))),
-                ">=" | "<=" | "==" | "!=" => {
-                    let op = match type_name {
-                        ">=" => CompareOp::Gte, "<=" => CompareOp::Lte,
-                        "==" => CompareOp::Eq, "!=" => CompareOp::Neq,
-                        _ => unreachable!(),
-                    };
-                    Some(Box::new(CompareProcessNode::new(id, op)))
-                }
-                "AND" | "OR" | "XOR" | "NOT" => {
-                    let op = match type_name {
-                        "AND" => LogicOp::And, "OR" => LogicOp::Or,
-                        "XOR" => LogicOp::Xor, "NOT" => LogicOp::Not,
-                        _ => unreachable!(),
-                    };
-                    Some(Box::new(LogicGateProcessNode::new(id, op)))
-                }
-                "Flip-Flop" => Some(Box::new(FlipFlopProcessNode::new(id))),
-                "JK Flip-Flop" => Some(Box::new(JkFlipFlopProcessNode::new(id))),
-                "Components to Color" => Some(Box::new(ComponentsToColorProcessNode::new(id))),
-                "Color to Components" => Some(Box::new(ColorToComponentsProcessNode::new(id))),
-                name if ReshapeKind::ALL.iter().any(|k| k.type_name() == name) => {
-                    let kind = *ReshapeKind::ALL.iter().find(|k| k.type_name() == name).unwrap();
-                    Some(Box::new(ColorReshapeProcessNode::new(id, kind)))
-                }
-                "Position Merge" => Some(Box::new(PositionMergeProcessNode::new(id))),
-                "Position Split" => Some(Box::new(PositionSplitProcessNode::new(id))),
-                "Lookup Table" => Some(Box::new(LookupProcessNode::new(id))),
-                "Counter" => Some(Box::new(CounterProcessNode::new(id))),
-                "Change Detect" => Some(Box::new(ChangeDetectProcessNode::new(id))),
-                "Schmitt Trigger" => Some(Box::new(SchmittTriggerProcessNode::new(id))),
-                "Toggle Bank" => Some(Box::new(ToggleBankProcessNode::new(id))),
-                "Trigger Bank" => Some(Box::new(TriggerBankProcessNode::new(id))),
-                "Gain" => Some(Box::new(GainProcessNode::new(id))),
-                "Phase Accumulator" => Some(Box::new(PhaseAccumulatorProcessNode::new(id))),
-                "Port Hub" => Some(Box::new(PortHubProcessNode::new(id))),
-                "Const Value" => Some(Box::new(ConstantProcessNode::new(id, PortType::Untyped, 0.0))),
-                "Const Logic" => Some(Box::new(ConstantProcessNode::new(id, PortType::Logic, 0.0))),
-                "Const Phase" => Some(Box::new(ConstantProcessNode::new(id, PortType::Phase, 0.0))),
-                "Sin" => Some(Box::new(OscillatorProcessNode::new(id, OscFunc::Sin))),
-                "Cos" => Some(Box::new(OscillatorProcessNode::new(id, OscFunc::Cos))),
-                "Subgraph" => Some(Box::new(SubgraphProcessNode::new(id))),
-                "Portal Send" => Some(Box::new(
-                    engine::nodes::meta::portal::PortalSendProcessNode::new(id, self.portals.clone()),
-                )),
-                "Portal Receive" => Some(Box::new(
-                    engine::nodes::meta::portal::PortalReceiveProcessNode::new(id, self.portals.clone()),
-                )),
-                "Effect Stack" => Some(Box::new(EffectStackProcessNode::new(id, self.effect_hub.clone(), self.object_store.clone()))),
-                "Fill" => Some(Box::new(EffectNode::new(id, Fill::default(), self.effect_hub.clone()))),
-                "Bar Loop" => Some(Box::new(EffectNode::new(id, Bar::default(), self.effect_hub.clone()))),
-                "Wave Loop" => Some(Box::new(EffectNode::new(id, Wave::default(), self.effect_hub.clone()))),
-                "Ripple Burst" => Some(Box::new(EffectNode::new(id, Ripple::default(), self.effect_hub.clone()))),
-                "Spark Burst" => Some(Box::new(EffectNode::new(id, SparkBurst::default(), self.effect_hub.clone()))),
-                _ => {
-                    eprintln!("Unknown node type for engine: {}", type_name);
-                    None
-                }
-            };
+            let engine_node: Option<Box<dyn ProcessNode>> =
+                match table.iter().find(|d| d.name == type_name) {
+                    Some(desc) => Some((desc.engine)(id, &ctx)),
+                    None => {
+                        eprintln!("Unknown node type for engine: {}", type_name);
+                        None
+                    }
+                };
+            for (pattern, listener) in ctx.take_wanted_beats() {
+                self._subs.push(self.beat_clock.subscribe(pattern, listener));
+            }
+
 
             if let Some(engine_node) = engine_node {
                 // A node that arrives with promoted params (paste, move into
@@ -686,6 +791,57 @@ impl LightBeatApp {
                     });
                 }
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::engine::types::total_channels;
+
+    fn context() -> NodeContext {
+        NodeContext {
+            snapshot: Arc::new(std::sync::Mutex::new(crate::beat_clock::LinkSnapshot::default())),
+            input_controllers: crate::input_controller::InputControllerManager::new().shared,
+            audio_inputs: crate::audio::manager::AudioInputManager::new().shared,
+            dmx_inputs: crate::dmx_input::DmxInputHub::idle(),
+            midi_hub: crate::midi_io::MidiHub::idle(),
+            midi_learned: widgets::nodes::io::midi_common::new_shared_learned(),
+            gradient_library: widgets::nodes::math::gradient_source::new_shared_gradient_library(),
+            palette_ctx: widgets::nodes::math::palette_select::new_shared_palette_context(),
+            group_ctx: widgets::group_context::new_shared_group_context(),
+            stack_names: widgets::nodes::output::effect::new_shared_stack_names(),
+            portals: Arc::new(std::sync::Mutex::new(engine::nodes::meta::portal::PortalRegistry::default())),
+            effect_hub: engine::effects::EffectHub::new(),
+            object_store: crate::dmx_io::new_shared_object_store(),
+            wanted_beats: Rc::new(RefCell::new(Vec::new())),
+        }
+    }
+
+    #[test]
+    fn every_entry_makes_both_halves_under_its_own_name() {
+        let ctx = context();
+        let table = node_table();
+        assert!(table.len() > 80);
+        let mut names = std::collections::HashSet::new();
+        for desc in &table {
+            assert!(names.insert(desc.name), "two entries are called {}", desc.name);
+            let widget = (desc.widget)(NodeId(1), new_shared_state(desc.channels.0, desc.channels.1), &ctx);
+            let engine = (desc.engine)(NodeId(1), &ctx);
+            assert_eq!(widget.type_name(), desc.name, "the widget of {} reports another name", desc.name);
+            assert_eq!(engine.node_id(), NodeId(1), "{}", desc.name);
+        }
+    }
+
+    #[test]
+    fn the_shared_state_is_large_enough_for_the_fresh_engine_node() {
+        let ctx = context();
+        for desc in node_table() {
+            let engine = (desc.engine)(NodeId(1), &ctx);
+            let (need_in, need_out) = (total_channels(engine.inputs()), total_channels(engine.outputs()));
+            assert!(desc.channels.0 >= need_in, "{}: {} input channels for {}", desc.name, desc.channels.0, need_in);
+            assert!(desc.channels.1 >= need_out, "{}: {} output channels for {}", desc.name, desc.channels.1, need_out);
         }
     }
 }
