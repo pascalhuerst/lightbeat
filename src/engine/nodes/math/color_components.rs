@@ -159,7 +159,7 @@ impl ProcessNode for ComponentsToColorProcessNode {
         vec![ParamDef::Choice {
             name: "Mode".into(),
             value: self.mode.to_index(),
-            options: COLOR_MODE_NAMES.iter().map(|s| s.to_string()).collect(),
+            options: COLOR_MODE_NAMES.iter().map(|s| (*s).into()).collect(),
         }]
     }
 
@@ -264,7 +264,7 @@ impl ProcessNode for ColorToComponentsProcessNode {
         vec![ParamDef::Choice {
             name: "Mode".into(),
             value: self.mode.to_index(),
-            options: COLOR_MODE_NAMES.iter().map(|s| s.to_string()).collect(),
+            options: COLOR_MODE_NAMES.iter().map(|s| (*s).into()).collect(),
         }]
     }
 

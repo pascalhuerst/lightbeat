@@ -14,7 +14,7 @@ pub fn type_param(port_type: PortType) -> ParamDef {
     ParamDef::Choice {
         name: TYPE_PARAM.into(),
         value: type_to_index(port_type),
-        options: MUX_TYPE_NAMES.iter().map(|s| s.to_string()).collect(),
+        options: MUX_TYPE_NAMES.iter().map(|s| (*s).into()).collect(),
     }
 }
 

@@ -240,7 +240,7 @@ impl ProcessNode for StepSequencerProcessNode {
             ParamDef::Choice {
                 name: "Mode".into(),
                 value: self.mode.to_index(),
-                options: StepMode::ALL.iter().map(|m| m.label().to_string()).collect(),
+                options: StepMode::ALL.iter().map(|m| m.label().into()).collect(),
             },
         ]
     }

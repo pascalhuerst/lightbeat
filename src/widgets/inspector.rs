@@ -299,10 +299,10 @@ fn param_row(
                     reset_all(nodes, name);
                 }
                 egui::ComboBox::from_id_salt(("param", name))
-                    .selected_text(options.get(v).map(String::as_str).unwrap_or("?"))
+                    .selected_text(options.get(v).map(|s| s.as_ref()).unwrap_or("?"))
                     .show_ui(ui, |ui| {
                         for (oi, opt) in options.iter().enumerate() {
-                            if ui.selectable_value(&mut v, oi, opt).changed() {
+                            if ui.selectable_value(&mut v, oi, opt.as_ref()).changed() {
                                 set_all(nodes, name, ParamValue::Choice(v));
                                 for node in nodes {
                                     if reshapes(*node, param) {

@@ -220,14 +220,14 @@ impl ProcessNode for TransitionProcessNode {
     }
 
     fn params(&self) -> Vec<ParamDef> {
-        let curve_options: Vec<String> = EasingCurve::all().iter().map(|c| c.label().into()).collect();
+        let curve_options: Vec<std::borrow::Cow<'static, str>> = EasingCurve::all().iter().map(|c| c.label().into()).collect();
         vec![
             ParamDef::Choice {
                 name: "Type".into(),
                 value: self.mode.to_index(),
                 // Position and Gradient come last because saved settings go by position.
                 options: ["Auto", "Number", "Color", "Palette", "Phase out", "Position", "Gradient"]
-                    .iter().map(|s| s.to_string()).collect(),
+                    .iter().map(|s| (*s).into()).collect(),
             },
             ParamDef::Choice {
                 name: "Curve".into(),

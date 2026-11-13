@@ -74,7 +74,7 @@ impl ProcessNode for ConstantProcessNode {
             ParamDef::Choice {
                 name: "Operation".into(),
                 value: current,
-                options: Self::KINDS.iter().map(|k| Self::type_name_for(*k).trim_start_matches("Const ").to_string()).collect(),
+                options: Self::KINDS.iter().map(|k| Self::type_name_for(*k).trim_start_matches("Const ").into()).collect(),
             },
         ]
     }

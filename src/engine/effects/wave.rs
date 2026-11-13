@@ -43,8 +43,8 @@ impl EffectKind for Wave {
     fn params(&self) -> Vec<ParamDef> {
         vec![
             ParamDef::Float { name: "Wavelength".into(), value: self.wavelength, min: 0.05, max: 4.0, step: 0.01, unit: "" },
-            ParamDef::Choice { name: "Shape".into(), value: self.shape, options: SHAPES.iter().map(|s| s.to_string()).collect() },
-            ParamDef::Choice { name: "Direction".into(), value: self.direction, options: DIRECTIONS.iter().map(|s| s.to_string()).collect() },
+            ParamDef::Choice { name: "Shape".into(), value: self.shape, options: SHAPES.iter().map(|s| (*s).into()).collect() },
+            ParamDef::Choice { name: "Direction".into(), value: self.direction, options: DIRECTIONS.iter().map(|s| (*s).into()).collect() },
             ParamDef::Float { name: "amount".into(), value: self.intensity, min: 0.0, max: 1.0, step: 0.01, unit: "" },
         ]
     }

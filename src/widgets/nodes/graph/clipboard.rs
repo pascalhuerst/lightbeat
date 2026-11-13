@@ -406,7 +406,7 @@ mod paste_tests {
             ParamDef::Choice {
                 name: "Type".into(),
                 value: color,
-                options: MUX_TYPE_NAMES.iter().map(|s| s.to_string()).collect(),
+                options: MUX_TYPE_NAMES.iter().map(|s| (*s).into()).collect(),
             },
             ParamDef::Int { name: "Slots".into(), value: 10, min: 2, max: 64 },
         ];

@@ -199,7 +199,7 @@ impl ProcessNode for CounterProcessNode {
             ParamDef::Choice {
                 name: "Select by".into(),
                 value: self.select_mode.to_index(),
-                options: SelectMode::ALL.iter().map(|m| m.label().to_string()).collect(),
+                options: SelectMode::ALL.iter().map(|m| m.label().into()).collect(),
             },
         ]
     }

@@ -124,7 +124,7 @@ impl ProcessNode for MathProcessNode {
         vec![ParamDef::Choice {
             name: "Operation".into(),
             value: self.op.to_index(),
-            options: MathOp::ALL.iter().map(|o| o.label().to_string()).collect(),
+            options: MathOp::ALL.iter().map(|o| o.label().into()).collect(),
         }]
     }
 

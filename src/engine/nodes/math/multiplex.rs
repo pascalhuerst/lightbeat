@@ -184,7 +184,7 @@ impl ProcessNode for MultiplexerProcessNode {
             ParamDef::Choice {
                 name: "Type".into(),
                 value: type_to_index(self.port_type),
-                options: MUX_TYPE_NAMES.iter().map(|s| s.to_string()).collect(),
+                options: MUX_TYPE_NAMES.iter().map(|s| (*s).into()).collect(),
             },
             ParamDef::Int {
                 name: "Slots".into(),
@@ -195,7 +195,7 @@ impl ProcessNode for MultiplexerProcessNode {
             ParamDef::Choice {
                 name: "Select by".into(),
                 value: self.select_mode.to_index(),
-                options: SelectMode::ALL.iter().map(|m| m.label().to_string()).collect(),
+                options: SelectMode::ALL.iter().map(|m| m.label().into()).collect(),
             },
         ]
     }
@@ -337,7 +337,7 @@ impl ProcessNode for DemultiplexerProcessNode {
             ParamDef::Choice {
                 name: "Type".into(),
                 value: type_to_index(self.port_type),
-                options: MUX_TYPE_NAMES.iter().map(|s| s.to_string()).collect(),
+                options: MUX_TYPE_NAMES.iter().map(|s| (*s).into()).collect(),
             },
             ParamDef::Int {
                 name: "Slots".into(),
@@ -348,7 +348,7 @@ impl ProcessNode for DemultiplexerProcessNode {
             ParamDef::Choice {
                 name: "Select by".into(),
                 value: self.select_mode.to_index(),
-                options: SelectMode::ALL.iter().map(|m| m.label().to_string()).collect(),
+                options: SelectMode::ALL.iter().map(|m| m.label().into()).collect(),
             },
         ]
     }
