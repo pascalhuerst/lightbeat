@@ -21,7 +21,7 @@ impl PortHubWidget {
         Self {
             id,
             shared,
-            port_type: PortType::Untyped,
+            port_type: PortType::Any,
             slots: HUB_DEFAULT_SLOTS,
         }
     }
@@ -33,11 +33,19 @@ impl PortHubWidget {
             if d.slots != self.slots { self.slots = d.slots; }
         }
     }
+
+    /// Only the Auto setting adopts the first wire's type; every slot shares it.
+    fn adopt(&mut self, wire_type: PortType) {
+        if self.port_type != PortType::Any || wire_type == PortType::Any { return; }
+        self.port_type = wire_type;
+        let mut s = self.shared.lock().unwrap();
+        s.pending_params.push((0, ParamValue::Choice(type_to_index(wire_type))));
+    }
 }
 
 impl NodeWidget for PortHubWidget {
     fn restore_from_save(&mut self, _data: Option<&serde_json::Value>, params: &[(usize, ParamValue)]) {
-        self.port_type = param_usize(params, 0).map(type_from_index).unwrap_or(PortType::Untyped);
+        self.port_type = param_usize(params, 0).map(type_from_index).unwrap_or(PortType::Any);
         self.slots = clamp_slots(param_usize(params, 1).unwrap_or(HUB_DEFAULT_SLOTS));
     }
 
@@ -67,6 +75,13 @@ impl NodeWidget for PortHubWidget {
     fn min_content_height(&self) -> f32 { 14.0 }
     fn shared_state(&self) -> &SharedState { &self.shared }
 
+    fn on_ui_connect(&mut self, _input_port: usize, source_type: PortType) {
+        self.adopt(source_type);
+    }
+    fn on_ui_output_connect(&mut self, _output_port: usize, dest_type: PortType) {
+        self.adopt(dest_type);
+    }
+
     fn show_content(&mut self, ui: &mut Ui, _zoom: f32) {
         self.sync_from_display();
         ui.colored_label(
@@ -76,4 +91,34 @@ impl NodeWidget for PortHubWidget {
     }
 
     fn as_any_mut(&mut self) -> &mut dyn Any { self }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn hub() -> PortHubWidget {
+        PortHubWidget::new(NodeId(1), new_shared_state(1024, 1024))
+    }
+
+    #[test]
+    fn auto_takes_the_type_of_the_first_wire_on_either_side() {
+        let mut h = hub();
+        h.on_ui_connect(0, PortType::Color);
+        assert_eq!(h.port_type, PortType::Color);
+        assert_eq!(h.shared.lock().unwrap().pending_params.len(), 1);
+
+        let mut h = hub();
+        h.on_ui_output_connect(2, PortType::Position);
+        assert_eq!(h.port_type, PortType::Position);
+    }
+
+    #[test]
+    fn a_chosen_type_is_not_replaced_by_a_wire() {
+        let mut h = hub();
+        h.port_type = PortType::Logic;
+        h.on_ui_connect(0, PortType::Color);
+        assert_eq!(h.port_type, PortType::Logic);
+        assert!(h.shared.lock().unwrap().pending_params.is_empty());
+    }
 }
