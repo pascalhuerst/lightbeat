@@ -225,6 +225,7 @@ impl LightBeatApp {
             }
         });
         ui.separator();
+        let mut rescan = false;
         egui::ScrollArea::both().auto_shrink([false, false]).show(ui, |ui| {
             match self.setup_active_tab {
                 SetupTab::Interfaces => self.interface_manager.show(ui),
@@ -255,14 +256,34 @@ impl LightBeatApp {
                 }
                 SetupTab::Gradients => self.gradient_preset_manager.show(ui),
                 SetupTab::AudioInputs => {
-                    widgets::audio_input_list::show(ui, &mut self.audio_inputs);
+                    let missing = self.missing_hardware();
+                    rescan |= widgets::audio_input_list::show(ui, &mut self.audio_inputs, &missing);
                 }
                 SetupTab::InputControllers => {
-                    widgets::input_controller_list::show(ui, &mut self.input_controllers);
+                    let missing = self.missing_hardware();
+                    rescan |= widgets::input_controller_list::show(ui, &mut self.input_controllers, &missing);
                 }
                 SetupTab::DmxInputs => widgets::dmx_input_list::show(ui, &self.dmx_inputs),
             }
         });
+        if rescan {
+            self.rescan_hardware();
+        }
+    }
+
+    /// Everything set up but not present: controllers, audio inputs, MIDI devices.
+    pub(crate) fn missing_hardware(&self) -> Vec<String> {
+        let mut missing = self.input_controllers.missing_controllers();
+        missing.extend(self.audio_inputs.missing_inputs());
+        missing.extend(self.midi_hub.missing_devices());
+        missing
+    }
+
+    /// The one Rescan: the status bar and both hardware tabs call this.
+    pub(crate) fn rescan_hardware(&mut self) {
+        self.input_controllers.rescan();
+        self.audio_inputs.force_rescan();
+        self.midi_hub.rescan();
     }
 }
 

@@ -631,15 +631,15 @@ impl LightBeatApp {
                     };
                     ui.colored_label(theme::TEXT_DIM, status);
 
-                    let mut missing = self.input_controllers.missing_controllers();
-                    missing.extend(self.audio_inputs.missing_inputs());
-                    missing.extend(self.midi_hub.missing_devices());
-                    if !missing.is_empty() {
+                    let missing = {
+                        let mut m = self.input_controllers.missing_controllers();
+                        m.extend(self.audio_inputs.missing_inputs());
+                        m.extend(self.midi_hub.missing_devices());
+                        m
+                    };
+                    if let Some(text) = widgets::setup_ui::not_found_text(&missing) {
                         ui.separator();
-                        ui.colored_label(
-                            crate::theme::SEM_WARNING,
-                            format!("Not found: {}", missing.join(", ")),
-                        );
+                        ui.colored_label(theme::SEM_WARNING, text);
                         if ui
                             .small_button("Rescan")
                             .on_hover_text("Look again for everything listed as not found: controllers, audio inputs and MIDI devices")

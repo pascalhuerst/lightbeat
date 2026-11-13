@@ -184,6 +184,36 @@ pub fn status_badge(ui: &mut Ui, status: Status) -> Response {
     ui.colored_label(status.color(), status.label())
 }
 
+/// The one wording for hardware that is set up but not present, or none when
+/// everything is there. Status bar and both hardware tabs show this text.
+pub fn not_found_text(missing: &[String]) -> Option<String> {
+    if missing.is_empty() {
+        None
+    } else {
+        Some(format!("Not found: {}", missing.join(", ")))
+    }
+}
+
+/// The Rescan button of the hardware tabs. Returns true when clicked; the app
+/// then rescans controllers, audio inputs and MIDI together.
+pub fn rescan_button(ui: &mut Ui) -> bool {
+    ui.button(format!("{} Rescan", icon::ARROWS_CLOCKWISE))
+        .on_hover_text("Look again for controllers, audio inputs and MIDI devices")
+        .clicked()
+}
+
+/// Rescan button plus the "Not found" banner. Returns true when Rescan was clicked.
+pub fn hardware_bar(ui: &mut Ui, missing: &[String]) -> bool {
+    ui.horizontal(|ui| {
+        let clicked = rescan_button(ui);
+        if let Some(text) = not_found_text(missing) {
+            ui.colored_label(theme::SEM_WARNING, text);
+        }
+        clicked
+    })
+    .inner
+}
+
 // ---------------------------------------------------------------------------
 // Collapsible item
 // ---------------------------------------------------------------------------
@@ -323,6 +353,13 @@ mod tests {
     #[test]
     fn copies_are_named_copy() {
         assert_eq!(copy_name("Par"), "Par copy");
+    }
+
+    #[test]
+    fn not_found_text_lists_names_or_nothing() {
+        assert_eq!(not_found_text(&[]), None);
+        let m = vec!["X1".to_string(), "Mic".to_string()];
+        assert_eq!(not_found_text(&m).as_deref(), Some("Not found: X1, Mic"));
     }
 
     #[test]
