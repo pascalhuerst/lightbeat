@@ -74,6 +74,15 @@ pub struct AppConfig {
     /// to this room and this computer.
     #[serde(default)]
     pub latency_ms: f32,
+    /// Which panels and windows are open, so the next start looks the same.
+    #[serde(default = "default_true")]
+    pub show_add_nodes: bool,
+    #[serde(default)]
+    pub show_setup: bool,
+    #[serde(default)]
+    pub show_dmx_monitor: bool,
+    #[serde(default)]
+    pub setup_tab: crate::app::panels::SetupTab,
 }
 
 fn default_true() -> bool {
@@ -100,6 +109,10 @@ impl Default for AppConfig {
             check_for_updates: true,
             update_channel: crate::update::Channel::default(),
             latency_ms: 0.0,
+            show_add_nodes: true,
+            show_setup: false,
+            show_dmx_monitor: false,
+            setup_tab: crate::app::panels::SetupTab::default(),
         }
     }
 }
@@ -146,5 +159,35 @@ impl AppConfig {
         if self.recent_projects.len() > MAX_RECENT {
             self.recent_projects.truncate(MAX_RECENT);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn an_old_settings_file_gets_defaults_for_new_fields() {
+        let c: AppConfig = serde_json::from_str(r#"{"snap_to_grid": true}"#).unwrap();
+        assert!(c.snap_to_grid);
+        assert!(c.show_add_nodes);
+        assert!(!c.show_setup);
+        assert!(!c.show_dmx_monitor);
+        assert_eq!(c.setup_tab, crate::app::panels::SetupTab::Interfaces);
+        assert_eq!(c.idle_repaint_hz, 30.0);
+    }
+
+    #[test]
+    fn panel_state_survives_a_round_trip() {
+        let mut c = AppConfig::default();
+        c.show_add_nodes = false;
+        c.show_setup = true;
+        c.show_dmx_monitor = true;
+        c.setup_tab = crate::app::panels::SetupTab::AudioInputs;
+        c.msaa_samples = 4;
+        let back: AppConfig = serde_json::from_str(&serde_json::to_string(&c).unwrap()).unwrap();
+        assert!(!back.show_add_nodes && back.show_setup && back.show_dmx_monitor);
+        assert_eq!(back.setup_tab, crate::app::panels::SetupTab::AudioInputs);
+        assert_eq!(back.msaa_samples, 4);
     }
 }

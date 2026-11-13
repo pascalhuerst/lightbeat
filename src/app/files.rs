@@ -171,7 +171,7 @@ impl LightBeatApp {
         project.view = Some(self.view_state());
         match serde_json::to_string_pretty(&project) {
             Ok(json) => {
-                if let Err(e) = std::fs::write(&path, json) {
+                if let Err(e) = crate::paths::write_atomic(&path, json) {
                     self.report_error(format!("Autosave failed ({}): {e}", path.display()));
                 }
             }
@@ -187,9 +187,9 @@ impl LightBeatApp {
     }
 
     fn view_state(&self) -> project::ProjectViewState {
-        project::ProjectViewState {
-            show_library: self.show_library,
-        }
+        // Panel visibility lives in settings.json now; the field is only kept
+        // (at its old default) because the project format still has it.
+        project::ProjectViewState { show_library: true }
     }
 
     pub(crate) fn save_project_as(&mut self, ctx: &egui::Context) {
@@ -199,8 +199,8 @@ impl LightBeatApp {
         let ctx = ctx.clone();
         std::thread::spawn(move || {
             let dialog = rfd::FileDialog::new()
-                .set_title("Save Project As")
-                .add_filter("LightBeat Project", &["json"])
+                .set_title("Save project as")
+                .add_filter("LightBeat project", &["json"])
                 .set_file_name("project.json");
             if let Some(path) = dialog.save_file() {
                 let _ = tx.send(FileDialogResult::SaveProjectAs(path));
@@ -216,8 +216,8 @@ impl LightBeatApp {
         let ctx = ctx.clone();
         std::thread::spawn(move || {
             let dialog = rfd::FileDialog::new()
-                .set_title("Open Project")
-                .add_filter("LightBeat Project", &["json"]);
+                .set_title("Open project")
+                .add_filter("LightBeat project", &["json"]);
             if let Some(path) = dialog.pick_file() {
                 let _ = tx.send(FileDialogResult::OpenProject(path));
             }
@@ -232,8 +232,8 @@ impl LightBeatApp {
         let ctx = ctx.clone();
         std::thread::spawn(move || {
             let dialog = rfd::FileDialog::new()
-                .set_title("Export Setup")
-                .add_filter("LightBeat Setup", &["json"])
+                .set_title("Export setup")
+                .add_filter("LightBeat setup", &["json"])
                 .set_file_name("lightbeat-setup.json");
             if let Some(path) = dialog.save_file() {
                 let _ = tx.send(FileDialogResult::ExportSetup(path));
@@ -249,8 +249,8 @@ impl LightBeatApp {
         let ctx = ctx.clone();
         std::thread::spawn(move || {
             let dialog = rfd::FileDialog::new()
-                .set_title("Import Setup")
-                .add_filter("LightBeat Setup", &["json"]);
+                .set_title("Import setup")
+                .add_filter("LightBeat setup", &["json"]);
             if let Some(path) = dialog.pick_file() {
                 let _ = tx.send(FileDialogResult::ImportSetup(path));
             }
@@ -391,13 +391,6 @@ impl LightBeatApp {
         self.send_load_data_recursive(&proj.nodes, &indices, vec![]);
 
         self.graph.restore_view_state(&view);
-
-        // Restore persisted app-level view toggles (only when present —
-        // older projects without this field keep whatever the user has
-        // open at the moment, instead of jumping back to defaults).
-        if let Some(v) = &proj.view {
-            self.show_library = v.show_library;
-        }
     }
 
     pub(crate) fn load_project_from(&mut self, path: &std::path::Path) {
@@ -486,7 +479,6 @@ impl LightBeatApp {
     }
 }
 
-/// Inline inspector for a selected decorative frame.
 /// True when `a`'s modification time is strictly newer than `b`'s. Missing
 /// metadata on either side yields `false` — we don't want to false-positive
 /// into prompting the user when we can't actually compare.

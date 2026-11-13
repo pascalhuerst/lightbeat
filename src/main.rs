@@ -72,6 +72,11 @@ struct LightBeatApp {
     can_undo_setup: bool,
     can_redo_setup: bool,
     pending_undo_action: Option<UndoAction>,
+    /// The document that changed last; Undo and Redo act on it.
+    last_changed_doc: Option<app::undo::UndoDoc>,
+    /// The project as last seen by the change detector, to tell which of the two
+    /// documents an edit belongs to.
+    project_baseline: Option<project::ProjectFile>,
     beat_clock: BeatClock,
     _subs: Vec<SubscriptionHandle>,
     config: AppConfig,
@@ -85,6 +90,8 @@ struct LightBeatApp {
     last_update_check: Option<std::time::Instant>,
     show_update_window: bool,
     show_about: bool,
+    show_shortcuts: bool,
+    show_preferences: bool,
     /// Serialized form (JSON) of the project at the moment it was last saved
     /// (or loaded). Comparing the current serialized project against this
     /// tells us whether there are unsaved changes.
@@ -142,7 +149,7 @@ struct LightBeatApp {
     /// Portal Sends publish here by name; Portal Receives read.
     portals: engine::nodes::meta::portal::SharedPortalRegistry,
     library: LibraryManager,
-    show_library: bool,
+    show_add_nodes: bool,
     library_search: String,
     save_macro_dialog: Option<SaveMacroDialog>,
     project_undoer: egui::util::undoer::Undoer<project::ProjectFile>,
@@ -163,6 +170,8 @@ impl LightBeatApp {
         if config.msaa_samples > 0 {
             cc.egui_ctx.tessellation_options_mut(|o| o.feathering = false);
         }
+        let (open_add_nodes, open_setup, open_monitor, setup_tab) =
+            (config.show_add_nodes, config.show_setup, config.show_dmx_monitor, config.setup_tab);
         let beat_clock = BeatClock::new(4.0);
         let snapshot = beat_clock.snapshot();
         let dmx_shared = dmx_io::new_shared_dmx_state();
@@ -195,6 +204,8 @@ impl LightBeatApp {
             can_undo_setup: false,
             can_redo_setup: false,
             pending_undo_action: None,
+            last_changed_doc: None,
+            project_baseline: None,
             beat_clock,
             _subs: Vec::new(),
             config,
@@ -207,6 +218,8 @@ impl LightBeatApp {
             last_update_check: None,
             show_update_window: false,
             show_about: false,
+            show_shortcuts: false,
+            show_preferences: false,
             last_saved_project_json: None,
             last_autosave_time: 0.0,
             unsaved_prompt: None,
@@ -219,9 +232,9 @@ impl LightBeatApp {
             last_window_title: String::new(),
             close_discarded: false,
             recover_prompt: None,
-            show_dmx_monitor: false,
-            show_setup: false,
-            setup_active_tab: SetupTab::Interfaces,
+            show_dmx_monitor: open_monitor,
+            show_setup: open_setup,
+            setup_active_tab: setup_tab,
             dmx_monitor: widgets::dmx_monitor::DmxMonitor::new(),
             dmx_shared,
             object_store,
@@ -244,7 +257,7 @@ impl LightBeatApp {
                 engine::nodes::meta::portal::PortalRegistry::default(),
             )),
             library: LibraryManager::new(macros::default_library_root()),
-            show_library: true,
+            show_add_nodes: open_add_nodes,
             library_search: String::new(),
             save_macro_dialog: None,
             project_undoer: egui::util::undoer::Undoer::default(),
@@ -372,6 +385,21 @@ impl LightBeatApp {
             }
         }
         self.engine.send(EngineCommand::SetInterfaces(ifaces));
+    }
+
+    /// The undo or redo the Edit menu and the shortcut stand for right now.
+    pub(crate) fn undo_action(&self, redo: bool) -> Option<UndoAction> {
+        let (project, setup) = if redo {
+            (self.can_redo_proj, self.can_redo_setup)
+        } else {
+            (self.can_undo_proj, self.can_undo_setup)
+        };
+        app::undo::pick_target(self.last_changed_doc, project, setup).map(|doc| match (doc, redo) {
+            (app::undo::UndoDoc::Project, false) => UndoAction::UndoProject,
+            (app::undo::UndoDoc::Project, true) => UndoAction::RedoProject,
+            (app::undo::UndoDoc::Setup, false) => UndoAction::UndoSetup,
+            (app::undo::UndoDoc::Setup, true) => UndoAction::RedoSetup,
+        })
     }
 
     /// Apply an undo or redo. Builds the comparison snapshot on demand: the

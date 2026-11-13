@@ -10,7 +10,9 @@ use crate::version;
 use crate::widgets;
 use crate::app::macros::MacroDragPayload;
 use crate::app::files::PendingAction;
-use crate::app::panels::{NodeDragPayload, FrameDragPayload, show_frame_inspector};
+use crate::app::undo::UndoDoc;
+use crate::app::shortcuts;
+use crate::app::panels::{NodeDragPayload, FrameDragPayload, show_frame_inspector, show_frames_colour_inspector};
 use std::path::PathBuf;
 use eframe::egui;
 use crate::config::InspectorMode;
@@ -29,13 +31,15 @@ impl LightBeatApp {
 
         self.update_check_tick();
         self.show_update_ui(ctx);
+        self.show_shortcuts_window(ctx);
+        self.show_preferences_window(ctx);
 
-        let setup_hovered = self.show_setup_window(ctx);
+        self.show_setup_window(ctx);
 
         self.input_controllers.reap_lost_sessions();
 
         // "Add Nodes" side panel (left) — unified node-registry + macro library.
-        if self.show_library {
+        if self.show_add_nodes {
             egui::SidePanel::left("add_nodes_panel")
                 .default_width(220.0)
                 .show(ctx, |ui| {
@@ -54,7 +58,7 @@ impl LightBeatApp {
 
         // DMX Monitor (floating window, toggled via View menu).
         if self.show_dmx_monitor {
-            egui::Window::new("DMX Monitor")
+            egui::Window::new("DMX monitor")
                 .open(&mut self.show_dmx_monitor)
                 .default_size([600.0, 200.0])
                 .show(ctx, |ui| {
@@ -70,7 +74,7 @@ impl LightBeatApp {
 
         self.show_canvas(ctx);
 
-        self.handle_shortcuts(ctx, setup_hovered);
+        self.handle_shortcuts(ctx);
 
         self.handle_close_and_dialogs(ctx);
     }
@@ -98,6 +102,19 @@ impl LightBeatApp {
         if title != self.last_window_title {
             ctx.send_viewport_cmd(egui::ViewportCommand::Title(title.clone()));
             self.last_window_title = title;
+        }
+
+        // Remember which panels are open; only written when one changed.
+        let panels_changed = self.config.show_add_nodes != self.show_add_nodes
+            || self.config.show_setup != self.show_setup
+            || self.config.show_dmx_monitor != self.show_dmx_monitor
+            || self.config.setup_tab != self.setup_active_tab;
+        if panels_changed {
+            self.config.show_add_nodes = self.show_add_nodes;
+            self.config.show_setup = self.show_setup;
+            self.config.show_dmx_monitor = self.show_dmx_monitor;
+            self.config.setup_tab = self.setup_active_tab;
+            self.config.save();
         }
 
         // Track window size / maximized state so on_exit can persist them.
@@ -176,6 +193,16 @@ impl LightBeatApp {
             if current_setup != self.setup_baseline {
                 self.setup_baseline = current_setup.clone();
                 self.setup_changed_at = Some(now);
+                self.last_changed_doc = Some(UndoDoc::Setup);
+            }
+            // The first sight of the project is the baseline, not an edit.
+            if let Some(base) = &self.project_baseline
+                && *base != current_project
+            {
+                self.last_changed_doc = Some(UndoDoc::Project);
+            }
+            if self.project_baseline.as_ref() != Some(&current_project) {
+                self.project_baseline = Some(current_project.clone());
             }
             self.project_undoer.feed_state(now, &current_project);
             self.setup_undoer.feed_state(now, &current_setup);
@@ -207,13 +234,13 @@ impl LightBeatApp {
     }
 
     fn show_menu_bar(&mut self, ctx: &egui::Context) {
-        let (can_undo_proj, can_redo_proj) = (self.can_undo_proj, self.can_redo_proj);
-        let (can_undo_setup, can_redo_setup) = (self.can_undo_setup, self.can_redo_setup);
+        let undo_action = self.undo_action(false);
+        let redo_action = self.undo_action(true);
 
         if let Some(lines) = self.setup_notice.clone() {
             let mut open = true;
             let mut dismiss = false;
-            egui::Window::new("Import / Export Setup").open(&mut open).collapsible(false).resizable(true).show(ctx, |ui| {
+            egui::Window::new("Import / export setup").open(&mut open).collapsible(false).resizable(true).show(ctx, |ui| {
                 for line in &lines {
                     ui.label(line);
                 }
@@ -235,7 +262,7 @@ impl LightBeatApp {
                         ui.close_menu();
                         self.request_action(ctx, PendingAction::New);
                     }
-                    if ui.button("Open...").clicked() {
+                    if ui.add(egui::Button::new("Open...").shortcut_text(ctx.format_shortcut(&shortcuts::OPEN))).clicked() {
                         ui.close_menu();
                         self.request_action(ctx, PendingAction::Open);
                     }
@@ -243,7 +270,7 @@ impl LightBeatApp {
                     let mut load_recent: Option<PathBuf> = None;
                     let mut clear_recents = false;
                     ui.add_enabled_ui(!recents.is_empty(), |ui| {
-                        ui.menu_button("Open Recent", |ui| {
+                        ui.menu_button("Open recent", |ui| {
                             for p in &recents {
                                 let label = p.file_name()
                                     .and_then(|s| s.to_str())
@@ -272,53 +299,66 @@ impl LightBeatApp {
                         self.config.save();
                     }
                     ui.separator();
-                    if ui.button("Save").clicked() {
+                    if ui.add(egui::Button::new("Save").shortcut_text(ctx.format_shortcut(&shortcuts::SAVE))).clicked() {
                         ui.close_menu();
                         self.save_command(ctx, None);
                     }
-                    if ui.button("Save As...").clicked() {
+                    if ui.button("Save as...").clicked() {
                         ui.close_menu();
                         self.save_project_as(ctx);
                     }
                     ui.separator();
-                    if ui.button("Export Setup...").on_hover_text("Fixtures, objects, groups, interfaces, palettes, controllers and audio inputs, as one file").clicked() {
+                    if ui.button("Export setup...").on_hover_text("Fixtures, objects, groups, interfaces, palettes, controllers and audio inputs, as one file").clicked() {
                         ui.close_menu();
                         self.export_setup_dialog(ctx);
                     }
-                    if ui.button("Import Setup...").on_hover_text("Replace the setup with one from a file; Edit, Undo brings the old one back").clicked() {
+                    if ui.button("Import setup...").on_hover_text("Replace the setup with one from a file; Edit, Undo (setup) brings the old one back").clicked() {
                         ui.close_menu();
                         self.import_setup_dialog(ctx);
                     }
                     ui.separator();
-                    if ui.button("Quit").clicked() {
+                    if ui.add(egui::Button::new("Quit").shortcut_text(ctx.format_shortcut(&shortcuts::QUIT))).clicked() {
                         ui.close_menu();
                         self.quit_requested = true;
                     }
                 });
                 ui.menu_button("Edit", |ui| {
-                    if ui.add_enabled(can_undo_proj, egui::Button::new("Undo Project")).clicked() {
+                    let undo_label = match undo_action {
+                        Some(UndoAction::UndoProject) => "Undo (project)",
+                        Some(UndoAction::UndoSetup) => "Undo (setup)",
+                        _ => "Undo",
+                    };
+                    let redo_label = match redo_action {
+                        Some(UndoAction::RedoProject) => "Redo (project)",
+                        Some(UndoAction::RedoSetup) => "Redo (setup)",
+                        _ => "Redo",
+                    };
+                    if ui.add_enabled(undo_action.is_some(), egui::Button::new(undo_label).shortcut_text(ctx.format_shortcut(&shortcuts::UNDO))).clicked() {
                         ui.close_menu();
-                        self.pending_undo_action = Some(UndoAction::UndoProject);
+                        self.pending_undo_action = undo_action;
                     }
-                    if ui.add_enabled(can_redo_proj, egui::Button::new("Redo Project")).clicked() {
+                    if ui.add_enabled(redo_action.is_some(), egui::Button::new(redo_label).shortcut_text(ctx.format_shortcut(&shortcuts::REDO))).clicked() {
                         ui.close_menu();
-                        self.pending_undo_action = Some(UndoAction::RedoProject);
+                        self.pending_undo_action = redo_action;
                     }
                     ui.separator();
-                    if ui.add_enabled(can_undo_setup, egui::Button::new("Undo Setup")).clicked() {
+                    if ui.button("Preferences...").clicked() {
                         ui.close_menu();
-                        self.pending_undo_action = Some(UndoAction::UndoSetup);
-                    }
-                    if ui.add_enabled(can_redo_setup, egui::Button::new("Redo Setup")).clicked() {
-                        ui.close_menu();
-                        self.pending_undo_action = Some(UndoAction::RedoSetup);
+                        self.show_preferences = true;
                     }
                 });
                 ui.menu_button("View", |ui| {
-                    if ui.checkbox(&mut self.show_library, "Add Nodes").changed() {
+                    if ui.checkbox(&mut self.show_add_nodes, "Add nodes").changed() {
                         ui.close_menu();
                     }
-                    if ui.checkbox(&mut self.show_dmx_monitor, "DMX Monitor").changed() {
+                    if ui.checkbox(&mut self.show_setup, "Setup").changed() {
+                        ui.close_menu();
+                    }
+                    if ui.checkbox(&mut self.show_dmx_monitor, "DMX monitor").changed() {
+                        ui.close_menu();
+                    }
+                    if ui.checkbox(&mut self.config.snap_to_grid, "Snap to grid").changed() {
+                        self.config.save();
                         ui.close_menu();
                     }
                     ui.separator();
@@ -336,37 +376,22 @@ impl LightBeatApp {
                         if changed { self.config.save(); }
                     });
                 });
-                ui.menu_button("Window", |ui| {
-                    if ui.checkbox(&mut self.show_setup, "Setup…").changed() {
-                        ui.close_menu();
-                    }
-                });
                 ui.menu_button("Help", |ui| {
-                    if ui.button(format!("About LightBeat {}", version::version())).clicked() {
+                    if ui.button(format!("About LightBeat {}...", version::version())).clicked() {
                         ui.close_menu();
                         self.show_about = true;
                     }
+                    if ui.button("Keyboard shortcuts...").clicked() {
+                        ui.close_menu();
+                        self.show_shortcuts = true;
+                    }
                     ui.separator();
-                    if ui.button("Check for Updates").clicked() {
+                    if ui.button("Check for updates...").clicked() {
                         ui.close_menu();
                         self.show_update_window = true;
                         self.updater.check(self.config.update_channel);
                         self.last_update_check = Some(std::time::Instant::now());
                     }
-                    let mut auto = self.config.check_for_updates;
-                    if ui.checkbox(&mut auto, "Check automatically").changed() {
-                        self.config.check_for_updates = auto;
-                        self.config.save();
-                    }
-                    ui.menu_button(format!("Update channel: {}", self.config.update_channel.label()), |ui| {
-                        for channel in update::Channel::ALL {
-                            if ui.selectable_label(self.config.update_channel == channel, channel.label()).clicked() {
-                                self.config.update_channel = channel;
-                                self.config.save();
-                                ui.close_menu();
-                            }
-                        }
-                    });
                 });
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     ui.colored_label(theme::TEXT_DIM, format!("LightBeat {}", version::version()));
@@ -375,17 +400,16 @@ impl LightBeatApp {
         });
     }
 
-    fn show_setup_window(&mut self, ctx: &egui::Context) -> bool {
+    fn show_setup_window(&mut self, ctx: &egui::Context) {
         // Consolidated Setup window — embedded `egui::Window` inside the
         // main viewport. All setup managers (interfaces, fixtures, objects,
         // groups, palettes, gradients, audio inputs, input controllers)
         // live as tabs inside one window.
-        let mut setup_hovered = false;
         if self.show_setup {
             // Stage the open flag locally so the closure can borrow `self`
             // mutably; assign back after the window returns.
             let mut open = true;
-            let r = egui::Window::new("Setup")
+            egui::Window::new("Setup")
                 .open(&mut open)
                 .default_size([780.0, 560.0])
                 .min_width(420.0)
@@ -394,10 +418,7 @@ impl LightBeatApp {
                     self.show_setup_tabs(ui);
                 });
             self.show_setup = open;
-            if let Some(ir) = r
-                && ir.response.contains_pointer() { setup_hovered = true; }
         }
-        setup_hovered
     }
 
     fn show_save_macro_dialog(&mut self, ctx: &egui::Context) {
@@ -472,7 +493,7 @@ impl LightBeatApp {
                             ui.end_row();
                         });
                     if let Some(err) = &dlg.error {
-                        ui.colored_label(egui::Color32::LIGHT_RED, err);
+                        ui.colored_label(theme::SEM_DANGER, err);
                     }
                     ui.separator();
                     ui.horizontal(|ui| {
@@ -542,9 +563,7 @@ impl LightBeatApp {
                                 return;
                             }
                             if !nodes_selected && selected_frame_ids.len() > 1 {
-                                ui.heading(format!("{} frames selected", selected_frame_ids.len()));
-                                ui.separator();
-                                ui.label("Multi-frame editing isn't supported yet.");
+                                show_frames_colour_inspector(ui, &mut self.graph, &selected_frame_ids);
                                 return;
                             }
 
@@ -576,12 +595,12 @@ impl LightBeatApp {
 
                     // Blackout button — red when active.
                     let blackout_text = if shared.blackout {
-                        egui::RichText::new("BLACKOUT").color(egui::Color32::WHITE).strong()
+                        egui::RichText::new("BLACKOUT").color(theme::TEXT_BRIGHT).strong()
                     } else {
-                        egui::RichText::new("Blackout").color(egui::Color32::from_gray(160))
+                        egui::RichText::new("Blackout").color(theme::TEXT_DIM)
                     };
                     let blackout_btn = egui::Button::new(blackout_text)
-                        .fill(if shared.blackout { egui::Color32::from_rgb(180, 40, 40) } else { egui::Color32::TRANSPARENT });
+                        .fill(if shared.blackout { theme::SEM_DANGER } else { egui::Color32::TRANSPARENT });
                     if ui.add(blackout_btn).clicked() {
                         shared.blackout = !shared.blackout;
                     }
@@ -590,12 +609,12 @@ impl LightBeatApp {
 
                     // Bypass button — orange when active.
                     let bypass_text = if shared.bypass {
-                        egui::RichText::new("BYPASS").color(egui::Color32::WHITE).strong()
+                        egui::RichText::new("BYPASS").color(theme::TEXT_BRIGHT).strong()
                     } else {
-                        egui::RichText::new("Bypass").color(egui::Color32::from_gray(160))
+                        egui::RichText::new("Bypass").color(theme::TEXT_DIM)
                     };
                     let bypass_btn = egui::Button::new(bypass_text)
-                        .fill(if shared.bypass { egui::Color32::from_rgb(200, 140, 30) } else { egui::Color32::TRANSPARENT });
+                        .fill(if shared.bypass { theme::SEM_WARNING } else { egui::Color32::TRANSPARENT });
                     if ui.add(bypass_btn).clicked() {
                         shared.bypass = !shared.bypass;
                     }
@@ -610,7 +629,7 @@ impl LightBeatApp {
                     } else {
                         "Live"
                     };
-                    ui.colored_label(egui::Color32::from_gray(100), status);
+                    ui.colored_label(theme::TEXT_DIM, status);
 
                     let mut missing = self.input_controllers.missing_controllers();
                     missing.extend(self.audio_inputs.missing_inputs());
@@ -623,7 +642,7 @@ impl LightBeatApp {
                         );
                         if ui
                             .small_button("Rescan")
-                            .on_hover_text("Look for the missing controllers and audio inputs again")
+                            .on_hover_text("Look again for everything listed as not found: controllers, audio inputs and MIDI devices")
                             .clicked()
                         {
                             self.input_controllers.rescan();
@@ -673,7 +692,7 @@ impl LightBeatApp {
                     // Right-aligned zoom indicator + performance readout.
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         ui.colored_label(
-                            egui::Color32::from_gray(140),
+                            theme::TEXT_DIM,
                             format!("Zoom: {:.0}%", self.graph.zoom() * 100.0),
                         );
                         ui.separator();
@@ -688,11 +707,11 @@ impl LightBeatApp {
                         // The engine tick has a 1 ms budget; warn once the
                         // average eats more than half of it.
                         let tick_color = if tick_us > 800 {
-                            egui::Color32::from_rgb(200, 80, 80)
+                            theme::SEM_DANGER
                         } else if tick_us > 500 {
-                            egui::Color32::from_rgb(200, 160, 60)
+                            theme::SEM_WARNING
                         } else {
-                            egui::Color32::from_gray(110)
+                            theme::TEXT_DIM
                         };
                         let perf_text = format!(
                             "engine {}/{} us  ·  ui {:.1}/{:.1} ms (graph {:.1}) @ {} fps  ·  undo snap {:.1}/{:.1} ms @ {}/s",
@@ -793,7 +812,7 @@ impl LightBeatApp {
         }
     }
 
-    fn handle_shortcuts(&mut self, ctx: &egui::Context, setup_hovered: bool) {
+    fn handle_shortcuts(&mut self, ctx: &egui::Context) {
         // Keyboard shortcuts. `command` is Ctrl on Linux and Cmd on macOS. While a
         // text field has focus the keys belong to it (Ctrl+Z undoes its text),
         // except Ctrl+S, which saving does not conflict with.
@@ -809,8 +828,7 @@ impl LightBeatApp {
         }
 
         // Undo / Redo: Ctrl+Z / Ctrl+Shift+Z (and Ctrl+Y for redo).
-        // Routes to the setup undoer when the pointer is over the Setup
-        // window, otherwise to the project undoer.
+        // Acts on whichever of project and setup changed last.
         let undo_pressed = !typing && ctx.input(|i| {
             i.modifiers.command && !i.modifiers.shift && i.key_pressed(egui::Key::Z)
         });
@@ -821,18 +839,10 @@ impl LightBeatApp {
         });
 
         if undo_pressed {
-            self.run_undo_action(if setup_hovered {
-                UndoAction::UndoSetup
-            } else {
-                UndoAction::UndoProject
-            });
+            self.pending_undo_action = self.undo_action(false);
         }
         if redo_pressed {
-            self.run_undo_action(if setup_hovered {
-                UndoAction::RedoSetup
-            } else {
-                UndoAction::RedoProject
-            });
+            self.pending_undo_action = self.undo_action(true);
         }
         if let Some(action) = self.pending_undo_action.take() {
             self.run_undo_action(action);
@@ -868,7 +878,7 @@ impl LightBeatApp {
                     ui.label(format!("You have unsaved changes in this project. Save before {}?", action.describe()));
                     ui.add_space(8.0);
                     ui.horizontal(|ui| {
-                        if ui.button("Save").clicked() { do_save = true; }
+                        if ui.add(egui::Button::new("Save").shortcut_text(ctx.format_shortcut(&shortcuts::SAVE))).clicked() { do_save = true; }
                         if ui.button("Discard").clicked() { do_discard = true; }
                         if ui.button("Cancel").clicked() { do_cancel = true; }
                     });

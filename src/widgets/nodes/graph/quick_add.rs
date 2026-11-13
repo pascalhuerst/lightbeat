@@ -66,6 +66,12 @@ fn is_subsequence(needle: &str, haystack: &str) -> bool {
 }
 
 impl NodeGraph {
+    /// Registry indices matching `query` the way quick add ranks them, for other
+    /// node finders (the Add Nodes panel) to share the rules.
+    pub fn find_entries(&self, query: &str) -> Vec<usize> {
+        quick_add_matches(&self.registry, query)
+    }
+
     pub(super) fn show_quick_add(&mut self, ui: &mut Ui, just_opened: bool) {
         let Some(mut qa) = self.quick_add.take() else { return };
         let matches = quick_add_matches(&self.registry, &qa.query);

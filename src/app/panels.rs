@@ -5,8 +5,9 @@ use crate::app::macros::MacroDragPayload;
 use eframe::egui;
 
 /// Active tab in the consolidated Setup window.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 pub(crate) enum SetupTab {
+    #[default]
     Interfaces,
     FixtureTemplates,
     Objects,
@@ -21,15 +22,15 @@ pub(crate) enum SetupTab {
 
 const SETUP_TABS: &[(SetupTab, &str)] = &[
     (SetupTab::Interfaces, "Interfaces"),
-    (SetupTab::FixtureTemplates, "Fixture Templates"),
+    (SetupTab::FixtureTemplates, "Fixture templates"),
     (SetupTab::Objects, "Objects"),
     (SetupTab::Groups, "Groups"),
-    (SetupTab::ColorPalettes, "Color Palettes"),
-    (SetupTab::ColorPaletteGroups, "Palette Groups"),
-    (SetupTab::Gradients, "Gradients"),
-    (SetupTab::AudioInputs, "Audio Inputs"),
-    (SetupTab::InputControllers, "Input Controllers"),
-    (SetupTab::DmxInputs, "DMX Inputs"),
+    (SetupTab::ColorPalettes, "Color palettes"),
+    (SetupTab::ColorPaletteGroups, "Palette groups"),
+    (SetupTab::Gradients, "Gradient presets"),
+    (SetupTab::AudioInputs, "Audio inputs"),
+    (SetupTab::InputControllers, "Input controllers"),
+    (SetupTab::DmxInputs, "DMX inputs"),
 ];
 
 /// Payload carried during a node-registry → canvas drag (Add Nodes panel).
@@ -45,7 +46,7 @@ pub(crate) struct FrameDragPayload;
 impl LightBeatApp {
     pub(crate) fn show_add_nodes_panel(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
-            ui.heading("Add Nodes");
+            ui.heading("Add nodes");
             if ui.small_button(egui_phosphor::regular::ARROWS_CLOCKWISE)
                 .on_hover_text("Refresh macro library")
                 .clicked()
@@ -58,31 +59,35 @@ impl LightBeatApp {
         ui.horizontal(|ui| {
             ui.label(egui_phosphor::regular::MAGNIFYING_GLASS);
             ui.add(egui::TextEdit::singleline(&mut self.library_search)
-                .hint_text("search nodes, macros, tags…")
+                .hint_text("Search nodes, macros, tags...")
                 .desired_width(ui.available_width()));
         });
         ui.separator();
 
         if let Some(err) = &self.library.last_error {
-            ui.colored_label(egui::Color32::LIGHT_RED, err);
+            ui.colored_label(theme::SEM_DANGER, err);
         }
 
-        let q = self.library_search.to_lowercase();
+        let q = self.library_search.trim().to_lowercase();
 
-        // Build a filtered view of registered node types grouped by category.
-        // Hidden categories (prefixed with `_`) are always excluded.
-        let node_entries: Vec<(usize, String, String, &'static str)> = self.graph
-            .registry_entries()
-            .iter()
-            .enumerate()
+        // Registered node types: grouped by category when nothing is typed, in
+        // quick add's ranking (one flat list) when searching. Hidden
+        // categories (prefixed with `_`) are always excluded.
+        let searching = !q.is_empty();
+        let order: Vec<usize> = if searching {
+            self.graph.find_entries(&q)
+        } else {
+            (0..self.graph.registry_entries().len()).collect()
+        };
+        let node_entries: Vec<(usize, String, String, &'static str)> = order
+            .into_iter()
+            .map(|i| (i, &self.graph.registry_entries()[i]))
             .filter(|(_, e)| !e.category.starts_with('_'))
-            .filter(|(_, e)| {
-                q.is_empty()
-                    || e.label.to_lowercase().contains(&q)
-                    || e.category.to_lowercase().contains(&q)
-            })
             .map(|(i, e)| (i, e.category.clone(), e.label.clone(), e.description))
             .collect();
+
+        // A click adds at the middle of what the canvas shows; dragging places it.
+        let centre = self.graph.screen_to_world(self.graph.canvas_rect().center());
 
         let macro_entries: Vec<_> = self.library.entries.iter().enumerate()
             .filter(|(_, e)| {
@@ -106,7 +111,7 @@ impl LightBeatApp {
             // --- Decorative (Frame) ---
             if frame_matches {
                 ui.colored_label(
-                    egui::Color32::from_gray(150),
+                    theme::TEXT_DIM,
                     egui::RichText::new("Decorative").strong().size(11.0),
                 );
                 let dnd_id = egui::Id::new("frame-dnd");
@@ -114,8 +119,11 @@ impl LightBeatApp {
                     ui.add(egui::Button::new("+ Frame")
                         .wrap_mode(egui::TextWrapMode::Extend))
                 }).inner;
+                if resp.clicked() {
+                    self.graph.add_frame_at(centre);
+                }
                 resp.on_hover_text(
-                    "Drag onto canvas to add a decorative frame for visually \
+                    "Click or drag onto canvas to add a decorative frame for visually \
                      grouping nodes. Drag the title bar to move, the bottom-\
                      right corner to resize.",
                 );
@@ -125,10 +133,10 @@ impl LightBeatApp {
             // --- Registered node types, grouped by category ---
             let mut last_cat = "";
             for (idx, cat, label, desc) in &node_entries {
-                if cat != last_cat {
+                if !searching && cat != last_cat {
                     if !last_cat.is_empty() { ui.add_space(4.0); }
                     ui.colored_label(
-                        egui::Color32::from_gray(150),
+                        theme::TEXT_DIM,
                         egui::RichText::new(cat).strong().size(11.0),
                     );
                     last_cat = cat;
@@ -139,11 +147,16 @@ impl LightBeatApp {
                     ui.add(egui::Button::new(label.as_str())
                         .wrap_mode(egui::TextWrapMode::Extend))
                 }).inner;
-                let hover = if desc.is_empty() {
-                    "Drag onto canvas to add.".to_string()
-                } else {
-                    format!("Drag onto canvas to add.\n\n{}", desc)
-                };
+                if resp.clicked() {
+                    self.graph.spawn_from_registry(*idx, centre);
+                }
+                let mut hover = "Click or drag onto canvas to add.".to_string();
+                if searching {
+                    hover.push_str(&format!("\n\n{cat}"));
+                }
+                if !desc.is_empty() {
+                    hover.push_str(&format!("\n\n{desc}"));
+                }
                 resp.on_hover_text(hover);
             }
 
@@ -162,7 +175,7 @@ impl LightBeatApp {
                         if current_group.is_some() { ui.add_space(2.0); }
                         let label = if e.group.is_empty() { "(root)".to_string() } else { e.group.clone() };
                         ui.colored_label(
-                            egui::Color32::from_gray(120),
+                            theme::TEXT_DIM,
                             egui::RichText::new(label).size(10.0),
                         );
                         current_group = Some(e.group.clone());
@@ -176,11 +189,14 @@ impl LightBeatApp {
                                 .wrap_mode(egui::TextWrapMode::Extend)
                         )
                     });
-                    let mut hover = format!("Drag onto canvas to add.\n\n{}", e.description);
+                    let mut hover = format!("Click or drag onto canvas to add.\n\n{}", e.description);
                     if !e.tags.is_empty() {
                         hover.push_str(&format!("\n\nTags: {}", e.tags.join(", ")));
                     }
                     let btn_resp = inner_resp.inner.on_hover_text(hover);
+                    if btn_resp.clicked() {
+                        self.instantiate_macro_from_path(&e.path, centre);
+                    }
                     btn_resp.context_menu(|ui| {
                         if ui.button("Delete from library").clicked() {
                             delete = Some(e.path.clone());
@@ -191,7 +207,7 @@ impl LightBeatApp {
             }
 
             if node_entries.is_empty() && macro_entries.is_empty() && !frame_matches {
-                ui.colored_label(egui::Color32::from_gray(120), "No matches.");
+                ui.colored_label(theme::TEXT_DIM, "No matches.");
             }
         });
 
@@ -250,6 +266,41 @@ impl LightBeatApp {
     }
 }
 
+/// Several frames selected: only what makes sense for all of them, the colour.
+pub(crate) fn show_frames_colour_inspector(
+    ui: &mut egui::Ui,
+    graph: &mut widgets::nodes::NodeGraph,
+    frame_ids: &[u64],
+) {
+    ui.heading(format!("{} frames selected", frame_ids.len()));
+    ui.separator();
+    let frames = graph.frames_mut();
+    let Some(first_color) = frames.iter().find(|f| frame_ids.contains(&f.id)).map(|f| f.color) else {
+        return;
+    };
+    ui.horizontal(|ui| {
+        ui.label("Color");
+        let mut rgb = [
+            first_color.r() as f32 / 255.0,
+            first_color.g() as f32 / 255.0,
+            first_color.b() as f32 / 255.0,
+        ];
+        if ui.color_edit_button_rgb(&mut rgb).changed() {
+            let color = egui::Color32::from_rgb(
+                (rgb[0] * 255.0) as u8,
+                (rgb[1] * 255.0) as u8,
+                (rgb[2] * 255.0) as u8,
+            );
+            for frame in frames.iter_mut().filter(|f| frame_ids.contains(&f.id)) {
+                frame.color = color;
+            }
+        }
+    });
+    ui.add_space(4.0);
+    ui.colored_label(theme::TEXT_DIM, "Select one frame to edit its title and notes.");
+}
+
+/// Inline inspector for a selected decorative frame.
 pub(crate) fn show_frame_inspector(
     ui: &mut egui::Ui,
     graph: &mut widgets::nodes::NodeGraph,
@@ -289,7 +340,7 @@ pub(crate) fn show_frame_inspector(
     );
     ui.add_space(8.0);
     ui.colored_label(
-        egui::Color32::from_gray(140),
+        theme::TEXT_DIM,
         "Drag the title bar to move; the bottom-right corner to resize. Delete key removes the frame.",
     );
 }
