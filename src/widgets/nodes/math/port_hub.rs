@@ -6,7 +6,7 @@ use crate::engine::nodes::math::multiplex::{MUX_TYPE_NAMES, clamp_slots, type_to
 use crate::engine::nodes::math::port_hub::{HUB_DEFAULT_SLOTS, PortHubDisplay};
 use crate::engine::types::*;
 use crate::theme;
-use crate::widgets::nodes::node::NodeWidget;
+use crate::widgets::nodes::node::{NodeLayout, NodeWidget, labelled_layout};
 use crate::widgets::nodes::types::UiPortDef;
 
 pub struct PortHubWidget {
@@ -63,6 +63,8 @@ impl NodeWidget for PortHubWidget {
             .collect()
     }
 
+    fn show_port_labels(&self) -> bool { true }
+    fn layout(&self) -> NodeLayout { labelled_layout(&self.ui_inputs(), &self.ui_outputs()) }
     fn min_width(&self) -> f32 { 100.0 }
     fn min_content_height(&self) -> f32 { 14.0 }
     fn shared_state(&self) -> &SharedState { &self.shared }

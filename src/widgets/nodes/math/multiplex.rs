@@ -7,7 +7,7 @@ use crate::engine::nodes::math::multiplex::{
 };
 use crate::engine::types::*;
 use crate::theme;
-use crate::widgets::nodes::node::NodeWidget;
+use crate::widgets::nodes::node::{NodeLayout, NodeWidget, labelled_layout};
 use crate::widgets::nodes::types::UiPortDef;
 
 fn push_type(shared: &SharedState, port_type: PortType) {
@@ -77,6 +77,8 @@ impl NodeWidget for MultiplexerWidget {
         vec![UiPortDef::from_def(&PortDef::new("out", self.port_type))]
     }
 
+    fn show_port_labels(&self) -> bool { true }
+    fn layout(&self) -> NodeLayout { labelled_layout(&self.ui_inputs(), &self.ui_outputs()) }
     fn min_width(&self) -> f32 { 110.0 }
     fn min_content_height(&self) -> f32 { 25.0 }
     fn shared_state(&self) -> &SharedState { &self.shared }
@@ -169,6 +171,8 @@ impl NodeWidget for DemultiplexerWidget {
             .collect()
     }
 
+    fn show_port_labels(&self) -> bool { true }
+    fn layout(&self) -> NodeLayout { labelled_layout(&self.ui_inputs(), &self.ui_outputs()) }
     fn min_width(&self) -> f32 { 110.0 }
     fn min_content_height(&self) -> f32 { 25.0 }
     fn shared_state(&self) -> &SharedState { &self.shared }

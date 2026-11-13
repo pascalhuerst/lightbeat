@@ -440,6 +440,15 @@ pub fn label_gutter<'a>(names: impl Iterator<Item = &'a str>) -> f32 {
     (PORT_RADIUS + 10.0 + longest as f32 * 6.0).clamp(60.0, 190.0)
 }
 
+/// The standard layout with room kept on each side for the names of `inputs`
+/// and `outputs`, for nodes that return `show_port_labels() == true`.
+pub fn labelled_layout(inputs: &[UiPortDef], outputs: &[UiPortDef]) -> NodeLayout {
+    NodeLayout::STANDARD.with_gutters(
+        label_gutter(inputs.iter().map(|p| p.def.name.as_str())),
+        label_gutter(outputs.iter().map(|p| p.def.name.as_str())),
+    )
+}
+
 /// The title bar, which also moves the node.
 pub fn title_bar_rect(rect: Rect, layout: &NodeLayout, zoom: f32) -> Rect {
     Rect::from_min_size(rect.min, Vec2::new(rect.width(), layout.title_h * zoom))

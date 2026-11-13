@@ -7,7 +7,7 @@ use crate::engine::nodes::io::push1::Push1Display;
 use crate::engine::types::*;
 use crate::input_controller::{InputControllerKind, SharedControllers};
 use crate::theme;
-use crate::widgets::nodes::node::NodeWidget;
+use crate::widgets::nodes::node::{NodeLayout, NodeWidget, labelled_layout};
 use crate::widgets::nodes::types::UiPortDef;
 
 pub struct Push1Widget {
@@ -105,6 +105,8 @@ impl NodeWidget for Push1Widget {
         v
     }
 
+    fn show_port_labels(&self) -> bool { true }
+    fn layout(&self) -> NodeLayout { labelled_layout(&self.ui_inputs(), &self.ui_outputs()) }
     fn min_width(&self) -> f32 { 180.0 }
     fn min_content_height(&self) -> f32 { 24.0 }
     fn shared_state(&self) -> &SharedState { &self.shared }
