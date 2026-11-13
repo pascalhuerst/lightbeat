@@ -63,7 +63,7 @@ impl AnalyzerProc for BrightnessProc {
         let (mut weighted, mut total) = (0.0f32, 0.0f32);
         for (k, &a) in self.fft.analyse().iter().enumerate().skip(1) {
             let f = k as f32 * bin_hz;
-            if f >= 50.0 && f <= 16_000.0 {
+            if (50.0..=16_000.0).contains(&f) {
                 weighted += f * a;
                 total += a;
             }

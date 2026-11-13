@@ -716,7 +716,7 @@ impl LightBeatApp {
                         let (frame_us, frame_max_us) = self.perf.ui_frame.read();
                         let (graph_us, _) = self.perf.ui_graph.read();
                         let interval_us = self.perf.frame_interval_us();
-                        let fps = if interval_us > 0 { 1_000_000 / interval_us } else { 0 };
+                        let fps = 1_000_000u64.checked_div(interval_us).unwrap_or(0);
                         // The engine tick has a 1 ms budget; warn once the
                         // average eats more than half of it.
                         let tick_color = if tick_us > 800 {

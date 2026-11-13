@@ -539,7 +539,7 @@ fn compute_port_offsets(types: &[crate::engine::types::PortType]) -> Vec<f32> {
                 // The port colours already tell the types apart, so a new
                 // type only starts a new run of groups, with no gap.
                 run_idx = 0;
-            } else if run_idx != 0 && run_idx % PORT_GROUP_SIZE == 0 {
+            } else if run_idx != 0 && run_idx.is_multiple_of(PORT_GROUP_SIZE) {
                 // Group break within a homogeneous run.
                 y += PORT_SPACING;
             }

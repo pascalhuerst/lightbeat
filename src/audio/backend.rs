@@ -16,14 +16,11 @@ use serde::{Deserialize, Serialize};
 pub const DEFAULT_SAMPLE_RATE: u32 = 48_000;
 
 /// Which audio backend to use for a given input.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 pub enum AudioBackendKind {
+    #[default]
     Cpal,
     Jack,
-}
-
-impl Default for AudioBackendKind {
-    fn default() -> Self { AudioBackendKind::Cpal }
 }
 
 impl AudioBackendKind {
