@@ -1,5 +1,28 @@
 use super::*;
 
+/// Every node's input (with promoted) and output ports of one level, listed
+/// once so that the passes of a frame do not each rebuild them.
+pub(super) struct LevelPorts {
+    index: std::collections::HashMap<NodeId, usize>,
+    inputs: Vec<Vec<UiPortDef>>,
+    outputs: Vec<Vec<UiPortDef>>,
+}
+
+impl LevelPorts {
+    pub(super) fn build(level: &GraphLevel) -> Self {
+        Self {
+            index: level.states.iter().enumerate().map(|(i, s)| (s.id, i)).collect(),
+            inputs: level.nodes.iter().map(|n| n.ui_inputs_full()).collect(),
+            outputs: level.nodes.iter().map(|n| n.ui_outputs()).collect(),
+        }
+    }
+
+    fn get(&self, id: NodeId) -> Option<(&[UiPortDef], &[UiPortDef])> {
+        let i = *self.index.get(&id)?;
+        Some((&self.inputs[i], &self.outputs[i]))
+    }
+}
+
 impl NodeGraph {
     /// Bundle-connect helper: pair `bundle_size` consecutive ports starting
     /// at the source and target indices, skipping pairs where ports are
@@ -126,27 +149,41 @@ impl NodeGraph {
 
     /// Work out which ports each node with "hide unused ports" on should not
     /// show: those without a wire, except the "+" port that adds one.
+    #[cfg(test)]
     pub(super) fn refresh_hidden_ports(&mut self) {
-        for level in self.levels.iter_mut() {
+        let ports = LevelPorts::build(self.active());
+        self.refresh_hidden_ports_with(&ports);
+    }
+
+    /// `ports` is the active level's port lists; the other levels ask their
+    /// nodes, and only the ones that hide ports.
+    fn refresh_hidden_ports_with(&mut self, ports: &LevelPorts) {
+        let active_level = self.active_level;
+        for (li, level) in self.levels.iter_mut().enumerate() {
+            let hide_flags: Vec<bool> = level.nodes.iter()
+                .map(|n| n.shared_state().lock().unwrap().hide_unused_ports)
+                .collect();
             let mut wired: std::collections::HashSet<(NodeId, PortDir, usize)> = std::collections::HashSet::new();
-            let any = level.nodes.iter().any(|n| n.shared_state().lock().unwrap().hide_unused_ports);
-            if any {
+            if hide_flags.iter().any(|h| *h) {
                 for c in &level.connections {
                     wired.insert((c.from.node, PortDir::Output, c.from.index));
                     wired.insert((c.to.node, PortDir::Input, c.to.index));
                 }
             }
-            for (node, state) in level.nodes.iter().zip(level.states.iter()) {
-                let hide = node.shared_state().lock().unwrap().hide_unused_ports;
-                let (hidden_in, hidden_out) = if hide {
-                    let hidden = |ports: Vec<UiPortDef>, dir| -> Vec<bool> {
+            for (ni, (node, state)) in level.nodes.iter().zip(level.states.iter()).enumerate() {
+                let (hidden_in, hidden_out) = if hide_flags[ni] {
+                    let hidden = |ports: &[UiPortDef], dir| -> Vec<bool> {
                         ports
                             .iter()
                             .enumerate()
                             .map(|(i, p)| p.marker.is_none() && !wired.contains(&(state.id, dir, i)))
                             .collect()
                     };
-                    (hidden(node.ui_inputs_full(), PortDir::Input), hidden(node.ui_outputs(), PortDir::Output))
+                    if li == active_level {
+                        (hidden(&ports.inputs[ni], PortDir::Input), hidden(&ports.outputs[ni], PortDir::Output))
+                    } else {
+                        (hidden(&node.ui_inputs_full(), PortDir::Input), hidden(&node.ui_outputs(), PortDir::Output))
+                    }
                 } else {
                     (Vec::new(), Vec::new())
                 };
@@ -257,16 +294,16 @@ impl NodeGraph {
 
     /// A mode switch reshapes a node's ports; a wire that stays selected across
     /// that ends up pointing at something else, so deselect the node's wires.
-    fn deselect_on_port_change(&mut self) {
+    fn deselect_on_port_change(&mut self, ports: &LevelPorts) {
         use std::hash::{Hash, Hasher};
         let level = &self.levels[self.active_level];
         let mut changed: Vec<NodeId> = Vec::new();
         let mut fresh = std::collections::HashMap::new();
-        for (node, state) in level.nodes.iter().zip(level.states.iter()) {
+        for (ni, state) in level.states.iter().enumerate() {
             let mut h = std::collections::hash_map::DefaultHasher::new();
-            for p in node.ui_inputs_full() { p.def.name.hash(&mut h); p.def.port_type.hash(&mut h); }
+            for p in &ports.inputs[ni] { p.def.name.hash(&mut h); p.def.port_type.hash(&mut h); }
             0xffu8.hash(&mut h);
-            for p in node.ui_outputs() { p.def.name.hash(&mut h); p.def.port_type.hash(&mut h); }
+            for p in &ports.outputs[ni] { p.def.name.hash(&mut h); p.def.port_type.hash(&mut h); }
             let sig = h.finish();
             if self.port_signatures.get(&state.id).is_some_and(|old| *old != sig) {
                 changed.push(state.id);
@@ -280,18 +317,22 @@ impl NodeGraph {
         }
     }
 
+    /// Drop the wires whose ends no longer exist or no longer fit each other
+    /// (a node removed ports, or a mode switch changed their types).
+    #[cfg(test)]
     pub(crate) fn cleanup_stale_connections(&mut self) {
-        self.deselect_on_port_change();
+        let ports = LevelPorts::build(self.active());
+        self.cleanup_stale_connections_with(&ports);
+    }
+
+    fn cleanup_stale_connections_with(&mut self, ports: &LevelPorts) {
+        self.deselect_on_port_change(ports);
         let level = self.active();
         let stale: Vec<PortId> = level.connections.iter().filter(|conn| {
-            let src = level.nodes.iter()
-                .zip(level.states.iter())
-                .find(|(_, s)| s.id == conn.from.node)
-                .and_then(|(n, _)| n.ui_outputs().get(conn.from.index).map(|p| p.def.port_type));
-            let dst = level.nodes.iter()
-                .zip(level.states.iter())
-                .find(|(_, s)| s.id == conn.to.node)
-                .and_then(|(n, _)| n.ui_inputs_full().get(conn.to.index).map(|p| p.def.port_type));
+            let src = ports.get(conn.from.node)
+                .and_then(|(_, outs)| outs.get(conn.from.index).map(|p| p.def.port_type));
+            let dst = ports.get(conn.to.node)
+                .and_then(|(ins, _)| ins.get(conn.to.index).map(|p| p.def.port_type));
             match (src, dst) {
                 (Some(s), Some(d)) => !s.can_feed(&d),
                 _ => true, // missing endpoint = stale
@@ -301,6 +342,14 @@ impl NodeGraph {
         for port_id in stale {
             self.remove_connection_to(port_id);
         }
+    }
+
+    /// The per-frame passes that look at every node's ports share one set of
+    /// port lists. None of them changes a port, so it stays valid.
+    pub(super) fn tidy_ports(&mut self) {
+        let ports = LevelPorts::build(self.active());
+        self.refresh_hidden_ports_with(&ports);
+        self.cleanup_stale_connections_with(&ports);
     }
 
     /// For exactly two selected nodes, plan a one-shot pairwise connection

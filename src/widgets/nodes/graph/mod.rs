@@ -654,9 +654,8 @@ impl NodeGraph {
         self.reconcile_effect_stacks();
         self.remap_promoted_connections();
         self.remap_removed_ports();
-        self.refresh_hidden_ports();
-        // Clean up stale connections (ports removed by dynamic nodes like Group Output).
-        self.cleanup_stale_connections();
+        // Hidden ports, then stale connections (ports removed by dynamic nodes).
+        self.tidy_ports();
 
         let (response, painter) =
             ui.allocate_painter(ui.available_size(), Sense::click_and_drag());
