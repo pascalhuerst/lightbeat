@@ -44,7 +44,7 @@ impl NodeWidget for TriggerDelayWidget {
 
         ui.horizontal(|ui| {
             if ui.small_button("÷2").clicked() && exponent > -6 {
-                self.shared.lock().unwrap()
+                self.shared.lock()
                     .pending_params
                     .push((0, ParamValue::Int((exponent - 1) as i64)));
             }
@@ -57,7 +57,7 @@ impl NodeWidget for TriggerDelayWidget {
             ui.colored_label(color, delay_label(exponent));
 
             if ui.small_button("×2").clicked() && exponent < 6 {
-                self.shared.lock().unwrap()
+                self.shared.lock()
                     .pending_params
                     .push((0, ParamValue::Int((exponent + 1) as i64)));
             }

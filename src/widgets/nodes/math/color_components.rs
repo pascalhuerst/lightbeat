@@ -21,7 +21,7 @@ fn show_color_swatch(ui: &mut Ui, rgb: [f32; 3]) {
 
 /// Push a mode change to the engine via the standard param channel.
 fn push_mode(shared: &SharedState, mode: ColorMode) {
-    let mut s = shared.lock().unwrap();
+    let mut s = shared.lock();
     s.pending_params.push((0, ParamValue::Choice(mode.to_index())));
 }
 
@@ -39,7 +39,7 @@ fn infer_mode(current: ColorMode, colour_side_wire: Option<PortType>) -> ColorMo
 }
 
 fn show_node_content(ui: &mut Ui, shared: &SharedState, own_mode: &mut ColorMode) {
-    let s = shared.lock().unwrap();
+    let s = shared.lock();
     let display = s.display.as_ref().and_then(|d| d.downcast_ref::<ColorOpsDisplay>());
     let (mode, rgb) = match display {
         Some(d) => (d.mode, d.rgb),

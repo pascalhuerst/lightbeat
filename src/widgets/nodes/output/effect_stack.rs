@@ -115,7 +115,7 @@ impl EffectStackWidget {
 
     fn push_config(&self) {
         if let Ok(value) = serde_json::to_value(&self.config) {
-            self.shared.lock().unwrap().pending_config = Some(value);
+            self.shared.lock().pending_config = Some(value);
         }
     }
 
@@ -123,7 +123,7 @@ impl EffectStackWidget {
     /// layout, and single fixtures spread evenly along the axis by their
     /// order in the group. True when that differs from what the engine has.
     fn refresh_targets(&mut self) -> bool {
-        let ctx = self.group_ctx.lock().unwrap();
+        let ctx = self.group_ctx.lock();
         let mut names = Vec::new();
         let mut targets = Vec::new();
         for gid in &self.config.group_ids {
@@ -175,7 +175,7 @@ impl EffectStackWidget {
     /// All stacks as a tree, this one marked, so it is clear where the picture
     /// goes: down the tree to a root, which writes to the groups.
     fn show_tree(&self, ui: &mut Ui) {
-        let tree = self.names.lock().unwrap().tree();
+        let tree = self.names.lock().tree();
         if tree.len() < 2 {
             return;
         }
@@ -240,7 +240,7 @@ impl EffectStackWidget {
     }
 
     fn display(&self) -> Option<StackDisplaySnapshot> {
-        let shared = self.shared.lock().unwrap();
+        let shared = self.shared.lock();
         shared.display.as_ref().and_then(|d| d.downcast_ref::<StackDisplay>()).map(|d| StackDisplaySnapshot {
             pixels: d.pixels,
             preview: d.preview.clone(),
@@ -347,7 +347,7 @@ impl NodeWidget for EffectStackWidget {
                 } else {
                     ui.colored_label(theme::TEXT_DIM, format!("{}  ·  {} px", self.config.group_names.join(", "), pixels));
                 }
-            } else if self.names.lock().unwrap().names.contains(&self.config.parent) {
+            } else if self.names.lock().names.contains(&self.config.parent) {
                 ui.colored_label(theme::TEXT_DIM, format!("{} {}", egui_phosphor::regular::ARROW_BEND_DOWN_RIGHT, self.config.parent));
             } else {
                 ui.colored_label(theme::SEM_WARNING, format!("{} (not found)", self.config.parent));
@@ -489,7 +489,7 @@ impl NodeWidget for EffectStackWidget {
         }
         ui.horizontal(|ui| {
             ui.label("Send to");
-            let choices = self.names.lock().unwrap().parents_for(&self.config.name);
+            let choices = self.names.lock().parents_for(&self.config.name);
             let current = if self.is_root() { "(write to groups)".to_string() } else { self.config.parent.clone() };
             let mut picked: Option<String> = None;
             egui::ComboBox::from_id_salt(("stack_parent", self.id.0))
@@ -530,7 +530,7 @@ impl NodeWidget for EffectStackWidget {
             ui.add_space(4.0);
             setup_ui::section(ui, "Groups");
             let groups: Vec<(u32, String)> =
-                self.group_ctx.lock().unwrap().groups.iter().map(|g| (g.id, g.name.clone())).collect();
+                self.group_ctx.lock().groups.iter().map(|g| (g.id, g.name.clone())).collect();
             for (gid, name) in &groups {
                 let mut on = self.config.group_ids.contains(gid);
                 if ui.checkbox(&mut on, name).changed() {
@@ -631,9 +631,9 @@ mod tests {
     fn changes_reach_the_engine_but_a_quiet_frame_sends_nothing() {
         let mut s = stack();
         s.set_stack_members(vec![member(1, "a")]);
-        assert!(s.shared.lock().unwrap().pending_config.take().is_some());
+        assert!(s.shared.lock().pending_config.take().is_some());
         s.set_stack_members(vec![member(1, "a")]);
-        assert!(s.shared.lock().unwrap().pending_config.is_none());
+        assert!(s.shared.lock().pending_config.is_none());
     }
 
     #[test]

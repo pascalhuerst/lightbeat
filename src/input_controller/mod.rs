@@ -24,7 +24,8 @@ pub mod midi;
 pub mod x1;
 
 use std::collections::VecDeque;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use parking_lot::Mutex;
 
 use serde::{Deserialize, Serialize};
 
@@ -629,7 +630,7 @@ impl InputControllerManager {
         // Close all existing sessions; we'll rebuild below as needed.
         self.sessions.clear();
 
-        let mut state = self.shared.lock().unwrap();
+        let mut state = self.shared.lock();
         *state = controllers.iter().map(ControllerRuntime::from_persistent).collect();
         drop(state);
 
@@ -646,12 +647,12 @@ impl InputControllerManager {
 
     /// Export current controllers for setup save.
     pub fn export(&self) -> Vec<InputController> {
-        let state = self.shared.lock().unwrap();
+        let state = self.shared.lock();
         state.iter().map(ControllerRuntime::to_persistent).collect()
     }
 
     pub fn add_controller(&mut self, name: String) -> u32 {
-        let mut state = self.shared.lock().unwrap();
+        let mut state = self.shared.lock();
         let id = state.iter().map(|c| c.id).max().unwrap_or(0) + 1;
         state.push(ControllerRuntime {
             id,
@@ -679,7 +680,7 @@ impl InputControllerManager {
 
     /// Add an Ableton Push 1 controller — fixed layout for User Mode.
     pub fn add_push1(&mut self, name: String) -> u32 {
-        let mut state = self.shared.lock().unwrap();
+        let mut state = self.shared.lock();
         let id = state.iter().map(|c| c.id).max().unwrap_or(0) + 1;
         let inputs = push1_preset_inputs();
         let n = inputs.len();
@@ -717,7 +718,7 @@ impl InputControllerManager {
     /// Add a Novation Launchpad S. MIDI-based; factory layout is
     /// 64 grid pads + 8 side + 8 top CC buttons.
     pub fn add_launchpad(&mut self, name: String) -> u32 {
-        let mut state = self.shared.lock().unwrap();
+        let mut state = self.shared.lock();
         let id = state.iter().map(|c| c.id).max().unwrap_or(0) + 1;
         let inputs = launchpad_preset_inputs();
         let n = inputs.len();
@@ -755,7 +756,7 @@ impl InputControllerManager {
     /// Add a BCF2000 controller — preset-1 input layout is populated
     /// automatically. `add_controller` is the generic path.
     pub fn add_bcf2000(&mut self, name: String) -> u32 {
-        let mut state = self.shared.lock().unwrap();
+        let mut state = self.shared.lock();
         let id = state.iter().map(|c| c.id).max().unwrap_or(0) + 1;
         let inputs = bcf2000_preset1_inputs();
         let n = inputs.len();
@@ -794,7 +795,7 @@ impl InputControllerManager {
     /// Add a Native Instruments Kontrol X1 controller — fixed factory input
     /// layout, no MIDI port config (USB HID, auto-found by VID/PID).
     pub fn add_x1(&mut self, name: String) -> u32 {
-        let mut state = self.shared.lock().unwrap();
+        let mut state = self.shared.lock();
         let id = state.iter().map(|c| c.id).max().unwrap_or(0) + 1;
         let inputs = x1::x1_preset_inputs(self.next_input_id);
         let n = inputs.len();
@@ -827,7 +828,7 @@ impl InputControllerManager {
     }
 
     pub fn remove_controller(&mut self, id: u32) {
-        let mut state = self.shared.lock().unwrap();
+        let mut state = self.shared.lock();
         state.retain(|c| c.id != id);
         drop(state);
         self.reconcile_sessions();
@@ -838,7 +839,7 @@ impl InputControllerManager {
     /// port mapping).
     pub fn set_hw_port(&mut self, id: u32, port: String) {
         {
-            let mut state = self.shared.lock().unwrap();
+            let mut state = self.shared.lock();
             if let Some(c) = state.iter_mut().find(|c| c.id == id) {
                 match &mut c.kind {
                     InputControllerKind::Midi { hw_port_name } => *hw_port_name = port,
@@ -857,7 +858,7 @@ impl InputControllerManager {
     /// on BCF2000 / Push 1 / any feedback-capable kinds). No-op for plain MIDI.
     pub fn set_hw_output_port(&mut self, id: u32, port: String) {
         {
-            let mut state = self.shared.lock().unwrap();
+            let mut state = self.shared.lock();
             if let Some(c) = state.iter_mut().find(|c| c.id == id) {
                 match &mut c.kind {
                     InputControllerKind::Bcf2000 { hw_output_port, .. } => *hw_output_port = port,
@@ -872,14 +873,14 @@ impl InputControllerManager {
     }
 
     pub fn rename(&mut self, id: u32, name: String) {
-        let mut state = self.shared.lock().unwrap();
+        let mut state = self.shared.lock();
         if let Some(c) = state.iter_mut().find(|c| c.id == id) {
             c.name = name;
         }
     }
 
     pub fn set_learning(&mut self, id: u32, learning: bool) {
-        let mut state = self.shared.lock().unwrap();
+        let mut state = self.shared.lock();
         if let Some(c) = state.iter_mut().find(|c| c.id == id) {
             c.learning = learning;
             c.learn_buffer.clear();
@@ -890,13 +891,13 @@ impl InputControllerManager {
     /// Returns the new input id if something was added.
     pub fn consume_learn(&mut self, id: u32) -> Option<u32> {
         let source = {
-            let mut state = self.shared.lock().unwrap();
+            let mut state = self.shared.lock();
             let c = state.iter_mut().find(|c| c.id == id)?;
             c.learn_buffer.pop_front()?
         };
         // Check for a duplicate source — don't add twice.
         {
-            let state = self.shared.lock().unwrap();
+            let state = self.shared.lock();
             let c = state.iter().find(|c| c.id == id)?;
             if c.inputs.iter().any(|i| i.source == source) {
                 return None;
@@ -908,7 +909,7 @@ impl InputControllerManager {
         let name = source.label();
         let input = LearnedInput { id: new_id, name, source, mode: InputBindingMode::Value, disable_feedback: false };
 
-        let mut state = self.shared.lock().unwrap();
+        let mut state = self.shared.lock();
         if let Some(c) = state.iter_mut().find(|c| c.id == id) {
             c.inputs.push(input);
             c.resize_values();
@@ -917,7 +918,7 @@ impl InputControllerManager {
     }
 
     pub fn remove_input(&mut self, controller_id: u32, input_id: u32) {
-        let mut state = self.shared.lock().unwrap();
+        let mut state = self.shared.lock();
         if let Some(c) = state.iter_mut().find(|c| c.id == controller_id) {
             c.inputs.retain(|i| i.id != input_id);
             c.resize_values();
@@ -925,7 +926,7 @@ impl InputControllerManager {
     }
 
     pub fn rename_input(&mut self, controller_id: u32, input_id: u32, name: String) {
-        let mut state = self.shared.lock().unwrap();
+        let mut state = self.shared.lock();
         if let Some(c) = state.iter_mut().find(|c| c.id == controller_id)
             && let Some(i) = c.inputs.iter_mut().find(|i| i.id == input_id) {
                 i.name = name;
@@ -936,7 +937,7 @@ impl InputControllerManager {
     /// will replace the source of the input with `input_id`. Pass `None` to
     /// cancel.
     pub fn set_relearn(&mut self, controller_id: u32, input_id: Option<u32>) {
-        let mut state = self.shared.lock().unwrap();
+        let mut state = self.shared.lock();
         if let Some(c) = state.iter_mut().find(|c| c.id == controller_id) {
             c.relearn_input_id = input_id;
         }
@@ -945,7 +946,7 @@ impl InputControllerManager {
     /// Reset a factory-preset controller's inputs back to the code defaults.
     /// No-op for generic MIDI (their layout is learned, not factory).
     pub fn reset_factory_layout(&mut self, controller_id: u32) {
-        let mut state = self.shared.lock().unwrap();
+        let mut state = self.shared.lock();
         if let Some(c) = state.iter_mut().find(|c| c.id == controller_id) {
             let factory = match &c.kind {
                 InputControllerKind::Bcf2000 { .. } => Some(bcf2000_preset1_inputs()),
@@ -968,7 +969,7 @@ impl InputControllerManager {
     }
 
     pub fn set_input_mode(&mut self, controller_id: u32, input_id: u32, mode: InputBindingMode) {
-        let mut state = self.shared.lock().unwrap();
+        let mut state = self.shared.lock();
         if let Some(c) = state.iter_mut().find(|c| c.id == controller_id)
             && let Some(i) = c.inputs.iter_mut().find(|i| i.id == input_id) {
                 i.mode = mode;
@@ -976,7 +977,7 @@ impl InputControllerManager {
     }
 
     pub fn set_input_feedback_disabled(&mut self, controller_id: u32, input_id: u32, disabled: bool) {
-        let mut state = self.shared.lock().unwrap();
+        let mut state = self.shared.lock();
         if let Some(c) = state.iter_mut().find(|c| c.id == controller_id)
             && let Some(i) = c.inputs.iter_mut().find(|i| i.id == input_id) {
                 i.disable_feedback = disabled;
@@ -1007,7 +1008,7 @@ impl InputControllerManager {
         if self.sessions.len() == before {
             return;
         }
-        let mut state = self.shared.lock().unwrap();
+        let mut state = self.shared.lock();
         for c in state.iter_mut() {
             let active = self.sessions.iter().any(|s| s.controller_id() == c.id);
             if !active && c.status == ConnectionStatus::Connected {
@@ -1023,7 +1024,7 @@ impl InputControllerManager {
 
     /// Names of configured controllers whose hardware is not currently found.
     pub fn missing_controllers(&self) -> Vec<String> {
-        let state = self.shared.lock().unwrap();
+        let state = self.shared.lock();
         state
             .iter()
             .filter(|c| c.status == ConnectionStatus::Waiting)
@@ -1043,7 +1044,7 @@ impl InputControllerManager {
             X1,
         }
         let controllers: Vec<(u32, TargetKind)> = {
-            let state = self.shared.lock().unwrap();
+            let state = self.shared.lock();
             state.iter()
                 .filter_map(|c| match &c.kind {
                     InputControllerKind::Midi { hw_port_name }
@@ -1088,7 +1089,7 @@ impl InputControllerManager {
             match target {
                 TargetKind::Midi { input, output } => {
                     if !ports.contains(input) {
-                        let mut state = self.shared.lock().unwrap();
+                        let mut state = self.shared.lock();
                         if let Some(c) = state.iter_mut().find(|c| c.id == *cid) {
                             c.status = ConnectionStatus::Waiting;
                         }
@@ -1097,7 +1098,7 @@ impl InputControllerManager {
                     match MidiSession::open(*cid, input.clone(), output.clone(), self.shared.clone()) {
                         Ok(session) => {
                             self.sessions.push(Session::Midi(session));
-                            let mut state = self.shared.lock().unwrap();
+                            let mut state = self.shared.lock();
                             if let Some(c) = state.iter_mut().find(|c| c.id == *cid) {
                                 c.status = ConnectionStatus::Connected;
                             }
@@ -1110,7 +1111,7 @@ impl InputControllerManager {
                         Ok(session) => {
                             self.x1_error = None;
                             self.sessions.push(Session::X1(session));
-                            let mut state = self.shared.lock().unwrap();
+                            let mut state = self.shared.lock();
                             if let Some(c) = state.iter_mut().find(|c| c.id == *cid) {
                                 c.status = ConnectionStatus::Connected;
                             }
@@ -1123,7 +1124,7 @@ impl InputControllerManager {
                                 eprintln!("X1 not opened: {e}");
                                 self.x1_error = Some(e);
                             }
-                            let mut state = self.shared.lock().unwrap();
+                            let mut state = self.shared.lock();
                             if let Some(c) = state.iter_mut().find(|c| c.id == *cid) {
                                 c.status = ConnectionStatus::Waiting;
                             }
@@ -1134,7 +1135,7 @@ impl InputControllerManager {
         }
 
         // Update status for controllers without an active session.
-        let mut state = self.shared.lock().unwrap();
+        let mut state = self.shared.lock();
         for c in state.iter_mut() {
             let active = self.sessions.iter().any(|s| s.controller_id() == c.id);
             if !active {

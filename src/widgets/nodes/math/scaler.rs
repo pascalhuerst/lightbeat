@@ -24,7 +24,7 @@ impl NodeWidget for ScalerWidget {
 
     fn overridden_param_indices(&self) -> Vec<usize> {
         // "In Min" = param 0, wired from port 1. "In Max" = param 1, wired from port 2.
-        let s = self.shared.lock().unwrap();
+        let s = self.shared.lock();
         let mut hidden = Vec::new();
         if s.inputs_connected.get(1).copied().unwrap_or(false) { hidden.push(0); }
         if s.inputs_connected.get(2).copied().unwrap_or(false) { hidden.push(1); }
@@ -35,7 +35,7 @@ impl NodeWidget for ScalerWidget {
     fn min_content_height(&self) -> f32 { 15.0 }
 
     fn show_content(&mut self, ui: &mut Ui, _zoom: f32) {
-        let shared = self.shared.lock().unwrap();
+        let shared = self.shared.lock();
         let out = shared.outputs.first().copied().unwrap_or(0.0);
         drop(shared);
         ui.label(format!("{:.2}", out));

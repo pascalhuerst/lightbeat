@@ -29,7 +29,7 @@ impl NodeWidget for RandomWidget {
     fn min_content_height(&self) -> f32 { 20.0 }
 
     fn show_content(&mut self, ui: &mut Ui, _zoom: f32) {
-        let value = self.shared.lock().unwrap().outputs.first().copied().unwrap_or(0.0);
+        let value = self.shared.lock().outputs.first().copied().unwrap_or(0.0);
         ui.colored_label(theme::TEXT, format!("{:.3}", value));
     }
 }

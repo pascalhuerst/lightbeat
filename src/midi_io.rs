@@ -10,7 +10,8 @@
 //! and noisy. A device that is not there is simply not connected until then.
 
 use std::collections::{HashMap, VecDeque};
-use std::sync::{Arc, Condvar, Mutex, MutexGuard};
+use std::sync::Arc;
+use parking_lot::{Condvar, Mutex, MutexGuard};
 use std::thread;
 use std::time::Duration;
 
@@ -216,7 +217,7 @@ impl MidiHub {
     }
 
     fn lock(&self) -> MutexGuard<'_, State> {
-        self.0.state.lock().unwrap()
+        self.0.state.lock()
     }
 
     /// Make sure the device lists have been filled at least once, for a
@@ -368,7 +369,7 @@ fn run(inner: Arc<Inner>) {
     let mut out_conns: HashMap<String, MidiOutputConnection> = HashMap::new();
     loop {
         let (scan, reconcile) = {
-            let mut s = inner.state.lock().unwrap();
+            let mut s = inner.state.lock();
             // Nothing is looked up before something wants a device or the
             // user asks, so a project without MIDI never touches the ports.
             let wants = !s.wanted_in.is_empty() || !s.wanted_out.is_empty();
@@ -378,7 +379,7 @@ fn run(inner: Arc<Inner>) {
         };
         if scan {
             let (ins, outs) = enumerate();
-            let mut s = inner.state.lock().unwrap();
+            let mut s = inner.state.lock();
             s.available_in = ins;
             s.available_out = outs;
             s.scanned = true;
@@ -389,7 +390,7 @@ fn run(inner: Arc<Inner>) {
 
         // Send what the output nodes queued.
         let pending: Vec<(String, Vec<[u8; 3]>)> = {
-            let mut s = inner.state.lock().unwrap();
+            let mut s = inner.state.lock();
             s.out_ports
                 .iter_mut()
                 .filter(|(_, p)| p.connected && !p.queue.is_empty())
@@ -406,11 +407,11 @@ fn run(inner: Arc<Inner>) {
             }
         }
 
-        let s = inner.state.lock().unwrap();
+        let mut s = inner.state.lock();
         if s.rescan || s.reconcile || s.out_ports.values().any(|p| !p.queue.is_empty()) {
             continue;
         }
-        let _ = inner.wake.wait_timeout(s, Duration::from_millis(250));
+        let _ = inner.wake.wait_for(&mut s, Duration::from_millis(250));
     }
 }
 
@@ -431,7 +432,7 @@ fn reconcile_connections(
     out_conns: &mut HashMap<String, MidiOutputConnection>,
 ) {
     let (want_in, want_out, avail_in, avail_out) = {
-        let s = inner.state.lock().unwrap();
+        let s = inner.state.lock();
         let mut wi: Vec<String> = s.wanted_in.values().cloned().collect();
         let mut wo: Vec<String> = s.wanted_out.values().cloned().collect();
         wi.sort();
@@ -458,13 +459,13 @@ fn reconcile_connections(
             && let Some(conn) = open_output(&resolved)
         {
             out_conns.insert(name.clone(), conn);
-            let mut s = inner.state.lock().unwrap();
+            let mut s = inner.state.lock();
             let p = s.out_ports.entry(name.clone()).or_default();
             p.generation += 1;
         }
     }
 
-    let mut s = inner.state.lock().unwrap();
+    let mut s = inner.state.lock();
     s.in_ports.retain(|name, _| want_in.contains(name));
     for name in &want_in {
         s.in_ports.entry(name.clone()).or_default().connected = in_conns.contains_key(name);
@@ -490,7 +491,7 @@ fn open_input(inner: &Arc<Inner>, key: &str, resolved: &str) -> Option<MidiInput
             "lightbeat-midi-in",
             move |_ts, bytes, _| {
                 if let Some(msg) = parse(bytes) {
-                    let mut s = inner.state.lock().unwrap();
+                    let mut s = inner.state.lock();
                     if let Some(p) = s.in_ports.get_mut(&key) {
                         p.apply(msg);
                     }

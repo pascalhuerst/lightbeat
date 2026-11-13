@@ -192,7 +192,7 @@ impl NodeGraph {
                 .selected_nodes
                 .iter()
                 .filter_map(|&i| level.nodes.get(i))
-                .all(|n| n.shared_state().lock().unwrap().hide_unused_ports);
+                .all(|n| n.shared_state().lock().hide_unused_ports);
             if all_hidden { "Show all ports" } else { "Hide unused ports" }
         };
         let mut toggle_hide = false;
@@ -203,7 +203,7 @@ impl NodeGraph {
             self.selected_nodes
                 .iter()
                 .filter_map(|&i| level.nodes.get(i))
-                .all(|n| n.shared_state().lock().unwrap().disabled)
+                .all(|n| n.shared_state().lock().disabled)
         };
         let mut toggle_enabled = false;
         let mut move_to_sub = false;
@@ -271,7 +271,7 @@ impl NodeGraph {
         if toggle_enabled {
             let level = self.active();
             for n in self.selected_nodes.iter().filter_map(|&i| level.nodes.get(i)) {
-                n.shared_state().lock().unwrap().disabled = !all_disabled;
+                n.shared_state().lock().disabled = !all_disabled;
             }
             self.context_menu_pos = None;
             return;

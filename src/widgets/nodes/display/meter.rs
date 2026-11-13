@@ -36,7 +36,7 @@ impl MeterWidget {
     }
 
     fn data(&mut self) -> Option<MeterData> {
-        let shared = self.shared.lock().unwrap();
+        let shared = self.shared.lock();
         let d = shared.display.as_ref()?.downcast_ref::<MeterData>()?;
         if !self.synced {
             self.name = d.name.clone();
@@ -54,7 +54,7 @@ impl MeterWidget {
     }
 
     fn push_config(&self) {
-        self.shared.lock().unwrap().pending_config =
+        self.shared.lock().pending_config =
             Some(serde_json::json!({ "name": self.name, "unit": self.unit }));
     }
 }

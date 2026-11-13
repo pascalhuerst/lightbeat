@@ -23,7 +23,7 @@ impl LogicGateWidget {
     }
 
     fn push_config(&self) {
-        let mut shared = self.shared.lock().unwrap();
+        let mut shared = self.shared.lock();
         shared.pending_config = Some(serde_json::json!({
             "input_count": self.input_count,
         }));
@@ -71,7 +71,7 @@ impl NodeWidget for LogicGateWidget {
 
     fn show_content(&mut self, ui: &mut Ui, _zoom: f32) {
         let synced_count = {
-            let shared = self.shared.lock().unwrap();
+            let shared = self.shared.lock();
             shared.display.as_ref()
                 .and_then(|d| d.downcast_ref::<LogicDisplay>())
                 .map(|d| d.input_count)
@@ -81,7 +81,7 @@ impl NodeWidget for LogicGateWidget {
                 self.input_count = n.max(1);
             }
 
-        let shared = self.shared.lock().unwrap();
+        let shared = self.shared.lock();
         let out = shared.outputs.first().copied().unwrap_or(0.0);
         drop(shared);
         ui.label(if out >= 0.5 { "HIGH" } else { "LOW" });

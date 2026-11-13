@@ -36,7 +36,7 @@ pub const FINE_FACTOR: f32 = 0.1;
 /// The float the node was made with for its param at `index`, for a control
 /// whose double-click puts the setting back. None when nothing was recorded.
 pub fn recorded_default(shared: &SharedState, index: usize) -> Option<f32> {
-    match shared.lock().unwrap().default_params.get(index)?.as_value() {
+    match shared.lock().default_params.get(index)?.as_value() {
         ParamValue::Float(v) => Some(v),
         _ => None,
     }

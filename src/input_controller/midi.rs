@@ -216,7 +216,7 @@ impl MidiSession {
 fn handle_midi_message(controller_id: u32, msg: &[u8], shared: &SharedControllers) {
     let parsed = parse_midi(msg);
 
-    let mut state = shared.lock().unwrap();
+    let mut state = shared.lock();
     let c = match state.iter_mut().find(|c| c.id == controller_id) {
         Some(c) => c,
         None => return,
@@ -400,7 +400,7 @@ fn run_feedback_worker(
         // Launchpad-specific LED velocity formatting for NoteVelocity / Cc
         // sources without a second lookup.
         let snapshot: Option<(Vec<f32>, Vec<InputSource>, Vec<bool>, InputControllerKind)> = {
-            let state = shared.lock().unwrap();
+            let state = shared.lock();
             state.iter().find(|c| c.id == controller_id).map(|c| {
                 (
                     c.out_values.clone(),

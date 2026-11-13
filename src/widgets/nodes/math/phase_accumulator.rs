@@ -32,7 +32,7 @@ impl NodeWidget for PhaseAccumulatorWidget {
     fn min_content_height(&self) -> f32 { 15.0 }
 
     fn show_content(&mut self, ui: &mut Ui, _zoom: f32) {
-        let shared = self.shared.lock().unwrap();
+        let shared = self.shared.lock();
         let v = shared.outputs.first().copied().unwrap_or(0.0);
         drop(shared);
         ui.label(format!("{:.2}", v));

@@ -35,7 +35,7 @@ impl PortHubWidget {
     fn adopt(&mut self, wire_type: PortType) {
         if self.port_type != PortType::Any || wire_type == PortType::Any { return; }
         self.port_type = wire_type;
-        let mut s = self.shared.lock().unwrap();
+        let mut s = self.shared.lock();
         s.pending_params.push((0, ParamValue::Choice(type_to_index(wire_type))));
     }
 }
@@ -95,7 +95,7 @@ mod tests {
         let mut h = hub();
         h.on_ui_connect(0, PortType::Color);
         assert_eq!(h.port_type, PortType::Color);
-        assert_eq!(h.shared.lock().unwrap().pending_params.len(), 1);
+        assert_eq!(h.shared.lock().pending_params.len(), 1);
 
         let mut h = hub();
         h.on_ui_output_connect(2, PortType::Position);
@@ -108,6 +108,6 @@ mod tests {
         h.port_type = PortType::Logic;
         h.on_ui_connect(0, PortType::Color);
         assert_eq!(h.port_type, PortType::Logic);
-        assert!(h.shared.lock().unwrap().pending_params.is_empty());
+        assert!(h.shared.lock().pending_params.is_empty());
     }
 }

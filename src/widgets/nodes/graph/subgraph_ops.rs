@@ -199,7 +199,7 @@ impl NodeGraph {
             let state = level.states.remove(i);
             // Snapshot params and save_data from shared state.
             let (params, save_data) = {
-                let shared = node.shared_state().lock().unwrap();
+                let shared = node.shared_state().lock();
                 let params: Vec<(usize, ParamValue)> = shared.current_params.iter().enumerate()
                     .map(|(pi, p)| {
                         let val = match p {
@@ -309,7 +309,7 @@ impl NodeGraph {
         for (node_id, params, save_data) in restore_info {
             if let Some(idx) = inner_states.iter().position(|s| s.id == node_id) {
                 let shared = inner_nodes[idx].shared_state();
-                let mut state = shared.lock().unwrap();
+                let mut state = shared.lock();
                 for (pi, val) in params {
                     state.pending_params.push((pi, val));
                 }
@@ -430,7 +430,7 @@ impl NodeGraph {
                 let node = inner.nodes.remove(i);
                 let state = inner.states.remove(i);
                 let (params, save_data) = {
-                    let shared = node.shared_state().lock().unwrap();
+                    let shared = node.shared_state().lock();
                     let params: Vec<(usize, ParamValue)> = shared.current_params.iter().enumerate()
                         .map(|(pi, p)| {
                             let v = match p {
@@ -500,7 +500,7 @@ impl NodeGraph {
             let level = self.active();
             if let Some(idx) = level.states.iter().position(|s| s.id == node_id) {
                 let shared = level.nodes[idx].shared_state();
-                let mut state = shared.lock().unwrap();
+                let mut state = shared.lock();
                 for (pi, val) in params {
                     state.pending_params.push((pi, val));
                 }

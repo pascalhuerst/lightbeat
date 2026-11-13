@@ -32,7 +32,7 @@ fn copy_of(existing: &[InputController], id: u32) -> Option<InputController> {
 fn duplicate_controller(mgr: &mut InputControllerManager, id: u32) {
     let Some(copy) = copy_of(&mgr.export(), id) else { return };
     {
-        let mut state = mgr.shared.lock().unwrap();
+        let mut state = mgr.shared.lock();
         let pos = state.iter().position(|c| c.id == id).map_or(state.len(), |p| p + 1);
         state.insert(pos, ControllerRuntime::from_persistent(&copy));
     }
@@ -76,7 +76,7 @@ pub fn show(ui: &mut Ui, mgr: &mut InputControllerManager, missing: &[String]) -
     let mut reset_factory: Vec<u32> = Vec::new();
 
     {
-        let state = mgr.shared.lock().unwrap();
+        let state = mgr.shared.lock();
         if state.is_empty() {
             setup_ui::empty_state(ui, "No input controllers yet. Add one below.");
         }
@@ -269,7 +269,7 @@ pub fn show(ui: &mut Ui, mgr: &mut InputControllerManager, missing: &[String]) -
     if !debug_set_out.is_empty() || !set_debug_open.is_empty()
         || !set_debug_flags.is_empty() || !clear_midi_log.is_empty()
     {
-        let mut state = mgr.shared.lock().unwrap();
+        let mut state = mgr.shared.lock();
         for (cid, open) in set_debug_open {
             if let Some(c) = state.iter_mut().find(|c| c.id == cid) {
                 c.debug_open = open;

@@ -99,7 +99,7 @@ impl DmxInputWidget {
 
     fn push_config(&self) {
         if let Ok(value) = serde_json::to_value(&self.config) {
-            self.shared.lock().unwrap().pending_config = Some(value);
+            self.shared.lock().pending_config = Some(value);
         }
     }
 
@@ -146,7 +146,7 @@ impl DmxInputWidget {
     }
 
     fn live(&self) -> bool {
-        self.shared.lock().unwrap().outputs.first().copied().unwrap_or(0.0) >= 0.5
+        self.shared.lock().outputs.first().copied().unwrap_or(0.0) >= 0.5
     }
 
     /// The first output channel of each output.
@@ -301,7 +301,7 @@ impl NodeWidget for DmxInputWidget {
             }
         }
         let bases = self.bases();
-        let shared = self.shared.lock().unwrap();
+        let shared = self.shared.lock();
         for (i, output) in self.config.outputs.iter().enumerate() {
             let value = |k: usize| shared.outputs.get(bases[i] + k).copied().unwrap_or(0.0).clamp(0.0, 1.0);
             ui.horizontal(|ui| {
@@ -341,7 +341,7 @@ impl NodeWidget for DmxInputWidget {
         setup_ui::section(ui, "Outputs");
         let bases = self.bases();
         let live = self.source_values();
-        let shared_outputs = self.shared.lock().unwrap().outputs.clone();
+        let shared_outputs = self.shared.lock().outputs.clone();
         let mut remove: Option<usize> = None;
         let mut learn: Option<(u32, usize)> = None;
         let learning = self.learning;
@@ -532,7 +532,7 @@ mod tests {
         assert_eq!(ports[2].1, PortType::Logic);
         assert_eq!(ports[3].1, PortType::Position);
         assert_eq!(w.bases(), vec![1, 4, 5], "a colour takes three output channels");
-        assert!(w.shared.lock().unwrap().pending_config.is_some(), "the engine is told");
+        assert!(w.shared.lock().pending_config.is_some(), "the engine is told");
     }
 
     #[test]

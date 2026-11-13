@@ -2,7 +2,8 @@
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use parking_lot::Mutex;
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
@@ -99,7 +100,7 @@ fn install_callbacks(
 
         let enc_id = ids::encoder_from_controller(ev.id);
         let v = {
-            let mut state = enc_state.lock().unwrap();
+            let mut state = enc_state.lock();
             let cur = state.entry(enc_id).or_insert(0.0);
             *cur = (*cur + delta * ENC_STEP).rem_euclid(1.0);
             *cur
@@ -125,7 +126,7 @@ fn install_callbacks(
         let raw = ev.value & POT_MASK;
         let quant = raw >> POT_SHIFT;
         {
-            let mut last = pot_last.lock().unwrap();
+            let mut last = pot_last.lock();
             match last.get(&pot_id) {
                 Some(&prev) if prev == quant => return,
                 _ => { last.insert(pot_id, quant); }
@@ -143,7 +144,7 @@ fn write_input_value(
     src: &InputSource,
     value: f32,
 ) {
-    let mut state = shared.lock().unwrap();
+    let mut state = shared.lock();
     let Some(c) = state.iter_mut().find(|c| c.id == controller_id) else { return };
     let idx = c.inputs.iter().position(|i| &i.source == src);
 
@@ -188,7 +189,7 @@ fn run(
             // Device removed or USB error — bail so the manager can reopen.
             eprintln!("[x1 {}] poll error: {:?}", controller_id, e);
             // Mark disconnected and exit the loop.
-            let mut state = shared.lock().unwrap();
+            let mut state = shared.lock();
             if let Some(c) = state.iter_mut().find(|c| c.id == controller_id) {
                 c.status = ConnectionStatus::Waiting;
             }
@@ -197,7 +198,7 @@ fn run(
 
         // Push graph → device LED feedback.
         let (sources, values): (Vec<InputSource>, Vec<f32>) = {
-            let state = shared.lock().unwrap();
+            let state = shared.lock();
             match state.iter().find(|c| c.id == controller_id) {
                 Some(c) => (
                     c.inputs.iter().map(|i| i.source.clone()).collect(),

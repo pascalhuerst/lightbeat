@@ -32,7 +32,7 @@ impl ConstantWidget {
     }
 
     fn push_value(&self) {
-        self.shared.lock().unwrap().pending_params.push((0, ParamValue::Float(self.value)));
+        self.shared.lock().pending_params.push((0, ParamValue::Float(self.value)));
     }
 }
 
@@ -70,7 +70,7 @@ impl NodeWidget for ConstantWidget {
             self.last_edit = now;
         }
         if now - self.last_edit > 0.5 {
-            let engine = self.shared.lock().unwrap().outputs.first().copied();
+            let engine = self.shared.lock().outputs.first().copied();
             if let Some(v) = engine {
                 self.value = v;
             }

@@ -27,7 +27,7 @@ impl SignalTypeSetting {
 
     /// Follow what the engine runs, so the inspector and snapshots show.
     pub fn sync(&mut self, shared: &SharedState) {
-        let s = shared.lock().unwrap();
+        let s = shared.lock();
         if let Some(d) = s.display.as_ref().and_then(|d| d.downcast_ref::<SignalTypeDisplay>()) {
             self.port_type = d.port_type;
         }
@@ -46,7 +46,7 @@ impl SignalTypeSetting {
     pub fn adopt(&mut self, shared: &SharedState, wire_type: PortType) {
         if self.port_type != PortType::Any || wire_type == PortType::Any { return; }
         self.port_type = wire_type;
-        shared.lock().unwrap().pending_params
+        shared.lock().pending_params
             .push((self.param_index, ParamValue::Choice(type_to_index(wire_type))));
     }
 }

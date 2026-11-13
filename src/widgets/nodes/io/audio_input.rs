@@ -61,7 +61,7 @@ impl AudioInputWidget {
     }
 
     fn push_config(&self) {
-        let mut shared = self.shared.lock().unwrap();
+        let mut shared = self.shared.lock();
         shared.pending_config = Some(serde_json::json!({ "input_id": self.input_id }));
     }
 
@@ -70,7 +70,7 @@ impl AudioInputWidget {
     /// the engine counts, so the control does not jump back while it waits.
     fn lead_param(&self, index: usize) -> Option<(usize, f32)> {
         let name = format!("a{index}.lead_ms");
-        let s = self.shared.lock().unwrap();
+        let s = self.shared.lock();
         let (param, current) = s.current_params.iter().enumerate().find_map(|(i, p)| match p {
             ParamDef::Float { name: n, value, .. } if *n == name => Some((i, *value)),
             _ => None,
@@ -81,7 +81,7 @@ impl AudioInputWidget {
 
     fn set_lead(&self, param: usize, ms: f32) {
         let ms = ms.clamp(-LEAD_LIMIT_MS, LEAD_LIMIT_MS);
-        self.shared.lock().unwrap().pending_params.push((param, ParamValue::Float(ms)));
+        self.shared.lock().pending_params.push((param, ParamValue::Float(ms)));
     }
 
     fn rebind_to(&mut self, new_id: u32) {
@@ -111,7 +111,7 @@ impl NodeWidget for AudioInputWidget {
         if self.input_id == 0 {
             return;
         }
-        let state = self.audio.lock().unwrap();
+        let state = self.audio.lock();
         if let Some(input) = state.iter().find(|c| c.id == self.input_id) {
             // Mirror the engine's port layout (matches
             // AudioInputProcessNode::process): per-analyzer prefixed ports.
@@ -201,7 +201,7 @@ impl NodeWidget for AudioInputWidget {
 
     fn show_content(&mut self, ui: &mut Ui, _zoom: f32) {
         let snapshot = {
-            let shared = self.shared.lock().unwrap();
+            let shared = self.shared.lock();
             shared
                 .display
                 .as_ref()
@@ -373,7 +373,7 @@ impl NodeWidget for AudioInputWidget {
     fn show_inspector(&mut self, ui: &mut Ui) {
         // Tuple: (id, name, available_to_us). Available = unbound or bound to self.
         let inputs: Vec<(u32, String, bool)> = {
-            let state = self.audio.lock().unwrap();
+            let state = self.audio.lock();
             state
                 .iter()
                 .map(|c| {
@@ -519,11 +519,12 @@ mod tests {
 #[cfg(test)]
 mod nudge_tests {
     use super::*;
-    use std::sync::{Arc, Mutex};
+    use std::sync::Arc;
+    use parking_lot::Mutex;
 
     fn nudge_widget() -> AudioInputWidget {
         let shared = new_shared_state(0, 1);
-        shared.lock().unwrap().current_params = vec![
+        shared.lock().current_params = vec![
             ParamDef::Float { name: "a0.min_bpm".into(), value: 80.0, min: 40.0, max: 240.0, step: 1.0, unit: "BPM" },
             ParamDef::Float { name: "a0.lead_ms".into(), value: 12.0, min: -250.0, max: 250.0, step: 1.0, unit: "ms" },
         ];
@@ -537,7 +538,7 @@ mod nudge_tests {
         assert_eq!(w.lead_param(1), None);
         w.set_lead(1, 15.0);
         assert_eq!(w.lead_param(0), Some((1, 15.0)), "the pending value, not the old one");
-        let pending = w.shared.lock().unwrap().pending_params.clone();
+        let pending = w.shared.lock().pending_params.clone();
         assert_eq!(pending.len(), 1);
     }
 

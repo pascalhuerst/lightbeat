@@ -5,7 +5,8 @@
 //! are written to the objects.
 
 use std::collections::{HashMap, HashSet};
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::Arc;
+use parking_lot::{Mutex, MutexGuard};
 
 use crate::color::{BlendMode, Rgb};
 use crate::dmx_io::SharedObjectStore;
@@ -59,7 +60,7 @@ impl EffectHub {
     }
 
     pub fn lock(&self) -> MutexGuard<'_, HubState> {
-        self.0.lock().unwrap()
+        self.0.lock()
     }
 
     /// Blend every root stack into the objects' pixels. Stacks sent to
@@ -101,7 +102,7 @@ impl EffectHub {
             }
         }
 
-        let mut store = store.lock().unwrap();
+        let mut store = store.lock();
         let mut lit_now = HashSet::new();
         for (object_id, pixels) in &canvas {
             lit_now.insert(*object_id);

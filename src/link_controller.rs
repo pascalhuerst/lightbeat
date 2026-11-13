@@ -1,5 +1,6 @@
 use ableton_link::Link;
-use std::sync::{mpsc, OnceLock, Mutex};
+use std::sync::{mpsc, OnceLock};
+use parking_lot::Mutex;
 
 /// Events pushed from Link's internal thread via callbacks.
 #[derive(Debug, Clone)]
@@ -21,7 +22,7 @@ static EVENT_TX: OnceLock<Mutex<mpsc::Sender<LinkEvent>>> = OnceLock::new();
 
 extern "C" fn on_play_state_changed(playing: bool) {
     if let Some(tx) = EVENT_TX.get() {
-        let _ = tx.lock().unwrap().send(LinkEvent::PlayStateChanged(playing));
+        let _ = tx.lock().send(LinkEvent::PlayStateChanged(playing));
     }
 }
 

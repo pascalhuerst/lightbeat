@@ -57,7 +57,7 @@ impl AudioInputProcessNode {
     /// The bound input's analyzer settings, read when asked for (the UI sync
     /// and saving) instead of copied on every tick.
     fn analyzer_params(&self) -> Vec<ParamDef> {
-        let state = self.audio.lock().unwrap();
+        let state = self.audio.lock();
         state.iter().find(|c| c.id == self.input_id).map(|c| c.analyzer_param_defs()).unwrap_or_default()
     }
 
@@ -92,7 +92,7 @@ impl ProcessNode for AudioInputProcessNode {
 
     fn process(&mut self) {
         self.has_frame = false;
-        let state = self.audio.lock().unwrap();
+        let state = self.audio.lock();
         let input = state.iter().find(|c| c.id == self.input_id);
         let Some(input) = input else {
             for v in &mut self.output_values {
@@ -218,7 +218,7 @@ impl ProcessNode for AudioInputProcessNode {
         // Apply saved param values by name, looked up on the bound audio
         // input.
         if let Some(saved) = data.get("params").and_then(|v| v.as_object()) {
-            let state = self.audio.lock().unwrap();
+            let state = self.audio.lock();
             if let Some(input) = state.iter().find(|c| c.id == self.input_id) {
                 let defs = input.analyzer_param_defs();
                 for (name, value) in saved {
@@ -236,7 +236,7 @@ impl ProcessNode for AudioInputProcessNode {
     }
 
     fn set_param(&mut self, index: usize, value: ParamValue) {
-        let state = self.audio.lock().unwrap();
+        let state = self.audio.lock();
         if let Some(input) = state.iter().find(|c| c.id == self.input_id) {
             input.set_param(index, value);
         }
@@ -244,7 +244,7 @@ impl ProcessNode for AudioInputProcessNode {
 
     fn update_display(&self, shared: &mut NodeSharedState) {
         let name = {
-            let state = self.audio.lock().unwrap();
+            let state = self.audio.lock();
             state.iter().find(|c| c.id == self.input_id).map(|c| c.name.clone()).unwrap_or_default()
         };
         let outputs = self.outputs.iter().enumerate()
@@ -270,14 +270,15 @@ impl ProcessNode for AudioInputProcessNode {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::{Arc, Mutex};
+    use std::sync::Arc;
+    use parking_lot::Mutex;
 
     use super::*;
     use crate::audio::analyzers::worker::AnalyzerFrame;
     use crate::audio::manager::{AudioInputRuntime, ConnectionStatus};
 
     fn input_with(kinds: &[AnalyzerKind], values: Vec<f32>, counts: Vec<Vec<u64>>) -> SharedAudioInputs {
-        let frame = Arc::new(parking_lot::Mutex::new(AnalyzerFrame {
+        let frame = Arc::new(Mutex::new(AnalyzerFrame {
             values,
             onset_counts: counts,
             sample_index: 0,
@@ -348,7 +349,7 @@ mod tests {
         let audio = input_with(&[AnalyzerKind::Drums], vec![0.0; 6], vec![vec![1, 0, 0]]);
         let mut n = node(audio.clone());
         assert_eq!(n.read_output(1), 0.0, "the first sight of the counters is not an event");
-        let frame = audio.lock().unwrap()[0].analyzer_frame.clone().unwrap();
+        let frame = audio.lock()[0].analyzer_frame.clone().unwrap();
         frame.lock().onset_counts = vec![vec![2, 0, 0]];
         n.process();
         assert_eq!((n.read_output(1), n.read_output(2)), (1.0, 0.0), "kick pulses, snare does not");

@@ -8,14 +8,14 @@ use super::setup_ui;
 
 /// Read params from a node's shared state.
 fn read_params(node: &dyn NodeWidget) -> Vec<ParamDef> {
-    node.shared_state().lock().unwrap().current_params.clone()
+    node.shared_state().lock().current_params.clone()
 }
 
 /// What a double-click on `param` sets it to: the value it had when the node
 /// was made. None when the node does not know (its parameters are made up
 /// later) or the setting already is the default.
 fn reset_value(node: &dyn NodeWidget, param: &ParamDef) -> Option<ParamValue> {
-    let shared = node.shared_state().lock().unwrap();
+    let shared = node.shared_state().lock();
     let default = shared
         .default_params
         .iter()
@@ -69,7 +69,6 @@ fn param_label(ui: &mut Ui, text: &str, can_reset: bool) -> bool {
 fn push_param(node: &dyn NodeWidget, index: usize, value: ParamValue) {
     node.shared_state()
         .lock()
-        .unwrap()
         .pending_params
         .push((index, value));
 }
@@ -151,7 +150,7 @@ impl PromoteCtx {
         // `ui_inputs` may lock the node's shared state itself, so it must not
         // be called while the lock below is held.
         let native_inputs = node.ui_inputs().len();
-        let shared = node.shared_state().lock().unwrap();
+        let shared = node.shared_state().lock();
         Self {
             promoted: shared.promoted.clone(),
             non_promotable: shared.non_promotable,
@@ -181,7 +180,7 @@ fn is_mode(param: &ParamDef) -> bool {
 /// another thing in the next mode), so they go, with their wires. The snapshot
 /// inputs are not settings and stay.
 fn drop_exposed_inputs(node: &dyn NodeWidget) {
-    let mut shared = node.shared_state().lock().unwrap();
+    let mut shared = node.shared_state().lock();
     let keep = |p: &PromotedParam| {
         matches!(p.kind, PromotedKind::SnapshotSelect | PromotedKind::SnapshotFade)
     };
@@ -202,7 +201,7 @@ fn promote_checkbox(ui: &mut Ui, node: &dyn NodeWidget, promo: &PromoteCtx, para
     }
     let hint = "Expose this setting as an input port. While a wire is connected it controls the value.";
     if ui.checkbox(&mut on, "in").on_hover_text(hint).changed() {
-        let mut shared = node.shared_state().lock().unwrap();
+        let mut shared = node.shared_state().lock();
         if on {
             shared.promoted.push(PromotedParam {
                 name: name.to_string(),
@@ -223,7 +222,7 @@ fn reshapes(node: &dyn NodeWidget, param: &ParamDef) -> bool {
     if param.name() == OPERATION_PARAM {
         return false;
     }
-    is_mode(param) || node.shared_state().lock().unwrap().non_promotable.contains(&param.name())
+    is_mode(param) || node.shared_state().lock().non_promotable.contains(&param.name())
 }
 
 /// Button and Fader: the checkbox that gives the node an input port.
@@ -350,7 +349,7 @@ pub fn show_inspector(ui: &mut Ui, node: &mut dyn NodeWidget) {
         let inputs = node.ui_inputs();
         if !inputs.is_empty() {
             setup_ui::section(ui, "Inputs");
-            let shared = node.shared_state().lock().unwrap();
+            let shared = node.shared_state().lock();
             let values = shared.inputs.clone();
             drop(shared);
             let mut ch_base = 0;
@@ -365,7 +364,7 @@ pub fn show_inspector(ui: &mut Ui, node: &mut dyn NodeWidget) {
         let outputs = node.ui_outputs();
         if !outputs.is_empty() {
             setup_ui::section(ui, "Outputs");
-            let shared = node.shared_state().lock().unwrap();
+            let shared = node.shared_state().lock();
             let values = shared.outputs.clone();
             drop(shared);
             let mut ch_base = 0;
@@ -476,7 +475,7 @@ mod reset_tests {
     fn widget(default: Option<f32>, current: f32) -> GainWidget {
         let shared = new_shared_state(1, 1);
         {
-            let mut s = shared.lock().unwrap();
+            let mut s = shared.lock();
             s.default_params = default.map(|d| vec![float(d)]).unwrap_or_default();
             s.current_params = vec![float(current)];
         }
@@ -508,7 +507,7 @@ mod reset_tests {
         set_all(&nodes, "Gain", ParamValue::Float(0.9));
         reset_all(&nodes, "Gain");
         for w in [&a, &b] {
-            let pending = w.shared_state().lock().unwrap().pending_params.clone();
+            let pending = w.shared_state().lock().pending_params.clone();
             assert_eq!(pending.len(), 2);
             assert!(matches!(pending[1].1, ParamValue::Float(v) if v == 1.0));
         }

@@ -36,7 +36,7 @@ impl InputControllerWidget {
     }
 
     fn push_config(&self) {
-        let mut shared = self.shared.lock().unwrap();
+        let mut shared = self.shared.lock();
         shared.pending_config = Some(serde_json::json!({
             "controller_id": self.controller_id,
         }));
@@ -53,7 +53,7 @@ impl NodeWidget for InputControllerWidget {
             self.controller_id = id as u32;
         }
         if self.controller_id == 0 { return; }
-        let state = self.controllers.lock().unwrap();
+        let state = self.controllers.lock();
         if let Some(c) = state.iter().find(|c| c.id == self.controller_id) {
             // Match what `InputControllerProcessNode::process` builds: the
             // base ports, then one port per learned input, typed by source.
@@ -100,7 +100,7 @@ impl NodeWidget for InputControllerWidget {
 
     fn show_content(&mut self, ui: &mut Ui, _zoom: f32) {
         let snapshot: Option<(u32, String, Vec<(String, PortType, f32)>, Vec<(String, PortType)>)> = {
-            let shared = self.shared.lock().unwrap();
+            let shared = self.shared.lock();
             shared.display.as_ref()
                 .and_then(|d| d.downcast_ref::<InputControllerDisplay>())
                 .map(|d| (
@@ -135,7 +135,7 @@ impl NodeWidget for InputControllerWidget {
         // bind it here by mistake.
         let controllers: Vec<(u32, String)> = {
             use crate::input_controller::InputControllerKind;
-            let state = self.controllers.lock().unwrap();
+            let state = self.controllers.lock();
             state.iter()
                 .filter(|c| !matches!(c.kind, InputControllerKind::Push1 { .. }))
                 .map(|c| (c.id, c.name.clone()))

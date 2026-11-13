@@ -79,7 +79,7 @@ impl FaderWidget {
     }
 
     fn push_config(&self, mouse_value: Option<f32>, override_value: Option<Option<f32>>) {
-        let mut shared = self.shared.lock().unwrap();
+        let mut shared = self.shared.lock();
         let mut cfg = serde_json::json!({
             "name": self.name,
         });

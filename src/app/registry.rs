@@ -153,7 +153,7 @@ use crate::widgets::nodes::transport::step_sequencer::StepSequencerWidget;
 /// the context is cheap.
 #[derive(Clone)]
 pub(crate) struct NodeContext {
-    pub snapshot: Arc<std::sync::Mutex<crate::beat_clock::LinkSnapshot>>,
+    pub snapshot: Arc<parking_lot::Mutex<crate::beat_clock::LinkSnapshot>>,
     pub input_controllers: crate::input_controller::SharedControllers,
     pub audio_inputs: crate::audio::manager::SharedAudioInputs,
     pub dmx_inputs: crate::dmx_input::DmxInputHub,
@@ -168,15 +168,15 @@ pub(crate) struct NodeContext {
     pub object_store: crate::dmx_io::SharedObjectStore,
     /// Beat subscriptions an engine constructor asked for. The beat clock is
     /// not a handle that can be cloned, so the app registers them afterwards.
-    wanted_beats: Rc<RefCell<Vec<(BeatPattern, Arc<std::sync::Mutex<dyn BeatListener>>)>>>,
+    wanted_beats: Rc<RefCell<Vec<(BeatPattern, Arc<parking_lot::Mutex<dyn BeatListener>>)>>>,
 }
 
 impl NodeContext {
-    pub fn subscribe_beat(&self, pattern: BeatPattern, listener: Arc<std::sync::Mutex<dyn BeatListener>>) {
+    pub fn subscribe_beat(&self, pattern: BeatPattern, listener: Arc<parking_lot::Mutex<dyn BeatListener>>) {
         self.wanted_beats.borrow_mut().push((pattern, listener));
     }
 
-    fn take_wanted_beats(&self) -> Vec<(BeatPattern, Arc<std::sync::Mutex<dyn BeatListener>>)> {
+    fn take_wanted_beats(&self) -> Vec<(BeatPattern, Arc<parking_lot::Mutex<dyn BeatListener>>)> {
         std::mem::take(&mut *self.wanted_beats.borrow_mut())
     }
 }
@@ -779,7 +779,7 @@ impl LightBeatApp {
                 // or out of a subgraph) has a fresh engine half that has not
                 // been told about them yet.
                 {
-                    let mut s = shared.lock().unwrap();
+                    let mut s = shared.lock();
                     if !s.promoted.is_empty() {
                         s.pending_promoted = Some(s.promoted.clone());
                     }
@@ -812,7 +812,7 @@ mod tests {
 
     fn context() -> NodeContext {
         NodeContext {
-            snapshot: Arc::new(std::sync::Mutex::new(crate::beat_clock::LinkSnapshot::default())),
+            snapshot: Arc::new(parking_lot::Mutex::new(crate::beat_clock::LinkSnapshot::default())),
             input_controllers: crate::input_controller::InputControllerManager::new().shared,
             audio_inputs: crate::audio::manager::AudioInputManager::new().shared,
             dmx_inputs: crate::dmx_input::DmxInputHub::idle(),
@@ -822,7 +822,7 @@ mod tests {
             palette_ctx: widgets::nodes::math::palette_select::new_shared_palette_context(),
             group_ctx: widgets::group_context::new_shared_group_context(),
             stack_names: widgets::nodes::output::effect::new_shared_stack_names(),
-            portals: Arc::new(std::sync::Mutex::new(engine::nodes::meta::portal::PortalRegistry::default())),
+            portals: Arc::new(parking_lot::Mutex::new(engine::nodes::meta::portal::PortalRegistry::default())),
             effect_hub: engine::effects::EffectHub::new(),
             object_store: crate::dmx_io::new_shared_object_store(),
             wanted_beats: Rc::new(RefCell::new(Vec::new())),

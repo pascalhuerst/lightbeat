@@ -34,7 +34,7 @@ impl NodeWidget for OscillatorWidget {
 
 
     fn show_content(&mut self, ui: &mut Ui, _zoom: f32) {
-        let shared = self.shared.lock().unwrap();
+        let shared = self.shared.lock();
         let out = shared.outputs.first().copied().unwrap_or(0.0);
         drop(shared);
         ui.label(format!("{:.2}", out));

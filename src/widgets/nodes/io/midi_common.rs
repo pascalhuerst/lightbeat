@@ -2,7 +2,8 @@
 //! and sharing what the inputs have learned with the outputs.
 
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use parking_lot::Mutex;
 
 use egui::{self, Ui};
 

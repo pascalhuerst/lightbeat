@@ -107,7 +107,7 @@ impl ProcessNode for X1ProcessNode {
             return;
         }
 
-        let mut state = self.controllers.lock().unwrap();
+        let mut state = self.controllers.lock();
         let Some(c) = bind_controller(
             &mut state, self.controller_id,
             |k| matches!(k, InputControllerKind::X1),

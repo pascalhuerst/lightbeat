@@ -20,7 +20,7 @@ impl LedDisplayWidget {
     }
 
     fn push_config(&self) {
-        let mut shared = self.shared.lock().unwrap();
+        let mut shared = self.shared.lock();
         shared.pending_config = Some(serde_json::json!({ "name": self.name }));
     }
 }
@@ -46,7 +46,7 @@ impl NodeWidget for LedDisplayWidget {
 
     fn show_content(&mut self, ui: &mut Ui, _zoom: f32) {
         let (name, value) = {
-            let shared = self.shared.lock().unwrap();
+            let shared = self.shared.lock();
             let display = shared.display.as_ref()
                 .and_then(|d| d.downcast_ref::<LedDisplayData>());
             if let Some(d) = display {

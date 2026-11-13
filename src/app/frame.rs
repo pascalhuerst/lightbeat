@@ -593,7 +593,7 @@ impl LightBeatApp {
             .exact_height(28.0)
             .show(ctx, |ui| {
                 ui.horizontal_centered(|ui| {
-                    let mut shared = self.dmx_shared.lock().unwrap();
+                    let mut shared = self.dmx_shared.lock();
 
                     // Blackout button — red when active.
                     let blackout_text = if shared.blackout {

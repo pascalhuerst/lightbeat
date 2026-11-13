@@ -1,5 +1,6 @@
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use parking_lot::Mutex;
 
 use crate::interfaces::DmxOutput;
 use crate::objects::object::Object;
@@ -193,7 +194,7 @@ impl DmxOutputManager {
 
         // 0. Ensure UI-requested test universes exist on their interfaces.
         {
-            let shared = self.shared.lock().unwrap();
+            let shared = self.shared.lock();
             let test_keys: Vec<UniverseKey> = shared.test_universes.clone();
             drop(shared);
             for key in test_keys {
@@ -207,7 +208,7 @@ impl DmxOutputManager {
 
         // 1. Write all object channel values into the correct interface's universe buffer.
         {
-            let store = self.object_store.lock().unwrap();
+            let store = self.object_store.lock();
             for obj in &store.objects {
                 // Find (or create) the universe buffer on the object's assigned interface.
                 let iface = self.interfaces.iter_mut().find(|i| i.id == obj.interface_id);
@@ -223,7 +224,7 @@ impl DmxOutputManager {
 
         // 2. Apply overrides and update shared output for the monitored universe(s).
         {
-            let mut shared = self.shared.lock().unwrap();
+            let mut shared = self.shared.lock();
 
             // Update all universe outputs in shared state.
             for iface in &self.interfaces {
@@ -251,7 +252,7 @@ impl DmxOutputManager {
 
         // 3. Send to interfaces. Bypass still runs everything above so the
         // monitor keeps showing what would go out.
-        let shared = self.shared.lock().unwrap();
+        let shared = self.shared.lock();
         let bypass = shared.bypass;
         let blackout = shared.blackout;
 

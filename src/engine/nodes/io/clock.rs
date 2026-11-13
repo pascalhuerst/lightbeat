@@ -1,4 +1,5 @@
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use parking_lot::Mutex;
 use std::time::Instant;
 
 use crate::beat_clock::{BeatInfo, BeatListener, LinkSnapshot};
@@ -95,8 +96,8 @@ impl ClockProcessNode {
     /// moves with the phase.
     fn step(&mut self, lead_ms: f32) {
         // The subscription still feeds the display; its count is not used.
-        self.beat_state.lock().unwrap().pending_beats = 0;
-        let snap = self.snapshot.lock().unwrap().clone();
+        self.beat_state.lock().pending_beats = 0;
+        let snap = self.snapshot.lock().clone();
 
         self.bpm_output = snap.tempo as f32;
         self.peers_output = snap.num_peers as f32;
@@ -143,7 +144,7 @@ impl ProcessNode for ClockProcessNode {
         match port_index {
             0 => self.beat_output,
             1 => {
-                let snap = self.snapshot.lock().unwrap();
+                let snap = self.snapshot.lock();
                 if snap.playing { 1.0 } else { 0.0 }
             }
             2 => self.phase_output,
@@ -155,8 +156,8 @@ impl ProcessNode for ClockProcessNode {
 
 
     fn update_display(&self, shared: &mut NodeSharedState) {
-        let snap = self.snapshot.lock().unwrap();
-        let bs = self.beat_state.lock().unwrap();
+        let snap = self.snapshot.lock();
+        let bs = self.beat_state.lock();
         shared.display = Some(Box::new(ClockDisplay {
             tempo: snap.tempo,
             playing: snap.playing,
@@ -183,7 +184,7 @@ mod tests {
     }
 
     fn move_to(snap: &Arc<Mutex<LinkSnapshot>>, beat: f64) {
-        let mut s = snap.lock().unwrap();
+        let mut s = snap.lock();
         s.beat = beat;
         s.phase = (beat / 4.0).fract();
     }
@@ -206,12 +207,12 @@ mod tests {
     #[test]
     fn the_session_tempo_and_peer_count_are_outputs() {
         let (mut c, snap) = clock_at(0.3, 126.0);
-        snap.lock().unwrap().num_peers = 2;
+        snap.lock().num_peers = 2;
         c.step(0.0);
         assert_eq!(c.outputs().len(), 5);
         assert_eq!((c.outputs()[3].name.as_str(), c.outputs()[4].name.as_str()), ("bpm", "peers"));
         assert_eq!((c.read_output(3), c.read_output(4)), (126.0, 2.0));
-        snap.lock().unwrap().playing = false;
+        snap.lock().playing = false;
         c.step(0.0);
         assert_eq!(c.read_output(3), 126.0, "the tempo is there while stopped too");
     }
@@ -224,7 +225,7 @@ mod tests {
         move_to(&snap, 4.1);
         c.step(0.0);
         assert_eq!(c.read_output(0), 1.0);
-        snap.lock().unwrap().playing = false;
+        snap.lock().playing = false;
         move_to(&snap, 5.2);
         c.step(0.0);
         assert_eq!(c.read_output(0), 0.0);

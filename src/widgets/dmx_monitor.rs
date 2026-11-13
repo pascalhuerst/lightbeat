@@ -35,7 +35,7 @@ impl DmxMonitor {
         interface_names: &[(u32, String)],
     ) {
         // Read available universes and current data.
-        let state = shared.lock().unwrap();
+        let state = shared.lock();
         let available_keys: Vec<UniverseKey> = state.universes.keys().copied().collect();
         drop(state);
 
@@ -49,13 +49,13 @@ impl DmxMonitor {
 
         // Ensure the selected universe exists in shared state (request it as a test universe).
         if let Some(key) = self.selected_key {
-            let mut state = shared.lock().unwrap();
+            let mut state = shared.lock();
             if !state.test_universes.contains(&key) {
                 state.test_universes.push(key);
             }
         }
 
-        let state = shared.lock().unwrap();
+        let state = shared.lock();
         let (channels, overrides) = if let Some(key) = &self.selected_key {
             if let Some(uni) = state.universes.get(key) {
                 (uni.channels, uni.overrides.clone())
@@ -113,7 +113,7 @@ impl DmxMonitor {
 
             if ui.small_button("Clear overrides").clicked()
                 && let Some(key) = &self.selected_key {
-                    let mut state = shared.lock().unwrap();
+                    let mut state = shared.lock();
                     if let Some(uni) = state.universes.get_mut(key) {
                         uni.overrides.clear_all();
                     }
@@ -173,7 +173,7 @@ impl DmxMonitor {
                             let cell_rect = Rect::from_min_size(cell_top_left, cell_size);
 
                             if response.double_clicked() {
-                                let mut state = shared.lock().unwrap();
+                                let mut state = shared.lock();
                                 if let Some(uni) = state.universes.get_mut(key) {
                                     uni.overrides.clear(ch);
                                 }
@@ -181,7 +181,7 @@ impl DmxMonitor {
                                 if shift {
                                     let delta = response.drag_delta().y;
                                     let norm_delta = -delta / cell_h.max(1.0) * 0.1;
-                                    let mut state = shared.lock().unwrap();
+                                    let mut state = shared.lock();
                                     if let Some(uni) = state.universes.get_mut(key) {
                                         let cur = uni.overrides.values[ch] as f32 / 255.0;
                                         let new_v = (cur + norm_delta).clamp(0.0, 1.0);
@@ -190,7 +190,7 @@ impl DmxMonitor {
                                 } else {
                                     let norm = fader::value_from_pos(pos, cell_rect, Orientation::Vertical);
                                     let value = (norm * 255.0).round() as u8;
-                                    let mut state = shared.lock().unwrap();
+                                    let mut state = shared.lock();
                                     if let Some(uni) = state.universes.get_mut(key) {
                                         uni.overrides.set(ch, value);
                                     }
@@ -198,7 +198,7 @@ impl DmxMonitor {
                             } else if response.clicked() && shift {
                                 let norm = fader::value_from_pos(pos, cell_rect, Orientation::Vertical);
                                 let value = (norm * 255.0).round() as u8;
-                                let mut state = shared.lock().unwrap();
+                                let mut state = shared.lock();
                                 if let Some(uni) = state.universes.get_mut(key) {
                                     uni.overrides.set(ch, value);
                                 }
