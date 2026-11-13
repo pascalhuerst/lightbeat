@@ -9,6 +9,11 @@ pub enum MathOp {
 }
 
 impl MathOp {
+    pub const ALL: [MathOp; 4] = [MathOp::Add, MathOp::Sub, MathOp::Mul, MathOp::Div];
+
+    pub fn from_index(i: usize) -> Self { Self::ALL.get(i).copied().unwrap_or(MathOp::Add) }
+    pub fn to_index(self) -> usize { Self::ALL.iter().position(|o| *o == self).unwrap_or(0) }
+
     pub fn label(&self) -> &'static str {
         match self {
             MathOp::Add => "Add",
@@ -111,6 +116,20 @@ impl ProcessNode for MathProcessNode {
 
     fn read_output(&self, port_index: usize) -> f32 {
         if port_index == 0 { self.out } else { 0.0 }
+    }
+
+    fn non_promotable_params(&self) -> &'static [&'static str] { &["Operation"] }
+
+    fn params(&self) -> Vec<ParamDef> {
+        vec![ParamDef::Choice {
+            name: "Operation".into(),
+            value: self.op.to_index(),
+            options: MathOp::ALL.iter().map(|o| o.label().to_string()).collect(),
+        }]
+    }
+
+    fn set_param(&mut self, index: usize, value: ParamValue) {
+        if index == 0 { self.op = MathOp::from_index(value.as_usize()); }
     }
 
     fn on_connect(&mut self, input_port: usize, source_type: PortType) {

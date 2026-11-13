@@ -6,9 +6,8 @@ use crate::engine::nodes::ui::button::{ButtonDisplay, ButtonMode};
 use crate::engine::nodes::ui::common::MouseOverrideMode;
 use crate::engine::types::*;
 use crate::theme;
-use crate::widgets::setup_ui;
 use crate::widgets::fader::highlight_alpha;
-use crate::widgets::nodes::node::{NodeLayout, NodeWidget};
+use crate::widgets::nodes::node::{param_usize, NodeLayout, NodeWidget};
 use crate::widgets::nodes::types::UiPortDef;
 
 const HIGHLIGHT_DURATION: f64 = 0.5;
@@ -52,11 +51,7 @@ impl ButtonWidget {
         let mut shared = self.shared.lock().unwrap();
         let mut cfg = serde_json::json!({
             "label": self.label,
-            "mode": self.mode.as_str(),
             "click_id": self.click_id,
-            "inputs_enabled": self.inputs_enabled,
-            "override_enabled": self.override_enabled,
-            "reset_mode": self.reset_mode.as_str(),
         });
         if let Some(os) = override_state {
             cfg["override_state"] = match os {
@@ -79,11 +74,26 @@ impl NodeWidget for ButtonWidget {
     /// `cleanup_stale_connections` runs, so a wire targeting the button's
     /// input port isn't dropped on the first frame while we're still
     /// waiting for the engine to finish applying `load_data`.
-    fn restore_from_save(&mut self, data: Option<&serde_json::Value>, _params: &[(usize, crate::engine::types::ParamValue)]) {
-        let Some(data) = data else { return };
-        if let Some(b) = data.get("inputs_enabled").and_then(|v| v.as_bool()) {
-            self.inputs_enabled = b;
-        }
+    fn restore_from_save(&mut self, data: Option<&serde_json::Value>, params: &[(usize, crate::engine::types::ParamValue)]) {
+        // Files from before the settings were params keep it in the config.
+        self.inputs_enabled = match param_usize(params, 1) {
+            Some(v) => v != 0,
+            None => data.and_then(|d| d.get("inputs_enabled")).and_then(|v| v.as_bool()).unwrap_or(false),
+        };
+    }
+
+    fn param_display(&self, name: &str) -> (Option<String>, String) {
+        (None, if name == "Button mode" { "Mode".to_string() } else { name.to_string() })
+    }
+
+    /// The mouse override only exists on a toggle that has an input, and its
+    /// reset only when the override is allowed.
+    fn overridden_param_indices(&self) -> Vec<usize> {
+        let applies = self.inputs_enabled && self.mode == ButtonMode::Toggle;
+        let mut hidden = Vec::new();
+        if !applies { hidden.push(2); }
+        if !(applies && self.override_enabled) { hidden.push(3); }
+        hidden
     }
 
     fn node_id(&self) -> NodeId { self.id }
@@ -226,48 +236,11 @@ impl NodeWidget for ButtonWidget {
             }
         });
 
-        if setup_ui::choice_combo(ui, ("button_mode", self.id), "Mode", &mut self.mode, &[
-            (ButtonMode::Trigger, "Trigger", ""),
-            (ButtonMode::Toggle, "Toggle", ""),
-        ]) {
-            changed = true;
-        }
-
-        if ui.checkbox(&mut self.inputs_enabled, "Input enabled").changed() {
-            changed = true;
-        }
-        if self.inputs_enabled && self.mode == ButtonMode::Toggle {
-            ui.indent("btn_input_opts", |ui| {
-                if ui.checkbox(&mut self.override_enabled, "Allow mouse override").changed() {
-                    changed = true;
-                }
-                if self.override_enabled {
-                    ui.horizontal(|ui| {
-                        ui.label("Reset");
-                        egui::ComboBox::from_id_salt(("btn_reset", self.id))
-                            .selected_text(self.reset_mode.label())
-                            .show_ui(ui, |ui| {
-                                for m in [
-                                    MouseOverrideMode::ClearOnReset,
-                                    MouseOverrideMode::PickupIncrease,
-                                    MouseOverrideMode::PickupDecrease,
-                                ] {
-                                    if ui.selectable_label(self.reset_mode == m, m.label()).clicked() {
-                                        self.reset_mode = m;
-                                        changed = true;
-                                    }
-                                }
-                            });
-                    });
-                }
-            });
-        } else if self.inputs_enabled && self.mode == ButtonMode::Trigger {
-            ui.indent("btn_input_opts", |ui| {
-                ui.colored_label(
-                    theme::TEXT_DIM,
-                    "Trigger mode: input rising edges fire the output. No override.",
-                );
-            });
+        if self.inputs_enabled && self.mode == ButtonMode::Trigger {
+            ui.colored_label(
+                theme::TEXT_DIM,
+                "Trigger mode: input rising edges fire the output. No override.",
+            );
         }
 
         if changed { self.push_settings(); }
@@ -296,5 +269,19 @@ mod tests {
         assert_eq!(size, egui::Vec2::new(200.0, 70.0));
         // Smaller than the minimum is raised to it.
         assert_eq!(node_size(&b, Some(egui::Vec2::new(10.0, 10.0))), egui::Vec2::new(90.0, 26.0));
+    }
+
+    #[test]
+    fn the_input_port_comes_back_from_either_form_of_a_saved_button() {
+        let old = serde_json::json!({ "inputs_enabled": true });
+        let mut b = ButtonWidget::new(NodeId(1), new_shared_state(1, 1));
+        b.restore_from_save(Some(&old), &[]);
+        assert_eq!(b.ui_inputs().len(), 1);
+        let mut b = ButtonWidget::new(NodeId(1), new_shared_state(1, 1));
+        b.restore_from_save(None, &[(1, ParamValue::Bool(true))]);
+        assert_eq!(b.ui_inputs().len(), 1);
+        let mut b = ButtonWidget::new(NodeId(1), new_shared_state(1, 1));
+        b.restore_from_save(None, &[]);
+        assert!(b.ui_inputs().is_empty());
     }
 }

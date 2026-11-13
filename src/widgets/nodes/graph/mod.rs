@@ -655,6 +655,11 @@ impl NodeGraph {
         self.reconcile_effect_stacks();
         self.remap_promoted_connections();
         self.remap_removed_ports();
+        for level in &mut self.levels {
+            for node in &mut level.nodes {
+                node.follow_params();
+            }
+        }
         // Hidden ports, then stale connections (ports removed by dynamic nodes).
         self.tidy_ports();
 

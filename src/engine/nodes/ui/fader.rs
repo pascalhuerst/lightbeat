@@ -14,13 +14,15 @@ impl FaderOrientation {
             _ => FaderOrientation::Vertical,
         }
     }
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            FaderOrientation::Vertical => "vertical",
-            FaderOrientation::Horizontal => "horizontal",
-        }
-    }
 }
+
+/// The order of the "Mouse override" dropdown; saved settings go by position.
+pub const MOUSE_OVERRIDE_ORDER: [MouseOverrideMode; 4] = [
+    MouseOverrideMode::No,
+    MouseOverrideMode::ClearOnReset,
+    MouseOverrideMode::PickupDecrease,
+    MouseOverrideMode::PickupIncrease,
+];
 
 pub struct FaderDisplay {
     pub name: String,
@@ -77,6 +79,19 @@ impl FaderProcessNode {
         }
     }
 
+    /// The one place the input port appears or goes away, for both a changed
+    /// param and a file saved before the setting was a param.
+    fn set_inputs_enabled(&mut self, enabled: bool) {
+        if enabled == self.inputs_enabled { return; }
+        self.inputs_enabled = enabled;
+        self.rebuild_ports();
+        if !enabled {
+            self.override_value = None;
+            self.input_value = 0.0;
+            self.prev_input_value = 0.0;
+        }
+    }
+
     fn rebuild_ports(&mut self) {
         self.inputs = if self.inputs_enabled {
             vec![PortDef::new("in", PortType::Untyped)]
@@ -122,14 +137,52 @@ impl ProcessNode for FaderProcessNode {
         if pi == 0 { self.output } else { 0.0 }
     }
 
+    fn non_promotable_params(&self) -> &'static [&'static str] {
+        &["Input enabled"]
+    }
+
+    fn params(&self) -> Vec<ParamDef> {
+        vec![
+            ParamDef::Choice {
+                name: "Orientation".into(),
+                value: if self.orientation == FaderOrientation::Horizontal { 1 } else { 0 },
+                options: vec!["Vertical".into(), "Horizontal".into()],
+            },
+            ParamDef::Bool { name: "Input enabled".into(), value: self.inputs_enabled },
+            ParamDef::Choice {
+                name: "Mouse override".into(),
+                value: MOUSE_OVERRIDE_ORDER.iter().position(|m| *m == self.mouse_override).unwrap_or(0),
+                options: MOUSE_OVERRIDE_ORDER.iter().map(|m| m.label().to_string()).collect(),
+            },
+            ParamDef::Bool { name: "Bipolar".into(), value: self.bipolar },
+        ]
+    }
+
+    fn set_param(&mut self, index: usize, value: ParamValue) {
+        match index {
+            0 => {
+                self.orientation = if value.as_usize() == 1 {
+                    FaderOrientation::Horizontal
+                } else {
+                    FaderOrientation::Vertical
+                };
+            }
+            1 => self.set_inputs_enabled(value.as_usize() != 0),
+            2 => {
+                self.mouse_override = MOUSE_OVERRIDE_ORDER
+                    .get(value.as_usize())
+                    .copied()
+                    .unwrap_or(MouseOverrideMode::No);
+            }
+            3 => self.bipolar = value.as_usize() != 0,
+            _ => {}
+        }
+    }
+
     fn save_data(&self) -> Option<serde_json::Value> {
         Some(serde_json::json!({
             "name": self.name,
-            "orientation": self.orientation.as_str(),
             "mouse_value": self.mouse_value,
-            "inputs_enabled": self.inputs_enabled,
-            "mouse_override": self.mouse_override.as_str(),
-            "bipolar": self.bipolar,
             "override_value": self.override_value,
         }))
     }
@@ -138,16 +191,16 @@ impl ProcessNode for FaderProcessNode {
         if let Some(n) = data.get("name").and_then(|v| v.as_str()) {
             self.name = n.to_string();
         }
+        // Settings that were once kept here and are params now; only files
+        // saved before that carry them.
         if let Some(s) = data.get("orientation").and_then(|v| v.as_str()) {
             self.orientation = FaderOrientation::from_str(s);
         }
         if let Some(v) = data.get("mouse_value").and_then(|v| v.as_f64()) {
             self.mouse_value = (v as f32).clamp(0.0, 1.0);
         }
-        let mut ports_dirty = false;
         if let Some(b) = data.get("inputs_enabled").and_then(|v| v.as_bool()) {
-            if b != self.inputs_enabled { ports_dirty = true; }
-            self.inputs_enabled = b;
+            self.set_inputs_enabled(b);
         }
         if let Some(s) = data.get("mouse_override").and_then(|v| v.as_str()) {
             self.mouse_override = MouseOverrideMode::from_str(s);
@@ -158,14 +211,6 @@ impl ProcessNode for FaderProcessNode {
         // Override value: null/missing -> None; number -> Some(v).
         if let Some(ov) = data.get("override_value") {
             self.override_value = ov.as_f64().map(|f| (f as f32).clamp(0.0, 1.0));
-        }
-        if ports_dirty {
-            self.rebuild_ports();
-            if !self.inputs_enabled {
-                self.override_value = None;
-                self.input_value = 0.0;
-                self.prev_input_value = 0.0;
-            }
         }
     }
 
@@ -190,7 +235,29 @@ mod tests {
 
     #[test]
     fn save_load_round_trip() {
-        let saved = serde_json::json!({
+        let mut a = FaderProcessNode::new(NodeId(1));
+        a.load_data(&serde_json::json!({ "name": "Master", "mouse_value": 0.25, "override_value": 0.75 }));
+        a.set_param(0, ParamValue::Choice(1));
+        a.set_param(1, ParamValue::Bool(true));
+        a.set_param(2, ParamValue::Choice(3));
+        a.set_param(3, ParamValue::Bool(true));
+        let saved = a.save_data().unwrap();
+        assert_eq!(saved, serde_json::json!({ "name": "Master", "mouse_value": 0.25, "override_value": 0.75 }));
+        // The settings travel as params, in the order the node lists them.
+        let params = a.params();
+        let mut b = FaderProcessNode::new(NodeId(2));
+        b.load_data(&saved);
+        for (i, p) in params.iter().enumerate() { b.set_param(i, p.as_value()); }
+        assert_eq!(b.save_data().unwrap(), saved);
+        assert_eq!(b.params().iter().map(|p| format!("{:?}", p.as_value())).collect::<Vec<_>>(),
+                   params.iter().map(|p| format!("{:?}", p.as_value())).collect::<Vec<_>>());
+        assert_eq!(b.inputs().len(), 1);
+    }
+
+    #[test]
+    fn a_fader_saved_with_its_settings_in_the_config_comes_back_with_them() {
+        let mut f = FaderProcessNode::new(NodeId(1));
+        f.load_data(&serde_json::json!({
             "name": "Master",
             "orientation": "horizontal",
             "mouse_value": 0.25,
@@ -198,12 +265,16 @@ mod tests {
             "mouse_override": "pickup_increase",
             "bipolar": true,
             "override_value": 0.75,
-        });
-        let mut a = FaderProcessNode::new(NodeId(1));
-        a.load_data(&saved);
-        assert_eq!(a.save_data().unwrap(), saved);
-        let mut b = FaderProcessNode::new(NodeId(2));
-        b.load_data(&a.save_data().unwrap());
-        assert_eq!(b.save_data().unwrap(), saved);
+        }));
+        let p = f.params();
+        assert!(matches!(&p[0], ParamDef::Choice { value: 1, .. }));
+        assert!(matches!(&p[1], ParamDef::Bool { value: true, .. }));
+        assert!(matches!(&p[2], ParamDef::Choice { value: 3, .. }));
+        assert!(matches!(&p[3], ParamDef::Bool { value: true, .. }));
+        assert_eq!(f.inputs().len(), 1);
+        // Written back out, the old keys are gone.
+        let out = f.save_data().unwrap();
+        assert!(out.get("orientation").is_none() && out.get("bipolar").is_none());
+        assert_eq!(out["override_value"], serde_json::json!(0.75));
     }
 }

@@ -20,13 +20,12 @@ impl TransitionWidget {
     }
 
     fn build_inputs(mode: TransitionMode) -> Vec<UiPortDef> {
-        let mut ports = vec![
-            UiPortDef::from_def(&PortDef::new("trigger", PortType::Logic)),
-            UiPortDef::from_def(&PortDef::new("phase", PortType::Phase)),
-        ];
+        let mut ports = Vec::new();
         if mode != TransitionMode::Phase {
             ports.push(UiPortDef::from_def(&PortDef::new("in", mode.value_type())));
         }
+        ports.push(UiPortDef::from_def(&PortDef::new("trigger", PortType::Logic)));
+        ports.push(UiPortDef::from_def(&PortDef::new("phase", PortType::Phase)));
         ports
     }
 
@@ -74,8 +73,8 @@ impl NodeWidget for TransitionWidget {
     fn shared_state(&self) -> &SharedState { &self.shared }
 
     fn on_ui_connect(&mut self, input_port: usize, source_type: PortType) {
-        // Only the `value` port (index 2) determines mode.
-        if input_port != 2 || self.mode != TransitionMode::Neutral { return; }
+        // Only the `value` port (index 0) determines mode.
+        if input_port != 0 || self.mode != TransitionMode::Neutral { return; }
         if let Some(new_mode) = Self::infer_mode(source_type) {
             self.mode = new_mode;
             self.push_mode(new_mode);

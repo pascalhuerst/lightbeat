@@ -112,14 +112,20 @@ impl TransitionProcessNode {
     }
 
     fn build_inputs(mode: TransitionMode) -> Vec<PortDef> {
-        let mut ports = vec![
-            PortDef::new("trigger", PortType::Logic),
-            PortDef::new("phase", PortType::Phase),
-        ];
+        // Phase out has no value, so there the trigger leads.
+        let mut ports = Vec::new();
         if mode != TransitionMode::Phase {
             ports.push(PortDef::new("in", mode.value_type()));
         }
+        ports.push(PortDef::new("trigger", PortType::Logic));
+        ports.push(PortDef::new("phase", PortType::Phase));
         ports
+    }
+
+    /// Channel of the trigger: after the value's channels, or first in Phase
+    /// mode, which has no value.
+    fn lead(&self) -> usize {
+        if self.mode == TransitionMode::Phase { 0 } else { self.mode.channels() }
     }
 
     fn build_outputs(mode: TransitionMode) -> Vec<PortDef> {
@@ -135,26 +141,27 @@ impl ProcessNode for TransitionProcessNode {
     fn outputs(&self) -> &[PortDef] { &self.outputs }
 
     fn write_input(&mut self, channel: usize, value: f32) {
-        // Layout: [trigger] [phase] [value channels...]
-        // With port_base_index: trigger=0, phase=1, value=2 (or 2,3,4 for Color)
-        match channel {
-            0 => self.trigger_in = value,
-            1 => self.phase_in = value,
-            c => {
-                let vi = c - 2;
-                if vi < MAX_CHANNELS { self.value_in[vi] = value; }
-            }
+        // Layout: [value channels...] [trigger] [phase]
+        let lead = self.lead();
+        if channel < lead {
+            if channel < MAX_CHANNELS { self.value_in[channel] = value; }
+        } else if channel == lead {
+            self.trigger_in = value;
+        } else if channel == lead + 1 {
+            self.phase_in = value;
         }
     }
 
     fn read_input(&self, channel: usize) -> f32 {
-        match channel {
-            0 => self.trigger_in,
-            1 => self.phase_in,
-            c => {
-                let vi = c - 2;
-                if vi < MAX_CHANNELS { self.value_in[vi] } else { 0.0 }
-            }
+        let lead = self.lead();
+        if channel < lead {
+            self.value_in.get(channel).copied().unwrap_or(0.0)
+        } else if channel == lead {
+            self.trigger_in
+        } else if channel == lead + 1 {
+            self.phase_in
+        } else {
+            0.0
         }
     }
 
@@ -271,14 +278,15 @@ mod phase_mode_tests {
         let mut n = TransitionProcessNode::new(NodeId(1));
         n.set_param(0, ParamValue::Choice(TransitionMode::Position.to_index()));
         assert_eq!(n.outputs()[0].port_type, PortType::Position);
-        n.write_input(1, 0.0);
+        // Position: value channels 0 and 1, then trigger, then phase.
+        n.write_input(3, 0.0);
         n.process();
-        n.write_input(2, 1.0);
-        n.write_input(3, 0.5);
         n.write_input(0, 1.0);
-        n.process();
-        n.write_input(0, 0.0);
         n.write_input(1, 0.5);
+        n.write_input(2, 1.0);
+        n.process();
+        n.write_input(2, 0.0);
+        n.write_input(3, 0.5);
         n.process();
         assert!((n.read_output(0) - 0.5).abs() < 1e-4);
         assert!((n.read_output(1) - 0.25).abs() < 1e-4);

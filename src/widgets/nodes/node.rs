@@ -2,7 +2,7 @@ use std::any::Any;
 
 use egui::{Pos2, Rect, Ui, Vec2};
 
-use crate::engine::types::{NodeId, ParamValue, PortDef, PortDir, SharedState};
+use crate::engine::types::{NodeId, ParamDef, ParamValue, PortDef, PortDir, SharedState};
 
 use super::types::UiPortDef;
 
@@ -10,6 +10,15 @@ use super::types::UiPortDef;
 /// choice or a count.
 pub fn param_usize(params: &[(usize, ParamValue)], index: usize) -> Option<usize> {
     params.iter().find(|(i, _)| *i == index).map(|(_, v)| v.as_usize())
+}
+
+/// The mirrored value of the choice at `index`, for widgets that follow a
+/// setting (`NodeWidget::follow_params`). None until the engine has mirrored it.
+pub fn current_choice(shared: &SharedState, index: usize) -> Option<usize> {
+    match shared.lock().unwrap().current_params.get(index) {
+        Some(ParamDef::Choice { value, .. }) => Some(*value),
+        _ => None,
+    }
 }
 
 /// An effect as its stack lists it.
@@ -57,6 +66,12 @@ pub trait NodeWidget: Any {
         _params: &[(usize, ParamValue)],
     ) {
     }
+
+    /// Called every frame for every node. A widget whose identity is one of
+    /// its settings (the operation of Add/Sub/Mul/Div, say) follows the
+    /// setting here, so its type name and title are those of the sibling the
+    /// user switched it to. Keep it cheap: most widgets do nothing.
+    fn follow_params(&mut self) {}
 
     /// UI port definitions (may include fill colors for display).
     fn ui_inputs(&self) -> Vec<UiPortDef>;

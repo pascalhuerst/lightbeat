@@ -18,6 +18,19 @@ impl ConstantProcessNode {
         }
     }
 
+    /// The kinds a constant can be switched between, in the order of the
+    /// "Operation" dropdown.
+    pub const KINDS: [PortType; 3] = [PortType::Untyped, PortType::Logic, PortType::Phase];
+
+    fn value_range(port_type: PortType) -> (f32, f32, f32) {
+        match port_type {
+            PortType::Logic => (0.0, 1.0, 1.0),
+            PortType::Phase => (0.0, 1.0, 0.01),
+            // A constant can be anything; the node's own box is not bound by this.
+            _ => (-1.0e6, 1.0e6, 0.01),
+        }
+    }
+
     pub fn type_name_for(port_type: PortType) -> &'static str {
         match port_type {
             PortType::Logic => "Const Logic",
@@ -44,21 +57,38 @@ impl ProcessNode for ConstantProcessNode {
     }
 
     fn params(&self) -> Vec<ParamDef> {
-        let (min, max, step) = match self.port_type {
-            PortType::Logic => (0.0, 1.0, 1.0),
-            PortType::Phase => (0.0, 1.0, 0.01),
-            // A constant can be anything; the node's own box is not bound by this.
-            _ => (-1.0e6, 1.0e6, 0.01),
-        };
-        vec![ParamDef::Float {
-            name: "Value".into(),
-            value: self.value,
-            min, max, step,
-            unit: "",
-        }]
+        let (min, max, step) = Self::value_range(self.port_type);
+        let current = Self::KINDS.iter().position(|k| *k == self.port_type).unwrap_or(0);
+        vec![
+            ParamDef::Float {
+                name: "Value".into(),
+                value: self.value,
+                min, max, step,
+                unit: "",
+            },
+            ParamDef::Choice {
+                name: "Operation".into(),
+                value: current,
+                options: Self::KINDS.iter().map(|k| Self::type_name_for(*k).trim_start_matches("Const ").to_string()).collect(),
+            },
+        ]
     }
 
+    fn non_promotable_params(&self) -> &'static [&'static str] { &["Operation"] }
+
     fn set_param(&mut self, index: usize, value: ParamValue) {
-        if index == 0 { self.value = value.as_f32(); }
+        match index {
+            0 => self.value = value.as_f32(),
+            1 => {
+                let kind = Self::KINDS.get(value.as_usize()).copied().unwrap_or(PortType::Untyped);
+                if kind != self.port_type {
+                    self.port_type = kind;
+                    self.outputs = vec![PortDef::new("out", kind)];
+                    let (min, max, _) = Self::value_range(kind);
+                    self.value = self.value.clamp(min, max);
+                }
+            }
+            _ => {}
+        }
     }
 }

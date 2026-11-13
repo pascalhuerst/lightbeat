@@ -135,8 +135,8 @@ impl EnvelopeProcessNode {
             gate_in: 0.0,
             signal_in: 0.0,
             inputs: vec![
-                PortDef::new("gate", PortType::Logic),
                 PortDef::new("in", PortType::Untyped),
+                PortDef::new("gate", PortType::Logic),
             ],
             outputs: vec![
                 PortDef::new("out", PortType::Untyped),
@@ -206,16 +206,16 @@ impl ProcessNode for EnvelopeProcessNode {
 
     fn write_input(&mut self, port_index: usize, value: f32) {
         match port_index {
-            0 => self.gate_in = value,
-            1 => self.signal_in = value,
+            0 => self.signal_in = value,
+            1 => self.gate_in = value,
             _ => {}
         }
     }
 
     fn read_input(&self, port_index: usize) -> f32 {
         match port_index {
-            0 => self.gate_in,
-            1 => self.signal_in,
+            0 => self.signal_in,
+            1 => self.gate_in,
             _ => 0.0,
         }
     }
@@ -480,12 +480,12 @@ mod curve_tests {
         e.set_param(0, ParamValue::Float(0.01));
         e.set_param(1, ParamValue::Float(0.01));
         e.set_param(3, ParamValue::Float(0.01));
-        e.write_input(0, 1.0);
+        e.write_input(1, 1.0);
         let mut peak = 0.0f32;
         for _ in 0..100 { e.process(); peak = peak.max(e.read_output(0)); }
         assert!((peak - 1.0).abs() < 1e-3);
         assert!((e.read_output(0) - 0.6).abs() < 1e-3);
-        e.write_input(0, 0.0);
+        e.write_input(1, 0.0);
         for _ in 0..30 { e.process(); }
         assert_eq!(e.read_output(0), 0.0);
     }
@@ -496,7 +496,7 @@ mod curve_tests {
             crate::engine::time::set_dt(dt);
             let mut e = EnvelopeProcessNode::new(NodeId(1));
             e.set_param(0, ParamValue::Float(0.1));
-            e.write_input(0, 1.0);
+            e.write_input(1, 1.0);
             for _ in 0..ticks { e.process(); }
             crate::engine::time::set_dt(crate::engine::time::NOMINAL_DT);
             e.read_output(0)

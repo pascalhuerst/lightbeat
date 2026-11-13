@@ -9,6 +9,10 @@ pub enum LogicOp {
 }
 
 impl LogicOp {
+    /// The gates that fold any number of inputs and so can stand in for one
+    /// another. NOT has a single, differently named input and is left out.
+    pub const VARIADIC: [LogicOp; 3] = [LogicOp::And, LogicOp::Or, LogicOp::Xor];
+
     pub fn label(&self) -> &'static str {
         match self {
             LogicOp::And => "AND",
@@ -101,6 +105,23 @@ impl ProcessNode for LogicGateProcessNode {
         if self.op == LogicOp::Not { return; }
         if input_port >= self.inputs.len() {
             self.set_input_count(input_port + 1);
+        }
+    }
+
+    fn non_promotable_params(&self) -> &'static [&'static str] { &["Operation"] }
+
+    fn params(&self) -> Vec<ParamDef> {
+        let Some(current) = LogicOp::VARIADIC.iter().position(|o| *o == self.op) else { return Vec::new() };
+        vec![ParamDef::Choice {
+            name: "Operation".into(),
+            value: current,
+            options: LogicOp::VARIADIC.iter().map(|o| o.label().to_string()).collect(),
+        }]
+    }
+
+    fn set_param(&mut self, index: usize, value: ParamValue) {
+        if index == 0 && self.op != LogicOp::Not {
+            self.op = LogicOp::VARIADIC.get(value.as_usize()).copied().unwrap_or(LogicOp::And);
         }
     }
 
