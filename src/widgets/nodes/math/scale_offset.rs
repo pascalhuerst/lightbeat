@@ -27,13 +27,8 @@ impl NodeWidget for ScaleOffsetWidget {
     fn min_width(&self) -> f32 { 90.0 }
     fn min_content_height(&self) -> f32 { 15.0 }
 
-    fn overridden_param_indices(&self) -> Vec<usize> {
-        // Scale = param 0, wired from port 1. Offset = param 1, wired from port 2.
-        let s = self.shared.lock();
-        let mut hidden = Vec::new();
-        if s.inputs_connected.get(1).copied().unwrap_or(false) { hidden.push(0); }
-        if s.inputs_connected.get(2).copied().unwrap_or(false) { hidden.push(1); }
-        hidden
+    fn default_promoted(&self) -> &'static [(&'static str, PromotedKind)] {
+        &[("Scale", PromotedKind::Float), ("Offset", PromotedKind::Float)]
     }
 
     fn show_content(&mut self, ui: &mut Ui, _zoom: f32) {

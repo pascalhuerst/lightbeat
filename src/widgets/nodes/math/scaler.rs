@@ -17,18 +17,13 @@ impl ScalerWidget {
 
 impl NodeWidget for ScalerWidget {
     node_identity!("Range to Unit");
-    fn description(&self) -> &'static str { "Maps the range from in min to in max onto 0..1, clamped. The range comes from the settings or from wires." }
+    fn description(&self) -> &'static str { "Maps the range from in min to in max onto 0..1, clamped. The range is set in the settings, or by wires into its in min and in max inputs." }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> { UiPortDef::from_defs(&crate::engine::nodes::math::scaler::ports().0) }
     fn ui_outputs(&self) -> Vec<UiPortDef> { UiPortDef::from_defs(&crate::engine::nodes::math::scaler::ports().1) }
 
-    fn overridden_param_indices(&self) -> Vec<usize> {
-        // "In Min" = param 0, wired from port 1. "In Max" = param 1, wired from port 2.
-        let s = self.shared.lock();
-        let mut hidden = Vec::new();
-        if s.inputs_connected.get(1).copied().unwrap_or(false) { hidden.push(0); }
-        if s.inputs_connected.get(2).copied().unwrap_or(false) { hidden.push(1); }
-        hidden
+    fn default_promoted(&self) -> &'static [(&'static str, PromotedKind)] {
+        &[("In Min", PromotedKind::Float), ("In Max", PromotedKind::Float)]
     }
 
     fn min_width(&self) -> f32 { 80.0 }

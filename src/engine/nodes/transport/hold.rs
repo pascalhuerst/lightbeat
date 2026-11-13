@@ -6,17 +6,14 @@ pub struct TriggerHoldDisplay {
 }
 
 /// Holds a trigger high for a number of milliseconds after each rising edge.
-/// Duration is taken from the `duration` input (in ms) while it is wired,
-/// otherwise from the `Duration` param. The time left is counted down by the
+/// The duration is the `Duration` setting in ms; a new node has it exposed as
+/// an input (see `TriggerHoldWidget::default_promoted`). The time left is counted down by the
 /// measured tick length, so the hold stays right if the loop runs late.
 pub struct TriggerHoldProcessNode {
     id: NodeId,
     trigger_in: f32,
     prev_trigger: f32,
-    duration_in: f32,
-    duration_connected: bool,
-    /// Used while the input is unwired.
-    default_duration: u32,
+    duration: u32,
     /// Milliseconds of hold left.
     remaining: f32,
     output: f32,
@@ -30,7 +27,6 @@ pub fn ports() -> (Vec<PortDef>, Vec<PortDef>) {
     (
         vec![
             PortDef::new("trigger", PortType::Logic),
-            PortDef::new("duration", PortType::Untyped),
         ],
         vec![PortDef::new("out", PortType::Logic)],
     )
@@ -43,9 +39,7 @@ impl TriggerHoldProcessNode {
             id,
             trigger_in: 0.0,
             prev_trigger: 0.0,
-            duration_in: 0.0,
-            duration_connected: false,
-            default_duration: 100,
+            duration: 100,
             remaining: 0.0,
             output: 0.0,
             inputs,
@@ -54,11 +48,7 @@ impl TriggerHoldProcessNode {
     }
 
     fn effective_duration(&self) -> u32 {
-        if self.duration_connected {
-            self.duration_in.round().max(1.0) as u32
-        } else {
-            self.default_duration.max(1)
-        }
+        self.duration.max(1)
     }
 }
 
@@ -69,18 +59,10 @@ impl ProcessNode for TriggerHoldProcessNode {
     fn outputs(&self) -> &[PortDef] { &self.outputs }
 
     fn write_input(&mut self, pi: usize, v: f32) {
-        match pi {
-            0 => self.trigger_in = v,
-            1 => self.duration_in = v,
-            _ => {}
-        }
+        if pi == 0 { self.trigger_in = v; }
     }
     fn read_input(&self, pi: usize) -> f32 {
-        match pi { 0 => self.trigger_in, 1 => self.duration_in, _ => 0.0 }
-    }
-
-    fn set_input_connections(&mut self, connected: &[bool]) {
-        self.duration_connected = connected.get(1).copied().unwrap_or(false);
+        if pi == 0 { self.trigger_in } else { 0.0 }
     }
 
     fn process(&mut self) {
@@ -102,13 +84,10 @@ impl ProcessNode for TriggerHoldProcessNode {
         if pi == 0 { self.output } else { 0.0 }
     }
 
-    // The duration already has an input port of its own.
-    fn non_promotable_params(&self) -> &'static [&'static str] { &["Duration"] }
-
     fn params(&self) -> Vec<ParamDef> {
         vec![ParamDef::Float {
             name: "Duration".into(),
-            value: self.default_duration as f32,
+            value: self.duration as f32,
             min: 1.0,
             max: 100_000.0,
             step: 1.0,
@@ -118,7 +97,7 @@ impl ProcessNode for TriggerHoldProcessNode {
 
     fn set_param(&mut self, index: usize, value: ParamValue) {
         if index == 0 {
-            self.default_duration = (value.as_f32().round().max(1.0) as u32).min(100_000);
+            self.duration = (value.as_f32().round().max(1.0) as u32).min(100_000);
         }
     }
 
@@ -149,17 +128,14 @@ mod tests {
     }
 
     #[test]
-    fn the_input_decides_by_being_wired_not_by_its_value() {
+    fn the_duration_setting_sets_the_hold_and_zero_is_the_shortest() {
         let mut n = TriggerHoldProcessNode::new(NodeId(1));
         n.set_param(0, ParamValue::Float(5.0));
         assert_eq!(pulse_length(&mut n), 5);
-        n.set_input_connections(&[false, true]);
-        n.write_input(1, 0.0);
-        assert_eq!(pulse_length(&mut n), 1, "a wired zero is the shortest hold, not the setting");
-        n.write_input(1, 8.0);
+        n.set_param(0, ParamValue::Float(0.0));
+        assert_eq!(pulse_length(&mut n), 1);
+        n.set_param(0, ParamValue::Float(8.0));
         assert_eq!(pulse_length(&mut n), 8);
-        n.set_input_connections(&[false, false]);
-        assert_eq!(pulse_length(&mut n), 5);
     }
 
     #[test]

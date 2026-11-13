@@ -379,7 +379,7 @@ pub fn show_inspector(ui: &mut Ui, node: &mut dyn NodeWidget) {
 
     // Parameters
     let params = read_params(node);
-    let hidden = node.overridden_param_indices();
+    let hidden = node.hidden_param_indices();
     let visible_count = params.iter().enumerate()
         .filter(|(i, _)| !hidden.contains(i)).count();
     if !params.is_empty() && visible_count > 0 {
@@ -423,7 +423,7 @@ fn find_common_params(nodes: &[&dyn NodeWidget]) -> Vec<ParamDef> {
         .iter()
         .map(|n| {
             let params = read_params(*n);
-            n.overridden_param_indices().into_iter().filter_map(|i| params.get(i).map(|p| p.name().to_string())).collect()
+            n.hidden_param_indices().into_iter().filter_map(|i| params.get(i).map(|p| p.name().to_string())).collect()
         })
         .collect();
     let same = |a: &ParamDef, b: &ParamDef| match (a, b) {

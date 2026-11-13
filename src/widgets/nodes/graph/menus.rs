@@ -128,6 +128,7 @@ impl NodeGraph {
         if !port_name.is_empty() {
             node.set_name(port_name);
         }
+        node.apply_default_promoted();
         let level = self.active();
         let Some(target) = level.states.iter().position(|s| s.id == port.node) else { return };
         if port.dir == PortDir::Input {

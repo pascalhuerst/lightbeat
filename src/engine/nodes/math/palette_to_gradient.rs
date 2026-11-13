@@ -1,7 +1,6 @@
 //! Builds a 4-stop Gradient from a Palette input plus one position per
-//! palette slot. Each slot's position follows the input-overrides-param
-//! pattern: wire `pos1..pos4` to drive the stop positions dynamically, or
-//! dial them in from the inspector when unwired.
+//! palette slot. The positions are settings (`Pos 1..Pos 4`); a new node has
+//! them exposed as inputs (see `PaletteToGradientWidget::default_promoted`).
 
 use crate::color::{Gradient, GradientStop, Rgb};
 use crate::engine::types::*;
@@ -12,11 +11,7 @@ pub struct PaletteToGradientProcessNode {
     id: NodeId,
     /// Flat palette channels (12 floats = 4 × RGB).
     palette_in: [f32; 12],
-    /// Wired stop positions (one per palette slot).
-    pos_in: [f32; N],
-    /// Inspector defaults, used when the matching pos port isn't wired.
     pos_param: [f32; N],
-    pos_connected: [bool; N],
     /// Output channels (40 floats = 8 × (r, g, b, a, position)). Unused
     /// stops are marked with alpha = -1 via `Gradient::to_channels`.
     channels: [f32; GRADIENT_STOP_COUNT * GRADIENT_STOP_FLOATS],
@@ -30,10 +25,6 @@ pub fn ports() -> (Vec<PortDef>, Vec<PortDef>) {
     (
         vec![
             PortDef::new("palette", PortType::Palette),
-            PortDef::new("pos1", PortType::Untyped),
-            PortDef::new("pos2", PortType::Untyped),
-            PortDef::new("pos3", PortType::Untyped),
-            PortDef::new("pos4", PortType::Untyped),
         ],
         vec![PortDef::new("gradient", PortType::Gradient)],
     )
@@ -45,10 +36,8 @@ impl PaletteToGradientProcessNode {
         Self {
             id,
             palette_in: [0.0; 12],
-            pos_in: [0.0; N],
             // Default: evenly spread across 0..1.
             pos_param: [0.0, 1.0 / 3.0, 2.0 / 3.0, 1.0],
-            pos_connected: [false; N],
             channels: [0.0; GRADIENT_STOP_COUNT * GRADIENT_STOP_FLOATS],
             inputs,
             outputs,
@@ -56,8 +45,7 @@ impl PaletteToGradientProcessNode {
     }
 
     fn effective_pos(&self, i: usize) -> f32 {
-        let p = if self.pos_connected[i] { self.pos_in[i] } else { self.pos_param[i] };
-        p.clamp(0.0, 1.0)
+        self.pos_param[i].clamp(0.0, 1.0)
     }
 }
 
@@ -68,27 +56,12 @@ impl ProcessNode for PaletteToGradientProcessNode {
     fn outputs(&self) -> &[PortDef] { &self.outputs }
 
     fn write_input(&mut self, channel: usize, v: f32) {
-        // Palette occupies channels 0..12 (flat), then one channel each for
-        // pos1..pos4 at 12, 13, 14, 15.
         if channel < 12 {
             self.palette_in[channel] = v;
-        } else if channel < 12 + N {
-            self.pos_in[channel - 12] = v;
         }
     }
     fn read_input(&self, channel: usize) -> f32 {
-        if channel < 12 {
-            self.palette_in[channel]
-        } else if channel < 12 + N {
-            self.pos_in[channel - 12]
-        } else { 0.0 }
-    }
-
-    fn set_input_connections(&mut self, connected: &[bool]) {
-        // Port 0 = palette; ports 1..=4 = pos1..pos4.
-        for (i, wired) in self.pos_connected.iter_mut().enumerate() {
-            *wired = connected.get(1 + i).copied().unwrap_or(false);
-        }
+        self.palette_in.get(channel).copied().unwrap_or(0.0)
     }
 
     fn process(&mut self) {
@@ -112,10 +85,6 @@ impl ProcessNode for PaletteToGradientProcessNode {
 
     fn read_output(&self, channel: usize) -> f32 {
         self.channels.get(channel).copied().unwrap_or(0.0)
-    }
-
-    fn non_promotable_params(&self) -> &'static [&'static str] {
-        &["Pos 1", "Pos 2", "Pos 3", "Pos 4"]
     }
 
     fn params(&self) -> Vec<ParamDef> {

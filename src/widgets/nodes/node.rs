@@ -2,7 +2,7 @@ use std::any::Any;
 
 use egui::{Pos2, Rect, Ui, Vec2};
 
-use crate::engine::types::{NodeId, ParamDef, ParamValue, PortDef, PortDir, SharedState};
+use crate::engine::types::{NodeId, ParamDef, ParamValue, PortDef, PortDir, PromotedKind, PromotedParam, SharedState};
 
 use super::types::UiPortDef;
 
@@ -227,14 +227,18 @@ pub trait NodeWidget: Any {
     /// — otherwise the label would overlap the widget's own UI. Default: off.
     fn show_port_labels(&self) -> bool { false }
 
-    /// Param indices that are currently overridden by a wired input and
-    /// should be hidden from the auto-inspector. Pattern: when an input
-    /// port is wired, the wire's value supersedes the matching param;
-    /// the param is omitted from the inspector to avoid showing a value
-    /// the user can't actually change. Implementations typically read
-    /// `shared_state().lock().inputs_connected[port_idx]` to compute this.
-    /// Default: nothing is overridden.
-    fn overridden_param_indices(&self) -> Vec<usize> { Vec::new() }
+    /// Param indices that do not apply right now (another mode, a switch that
+    /// is off) and are left out of the auto-inspector. A param a wire drives
+    /// is not hidden: it is promoted, and the inspector shows it locked.
+    /// Default: nothing is hidden.
+    fn hidden_param_indices(&self) -> Vec<usize> { Vec::new() }
+
+    /// Params a node of this type is created with already exposed as inputs,
+    /// in port order, with the kind each carries (it must be the kind of the
+    /// param). Applied when the user adds the node, not when one is loaded or
+    /// pasted, where the saved list rules. The user can switch them off in the
+    /// inspector like any other promoted param.
+    fn default_promoted(&self) -> &'static [(&'static str, PromotedKind)] { &[] }
 
     /// How the inspector and a promoted port show a param: an optional group
     /// heading it is listed under, and its label. Params are keyed by name,
@@ -274,6 +278,23 @@ impl dyn NodeWidget {
         };
         let types: Vec<crate::engine::types::PortType> = ports.iter().map(|p| p.def.port_type).collect();
         port_pos_in(rect, &self.layout(), dir, &types, &self.hidden_ports(dir), index, zoom)
+    }
+
+    /// Starts the promoted list with `default_promoted`. Only for a node the
+    /// user has just made: the list is UI-owned and a loaded or pasted node
+    /// brings its own, and the engine hears of it with the new node.
+    pub fn apply_default_promoted(&self) {
+        let defaults = self.default_promoted();
+        if defaults.is_empty() {
+            return;
+        }
+        let list: Vec<PromotedParam> = defaults
+            .iter()
+            .map(|(name, kind)| PromotedParam { name: name.to_string(), kind: *kind })
+            .collect();
+        let mut shared = self.shared_state().lock();
+        shared.promoted_applied = list.clone();
+        shared.promoted = list;
     }
 
     /// The widget's own inputs followed by one port per promoted param. The

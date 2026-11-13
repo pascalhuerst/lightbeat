@@ -21,12 +21,6 @@ pub struct CounterProcessNode {
     ///   on rising edges; wrap fires when the phase wraps around.
     in0: f32,
     reset_in: f32,
-    /// Wired override of `max_value`. Used only when `max_input_connected`.
-    max_in: f32,
-    /// Set by `set_input_connections` each tick — true if a wire ends at
-    /// the `max` port (logical input index 2). When true, the wired value
-    /// (rounded, >= 1) replaces `max_value` for the duration of the tick.
-    max_input_connected: bool,
     prev_trigger: bool,
     prev_reset: bool,
     /// Phase-mode wrap detection: previous tick's input phase.
@@ -49,7 +43,6 @@ pub fn ports_for(select_mode: SelectMode) -> (Vec<PortDef>, Vec<PortDef>) {
         vec![
             port0,
             PortDef::new("reset", PortType::Logic),
-            PortDef::new("max", PortType::Untyped),
         ],
         vec![
             PortDef::new("count", PortType::Untyped),
@@ -69,8 +62,6 @@ impl CounterProcessNode {
             wrap_out: 0.0,
             in0: 0.0,
             reset_in: 0.0,
-            max_in: 0.0,
-            max_input_connected: false,
             prev_trigger: false,
             prev_reset: false,
             prev_phase: 0.0,
@@ -85,14 +76,6 @@ impl CounterProcessNode {
     fn rebuild_ports(&mut self) {
         (self.inputs, self.outputs) = ports_for(self.select_mode);
     }
-
-    fn effective_max(&self) -> i64 {
-        if self.max_input_connected {
-            (self.max_in.round() as i64).max(1)
-        } else {
-            self.max_value
-        }
-    }
 }
 
 impl ProcessNode for CounterProcessNode {
@@ -105,7 +88,6 @@ impl ProcessNode for CounterProcessNode {
         match pi {
             0 => self.in0 = v,
             1 => self.reset_in = v,
-            2 => self.max_in = v,
             _ => {}
         }
     }
@@ -113,18 +95,13 @@ impl ProcessNode for CounterProcessNode {
         match pi {
             0 => self.in0,
             1 => self.reset_in,
-            2 => self.max_in,
             _ => 0.0,
         }
     }
 
-    fn set_input_connections(&mut self, connected: &[bool]) {
-        self.max_input_connected = connected.get(2).copied().unwrap_or(false);
-    }
-
     fn process(&mut self) {
         let reset = self.reset_in >= 0.5;
-        let max = self.effective_max().max(1);
+        let max = self.max_value.max(1);
         self.wrap_out = 0.0;
 
         if reset && !self.prev_reset {
@@ -174,7 +151,7 @@ impl ProcessNode for CounterProcessNode {
         }
 
         // Clamp the held count if the max shrank below the current count
-        // (e.g. user dialled down a wired max while idle).
+        // (e.g. a signal on the promoted max came down while idle).
         if self.count >= max { self.count = 0; }
         if self.count < 0 { self.count = 0; }
     }
@@ -188,7 +165,7 @@ impl ProcessNode for CounterProcessNode {
     }
 
     fn non_promotable_params(&self) -> &'static [&'static str] {
-        &["Max", "Select by"]
+        &["Select by"]
     }
 
     fn params(&self) -> Vec<ParamDef> {

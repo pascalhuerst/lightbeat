@@ -86,7 +86,7 @@ impl NodeWidget for ButtonWidget {
 
     /// The mouse override only exists on a toggle that has an input, and its
     /// reset only when the override is allowed.
-    fn overridden_param_indices(&self) -> Vec<usize> {
+    fn hidden_param_indices(&self) -> Vec<usize> {
         let applies = self.inputs_enabled && self.mode == ButtonMode::Toggle;
         let mut hidden = Vec::new();
         if !applies { hidden.push(2); }

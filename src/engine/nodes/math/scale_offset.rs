@@ -1,7 +1,7 @@
 //! Scale and offset: `out = in * scale + offset`.
 //!
-//! `scale` and `offset` follow the "input-overrides-param" pattern: when the
-//! port is wired, the wire value takes over and the inspector param is hidden.
+//! Scale and Offset are ordinary settings; a new node has them exposed as
+//! inputs (see `ScaleOffsetWidget::default_promoted`).
 
 use crate::engine::param_spec::FloatParam;
 use crate::engine::types::*;
@@ -16,10 +16,6 @@ pub struct ScaleOffsetProcessNode {
     in_value: f32,
     scale: f32,
     offset: f32,
-    scale_in: f32,
-    offset_in: f32,
-    scale_connected: bool,
-    offset_connected: bool,
     out_value: f32,
     inputs: Vec<PortDef>,
     outputs: Vec<PortDef>,
@@ -31,8 +27,6 @@ pub fn ports() -> (Vec<PortDef>, Vec<PortDef>) {
     (
         vec![
             PortDef::new("in", PortType::Untyped),
-            PortDef::new("scale", PortType::Untyped),
-            PortDef::new("offset", PortType::Untyped),
         ],
         vec![PortDef::new("out", PortType::Untyped)],
     )
@@ -46,21 +40,10 @@ impl ScaleOffsetProcessNode {
             in_value: 0.0,
             scale: 1.0,
             offset: 0.0,
-            scale_in: 1.0,
-            offset_in: 0.0,
-            scale_connected: false,
-            offset_connected: false,
             out_value: 0.0,
             inputs,
             outputs,
         }
-    }
-
-    fn effective_scale(&self) -> f32 {
-        if self.scale_connected { self.scale_in } else { self.scale }
-    }
-    fn effective_offset(&self) -> f32 {
-        if self.offset_connected { self.offset_in } else { self.offset }
     }
 }
 
@@ -71,39 +54,18 @@ impl ProcessNode for ScaleOffsetProcessNode {
     fn outputs(&self) -> &[PortDef] { &self.outputs }
 
     fn write_input(&mut self, pi: usize, v: f32) {
-        match pi {
-            0 => self.in_value = v,
-            1 => self.scale_in = v,
-            2 => self.offset_in = v,
-            _ => {}
-        }
+        if pi == 0 { self.in_value = v; }
     }
     fn read_input(&self, pi: usize) -> f32 {
-        match pi {
-            0 => self.in_value,
-            1 => self.scale_in,
-            2 => self.offset_in,
-            _ => 0.0,
-        }
-    }
-
-    fn set_input_connections(&mut self, connected: &[bool]) {
-        self.scale_connected = connected.get(1).copied().unwrap_or(false);
-        self.offset_connected = connected.get(2).copied().unwrap_or(false);
+        if pi == 0 { self.in_value } else { 0.0 }
     }
 
     fn process(&mut self) {
-        let r = self.effective_scale();
-        let c = self.effective_offset();
-        self.out_value = self.in_value * r + c;
+        self.out_value = self.in_value * self.scale + self.offset;
     }
 
     fn read_output(&self, pi: usize) -> f32 {
         if pi == 0 { self.out_value } else { 0.0 }
-    }
-
-    fn non_promotable_params(&self) -> &'static [&'static str] {
-        &["Scale", "Offset"]
     }
 
     fn params(&self) -> Vec<ParamDef> {
@@ -139,12 +101,18 @@ mod tests {
     }
 
     #[test]
-    fn wired_scale_and_offset_win_over_the_params() {
+    fn a_promoted_scale_and_offset_drive_the_settings() {
+        use crate::engine::promoted::{PromotedInputs, PromotedKind, PromotedParam};
         let mut n = ScaleOffsetProcessNode::new(NodeId(1));
-        n.set_param(0, ParamValue::Float(2.0));
-        n.set_input_connections(&[true, true, true]);
-        n.write_input(1, 3.0);
-        n.write_input(2, -1.0);
+        let mut promoted = PromotedInputs::default();
+        let wanted: Vec<_> = ["Scale", "Offset"]
+            .iter()
+            .map(|name| PromotedParam { name: name.to_string(), kind: PromotedKind::Float })
+            .collect();
+        promoted.adopt(&wanted, &n);
+        promoted.note_wiring(&[true, true]);
+        promoted.apply(&mut n, 0, 3.0);
+        promoted.apply(&mut n, 1, -1.0);
         assert_eq!(run(&mut n, 1.0), 2.0);
     }
 
