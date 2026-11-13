@@ -249,8 +249,8 @@ pub struct NodeSharedState {
     /// Per-logical-input-port connectedness (written by engine, read by UI).
     /// Indexed by `inputs()` vec index — true iff at least one wire ends at
     /// that port on this node. Used by the auto-inspector to hide params
-    /// that are overridden by a wired input, and by widgets that need to
-    /// render differently when a port is wired.
+    /// that a wire is driving, and by widgets that need to render differently
+    /// when a port is wired.
     pub inputs_connected: Vec<bool>,
     /// When true, the engine skips this node's `process` each tick. Output
     /// values freeze at whatever they were last computed — downstream

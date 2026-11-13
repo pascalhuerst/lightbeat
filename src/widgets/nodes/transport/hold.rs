@@ -20,7 +20,11 @@ impl TriggerHoldWidget {
 impl NodeWidget for TriggerHoldWidget {
     node_identity!("Trigger Hold");
     fn description(&self) -> &'static str {
-        "Holds a trigger high for a number of milliseconds after each rising edge. Duration via input or param."
+        "Holds a trigger high for a number of milliseconds after each rising edge. A new node has Duration as an input; switch it off in the inspector to type a value."
+    }
+
+    fn default_promoted(&self) -> &'static [(&'static str, PromotedKind)] {
+        &[("Duration", PromotedKind::Float)]
     }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> { UiPortDef::from_defs(&crate::engine::nodes::transport::hold::ports().0) }

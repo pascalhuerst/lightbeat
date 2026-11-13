@@ -56,12 +56,11 @@ impl NodeWidget for PhaseScalerWidget {
         "Multiplies or divides phase rate by a power of two to speed up or \
          slow down cycles. A rising edge on `reset` resyncs the sub-cycle \
          counter — useful to keep a divided phase aligned to an external \
-         downbeat or a detected onset. Wiring the `exp` input overrides \
-         the param: its value is taken directly as the exponent \
-         (rounded, clamped to -6..=6), so feeding a Phase Accumulator or \
-         other integer source works without any scaling. Press + to add \
+         downbeat or a detected onset. A new node has \
+         Exponent and Offset as inputs: a wire's value is taken as the exponent \
+         (rounded, clamped to -6..=6) or the offset. Press + to add \
          more outputs, each with its own ratio, all following the same \
-         input and reset; the exp and offset inputs drive the first one."
+         input and reset; the Exponent and Offset settings drive the first one."
     }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> {
@@ -80,19 +79,8 @@ impl NodeWidget for PhaseScalerWidget {
     fn min_width(&self) -> f32 { 120.0 }
     fn min_content_height(&self) -> f32 { 20.0 }
 
-
-    /// When the `exp` / `offset` inputs are wired the corresponding params
-    /// are overridden by the engine. Hide them from the auto-inspector so
-    /// the user isn't editing values that get thrown away.
-    fn overridden_param_indices(&self) -> Vec<usize> {
-        let shared = self.shared.lock();
-        let exp_wired = shared.inputs_connected.get(2).copied().unwrap_or(false);
-        let offset_wired = shared.inputs_connected.get(3).copied().unwrap_or(false);
-        drop(shared);
-        let mut v = Vec::new();
-        if exp_wired { v.push(0); }     // param 0 = Exponent
-        if offset_wired { v.push(1); }  // param 1 = Offset
-        v
+    fn default_promoted(&self) -> &'static [(&'static str, PromotedKind)] {
+        &[("Exponent", PromotedKind::Int), ("Offset", PromotedKind::Float)]
     }
 
     fn show_content(&mut self, ui: &mut Ui, _zoom: f32) {

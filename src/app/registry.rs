@@ -30,7 +30,6 @@ use crate::engine::nodes::ui::fader_group::FaderGroupProcessNode;
 use crate::engine::nodes::ui::peak_meter::PeakMeterProcessNode;
 use crate::engine::nodes::ui::color_mixer::ColorMixerProcessNode;
 use crate::engine::nodes::ui::xy_pad::XyPadProcessNode;
-use crate::engine::nodes::ui::gradient_stops::GradientStopsProcessNode;
 use crate::engine::nodes::math::bipolar::BipolarProcessNode;
 use crate::engine::nodes::math::scale_offset::ScaleOffsetProcessNode;
 use crate::engine::nodes::math::change_detect::ChangeDetectProcessNode;
@@ -101,7 +100,6 @@ use crate::widgets::nodes::ui::fader_group::FaderGroupWidget;
 use crate::widgets::nodes::ui::peak_meter::PeakMeterWidget;
 use crate::widgets::nodes::ui::color_mixer::ColorMixerWidget;
 use crate::widgets::nodes::ui::xy_pad::XyPadWidget;
-use crate::widgets::nodes::ui::gradient_stops::GradientStopsWidget;
 use crate::widgets::nodes::math::bipolar::BipolarWidget;
 use crate::widgets::nodes::math::scale_offset::ScaleOffsetWidget;
 use crate::widgets::nodes::math::change_detect::ChangeDetectWidget;
@@ -311,13 +309,6 @@ pub(crate) fn node_table() -> Vec<NodeDescriptor> {
         "Input", "Color Mixer", (0, 3),
         |id, s, _| Box::new(ColorMixerWidget::new(id, s)),
         |id, _| Box::new(ColorMixerProcessNode::new(id)),
-    ));
-    // 1 Palette input (12 channels) for the live preview, 4 position
-    // outputs to feed Palette → Gradient's pos1..pos4.
-    table.push(node(
-        "Input", "Gradient Stops", (12, 4),
-        |id, s, _| Box::new(GradientStopsWidget::new(id, s)),
-        |id, _| Box::new(GradientStopsProcessNode::new(id)),
     ));
     table.push(node(
         "Display", "Peak Level Meter", (2, 0),
@@ -796,6 +787,7 @@ impl LightBeatApp {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::engine::types::PromotedKind;
     use crate::engine::types::total_channels;
 
     fn context() -> NodeContext {
@@ -829,6 +821,55 @@ mod tests {
             let engine = (desc.engine)(NodeId(1), &ctx);
             assert_eq!(widget.type_name(), desc.name, "the widget of {} reports another name", desc.name);
             assert_eq!(engine.node_id(), NodeId(1), "{}", desc.name);
+        }
+    }
+
+    #[test]
+    fn default_promoted_names_are_promotable_params_of_the_kind_they_say() {
+        let ctx = context();
+        let mut with_defaults = Vec::new();
+        for desc in node_table() {
+            let widget = (desc.widget)(NodeId(1), new_shared_state(desc.channels.0, desc.channels.1), &ctx);
+            let engine = (desc.engine)(NodeId(1), &ctx);
+            let params = engine.params();
+            for (name, kind) in widget.default_promoted() {
+                let param = params.iter().find(|p| p.name() == *name)
+                    .unwrap_or_else(|| panic!("{} has no setting {name}", desc.name));
+                assert_eq!(PromotedKind::of(param), *kind, "{} {name}", desc.name);
+                assert!(!engine.non_promotable_params().contains(name), "{} {name}", desc.name);
+            }
+            if !widget.default_promoted().is_empty() {
+                with_defaults.push(desc.name);
+            }
+        }
+        with_defaults.sort();
+        assert_eq!(
+            with_defaults,
+            ["Bipolar", "Counter", "Palette to Gradient", "Phase Scaler", "Range to Unit", "Scale Offset", "Trigger Hold"],
+        );
+    }
+
+    #[test]
+    fn a_new_node_of_each_formerly_hand_wired_type_has_its_setting_ports() {
+        let ctx = context();
+        let expect: [(&str, &[&str]); 7] = [
+            ("Range to Unit", &["in", "In Min", "In Max"]),
+            ("Scale Offset", &["in", "Scale", "Offset"]),
+            ("Bipolar", &["in", "Range", "Center"]),
+            ("Counter", &["trigger", "reset", "Max"]),
+            ("Phase Scaler", &["phase", "reset", "Exponent", "Offset"]),
+            ("Palette to Gradient", &["palette", "Pos 1", "Pos 2", "Pos 3", "Pos 4"]),
+            ("Trigger Hold", &["trigger", "Duration"]),
+        ];
+        for (type_name, ports) in expect {
+            let desc = node_table().into_iter().find(|d| d.name == type_name).unwrap();
+            let widget = (desc.widget)(NodeId(1), new_shared_state(desc.channels.0, desc.channels.1), &ctx);
+            assert_eq!(widget.shared_state().lock().promoted.len(), 0, "{type_name}: the constructor adds nothing");
+            widget.apply_default_promoted();
+            let got: Vec<String> = widget.ui_inputs_full().into_iter().map(|p| p.def.name).collect();
+            assert_eq!(got, ports, "{type_name}");
+            let engine = (desc.engine)(NodeId(1), &ctx);
+            assert_eq!(engine.inputs().len() + widget.shared_state().lock().promoted.len(), ports.len(), "{type_name}");
         }
     }
 

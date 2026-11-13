@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 
 use crate::engine::nodes::meta::subgraph::{BRIDGE_IN_NODE_ID, BRIDGE_OUT_NODE_ID};
-use crate::engine::types::{NodeId, ParamDef, ParamValue, PortDir, PortId, PromotedParam, SnapshotSet};
+use crate::engine::types::{NodeId, ParamDef, ParamValue, PortDir, PortId, PromotedKind, PromotedParam, SnapshotSet};
 use crate::widgets::nodes::{GraphLevel, NodeGraph};
 
 // ---------------------------------------------------------------------------
@@ -16,16 +16,44 @@ use crate::widgets::nodes::{GraphLevel, NodeGraph};
 /// 1: hardware nodes gained a leading "connected" output.
 /// 2: Change Detect has its value first.
 /// 3: Envelope and Transition have their signal first and the trigger after.
+/// 4: the hand-built "a wire overrides this setting" ports are gone; those
+///    settings are promoted params (`LEGACY_OVERRIDE_PORT_TYPES`).
 ///
 /// TEMPORARY: the migration exists only so the developers' test projects
 /// survive one load. Once they are re-saved, delete `STATUS_PORT_NODE_TYPES`,
 /// `connections_for_current_layout`, its tests and the `version` field.
-pub const PROJECT_VERSION: u32 = 3;
+pub const PROJECT_VERSION: u32 = 4;
 
 /// Node types whose outputs shifted by one when the "connected" port was
 /// inserted at index 0 (version 1).
 const STATUS_PORT_NODE_TYPES: [&str; 5] =
     ["Input Controller", "Audio Input", "Launchpad S", "Push 1", "X1"];
+
+/// Node types that had input ports of their own for settings (version 4):
+/// Range to Unit, Scale Offset, Bipolar, Counter, Phase Scaler, Palette to
+/// Gradient, Trigger Hold. Those ports sat in the place where the promoted
+/// ports of the node's default list now are, in the same order, so an old node
+/// gets that list and its saved wires land on the same ports. A promoted entry
+/// an old file had already comes after them, as its port did.
+const LEGACY_OVERRIDE_PORT_TYPES: [&str; 7] = [
+    "Range to Unit", "Scale Offset", "Bipolar", "Counter", "Phase Scaler", "Palette to Gradient", "Trigger Hold",
+];
+
+fn with_legacy_override_ports(
+    type_name: &str,
+    version: u32,
+    defaults: &[(&'static str, PromotedKind)],
+    mut promoted: Vec<PromotedParam>,
+) -> Vec<PromotedParam> {
+    if version >= 4 || !LEGACY_OVERRIDE_PORT_TYPES.contains(&type_name) {
+        return promoted;
+    }
+    promoted.retain(|p| !defaults.iter().any(|(name, _)| *name == p.name));
+    let mut list: Vec<PromotedParam> =
+        defaults.iter().map(|(name, kind)| PromotedParam { name: name.to_string(), kind: *kind }).collect();
+    list.extend(promoted);
+    list
+}
 
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct ProjectFile {
@@ -425,6 +453,7 @@ pub fn load_graph(graph: &mut NodeGraph, project: &ProjectFile) -> Vec<usize> {
             let mut restore_params: Vec<(usize, ParamValue)> = Vec::new();
             {
                 let n = graph.node_mut(idx);
+                let default_promoted = n.default_promoted();
                 let declared = {
                     let shared = n.shared_state().lock();
                     shared.current_params.clone()
@@ -458,6 +487,7 @@ pub fn load_graph(graph: &mut NodeGraph, project: &ProjectFile) -> Vec<usize> {
                 for p in &mut promoted {
                     p.name = current_setting_name(type_name, &p.name).to_string();
                 }
+                let promoted = with_legacy_override_ports(type_name, project.version, default_promoted, promoted);
                 shared.promoted = promoted.clone();
                 shared.promoted_applied = promoted.clone();
                 if !promoted.is_empty() {
@@ -855,6 +885,105 @@ mod tests {
         g.cleanup_stale_connections();
         assert_eq!(g.node_and_state(0).0.ui_outputs().len(), 3);
         assert_eq!(g.root_level().connections.len(), 1, "the wire to the third output was kept");
+    }
+
+    fn scale_offset_graph() -> crate::widgets::nodes::NodeGraph {
+        use crate::widgets::nodes::math::constant::ConstantWidget;
+        use crate::widgets::nodes::math::scale_offset::ScaleOffsetWidget;
+
+        let mut g = crate::widgets::nodes::NodeGraph::new();
+        g.register_node("Math", "Scale Offset", |id| {
+            Box::new(ScaleOffsetWidget::new(id, crate::engine::types::new_shared_state(4, 1)))
+        });
+        g.register_node("Math", "Const Value", |id| {
+            Box::new(ConstantWidget::new(id, crate::engine::types::PortType::Untyped, crate::engine::types::new_shared_state(0, 1)))
+        });
+        g
+    }
+
+    fn promoted_names(g: &mut crate::widgets::nodes::NodeGraph, node: usize) -> Vec<String> {
+        g.node_mut(node).shared_state().lock().promoted.iter().map(|p| p.name.clone()).collect()
+    }
+
+    #[test]
+    fn a_project_from_before_the_override_ports_went_keeps_its_wires_on_the_same_ports() {
+        let json = |version: &str, promoted: &str| {
+            format!(r#"{{
+                {version}
+                "nodes": [
+                    {{"type_name": "Scale Offset", "id": 1, "pos": [0.0, 0.0], "params": [], "promoted": {promoted}}},
+                    {{"type_name": "Const Value", "id": 2, "pos": [0.0, 0.0], "params": []}}
+                ],
+                "connections": [{{"from_node": 2, "from_port": 0, "to_node": 1, "to_port": 2}}]
+            }}"#)
+        };
+        // Before version 4 the node had in, scale, offset as ports.
+        let old: ProjectFile = serde_json::from_str(&json("", "[]")).unwrap();
+        let mut g = scale_offset_graph();
+        load_graph(&mut g, &old);
+        g.cleanup_stale_connections();
+        assert_eq!(promoted_names(&mut g, 0), ["Scale", "Offset"]);
+        assert_eq!(g.root_level().connections.len(), 1);
+        assert_eq!(g.root_level().connections[0].to.index, 2, "still the third port, now the promoted Offset");
+        assert!(g.node_mut(0).shared_state().lock().pending_promoted.is_some(), "the engine hears of the list");
+
+        // What the old node saved itself carries over after the defaults.
+        let old_with_entry: ProjectFile = serde_json::from_str(&json("", r#"[{"name": "Offset", "kind": "Float"}]"#)).unwrap();
+        let mut g = scale_offset_graph();
+        load_graph(&mut g, &old_with_entry);
+        assert_eq!(promoted_names(&mut g, 0), ["Scale", "Offset"]);
+
+        // A current file's list rules, also when the user switched everything off.
+        let current: ProjectFile = serde_json::from_str(&json(&format!(r#""version": {PROJECT_VERSION},"#), "[]")).unwrap();
+        let mut g = scale_offset_graph();
+        load_graph(&mut g, &current);
+        assert!(promoted_names(&mut g, 0).is_empty());
+    }
+
+    #[test]
+    fn an_old_gradient_stops_node_is_dropped_with_its_wires_and_the_rest_loads() {
+        use crate::widgets::nodes::math::palette_to_gradient::PaletteToGradientWidget;
+
+        let mut g = crate::widgets::nodes::NodeGraph::new();
+        g.register_node("Color", "Palette to Gradient", |id| {
+            Box::new(PaletteToGradientWidget::new(id, crate::engine::types::new_shared_state(16, 40)))
+        });
+        let old: ProjectFile = serde_json::from_str(r#"{
+            "version": 3,
+            "nodes": [
+                {"type_name": "Palette to Gradient", "id": 1, "pos": [0.0, 0.0], "params": []},
+                {"type_name": "Gradient Stops", "id": 2, "pos": [0.0, 0.0], "params": []}
+            ],
+            "connections": [{"from_node": 2, "from_port": 1, "to_node": 1, "to_port": 2}]
+        }"#).unwrap();
+        load_graph(&mut g, &old);
+        g.cleanup_stale_connections();
+        assert_eq!(g.root_level().nodes.len(), 1);
+        assert!(g.root_level().connections.is_empty());
+        assert_eq!(promoted_names(&mut g, 0), ["Pos 1", "Pos 2", "Pos 3", "Pos 4"]);
+    }
+
+    #[test]
+    fn a_new_node_with_its_setting_wired_saves_and_loads_the_same() {
+        let mut a = scale_offset_graph();
+        let node = a.create_from_registry("Scale Offset", NodeId(1)).unwrap();
+        node.apply_default_promoted();
+        a.add_node(node, egui::pos2(0.0, 0.0));
+        let constant = a.create_from_registry("Const Value", NodeId(2)).unwrap();
+        a.add_node(constant, egui::pos2(0.0, 0.0));
+        a.add_connection(
+            PortId { node: NodeId(2), index: 0, dir: PortDir::Output },
+            PortId { node: NodeId(1), index: 2, dir: PortDir::Input },
+        );
+        let saved = save_graph(&a);
+        assert_eq!(saved.version, PROJECT_VERSION);
+
+        let mut b = scale_offset_graph();
+        load_graph(&mut b, &saved);
+        b.cleanup_stale_connections();
+        assert_eq!(promoted_names(&mut b, 0), ["Scale", "Offset"]);
+        assert_eq!(b.root_level().connections.len(), 1);
+        assert_eq!(b.root_level().connections[0].to.index, 2);
     }
 
     #[test]

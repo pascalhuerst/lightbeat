@@ -448,6 +448,7 @@ impl NodeGraph {
         }
         let id = self.alloc_id();
         let node = (self.registry[registry_idx].factory)(id);
+        node.apply_default_promoted();
         Some(self.add_node(node, canvas_pos))
     }
 

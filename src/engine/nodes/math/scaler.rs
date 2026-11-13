@@ -2,22 +2,17 @@ use crate::engine::param_spec::FloatParam;
 use crate::engine::types::*;
 
 
-const IN_MIN: FloatParam = FloatParam::new("In Min", -100.0, 100.0, 0.1, "");
-const IN_MAX: FloatParam = FloatParam::new("In Max", -100.0, 100.0, 0.1, "");
+// Wide because the old input ports passed any value through (BPM, DMX values, counts).
+const IN_MIN: FloatParam = FloatParam::new("In Min", -10000.0, 10000.0, 0.1, "");
+const IN_MAX: FloatParam = FloatParam::new("In Max", -10000.0, 10000.0, 0.1, "");
 
-/// Maps an input from [in_min, in_max] to [0, 1]. `in_min` and `in_max`
-/// can be overridden by wiring their input ports — follows the
-/// "input-overrides-param" pattern so an unwired port means "use the
-/// inspector value" and wiring it hides the param.
+/// Maps an input from [in_min, in_max] to [0, 1]. A new node has both ends
+/// exposed as inputs (see `ScalerWidget::default_promoted`).
 pub struct ScalerProcessNode {
     id: NodeId,
     in_min: f32,
     in_max: f32,
     value_in: f32,
-    min_in: f32,
-    max_in: f32,
-    min_connected: bool,
-    max_connected: bool,
     value_out: f32,
     inputs: Vec<PortDef>,
     outputs: Vec<PortDef>,
@@ -29,8 +24,6 @@ pub fn ports() -> (Vec<PortDef>, Vec<PortDef>) {
     (
         vec![
             PortDef::new("in", PortType::Any),
-            PortDef::new("in min", PortType::Untyped),
-            PortDef::new("in max", PortType::Untyped),
         ],
         vec![PortDef::new("out", PortType::Untyped)],
     )
@@ -44,21 +37,10 @@ impl ScalerProcessNode {
             in_min: 0.0,
             in_max: 1.0,
             value_in: 0.0,
-            min_in: 0.0,
-            max_in: 1.0,
-            min_connected: false,
-            max_connected: false,
             value_out: 0.0,
             inputs,
             outputs,
         }
-    }
-
-    fn effective_min(&self) -> f32 {
-        if self.min_connected { self.min_in } else { self.in_min }
-    }
-    fn effective_max(&self) -> f32 {
-        if self.max_connected { self.max_in } else { self.in_max }
     }
 }
 
@@ -69,30 +51,15 @@ impl ProcessNode for ScalerProcessNode {
     fn outputs(&self) -> &[PortDef] { &self.outputs }
 
     fn write_input(&mut self, pi: usize, v: f32) {
-        match pi {
-            0 => self.value_in = v,
-            1 => self.min_in = v,
-            2 => self.max_in = v,
-            _ => {}
-        }
+        if pi == 0 { self.value_in = v; }
     }
     fn read_input(&self, pi: usize) -> f32 {
-        match pi {
-            0 => self.value_in,
-            1 => self.min_in,
-            2 => self.max_in,
-            _ => 0.0,
-        }
-    }
-
-    fn set_input_connections(&mut self, connected: &[bool]) {
-        self.min_connected = connected.get(1).copied().unwrap_or(false);
-        self.max_connected = connected.get(2).copied().unwrap_or(false);
+        if pi == 0 { self.value_in } else { 0.0 }
     }
 
     fn process(&mut self) {
-        let lo = self.effective_min();
-        let hi = self.effective_max();
+        let lo = self.in_min;
+        let hi = self.in_max;
         let range = hi - lo;
         if range.abs() > 1e-10 {
             self.value_out = ((self.value_in - lo) / range).clamp(0.0, 1.0);
@@ -103,10 +70,6 @@ impl ProcessNode for ScalerProcessNode {
 
     fn read_output(&self, pi: usize) -> f32 {
         if pi == 0 { self.value_out } else { 0.0 }
-    }
-
-    fn non_promotable_params(&self) -> &'static [&'static str] {
-        &["In Min", "In Max"]
     }
 
     fn params(&self) -> Vec<ParamDef> {

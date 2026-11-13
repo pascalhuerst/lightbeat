@@ -40,16 +40,6 @@ pub struct PhaseScalerProcessNode {
     prev_phase_in: f32,
     reset_in: f32,
     prev_reset: f32,
-    /// Last written value on the `exp` input (index 2). Interpreted as
-    /// the raw exponent value (rounded to the nearest integer and
-    /// clamped into -6..=6), so `-3` on the wire gives exponent -3 —
-    /// identical to setting the param to -3 with nothing wired.
-    exp_in: f32,
-    exp_connected: bool,
-    /// Last written value on the `offset` input (index 3). Phase-typed so
-    /// 0..1 maps directly onto the offset range.
-    offset_in: f32,
-    offset_connected: bool,
     phase_out: f32,
     cycle_counter: u64,
     /// Further outputs, each with its own ratio, and what they read now.
@@ -68,8 +58,6 @@ pub fn ports_for(extra: usize) -> (Vec<PortDef>, Vec<PortDef>) {
         vec![
             PortDef::new("phase", PortType::Phase),
             PortDef::new("reset", PortType::Logic),
-            PortDef::new("exp", PortType::Untyped),
-            PortDef::new("offset", PortType::Phase),
         ],
         std::iter::once(PortDef::new("phase", PortType::Phase))
             .chain((0..extra).map(|i| PortDef::new(format!("phase {}", i + 2), PortType::Phase)))
@@ -87,10 +75,6 @@ impl PhaseScalerProcessNode {
             prev_phase_in: 0.0,
             reset_in: 0.0,
             prev_reset: 0.0,
-            exp_in: 0.0,
-            exp_connected: false,
-            offset_in: 0.0,
-            offset_connected: false,
             phase_out: 0.0,
             cycle_counter: 0,
             extra: Vec::new(),
@@ -116,8 +100,6 @@ impl ProcessNode for PhaseScalerProcessNode {
         match port_index {
             0 => self.phase_in,
             1 => self.reset_in,
-            2 => self.exp_in,
-            3 => self.offset_in,
             _ => 0.0,
         }
     }
@@ -126,33 +108,11 @@ impl ProcessNode for PhaseScalerProcessNode {
         match port_index {
             0 => self.phase_in = value,
             1 => self.reset_in = value,
-            2 => self.exp_in = value,
-            3 => self.offset_in = value,
             _ => {}
         }
     }
 
-    fn set_input_connections(&mut self, connected: &[bool]) {
-        self.exp_connected = connected.get(2).copied().unwrap_or(false);
-        self.offset_connected = connected.get(3).copied().unwrap_or(false);
-    }
-
     fn process(&mut self) {
-        // Resolve exponent + offset: wired input overrides the param.
-        // Exponent input is taken directly — a wire carrying `-3` gives
-        // exponent -3, matching the inspector's "Exponent" slider. The
-        // value is rounded and clamped to the engine's supported range.
-        let exponent = if self.exp_connected {
-            (self.exp_in.round() as i32).clamp(-6, 6)
-        } else {
-            self.exponent
-        };
-        let offset = if self.offset_connected {
-            self.offset_in.rem_euclid(1.0)
-        } else {
-            self.offset
-        };
-
         // Rising edge on `reset` resyncs the sub-cycle phase to the input:
         // clears the multi-cycle accumulator (only used in divide mode) and
         // latches `prev_phase_in` so the next tick doesn't see a spurious
@@ -169,7 +129,7 @@ impl ProcessNode for PhaseScalerProcessNode {
             self.prev_phase_in = self.phase_in;
         }
 
-        self.phase_out = scale(self.phase_in, self.cycle_counter, exponent, offset);
+        self.phase_out = scale(self.phase_in, self.cycle_counter, self.exponent, self.offset);
         for (out, x) in self.extra_out.iter_mut().zip(&self.extra) {
             *out = scale(self.phase_in, self.cycle_counter, x.exponent, x.offset);
         }
@@ -196,10 +156,6 @@ impl ProcessNode for PhaseScalerProcessNode {
             self.extra_out.resize(self.extra.len(), 0.0);
             self.outputs = ports_for(self.extra.len()).1;
         }
-    }
-
-    fn non_promotable_params(&self) -> &'static [&'static str] {
-        &["Exponent", "Offset"]
     }
 
     fn params(&self) -> Vec<ParamDef> {

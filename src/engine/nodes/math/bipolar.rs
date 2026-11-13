@@ -8,9 +8,8 @@
 //! input to the **bipolar** range -0.5..+0.5. Setting range=2 gives a full
 //! -1..+1 converter.
 //!
-//! `range` and `center` follow the "input-overrides-param" pattern — when
-//! the corresponding input port is wired, the wire value takes over and
-//! the inspector param is hidden.
+//! A new node has `range` and `center` exposed as inputs (see
+//! `BipolarWidget::default_promoted`).
 
 use crate::engine::param_spec::FloatParam;
 use crate::engine::types::*;
@@ -24,10 +23,6 @@ pub struct BipolarProcessNode {
     in_value: f32,
     range: f32,
     center: f32,
-    range_in: f32,
-    center_in: f32,
-    range_connected: bool,
-    center_connected: bool,
     out_value: f32,
     inputs: Vec<PortDef>,
     outputs: Vec<PortDef>,
@@ -39,8 +34,6 @@ pub fn ports() -> (Vec<PortDef>, Vec<PortDef>) {
     (
         vec![
             PortDef::new("in", PortType::Untyped),
-            PortDef::new("range", PortType::Untyped),
-            PortDef::new("center", PortType::Untyped),
         ],
         vec![PortDef::new("out", PortType::Untyped)],
     )
@@ -54,21 +47,10 @@ impl BipolarProcessNode {
             in_value: 0.5,
             range: 1.0,
             center: 0.0,
-            range_in: 1.0,
-            center_in: 0.0,
-            range_connected: false,
-            center_connected: false,
             out_value: 0.0,
             inputs,
             outputs,
         }
-    }
-
-    fn effective_range(&self) -> f32 {
-        if self.range_connected { self.range_in } else { self.range }
-    }
-    fn effective_center(&self) -> f32 {
-        if self.center_connected { self.center_in } else { self.center }
     }
 }
 
@@ -79,39 +61,18 @@ impl ProcessNode for BipolarProcessNode {
     fn outputs(&self) -> &[PortDef] { &self.outputs }
 
     fn write_input(&mut self, pi: usize, v: f32) {
-        match pi {
-            0 => self.in_value = v,
-            1 => self.range_in = v,
-            2 => self.center_in = v,
-            _ => {}
-        }
+        if pi == 0 { self.in_value = v; }
     }
     fn read_input(&self, pi: usize) -> f32 {
-        match pi {
-            0 => self.in_value,
-            1 => self.range_in,
-            2 => self.center_in,
-            _ => 0.0,
-        }
-    }
-
-    fn set_input_connections(&mut self, connected: &[bool]) {
-        self.range_connected = connected.get(1).copied().unwrap_or(false);
-        self.center_connected = connected.get(2).copied().unwrap_or(false);
+        if pi == 0 { self.in_value } else { 0.0 }
     }
 
     fn process(&mut self) {
-        let r = self.effective_range();
-        let c = self.effective_center();
-        self.out_value = (self.in_value - 0.5) * r + c;
+        self.out_value = (self.in_value - 0.5) * self.range + self.center;
     }
 
     fn read_output(&self, pi: usize) -> f32 {
         if pi == 0 { self.out_value } else { 0.0 }
-    }
-
-    fn non_promotable_params(&self) -> &'static [&'static str] {
-        &["Range", "Center"]
     }
 
     fn params(&self) -> Vec<ParamDef> {

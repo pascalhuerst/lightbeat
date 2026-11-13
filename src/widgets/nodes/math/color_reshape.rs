@@ -58,7 +58,7 @@ impl NodeWidget for ColorReshapeWidget {
 
     /// The slider in `show_inspector` changes the ports in the same frame; a
     /// generic row would only move the engine's copy.
-    fn overridden_param_indices(&self) -> Vec<usize> {
+    fn hidden_param_indices(&self) -> Vec<usize> {
         if self.kind.has_stops() { vec![0] } else { Vec::new() }
     }
 

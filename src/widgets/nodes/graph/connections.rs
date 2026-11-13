@@ -849,3 +849,47 @@ mod removed_port_tests {
         assert_eq!(from_receive(&g, 0, 3), vec![(0, 20), (1, 21), (2, 22)], "another name is left alone");
     }
 }
+
+#[cfg(test)]
+mod default_promoted_tests {
+    use super::*;
+    use crate::engine::types::new_shared_state;
+    use crate::widgets::nodes::math::constant::ConstantWidget;
+    use crate::widgets::nodes::math::scale_offset::ScaleOffsetWidget;
+
+    fn names(g: &NodeGraph, node: usize) -> Vec<String> {
+        g.node_and_state(node).0.ui_inputs_full().into_iter().map(|p| p.def.name).collect()
+    }
+
+    #[test]
+    fn a_new_node_has_its_ports_and_switching_one_off_moves_the_wire_after_it() {
+        let mut g = NodeGraph::new();
+        let node: Box<dyn NodeWidget> = Box::new(ScaleOffsetWidget::new(NodeId(1), new_shared_state(4, 1)));
+        node.apply_default_promoted();
+        g.add_node(node, Pos2::ZERO);
+        g.add_node(Box::new(ConstantWidget::new(NodeId(2), PortType::Untyped, new_shared_state(0, 1))), Pos2::ZERO);
+        assert_eq!(names(&g, 0), ["in", "Scale", "Offset"]);
+
+        // A wire on "Offset", the third port.
+        g.add_connection(
+            PortId { node: NodeId(2), index: 0, dir: PortDir::Output },
+            PortId { node: NodeId(1), index: 2, dir: PortDir::Input },
+        );
+        g.node_mut(0).shared_state().lock().promoted.retain(|p| p.name != "Scale");
+        g.remap_promoted_connections();
+        assert_eq!(names(&g, 0), ["in", "Offset"]);
+        let wires: Vec<usize> = g.active().connections.iter().map(|c| c.to.index).collect();
+        assert_eq!(wires, vec![1]);
+
+        // Switching off the one the wire is on takes the wire with it.
+        g.node_mut(0).shared_state().lock().promoted.clear();
+        g.remap_promoted_connections();
+        assert!(g.active().connections.is_empty());
+    }
+
+    #[test]
+    fn the_constructor_leaves_the_list_empty_for_load_and_paste() {
+        let node = ScaleOffsetWidget::new(NodeId(1), new_shared_state(4, 1));
+        assert!(node.shared_state().lock().promoted.is_empty());
+    }
+}

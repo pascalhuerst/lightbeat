@@ -70,7 +70,7 @@ impl NodeWidget for EnvelopeWidget {
     }
     fn ui_outputs(&self) -> Vec<UiPortDef> { UiPortDef::from_defs(&ports().1) }
 
-    fn overridden_param_indices(&self) -> Vec<usize> {
+    fn hidden_param_indices(&self) -> Vec<usize> {
         // Hide params that don't apply to the current mode. Indices:
         // 0=Attack/Rise/Tau, 1=Decay, 2=Sustain, 3=Release/Fall, 4=Mode, 5-7 the
         // bend of attack, decay and release.
