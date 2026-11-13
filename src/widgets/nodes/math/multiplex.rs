@@ -57,9 +57,9 @@ impl NodeWidget for MultiplexerWidget {
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { "Multiplexer" }
     fn description(&self) -> &'static str {
-        "Routes one of N typed inputs to a single output. In Index select \
-         mode (default) `select` is an integer (rounded, clamped). In \
-         Phase select mode `select` accepts a 0..1 phase swept across \
+        "Routes one of N typed inputs to a single output. When selecting by Index \
+         (default) `select` is an integer (rounded, clamped); selecting by \
+         Phase it accepts a 0..1 phase swept across \
          slots — wire in a Clock or LFO for beat-synced switching. Port \
          type auto-detected from the first data connection."
     }
@@ -155,7 +155,7 @@ impl NodeWidget for DemultiplexerWidget {
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { "Demultiplexer" }
     fn description(&self) -> &'static str {
-        "Routes a typed input to one of N outputs. In Index select mode (default) `select` is an integer (rounded, clamped); in Phase select mode it is a 0..1 phase swept across the outputs. Unselected outputs emit zero. Port type auto-detected from the first connection; slot count set in the inspector."
+        "Routes a typed input to one of N outputs. Selecting by Index (default), `select` is an integer (rounded, clamped); selecting by Phase it is a 0..1 phase swept across the outputs. Unselected outputs emit zero. Port type auto-detected from the first connection; slot count set in the inspector."
     }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> {

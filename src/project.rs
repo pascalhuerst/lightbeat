@@ -333,6 +333,18 @@ pub(crate) const RENAMED_NODES: [(&str, &str); 8] = [
     ("Bar Loop", "Bar"),
 ];
 
+/// Settings that were renamed: (node, old name, new name). Promoted inputs and
+/// snapshots refer to a setting by name, so they are carried over on load.
+/// Temporary, like `RENAMED_NODES`.
+const RENAMED_SETTINGS: [(&str, &str, &str); 1] = [("Lookup Table", "Input", "Select by")];
+
+fn current_setting_name<'a>(node: &str, saved: &'a str) -> &'a str {
+    RENAMED_SETTINGS
+        .iter()
+        .find(|(n, old, _)| *n == node && *old == saved)
+        .map_or(saved, |(_, _, new)| new)
+}
+
 fn current_type_name(saved: &str) -> &str {
     RENAMED_NODES.iter().find(|(old, _)| *old == saved).map_or(saved, |(_, new)| new)
 }
@@ -385,14 +397,24 @@ pub fn load_graph(graph: &mut NodeGraph, project: &ProjectFile) -> Vec<usize> {
                 shared.disabled = saved.disabled;
                 shared.hide_unused_ports = saved.hide_unused_ports;
                 // Set before connections are restored so the extra ports exist.
-                shared.promoted = saved.promoted.clone();
-                shared.promoted_applied = saved.promoted.clone();
-                if !saved.promoted.is_empty() {
-                    shared.pending_promoted = Some(saved.promoted.clone());
+                let mut promoted = saved.promoted.clone();
+                for p in &mut promoted {
+                    p.name = current_setting_name(type_name, &p.name).to_string();
+                }
+                shared.promoted = promoted.clone();
+                shared.promoted_applied = promoted.clone();
+                if !promoted.is_empty() {
+                    shared.pending_promoted = Some(promoted);
                 }
                 if !saved.snapshots.is_empty() {
-                    shared.snapshots = saved.snapshots.clone();
-                    shared.pending_snapshots = Some(saved.snapshots.clone());
+                    let mut snapshots = saved.snapshots.clone();
+                    for snap in &mut snapshots.snapshots {
+                        for (name, _) in &mut snap.values {
+                            *name = current_setting_name(type_name, name).to_string();
+                        }
+                    }
+                    shared.snapshots = snapshots.clone();
+                    shared.pending_snapshots = Some(snapshots);
                 }
             }
 
@@ -824,6 +846,13 @@ mod tests {
         g.register_node("Signal", "Smoothing", |id| Box::new(SmoothingWidget::new(id, new_shared_state(40, 40))));
         g.register_node("Trigger", "Tick Delay", |id| Box::new(LatchWidget::new(id, new_shared_state(40, 40))));
         g
+    }
+
+    #[test]
+    fn a_renamed_setting_keeps_its_promotion_and_snapshots_by_name() {
+        assert_eq!(current_setting_name("Lookup Table", "Input"), "Select by");
+        assert_eq!(current_setting_name("Lookup Table", "Edge"), "Edge");
+        assert_eq!(current_setting_name("Smoothing", "Input"), "Input");
     }
 
     #[test]

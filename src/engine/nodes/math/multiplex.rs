@@ -171,7 +171,7 @@ impl ProcessNode for MultiplexerProcessNode {
     }
 
     fn non_promotable_params(&self) -> &'static [&'static str] {
-        &["Type", "Slots", "Select Mode"]
+        &["Type", "Slots", "Select by"]
     }
 
     fn params(&self) -> Vec<ParamDef> {
@@ -188,7 +188,7 @@ impl ProcessNode for MultiplexerProcessNode {
                 max: MUX_MAX_SLOTS as i64,
             },
             ParamDef::Choice {
-                name: "Select Mode".into(),
+                name: "Select by".into(),
                 value: self.select_mode.to_index(),
                 options: SelectMode::ALL.iter().map(|m| m.label().to_string()).collect(),
             },
@@ -318,7 +318,7 @@ impl ProcessNode for DemultiplexerProcessNode {
     }
 
     fn non_promotable_params(&self) -> &'static [&'static str] {
-        &["Type", "Slots", "Select Mode"]
+        &["Type", "Slots", "Select by"]
     }
 
     fn params(&self) -> Vec<ParamDef> {
@@ -335,7 +335,7 @@ impl ProcessNode for DemultiplexerProcessNode {
                 max: MUX_MAX_SLOTS as i64,
             },
             ParamDef::Choice {
-                name: "Select Mode".into(),
+                name: "Select by".into(),
                 value: self.select_mode.to_index(),
                 options: SelectMode::ALL.iter().map(|m| m.label().to_string()).collect(),
             },

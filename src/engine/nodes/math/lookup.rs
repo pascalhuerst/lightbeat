@@ -182,9 +182,9 @@ impl ProcessNode for LookupProcessNode {
     fn params(&self) -> Vec<ParamDef> {
         vec![
             ParamDef::Choice {
-                name: "Input".into(),
+                name: "Select by".into(),
                 value: match self.input { LookupInput::Index => 0, LookupInput::Phase => 1 },
-                options: vec!["Row number".into(), "Phase over the table".into()],
+                options: vec!["Index".into(), "Phase".into()],
             },
             ParamDef::Choice {
                 name: "Edge".into(),
