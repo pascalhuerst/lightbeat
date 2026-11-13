@@ -40,6 +40,27 @@ pub fn data_file(name: &str) -> PathBuf {
     data_dir().join(name)
 }
 
+/// Write `bytes` to `path` so that a crash or a full disk leaves either the
+/// old file or the new one, never half of it: the bytes go to a temporary file
+/// in the same directory (a rename is only atomic within one filesystem), which
+/// then replaces the target.
+pub fn write_atomic(path: &Path, bytes: impl AsRef<[u8]>) -> std::io::Result<()> {
+    use std::io::Write;
+    let mut name = path.file_name().map(|n| n.to_os_string()).unwrap_or_default();
+    name.push(".tmp");
+    let tmp = path.with_file_name(name);
+    let result = (|| {
+        let mut file = std::fs::File::create(&tmp)?;
+        file.write_all(bytes.as_ref())?;
+        file.sync_all()?;
+        std::fs::rename(&tmp, path)
+    })();
+    if result.is_err() {
+        let _ = std::fs::remove_file(&tmp);
+    }
+    result
+}
+
 /// The directory to use; empty means the working directory.
 fn choose(
     lightbeat_home: Option<OsString>,
@@ -73,6 +94,19 @@ mod tests {
 
     fn dir(env: Option<&str>, cwd: bool, home: Option<&str>, xdg: Option<&str>, macos: bool) -> PathBuf {
         choose(env.map(Into::into), cwd, home.map(Into::into), xdg.map(Into::into), macos)
+    }
+
+    #[test]
+    fn write_atomic_replaces_the_file_and_leaves_no_temporary() {
+        let d = std::env::temp_dir().join(format!("lightbeat-atomic-{}", std::process::id()));
+        std::fs::create_dir_all(&d).unwrap();
+        let path = d.join("setup.json");
+        std::fs::write(&path, "old").unwrap();
+        write_atomic(&path, "new contents").unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "new contents");
+        assert!(!d.join("setup.json.tmp").exists());
+        assert!(write_atomic(&d.join("missing-dir/x.json"), "x").is_err());
+        std::fs::remove_dir_all(&d).unwrap();
     }
 
     #[test]

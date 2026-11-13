@@ -78,7 +78,7 @@ fn write_setup(path: &std::path::Path, setup: &SetupFile, blocked: bool) -> Resu
         return Ok(false);
     }
     let json = serde_json::to_string_pretty(setup).map_err(|e| e.to_string())?;
-    std::fs::write(path, json).map_err(|e| e.to_string())?;
+    crate::paths::write_atomic(path, json).map_err(|e| e.to_string())?;
     Ok(true)
 }
 
@@ -112,7 +112,7 @@ pub fn load_setup() -> Result<SetupFile, String> {
 /// Write the setup to any file, for taking it to another computer.
 pub fn export_to(setup: &SetupFile, path: &std::path::Path) -> Result<(), String> {
     let json = serde_json::to_string_pretty(setup).map_err(|e| e.to_string())?;
-    std::fs::write(path, json).map_err(|e| e.to_string())
+    crate::paths::write_atomic(path, json).map_err(|e| e.to_string())
 }
 
 pub fn import_from(path: &std::path::Path) -> Result<SetupFile, String> {
