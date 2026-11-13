@@ -255,40 +255,112 @@ impl NodeGraph {
 
     /// A node that had a port removed from the middle of its list reports it
     /// here: the wires on that port go, and the ones on the ports after it
-    /// follow them down.
+    /// follow them down. A subgraph's bridge nodes inside and the Portal
+    /// Receives of a Portal Send are the other ends of the same port.
     pub(super) fn remap_removed_ports(&mut self) {
+        enum Kind { Plain, Subgraph, PortalSend(String) }
         let level = self.active_mut();
         let ids: Vec<NodeId> = level.states.iter().map(|s| s.id).collect();
-        let removed: Vec<(NodeId, PortDir, usize)> = level
+        let removed: Vec<(NodeId, PortDir, usize, Kind)> = level
             .nodes
             .iter_mut()
             .zip(ids)
-            .filter_map(|(node, id)| node.take_removed_port().map(|(dir, i)| (id, dir, i)))
-            .collect();
-        for (node, dir, index) in removed {
-            let on_node = |p: &PortId| p.node == node && p.dir == dir;
-            let wires: Vec<(PortId, PortId)> = self
-                .active()
-                .connections
-                .iter()
-                .filter(|c| match dir {
-                    PortDir::Input => on_node(&c.to) && c.to.index >= index,
-                    PortDir::Output => on_node(&c.from) && c.from.index >= index,
-                })
-                .map(|c| (c.from, c.to))
-                .collect();
-            for (_, to) in &wires {
-                self.remove_connection_to(*to);
-            }
-            for (from, to) in wires {
-                let (from, to) = match dir {
-                    PortDir::Input if to.index == index => continue,
-                    PortDir::Output if from.index == index => continue,
-                    PortDir::Input => (from, PortId { index: to.index - 1, ..to }),
-                    PortDir::Output => (PortId { index: from.index - 1, ..from }, to),
+            .filter_map(|(node, id)| {
+                let (dir, i) = node.take_removed_port()?;
+                let any = node.as_any_mut();
+                let kind = if any.is::<SubgraphWidget>() {
+                    Kind::Subgraph
+                } else if let Some(send) = any.downcast_ref::<PortalSendWidget>() {
+                    Kind::PortalSend(send.name().to_string())
+                } else {
+                    Kind::Plain
                 };
-                self.add_connection(from, to);
+                Some((id, dir, i, kind))
+            })
+            .collect();
+        for (node, dir, index, kind) in removed {
+            self.shift_wires_after_removal(node, dir, index);
+            match kind {
+                Kind::Plain => {}
+                Kind::Subgraph => {
+                    let Some(inner) = self.levels.iter().position(|l| l.subgraph_id == Some(node)) else { continue };
+                    let (bridge, bridge_dir) = match dir {
+                        PortDir::Input => (BRIDGE_IN_NODE_ID, PortDir::Output),
+                        PortDir::Output => (BRIDGE_OUT_NODE_ID, PortDir::Input),
+                    };
+                    self.at_level(inner, |g| g.shift_wires_after_removal(bridge, bridge_dir, index));
+                    for n in self.levels[inner].nodes.iter_mut() {
+                        let any = n.as_any_mut();
+                        if let Some(gi) = any.downcast_mut::<GraphInputWidget>() {
+                            if dir == PortDir::Input { gi.remove_port(index); }
+                        } else if let Some(go) = any.downcast_mut::<GraphOutputWidget>()
+                            && dir == PortDir::Output {
+                                go.remove_port(index);
+                            }
+                    }
+                }
+                Kind::PortalSend(name) => {
+                    if name.is_empty() { continue; }
+                    for li in 0..self.levels.len() {
+                        let lv = &mut self.levels[li];
+                        let receives: Vec<NodeId> = lv
+                            .nodes
+                            .iter_mut()
+                            .zip(lv.states.iter())
+                            .filter_map(|(n, s)| {
+                                let recv = n.as_any_mut().downcast_mut::<PortalReceiveWidget>()?;
+                                (recv.bound_name() == name).then(|| {
+                                    recv.drop_port(index);
+                                    s.id
+                                })
+                            })
+                            .collect();
+                        self.at_level(li, |g| {
+                            for id in receives {
+                                g.shift_wires_after_removal(id, PortDir::Output, index);
+                            }
+                        });
+                    }
+                }
             }
+        }
+    }
+
+    /// Run `f` as if `level` were the one on screen: wires and engine commands
+    /// of that level are the ones it touches.
+    fn at_level<R>(&mut self, level: usize, f: impl FnOnce(&mut Self) -> R) -> R {
+        let before = self.active_level;
+        self.active_level = level;
+        let r = f(self);
+        self.active_level = before;
+        r
+    }
+
+    /// Port `index` of `node` is gone from the active level: drop its wires and
+    /// move the ones on the ports after it down by one.
+    fn shift_wires_after_removal(&mut self, node: NodeId, dir: PortDir, index: usize) {
+        let on_node = |p: &PortId| p.node == node && p.dir == dir;
+        let wires: Vec<(PortId, PortId)> = self
+            .active()
+            .connections
+            .iter()
+            .filter(|c| match dir {
+                PortDir::Input => on_node(&c.to) && c.to.index >= index,
+                PortDir::Output => on_node(&c.from) && c.from.index >= index,
+            })
+            .map(|c| (c.from, c.to))
+            .collect();
+        for (_, to) in &wires {
+            self.remove_connection_to(*to);
+        }
+        for (from, to) in wires {
+            let (from, to) = match dir {
+                PortDir::Input if to.index == index => continue,
+                PortDir::Output if from.index == index => continue,
+                PortDir::Input => (from, PortId { index: to.index - 1, ..to }),
+                PortDir::Output => (PortId { index: from.index - 1, ..from }, to),
+            };
+            self.add_connection(from, to);
         }
     }
 
@@ -663,5 +735,117 @@ mod removed_port_tests {
         g.remap_removed_ports();
         g.cleanup_stale_connections();
         assert_eq!(wires(&g), vec![(10, 1), (12, 2)]);
+    }
+
+    /// Subgraph 1 with three inputs and outputs, opened once so it has a level,
+    /// and the root again as the active level.
+    fn subgraph_with_inner_level() -> NodeGraph {
+        let mut g = NodeGraph::new();
+        let mut sub = SubgraphWidget::new(NodeId(1), new_shared_state(3, 3));
+        sub.input_defs = three_subgraph_ports();
+        sub.output_defs = three_subgraph_ports();
+        g.add_node(Box::new(sub), Pos2::ZERO);
+        g.navigate_into_by_index(0);
+        g.drain_engine_commands();
+        g
+    }
+
+    fn inner_wires(g: &NodeGraph) -> Vec<(u64, usize, u64, usize)> {
+        let mut w: Vec<_> = g.levels[1].connections.iter().map(|c| (c.from.node.0, c.from.index, c.to.node.0, c.to.index)).collect();
+        w.sort();
+        w
+    }
+
+    #[test]
+    fn removing_a_subgraph_input_moves_the_wires_on_the_graph_input_inside() {
+        let mut g = subgraph_with_inner_level();
+        for k in 0..3u64 {
+            g.add_node(display(10 + k), Pos2::new(200.0, k as f32 * 50.0));
+            g.add_connection(
+                PortId { node: BRIDGE_IN_NODE_ID, index: k as usize, dir: PortDir::Output },
+                PortId { node: NodeId(10 + k), index: 0, dir: PortDir::Input },
+            );
+        }
+        g.navigate_to_level(0);
+        g.drain_engine_commands();
+        g.node_mut(0).as_any_mut().downcast_mut::<SubgraphWidget>().unwrap().remove_input(1);
+        g.remap_removed_ports();
+        assert_eq!(g.active_level_index(), 0, "the view stays where it was");
+        let bridge = BRIDGE_IN_NODE_ID.0;
+        assert_eq!(inner_wires(&g), vec![(bridge, 0, 10, 0), (bridge, 1, 12, 0)]);
+        let sent_inside = g.drain_engine_commands().iter()
+            .filter(|c| matches!(c, EngineCommand::SubgraphInnerCommand { subgraph_path, .. } if *subgraph_path == vec![NodeId(1)]))
+            .count();
+        assert!(sent_inside >= 3, "the engine hears about the removed and the moved wire");
+        g.navigate_to_level(1);
+        g.cleanup_stale_connections();
+        assert_eq!(inner_wires(&g), vec![(bridge, 0, 10, 0), (bridge, 1, 12, 0)]);
+    }
+
+    #[test]
+    fn removing_a_subgraph_output_moves_the_wires_on_the_graph_output_inside() {
+        let mut g = subgraph_with_inner_level();
+        for k in 0..3u64 {
+            g.add_node(constant(10 + k), Pos2::new(0.0, k as f32 * 50.0));
+            g.add_connection(
+                PortId { node: NodeId(10 + k), index: 0, dir: PortDir::Output },
+                PortId { node: BRIDGE_OUT_NODE_ID, index: k as usize, dir: PortDir::Input },
+            );
+        }
+        g.navigate_to_level(0);
+        g.node_mut(0).as_any_mut().downcast_mut::<SubgraphWidget>().unwrap().remove_output(0);
+        g.remap_removed_ports();
+        let bridge = BRIDGE_OUT_NODE_ID.0;
+        assert_eq!(inner_wires(&g), vec![(11, 0, bridge, 0), (12, 0, bridge, 1)]);
+    }
+
+    #[test]
+    fn removing_a_portal_send_port_moves_the_wires_on_receives_of_that_name_on_every_level() {
+        use crate::widgets::nodes::meta::portal::{PortalReceiveWidget, PortalSendWidget};
+        let ports = serde_json::json!([
+            { "name": "a", "port_type_idx": 2 }, { "name": "b", "port_type_idx": 2 }, { "name": "c", "port_type_idx": 2 },
+        ]);
+        let receive = |id: u64, name: &str| {
+            let mut r = PortalReceiveWidget::new(NodeId(id), new_shared_state(0, 3), Default::default());
+            r.restore_from_save_data(&serde_json::json!({ "bound_name": name, "ports": ports }));
+            Box::new(r) as Box<dyn NodeWidget>
+        };
+        let wire_displays = |g: &mut NodeGraph, receive_id: u64, first_display: u64| {
+            for k in 0..3u64 {
+                g.add_node(display(first_display + k), Pos2::new(200.0, k as f32 * 50.0));
+                g.add_connection(
+                    PortId { node: NodeId(receive_id), index: k as usize, dir: PortDir::Output },
+                    PortId { node: NodeId(first_display + k), index: 0, dir: PortDir::Input },
+                );
+            }
+        };
+        let mut g = NodeGraph::new();
+        let mut send = PortalSendWidget::new(NodeId(1), new_shared_state(3, 0));
+        send.restore_from_save_data(&serde_json::json!({ "name": "p", "ports": ports }));
+        g.add_node(Box::new(send), Pos2::ZERO);
+        g.add_node(receive(2, "p"), Pos2::new(0.0, 200.0));
+        wire_displays(&mut g, 2, 10);
+        g.add_node(receive(3, "other"), Pos2::new(0.0, 400.0));
+        wire_displays(&mut g, 3, 20);
+        let mut sub = SubgraphWidget::new(NodeId(4), new_shared_state(0, 0));
+        sub.input_defs = Vec::new();
+        g.add_node(Box::new(sub), Pos2::new(0.0, 600.0));
+        g.navigate_into_by_index(3);
+        g.add_node(receive(5, "p"), Pos2::ZERO);
+        wire_displays(&mut g, 5, 30);
+        g.navigate_to_level(0);
+
+        g.node_mut(0).as_any_mut().downcast_mut::<PortalSendWidget>().unwrap().remove_port(1);
+        g.remap_removed_ports();
+
+        let from_receive = |g: &NodeGraph, level: usize, id: u64| {
+            let mut w: Vec<(usize, u64)> = g.levels[level].connections.iter()
+                .filter(|c| c.from.node.0 == id).map(|c| (c.from.index, c.to.node.0)).collect();
+            w.sort();
+            w
+        };
+        assert_eq!(from_receive(&g, 0, 2), vec![(0, 10), (1, 12)]);
+        assert_eq!(from_receive(&g, 1, 5), vec![(0, 30), (1, 32)], "a Receive inside a subgraph too");
+        assert_eq!(from_receive(&g, 0, 3), vec![(0, 20), (1, 21), (2, 22)], "another name is left alone");
     }
 }

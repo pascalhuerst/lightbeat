@@ -57,6 +57,8 @@ impl PortalSendWidget {
         self.removed = Some(i);
     }
 
+    pub fn name(&self) -> &str { &self.name }
+
     pub fn restore_from_save_data(&mut self, data: &serde_json::Value) {
         if let Some(n) = data.get("name").and_then(|v| v.as_str()) {
             self.name = n.to_string();
@@ -182,6 +184,17 @@ pub struct PortalReceiveWidget {
 impl PortalReceiveWidget {
     pub fn new(id: NodeId, shared: SharedState, registry: SharedPortalRegistry) -> Self {
         Self { id, shared, registry, bound_name: String::new(), port_defs: Vec::new(), connected: false }
+    }
+
+    pub fn bound_name(&self) -> &str { &self.bound_name }
+
+    /// The Send this is bound to lost port `i`. The list normally follows from
+    /// the engine a moment later; doing it now lets the graph move the wires
+    /// and check their types against the new list straight away.
+    pub fn drop_port(&mut self, i: usize) {
+        if i < self.port_defs.len() {
+            self.port_defs.remove(i);
+        }
     }
 
     fn push_config(&self) {
