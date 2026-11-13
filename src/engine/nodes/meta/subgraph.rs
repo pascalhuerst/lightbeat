@@ -5,6 +5,7 @@ use crate::engine::graph::UI_SYNC_EVERY_N_TICKS;
 use crate::engine::promoted::PromotedInputs;
 use crate::engine::routing::RoutePlan;
 use crate::engine::sync_hint::SaveDataGate;
+use crate::perf::NodeProfiler;
 use std::any::Any;
 use std::collections::HashMap;
 
@@ -126,6 +127,10 @@ pub struct InnerGraph {
     /// Scratch buffers reused across ticks so the hot loop does not allocate.
     disabled_mask: Vec<bool>,
     sync_counter: u32,
+    /// Only the root graph has one; see `process_nodes`.
+    profiler: Option<NodeProfiler>,
+    /// Phase names for the node profile, which tell the root from the inner graphs.
+    laps: [&'static str; 5],
 }
 
 /// Reserved NodeIds for bridge endpoints.
@@ -148,6 +153,14 @@ impl InnerGraph {
             plan_dirty: true,
             disabled_mask: Vec::new(),
             sync_counter: 0,
+            profiler: None,
+            laps: [
+                "[inner] 0 take pending",
+                "[inner] 1 connected bitmap",
+                "[inner] 2 process (nodes)",
+                "[inner] 3 propagate",
+                "[inner] 4 ui sync",
+            ],
         }
     }
 
@@ -180,17 +193,10 @@ impl InnerGraph {
         self.plan_dirty = false;
     }
 
-    /// Run one tick of the inner graph. Mirrors `EngineGraph::tick`; keep the
-    /// two in step when changing either.
-    pub fn tick(&mut self, input_ports: &[PortDef], output_ports: &[PortDef]) {
-        let mut clock = crate::perf::PhaseClock::start();
-        if self.index_stale {
-            self.rebuild_node_index();
-        }
-
-        // 0. Take everything the UI pushed, in a single lock per node, before
-        // `process` so an edit lands on the tick it arrives and before the
-        // connection scan because `load_data` can rebuild a node's ports.
+    /// Takes everything the UI pushed, in a single lock per node, before
+    /// `process` so an edit lands on the tick it arrives and before the
+    /// connection scan because `load_data` can rebuild a node's ports.
+    fn take_pending(&mut self) {
         self.disabled_mask.clear();
         for (i, node) in self.nodes.iter_mut().enumerate() {
             let (disabled, pending, config_update, promoted_update, snapshots_update, recall) = {
@@ -224,22 +230,24 @@ impl InnerGraph {
                 self.promoted[i].recall_snapshot(index, node.as_mut());
             }
         }
+    }
 
-        clock.lap("[inner] 0 take pending");
-
-        // 1. Re-resolve routing and the per-node connected-input bitmap (the
-        //    "input-overrides-param" pattern inside subgraphs) only when
-        //    something that could change them did.
-        if self.plan_dirty
-            || !self.plan.is_current(&self.nodes, input_ports, output_ports)
-        {
-            self.rebuild_plan(input_ports, output_ports);
-        }
-
-        clock.lap("[inner] 1 connected bitmap");
-
-        // 2. Process inner nodes, skipping disabled ones.
-        if crate::perf::node_profiling_enabled() {
+    /// Processes all nodes except disabled ones, which keep their previous
+    /// output values so downstream signal flow freezes instead of dropping to
+    /// zero. The root graph has its own profiler; nodes inside subgraphs
+    /// report to the shared sample list instead.
+    fn process_nodes(&mut self) {
+        if let Some(profile) = &mut self.profiler {
+            for (i, node) in self.nodes.iter_mut().enumerate() {
+                if self.disabled_mask[i] {
+                    continue;
+                }
+                let started = std::time::Instant::now();
+                node.process();
+                profile.record(node.type_name(), started.elapsed().as_nanos() as u64);
+            }
+            profile.end_tick();
+        } else if crate::perf::node_profiling_enabled() {
             for (i, node) in self.nodes.iter_mut().enumerate() {
                 if self.disabled_mask[i] {
                     continue;
@@ -258,10 +266,42 @@ impl InnerGraph {
                 }
             }
         }
+    }
 
-        clock.lap("[inner] 2 process (nodes)");
+    /// Run one tick of the graph: the root graph and every subgraph's inner
+    /// graph go through here. `after_propagate` runs once the signals have
+    /// moved and before the UI mirror; the root uses it for the hover probe.
+    pub fn tick_with(
+        &mut self,
+        input_ports: &[PortDef],
+        output_ports: &[PortDef],
+        after_propagate: impl FnOnce(&InnerGraph),
+    ) {
+        let mut clock = crate::perf::PhaseClock::start();
+        if self.index_stale {
+            self.rebuild_node_index();
+        }
 
-        // 3. Propagate connections (including bridge connections).
+        // 0. Pending params, config, promoted lists and snapshot recalls.
+        self.take_pending();
+        clock.lap(self.laps[0]);
+
+        // 1. Re-resolve routing and the per-node "which input ports are
+        //    connected" bitmap (the "input-overrides-param" pattern) only when
+        //    something that could change them did.
+        if self.plan_dirty
+            || !self.plan.is_current(&self.nodes, input_ports, output_ports)
+        {
+            self.rebuild_plan(input_ports, output_ports);
+        }
+        clock.lap(self.laps[1]);
+
+        // 2. Process the nodes.
+        self.process_nodes();
+        clock.lap(self.laps[2]);
+
+        // 3. Propagate connections (including bridge connections). Multi-channel
+        // ports (Color=3, Position=2) expand to multiple float copies.
         self.plan.run(
             &mut self.nodes,
             &mut self.promoted,
@@ -271,7 +311,9 @@ impl InnerGraph {
         for (i, node) in self.nodes.iter_mut().enumerate() {
             self.promoted[i].step_snapshots(node.as_mut());
         }
-        clock.lap("[inner] 3 propagate");
+        clock.lap(self.laps[3]);
+
+        after_propagate(self);
 
         // 4. Mirror state for the UI at roughly frame rate. `params()`,
         // `save_data()` and `update_display()` allocate, and the UI only sees
@@ -281,7 +323,11 @@ impl InnerGraph {
             self.sync_counter = 0;
             self.sync_shared_state();
         }
-        clock.lap("[inner] 4 ui sync");
+        clock.lap(self.laps[4]);
+    }
+
+    pub fn tick(&mut self, input_ports: &[PortDef], output_ports: &[PortDef]) {
+        self.tick_with(input_ports, output_ports, |_| {});
     }
 
     fn sync_shared_state(&mut self) {
