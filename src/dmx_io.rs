@@ -240,9 +240,10 @@ impl DmxOutputManager {
 
                     // Merge: universe data + overrides.
                     let mut output = universe.channels;
-                    for i in 0..512 {
-                        if entry.overrides.active[i] {
-                            output[i] = entry.overrides.values[i];
+                    let ov = &entry.overrides;
+                    for ((o, &active), &value) in output.iter_mut().zip(&ov.active).zip(&ov.values) {
+                        if active {
+                            *o = value;
                         }
                     }
                     entry.channels = output;

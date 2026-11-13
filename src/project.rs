@@ -456,8 +456,8 @@ pub fn load_graph(graph: &mut NodeGraph, project: &ProjectFile) -> Vec<usize> {
             // saved wires are attached.
             graph.node_mut(idx).restore_from_save(saved.data.as_ref(), &restore_params);
 
-            if saved.type_name == "Subgraph" {
-                if let Some(inner_project) = &saved.inner_graph {
+            if saved.type_name == "Subgraph"
+                && let Some(inner_project) = &saved.inner_graph {
                     // Save the active level explicitly — `navigate_up` just
                     // decrements by one, which picks the wrong level when
                     // sibling subgraphs have pushed levels above us in the
@@ -480,7 +480,6 @@ pub fn load_graph(graph: &mut NodeGraph, project: &ProjectFile) -> Vec<usize> {
                     let _inner_indices = load_graph(graph, inner_project);
                     graph.navigate_to_level(parent_level);
                 }
-            }
 
             indices.push(idx);
         }
@@ -578,7 +577,7 @@ pub fn autosave_path_for(project_path: Option<&std::path::Path>) -> PathBuf {
 pub fn save_to_file(
     graph: &NodeGraph,
     view: ProjectViewState,
-    path: &PathBuf,
+    path: &std::path::Path,
 ) -> Result<(), String> {
     let mut project = save_graph(graph);
     project.view = Some(view);
@@ -589,7 +588,7 @@ pub fn save_to_file(
     crate::paths::write_atomic(path, json).map_err(|e| e.to_string())
 }
 
-pub fn load_from_file(path: &PathBuf) -> Result<ProjectFile, String> {
+pub fn load_from_file(path: &std::path::Path) -> Result<ProjectFile, String> {
     let json = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
     serde_json::from_str(&json).map_err(|e| e.to_string())
 }

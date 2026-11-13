@@ -497,11 +497,10 @@ pub fn render(track: &Track, map: &TempoMap) -> Vec<f32> {
                     add(&mut tonal, a, &pad_chord(&freqs, z - a), 0.25);
                 }
             }
-            if b == 0 && si > 0 {
-                if let Some(at) = at_beat(abs_bar as f64 * 4.0) {
+            if b == 0 && si > 0
+                && let Some(at) = at_beat(abs_bar as f64 * 4.0) {
                     add(&mut drums, at, &bank.crash, 0.35);
                 }
-            }
         }
         bar_index += section.bars;
     }

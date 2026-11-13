@@ -55,7 +55,7 @@ impl Biquad {
 /// models the head, then a high-pass that drops the lowest octaves.
 fn k_weighting(sample_rate: u32) -> [Biquad; 2] {
     let fs = sample_rate as f64;
-    let (f0, gain, q) = (1681.974_450_955_533, 3.999_843_853_973_347, 0.707_175_236_955_419_6);
+    let (f0, gain, q) = (1681.974450955533, 3.999843853973347, 0.7071752369554196);
     let k = (std::f64::consts::PI * f0 / fs).tan();
     let vh = 10f64.powf(gain / 20.0);
     let vb = vh.powf(0.499_666_774_154_541_6);

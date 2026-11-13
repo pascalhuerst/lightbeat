@@ -207,14 +207,13 @@ impl DmxMonitor {
                     }
                 }
 
-        for i in 0..CHANNEL_COUNT {
+        for (i, &value) in channels.iter().enumerate() {
             let col = i % COLS;
             let row = i / COLS;
 
             let top_left = origin + Vec2::new(col as f32 * cell_w, row as f32 * cell_h);
             let cell_rect = Rect::from_min_size(top_left, cell_size);
 
-            let value = channels[i];
             let norm = value as f32 / 255.0;
             let is_override = overrides.active[i];
 

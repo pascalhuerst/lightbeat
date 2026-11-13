@@ -64,7 +64,7 @@ impl NodeWidget for PaletteToGradientWidget {
 
         let g = Gradient::from_channels(&chans);
         if !g.stops().is_empty() {
-            let samples = (rect.width() as usize).max(16).min(320);
+            let samples = (rect.width() as usize).clamp(16, 320);
             for i in 0..samples {
                 let t = i as f32 / (samples - 1).max(1) as f32;
                 let x = rect.min.x + (i as f32 / samples as f32) * rect.width();

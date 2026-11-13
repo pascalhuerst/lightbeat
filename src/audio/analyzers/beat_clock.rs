@@ -130,7 +130,7 @@ pub fn create(sample_rate: u32) -> (AnalyzerHandle, Box<dyn AnalyzerProc>) {
     let current = *params.read();
 
     let p_get = params.clone();
-    let get_params = Arc::new(move || params_for(&*p_get.read()))
+    let get_params = Arc::new(move || params_for(&p_get.read()))
         as Arc<dyn Fn() -> Vec<ParamDef> + Send + Sync>;
     let p_set = params.clone();
     let set_param = Arc::new(move |idx: usize, v: ParamValue| apply_param(&p_set, idx, v))

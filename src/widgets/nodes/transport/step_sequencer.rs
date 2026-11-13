@@ -64,7 +64,7 @@ impl NodeWidget for StepSequencerWidget {
             (rect.min.x + i as f32 * step_width).round()
         };
 
-        for i in 0..num_steps {
+        for (i, &step_value) in values.iter().enumerate() {
             let x_min = x_at(i);
             let x_max = x_at(i + 1);
             let cell = Rect::from_min_max(
@@ -72,7 +72,7 @@ impl NodeWidget for StepSequencerWidget {
                 egui::pos2(x_max, rect.max.y),
             );
             let is_active = i == current_step && active;
-            fader::draw_fader(&painter, cell, values[i], Orientation::Vertical, &style, is_active);
+            fader::draw_fader(&painter, cell, step_value, Orientation::Vertical, &style, is_active);
         }
         // Draw separator lines as 1px-wide filled rects at integer x —
         // independent of cell drawing so no separator can be hidden by a

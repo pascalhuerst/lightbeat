@@ -419,7 +419,7 @@ impl LightBeatApp {
     }
 
     pub(crate) fn load_project_from(&mut self, path: &std::path::Path) {
-        match project::load_from_file(&path.to_path_buf()) {
+        match project::load_from_file(path) {
             Ok(proj) => {
                 self.apply_project(&proj);
                 self.graph.fit_to_content();

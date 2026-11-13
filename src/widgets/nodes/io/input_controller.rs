@@ -45,7 +45,7 @@ impl InputControllerWidget {
 
 impl NodeWidget for InputControllerWidget {
     /// Pre-populate `controller_id` and the output-port list from save_data
-    /// + the live controllers registry, so connections survive the first
+    /// and the live controllers registry, so connections survive the first
     /// frame's `cleanup_stale_connections` after a project load.
     fn restore_from_save(&mut self, data: Option<&serde_json::Value>, _params: &[(usize, crate::engine::types::ParamValue)]) {
         let Some(data) = data else { return };

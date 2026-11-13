@@ -33,3 +33,13 @@ sha2 = "0.10"
 # Build libusb from source and link it in, so a release binary does not need
 # it installed (the X1 controller talks USB through it).
 vendored-usb = ["rusb/vendored"]
+
+[lints.clippy]
+# Single-use tuples in local bindings and callback boxes (a snapshot read under
+# a lock, a moved-node record). A type alias per tuple would only move the
+# tuple away from the one place that uses it.
+type_complexity = "allow"
+# egui drawing helpers and the routing builder take the painter, rect, zoom,
+# style and state separately; bundling them in one-off structs would hide what
+# each call site passes.
+too_many_arguments = "allow"

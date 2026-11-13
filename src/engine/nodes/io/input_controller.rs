@@ -100,7 +100,7 @@ impl ProcessNode for InputControllerProcessNode {
             &mut state, self.controller_id, |_| true,
             &mut self.display_name, &mut self.connected,
         ) else {
-            for v in &mut self.output_values { *v = 0.0; }
+            self.output_values.fill(0.0);
             self.any_changed = false;
             self.prev_output_values.clear();
             self.display_name.clear();

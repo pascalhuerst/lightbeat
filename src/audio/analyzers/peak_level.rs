@@ -74,7 +74,7 @@ pub fn create(sample_rate: u32) -> (AnalyzerHandle, Box<dyn AnalyzerProc>) {
     let params = Arc::new(RwLock::new(PeakLevelParams::default()));
 
     let p_get = params.clone();
-    let get_params = Arc::new(move || params_for(&*p_get.read()))
+    let get_params = Arc::new(move || params_for(&p_get.read()))
         as Arc<dyn Fn() -> Vec<ParamDef> + Send + Sync>;
 
     let p_set = params.clone();

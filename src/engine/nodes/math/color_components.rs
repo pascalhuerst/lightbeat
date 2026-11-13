@@ -40,7 +40,7 @@ impl ColorMode {
         }
     }
 
-    pub fn to_index(&self) -> usize {
+    pub fn to_index(self) -> usize {
         match self {
             ColorMode::Neutral => 0,
             ColorMode::Rgb => 1,

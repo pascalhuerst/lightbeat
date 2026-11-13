@@ -337,7 +337,7 @@ pub(super) fn draw_gradient_preview(ui: &mut Ui, values: &[f32]) {
 
     let g = Gradient::from_channels(values);
     if !g.stops().is_empty() {
-        let samples = (rect.width() as usize).max(16).min(256);
+        let samples = (rect.width() as usize).clamp(16, 256);
         for i in 0..samples {
             let t = i as f32 / (samples - 1).max(1) as f32;
             let x = rect.min.x + (i as f32 / samples as f32) * rect.width();

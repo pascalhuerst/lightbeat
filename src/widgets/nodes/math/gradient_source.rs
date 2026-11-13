@@ -200,7 +200,7 @@ impl NodeWidget for GradientSourceWidget {
         theme::draw_checkerboard(&painter, bar_rect, 6.0);
 
         // Sample the gradient at many points across width.
-        let samples = (bar_rect.width() as usize).max(16).min(512);
+        let samples = (bar_rect.width() as usize).clamp(16, 512);
         if !self.preview_stops.is_empty() {
             for i in 0..samples {
                 let t = i as f32 / (samples - 1).max(1) as f32;
@@ -443,14 +443,13 @@ impl NodeWidget for GradientSourceWidget {
             self.stops.swap(a, b);
             changed = true;
         }
-        if shown.len() < self.stops.len() {
-            if setup_ui::add_button(ui, "Add stop")
+        if shown.len() < self.stops.len()
+            && setup_ui::add_button(ui, "Add stop")
                 && let Some(s) = self.stops.iter_mut().find(|s| !s.used)
             {
                 s.used = true;
                 changed = true;
             }
-        }
 
         if changed { self.push_config(); }
     }

@@ -43,9 +43,9 @@ impl Object {
     pub fn write_to_universe(&self, universe: &mut DmxUniverse) {
         let mut local = universe.channels;
         self.write_dmx(&mut local);
-        for i in 0..512 {
-            if local[i] != universe.channels[i] {
-                universe.set(i, local[i]);
+        for (i, &value) in local.iter().enumerate() {
+            if value != universe.channels[i] {
+                universe.set(i, value);
             }
         }
     }

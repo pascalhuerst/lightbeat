@@ -20,8 +20,8 @@ impl StepMode {
             StepMode::Trigger => "Trigger",
         }
     }
-    pub fn to_index(&self) -> usize {
-        Self::ALL.iter().position(|m| m == self).unwrap_or(0)
+    pub fn to_index(self) -> usize {
+        Self::ALL.iter().position(|m| *m == self).unwrap_or(0)
     }
     pub fn from_index(i: usize) -> Self {
         Self::ALL.get(i).copied().unwrap_or(Self::Phase)

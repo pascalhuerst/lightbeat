@@ -67,7 +67,7 @@ impl AudioBackend for JackBackend {
 
         // JACK server owns sample rate and buffer size — the requested values
         // on `StreamRequest` are informational only.
-        let sample_rate = client.sample_rate() as u32;
+        let sample_rate = client.sample_rate();
 
         let in_port = client
             .register_port("in", AudioIn::default())

@@ -65,11 +65,10 @@ impl NodeWidget for TriggerBankWidget {
                 self.last_pulse_time.resize(self.n, None);
             }
             for (i, &p) in d.pulses.iter().enumerate() {
-                if p {
-                    if let Some(slot) = self.last_pulse_time.get_mut(i) {
+                if p
+                    && let Some(slot) = self.last_pulse_time.get_mut(i) {
                         *slot = Some(now);
                     }
-                }
             }
         });
 

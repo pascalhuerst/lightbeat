@@ -57,19 +57,18 @@ impl X1State {
     /// Parse controller state directly from the raw USB input buffer.
     pub fn from_buf(buf: &[u8; 24]) -> Self {
         let mut pots_raw = [0u16; 8];
-        for i in 0..8 {
+        for (i, pot) in pots_raw.iter_mut().enumerate() {
             let idx = 8 + i * 2;
             if idx + 1 < buf.len() {
-                pots_raw[i] = u16::from_be_bytes([buf[idx], buf[idx + 1]]);
+                *pot = u16::from_be_bytes([buf[idx], buf[idx + 1]]);
             }
         }
 
         let bit = |group: usize, offset: u8| -> bool {
-            if let Some(byte) = buf.get(1 + group) {
-                if let Some(mask) = (1u8).checked_shl(offset as u32) {
+            if let Some(byte) = buf.get(1 + group)
+                && let Some(mask) = (1u8).checked_shl(offset as u32) {
                     return (*byte & mask) != 0;
                 }
-            }
             false
         };
 

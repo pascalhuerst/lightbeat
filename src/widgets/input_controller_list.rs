@@ -666,7 +666,7 @@ mod tests {
             kind: InputControllerKind::Midi { hw_port_name: "Port 1".into() },
             inputs: Vec::new(),
         };
-        let copy = copy_of(&[a.clone()], 2).unwrap();
+        let copy = copy_of(std::slice::from_ref(&a), 2).unwrap();
         assert_eq!(copy.id, 3);
         assert_eq!(copy.name, "Desk copy");
         assert_eq!(copy.kind, a.kind);

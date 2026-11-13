@@ -510,7 +510,7 @@ fn edit_cell(
                     data.get(base..base + span).unwrap_or(&[]),
                 );
                 if !g.stops().is_empty() {
-                    let samples = (rect.width() as usize).max(8).min(160);
+                    let samples = (rect.width() as usize).clamp(8, 160);
                     for i in 0..samples {
                         let t = i as f32 / (samples - 1).max(1) as f32;
                         let x = rect.min.x + (i as f32 / samples as f32) * rect.width();
