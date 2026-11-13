@@ -25,9 +25,9 @@
 use std::collections::VecDeque;
 
 use crate::engine::types::*;
-use crate::engine::nodes::io::status::{level, with_status_port};
+use crate::engine::nodes::io::status::{bind_controller, level, with_status_port};
 use crate::input_controller::{
-    ConnectionStatus, InputControllerKind, InputSource, LearnedInput, SharedControllers,
+    InputControllerKind, InputSource, LearnedInput, SharedControllers,
 };
 use crate::input_controller::midi::MidiSource;
 
@@ -329,29 +329,16 @@ impl ProcessNode for Push1ProcessNode {
         // can call &mut self helpers freely.
         {
             let mut state = self.controllers.lock().unwrap();
-            let c = match state.iter_mut().find(|c| c.id == self.controller_id) {
-                Some(c) => c,
-                None => {
-                    // Fall through; post-lock cleanup will reset outputs.
-                    // Can't early-return from inside this scope and still
-                    // use the lock data afterwards.
-                    self.connected = false;
-                    // Drop the guard implicitly and continue below.
-                    drop(state);
-                    self.reset_outputs();
-                    return;
-                }
-            };
-            if !matches!(c.kind, InputControllerKind::Push1 { .. }) {
-                self.connected = false;
+            let Some(c) = bind_controller(
+                &mut state, self.controller_id,
+                |k| matches!(k, InputControllerKind::Push1 { .. }),
+                &mut self.controller_name, &mut self.connected,
+            ) else {
+                // reset_outputs needs &mut self, so the lock goes first.
                 drop(state);
                 self.reset_outputs();
                 return;
-            }
-            if self.controller_name != c.name {
-                self.controller_name = c.name.clone();
-            }
-            self.connected = c.status == ConnectionStatus::Connected;
+            };
 
             // Lazy index rebuild.
             if self.idx_map.pads.is_empty() || self.idx_map.pads.len() != 64 {

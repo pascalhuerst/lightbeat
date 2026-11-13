@@ -1,6 +1,6 @@
 use crate::engine::types::*;
-use crate::engine::nodes::io::status::{level, with_status_port};
-use crate::input_controller::{ConnectionStatus, InputBindingMode, SharedControllers};
+use crate::engine::nodes::io::status::{bind_controller, level, with_status_port};
+use crate::input_controller::{InputBindingMode, SharedControllers};
 
 /// Display state mirrored to the widget.
 pub struct InputControllerDisplay {
@@ -96,11 +96,12 @@ impl ProcessNode for InputControllerProcessNode {
 
     fn process(&mut self) {
         let mut state = self.controllers.lock().unwrap();
-        let c = state.iter_mut().find(|c| c.id == self.controller_id);
-        let Some(c) = c else {
+        let Some(c) = bind_controller(
+            &mut state, self.controller_id, |_| true,
+            &mut self.display_name, &mut self.connected,
+        ) else {
             for v in &mut self.output_values { *v = 0.0; }
             self.any_changed = false;
-            self.connected = false;
             self.prev_output_values.clear();
             self.display_name.clear();
             if self.outputs.len() != 2 || self.outputs[1].name != "any change" {
@@ -114,7 +115,6 @@ impl ProcessNode for InputControllerProcessNode {
         };
 
         self.has_feedback = c.kind.has_feedback();
-        self.connected = c.status == ConnectionStatus::Connected;
 
         // Rebuild output port layout if the input set changed.
         let n = c.inputs.len();
@@ -197,10 +197,6 @@ impl ProcessNode for InputControllerProcessNode {
             .zip(self.prev_output_values.iter())
             .any(|(cur, prev)| cur != prev);
         self.prev_output_values.copy_from_slice(&self.output_values);
-
-        if self.display_name != c.name {
-            self.display_name = c.name.clone();
-        }
     }
 
     fn read_output(&self, pi: usize) -> f32 {

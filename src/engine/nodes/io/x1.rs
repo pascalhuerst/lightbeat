@@ -12,9 +12,9 @@ use crate::input_controller::x1::{
     ALL_BUTTONS, ALL_ENCODERS, ALL_POTS, X1ButtonId, X1EncoderId, X1PotId, X1Source,
     button_led_index, button_name, encoder_name, pot_name,
 };
-use crate::engine::nodes::io::status::{level, with_status_port};
+use crate::engine::nodes::io::status::{bind_controller, level, with_status_port};
 use crate::input_controller::{
-    ConnectionStatus, InputControllerKind, InputSource, SharedControllers,
+    InputControllerKind, InputSource, SharedControllers,
 };
 
 pub struct X1Display {
@@ -102,20 +102,14 @@ impl ProcessNode for X1ProcessNode {
         }
 
         let mut state = self.controllers.lock().unwrap();
-        let Some(c) = state.iter_mut().find(|c| c.id == self.controller_id) else {
-            self.connected = false;
+        let Some(c) = bind_controller(
+            &mut state, self.controller_id,
+            |k| matches!(k, InputControllerKind::X1),
+            &mut self.controller_name, &mut self.connected,
+        ) else {
             for v in &mut self.out_values { *v = 0.0; }
             return;
         };
-        if !matches!(c.kind, InputControllerKind::X1) {
-            self.connected = false;
-            for v in &mut self.out_values { *v = 0.0; }
-            return;
-        }
-        if self.controller_name != c.name {
-            self.controller_name = c.name.clone();
-        }
-        self.connected = c.status == ConnectionStatus::Connected;
 
         // Rebuild port-index → runtime-index maps if this is the first tick
         // with this controller, or if the runtime's input set changed.

@@ -11,9 +11,9 @@
 
 use crate::engine::types::*;
 use crate::input_controller::midi::MidiSource;
-use crate::engine::nodes::io::status::{level, with_status_port};
+use crate::engine::nodes::io::status::{bind_controller, level, with_status_port};
 use crate::input_controller::{
-    ConnectionStatus, InputControllerKind, InputSource, SharedControllers,
+    InputControllerKind, InputSource, SharedControllers,
 };
 
 pub struct LaunchpadDisplay {
@@ -99,20 +99,14 @@ impl ProcessNode for LaunchpadProcessNode {
         }
 
         let mut state = self.controllers.lock().unwrap();
-        let Some(c) = state.iter_mut().find(|c| c.id == self.controller_id) else {
-            self.connected = false;
+        let Some(c) = bind_controller(
+            &mut state, self.controller_id,
+            |k| matches!(k, InputControllerKind::LaunchpadS { .. }),
+            &mut self.controller_name, &mut self.connected,
+        ) else {
             for v in &mut self.out_values { *v = 0.0; }
             return;
         };
-        if !matches!(c.kind, InputControllerKind::LaunchpadS { .. }) {
-            self.connected = false;
-            for v in &mut self.out_values { *v = 0.0; }
-            return;
-        }
-        if self.controller_name != c.name {
-            self.controller_name = c.name.clone();
-        }
-        self.connected = c.status == ConnectionStatus::Connected;
 
         if self.cached_for != self.controller_id
             || self.out_to_runtime.len() != out_count()
