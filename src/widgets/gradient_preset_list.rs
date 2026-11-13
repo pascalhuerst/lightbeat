@@ -3,6 +3,8 @@ use egui_extras::{Column, TableBuilder};
 
 use crate::color::Gradient;
 use crate::objects::gradient_preset::GradientPreset;
+use crate::theme;
+use crate::widgets::setup_ui;
 
 pub struct GradientPresetManager {
     pub presets: Vec<GradientPreset>,
@@ -27,23 +29,32 @@ impl GradientPresetManager {
         id
     }
 
+    /// A copy right after the original, with a fresh id.
+    fn duplicate(&mut self, id: u32) {
+        let Some(pos) = self.presets.iter().position(|p| p.id == id) else { return };
+        let mut copy = self.presets[pos].clone();
+        copy.id = self.next_id();
+        copy.name = setup_ui::copy_name(&copy.name);
+        self.presets.insert(pos + 1, copy);
+    }
+
     pub fn show(&mut self, ui: &mut Ui) {
-        ui.heading("Gradients");
         ui.colored_label(
-            Color32::from_gray(140),
-            "Reusable gradient presets. Author or edit them by loading into a Gradient Source node, then use \"Save preset\" there to write back here.",
+            theme::TEXT_DIM,
+            "Reusable gradients. Author or edit one by loading it into a Gradient Source node, then use \"Save preset\" there to add it here.",
         );
         ui.separator();
 
         if self.presets.is_empty() {
-            ui.colored_label(Color32::from_gray(120), "No gradient presets yet.");
+            setup_ui::empty_state(ui, "No gradients yet. Add one below.");
         } else {
             let mut remove_id = None;
+            let mut duplicate_id = None;
             TableBuilder::new(ui)
                 .striped(true)
                 .column(Column::remainder().clip(true).at_least(120.0)) // name
                 .column(Column::exact(220.0))                            // preview
-                .column(Column::exact(24.0))                             // delete
+                .column(Column::exact(52.0))                             // duplicate and delete
                 .header(20.0, |mut header| {
                     header.col(|ui| { ui.strong("Name"); });
                     header.col(|ui| { ui.strong("Preview"); });
@@ -63,9 +74,14 @@ impl GradientPresetManager {
                                 draw_preset_preview(ui, &preset.stops);
                             });
                             row.col(|ui| {
-                                if ui.small_button(egui_phosphor::regular::X).clicked() {
-                                    remove_id = Some(preset.id);
-                                }
+                                ui.horizontal(|ui| {
+                                    if setup_ui::duplicate_button(ui, "Duplicate gradient") {
+                                        duplicate_id = Some(preset.id);
+                                    }
+                                    if setup_ui::delete_button(ui, "Delete gradient") {
+                                        remove_id = Some(preset.id);
+                                    }
+                                });
                             });
                         });
                     }
@@ -73,10 +89,13 @@ impl GradientPresetManager {
             if let Some(id) = remove_id {
                 self.presets.retain(|p| p.id != id);
             }
+            if let Some(id) = duplicate_id {
+                self.duplicate(id);
+            }
         }
 
         ui.separator();
-        if ui.button("Add Empty Preset").clicked() {
+        if setup_ui::add_button(ui, "Add gradient") {
             let id = self.next_id();
             self.presets.push(GradientPreset::new(id, format!("Gradient {}", id)));
         }
@@ -94,9 +113,9 @@ fn draw_preset_preview(ui: &mut Ui, stops: &[crate::color::GradientStop]) {
     for y in 0..rows {
         for x in 0..cols {
             let c = if (x + y) % 2 == 0 {
-                Color32::from_gray(40)
+                theme::CHECKER_DARK
             } else {
-                Color32::from_gray(70)
+                theme::CHECKER_LIGHT
             };
             let cell_rect = egui::Rect::from_min_size(
                 Pos2::new(rect.min.x + x as f32 * cell, rect.min.y + y as f32 * cell),
@@ -125,5 +144,20 @@ fn draw_preset_preview(ui: &mut Ui, stops: &[crate::color::GradientStop]) {
             );
         }
     }
-    painter.rect_stroke(rect, 2.0, Stroke::new(1.0_f32, Color32::from_gray(80)), StrokeKind::Inside);
+    painter.rect_stroke(rect, 2.0, Stroke::new(1.0_f32, theme::STROKE), StrokeKind::Inside);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn duplicate_gets_a_fresh_id_and_the_same_stops() {
+        let mut m = GradientPresetManager::from_presets(vec![GradientPreset::new(7, "Fire")]);
+        m.duplicate(7);
+        assert_eq!(m.presets[1].id, 8);
+        assert_eq!(m.presets[1].name, "Fire copy");
+        assert_eq!(m.presets[1].stops.len(), m.presets[0].stops.len());
+        assert_eq!(m.next_id(), 9);
+    }
 }
