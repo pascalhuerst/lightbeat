@@ -204,7 +204,7 @@ impl EngineGraph {
         let Some(node) = self.nodes.iter_mut().find(|n| n.node_id() == path[0]) else {
             return;
         };
-        let Some(sg) = node.as_any_mut().downcast_mut::<SubgraphProcessNode>() else {
+        let Some(sg) = node.as_any_mut().and_then(|a| a.downcast_mut::<SubgraphProcessNode>()) else {
             return;
         };
         sg.apply_inner_cmd_at_path(&path[1..], cmd);

@@ -440,7 +440,9 @@ pub trait ProcessNode: Send {
 
     fn update_display(&self, _shared: &mut NodeSharedState) {}
 
-    fn as_any_mut(&mut self) -> &mut dyn Any { unimplemented!("as_any_mut not implemented") }
+    /// `None` for nodes that cannot be reached by type, so a path that names
+    /// the wrong kind of node is ignored instead of panicking the engine.
+    fn as_any_mut(&mut self) -> Option<&mut dyn Any> { None }
     /// Default returns a placeholder that downcasts to nothing — nodes that
     /// want to be introspected (e.g. for in-subgraph display) override this
     /// to return `self`.
