@@ -55,10 +55,8 @@ impl NodeWidget for ColorMixerWidget {
         "Three sliders that mix a color in RGB, HSV or CMY. Switching mode keeps the color."
     }
 
-    fn ui_inputs(&self) -> Vec<UiPortDef> { vec![] }
-    fn ui_outputs(&self) -> Vec<UiPortDef> {
-        vec![UiPortDef::from_def(&PortDef::new("color", PortType::Color))]
-    }
+    fn ui_inputs(&self) -> Vec<UiPortDef> { UiPortDef::from_defs(&crate::engine::nodes::ui::color_mixer::ports().0) }
+    fn ui_outputs(&self) -> Vec<UiPortDef> { UiPortDef::from_defs(&crate::engine::nodes::ui::color_mixer::ports().1) }
 
     fn set_name(&mut self, name: &str) {
         self.name = name.to_string();

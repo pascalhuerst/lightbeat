@@ -21,21 +21,31 @@ pub struct GradientStopsProcessNode {
     outputs: Vec<PortDef>,
 }
 
+/// The ports, stated once: the widget builds its own from this, so the two
+/// halves cannot disagree.
+pub fn ports() -> (Vec<PortDef>, Vec<PortDef>) {
+    (
+        vec![PortDef::new("palette", PortType::Palette)],
+        vec![
+            PortDef::new("pos1", PortType::Untyped),
+            PortDef::new("pos2", PortType::Untyped),
+            PortDef::new("pos3", PortType::Untyped),
+            PortDef::new("pos4", PortType::Untyped),
+        ],
+    )
+}
+
 impl GradientStopsProcessNode {
     pub fn new(id: NodeId) -> Self {
+        let (inputs, outputs) = ports();
         Self {
             id,
             name: String::new(),
             // Even distribution by default.
             positions: [0.0, 1.0 / 3.0, 2.0 / 3.0, 1.0],
             palette: [0.0; 12],
-            inputs: vec![PortDef::new("palette", PortType::Palette)],
-            outputs: vec![
-                PortDef::new("pos1", PortType::Untyped),
-                PortDef::new("pos2", PortType::Untyped),
-                PortDef::new("pos3", PortType::Untyped),
-                PortDef::new("pos4", PortType::Untyped),
-            ],
+            inputs,
+            outputs,
         }
     }
 }

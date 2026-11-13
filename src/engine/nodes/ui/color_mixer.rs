@@ -13,6 +13,15 @@ pub enum MixerMode {
 
 pub const MIXER_MODE_NAMES: &[&str] = &["RGB", "HSV", "CMY"];
 
+/// The ports, stated once: the widget builds its own from this, so the two
+/// halves cannot disagree.
+pub fn ports() -> (Vec<PortDef>, Vec<PortDef>) {
+    (
+        vec![],
+        vec![PortDef::new("color", PortType::Color)],
+    )
+}
+
 impl MixerMode {
     pub fn to_index(self) -> usize {
         match self {
@@ -79,13 +88,14 @@ pub struct ColorMixerProcessNode {
 
 impl ColorMixerProcessNode {
     pub fn new(id: NodeId) -> Self {
+        let (_, outputs) = ports();
         Self {
             id,
             name: String::new(),
             mode: MixerMode::Rgb,
             values: [1.0; 3],
             out: [1.0; 3],
-            outputs: vec![PortDef::new("color", PortType::Color)],
+            outputs,
         }
     }
 }

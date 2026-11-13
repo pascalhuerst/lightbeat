@@ -73,17 +73,8 @@ impl NodeWidget for GradientStopsWidget {
          gradient; drag the handles to move each stop, Shift for fine steps, double-click a handle to reset it."
     }
 
-    fn ui_inputs(&self) -> Vec<UiPortDef> {
-        vec![UiPortDef::from_def(&PortDef::new("palette", PortType::Palette))]
-    }
-    fn ui_outputs(&self) -> Vec<UiPortDef> {
-        vec![
-            UiPortDef::from_def(&PortDef::new("pos1", PortType::Untyped)),
-            UiPortDef::from_def(&PortDef::new("pos2", PortType::Untyped)),
-            UiPortDef::from_def(&PortDef::new("pos3", PortType::Untyped),),
-            UiPortDef::from_def(&PortDef::new("pos4", PortType::Untyped)),
-        ]
-    }
+    fn ui_inputs(&self) -> Vec<UiPortDef> { UiPortDef::from_defs(&crate::engine::nodes::ui::gradient_stops::ports().0) }
+    fn ui_outputs(&self) -> Vec<UiPortDef> { UiPortDef::from_defs(&crate::engine::nodes::ui::gradient_stops::ports().1) }
 
     fn layout(&self) -> NodeLayout { NodeLayout::compact() }
     fn min_width(&self) -> f32 { 220.0 }

@@ -102,13 +102,8 @@ impl NodeWidget for PeakMeterWidget {
         "Level meter: green/yellow/red dB scale, RMS overlay, peak hold and clip indicator."
     }
 
-    fn ui_inputs(&self) -> Vec<UiPortDef> {
-        vec![
-            UiPortDef::from_def(&PortDef::new("peak", PortType::Untyped)),
-            UiPortDef::from_def(&PortDef::new("rms", PortType::Untyped)),
-        ]
-    }
-    fn ui_outputs(&self) -> Vec<UiPortDef> { vec![] }
+    fn ui_inputs(&self) -> Vec<UiPortDef> { UiPortDef::from_defs(&crate::engine::nodes::ui::peak_meter::ports().0) }
+    fn ui_outputs(&self) -> Vec<UiPortDef> { UiPortDef::from_defs(&crate::engine::nodes::ui::peak_meter::ports().1) }
 
     // The dB scale sits at the left edge, where the inputs are.
     fn layout(&self) -> NodeLayout { NodeLayout::compact().with_side_inset(PORT_RADIUS + 2.0) }
