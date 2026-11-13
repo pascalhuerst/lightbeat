@@ -336,13 +336,14 @@ pub(crate) const RENAMED_NODES: [(&str, &str); 8] = [
 /// Settings that were renamed: (node, old name, new name). Promoted inputs and
 /// snapshots refer to a setting by name, so they are carried over on load.
 /// Temporary, like `RENAMED_NODES`.
-const RENAMED_SETTINGS: [(&str, &str, &str); 6] = [
+const RENAMED_SETTINGS: [(&str, &str, &str); 7] = [
     ("Lookup Table", "Input", "Select by"),
     ("Fill", "Intensity", "amount"),
     ("Bar", "Intensity", "amount"),
     ("Wave Loop", "Intensity", "amount"),
     ("Ripple Burst", "Intensity", "amount"),
     ("Spark Burst", "Intensity", "amount"),
+    ("Ripple Burst", "Decay", "Lifetime"),
 ];
 
 fn current_setting_name<'a>(node: &str, saved: &'a str) -> &'a str {
@@ -860,6 +861,12 @@ mod tests {
         assert_eq!(current_setting_name("Lookup Table", "Input"), "Select by");
         assert_eq!(current_setting_name("Lookup Table", "Edge"), "Edge");
         assert_eq!(current_setting_name("Smoothing", "Input"), "Input");
+    }
+
+    #[test]
+    fn the_ripples_decay_is_now_lifetime() {
+        assert_eq!(current_setting_name("Ripple Burst", "Decay"), "Lifetime");
+        assert_eq!(current_setting_name("Envelope", "Decay"), "Decay");
     }
 
     #[test]
