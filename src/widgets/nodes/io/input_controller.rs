@@ -2,7 +2,7 @@ use std::any::Any;
 
 use egui::{self, Ui};
 
-use crate::engine::nodes::io::input_controller::InputControllerDisplay;
+use crate::engine::nodes::io::input_controller::{base_outputs, InputControllerDisplay};
 use crate::engine::types::*;
 use crate::input_controller::SharedControllers;
 use crate::theme;
@@ -31,7 +31,7 @@ impl InputControllerWidget {
             id,
             shared,
             controller_id: 0,
-            outputs: Vec::new(),
+            outputs: base_outputs().into_iter().map(|p| (p.name, p.port_type, 0.0)).collect(),
             feedback_inputs: Vec::new(),
             controllers,
         }
@@ -58,13 +58,8 @@ impl NodeWidget for InputControllerWidget {
         let state = self.controllers.lock().unwrap();
         if let Some(c) = state.iter().find(|c| c.id == self.controller_id) {
             // Match what `InputControllerProcessNode::process` builds: the
-            // "any change" trigger at index 0, then one port per learned
-            // input, typed by source.
-            self.outputs = std::iter::once((
-                "any change".to_string(),
-                PortType::Logic,
-                0.0,
-            )).chain(c.inputs.iter().map(|i| {
+            // base ports, then one port per learned input, typed by source.
+            self.outputs = base_outputs().into_iter().map(|p| (p.name, p.port_type, 0.0)).chain(c.inputs.iter().map(|i| {
                 let ty = if i.source.is_binary() { PortType::Logic } else { PortType::Untyped };
                 (i.name.clone(), ty, 0.0)
             })).collect();

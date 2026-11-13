@@ -59,19 +59,28 @@ pub struct ClockProcessNode {
     last_beat_idx: Option<i64>,
 }
 
+/// The ports, stated once: the widget builds its own from this, so the two
+/// halves cannot disagree.
+pub fn ports() -> (Vec<PortDef>, Vec<PortDef>) {
+    (
+        vec![],
+        vec![
+            PortDef::new("beat", PortType::Logic),
+            PortDef::new("play", PortType::Logic),
+            PortDef::new("phase", PortType::Phase),
+            PortDef::new("bpm", PortType::Untyped),
+            PortDef::new("peers", PortType::Untyped),
+        ],
+    )
+}
+
 impl ClockProcessNode {
     pub fn new(id: NodeId, snapshot: Arc<Mutex<LinkSnapshot>>) -> Self {
         Self {
             id,
             beat_state: Arc::new(Mutex::new(ClockBeatState::new())),
             snapshot,
-            outputs: vec![
-                PortDef::new("beat", PortType::Logic),
-                PortDef::new("play", PortType::Logic),
-                PortDef::new("phase", PortType::Phase),
-                PortDef::new("bpm", PortType::Untyped),
-                PortDef::new("peers", PortType::Untyped),
-            ],
+            outputs: ports().1,
             beat_output: 0.0,
             phase_output: 0.0,
             bpm_output: 0.0,

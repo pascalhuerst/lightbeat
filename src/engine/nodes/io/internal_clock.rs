@@ -42,6 +42,27 @@ pub struct InternalClockProcessNode {
     outputs: Vec<PortDef>,
 }
 
+/// The ports, stated once: the widget builds its own from this, so the two
+/// halves cannot disagree.
+pub fn ports() -> (Vec<PortDef>, Vec<PortDef>) {
+    (
+        vec![
+            PortDef::new("play/stop", PortType::Logic),
+            PortDef::new("bpm", PortType::Untyped),
+            PortDef::new("set bpm", PortType::Logic),
+            PortDef::new("reset", PortType::Logic),
+        ],
+        vec![
+            PortDef::new("beat", PortType::Logic),
+            // `play` is a held 1/0 level rather than a one-tick pulse, so it
+            // is a value (Untyped): downstream nodes can treat it like any
+            // other 0..1 signal, gate meters, fade in an effect while playing.
+            PortDef::new("play", PortType::Untyped),
+            PortDef::new("phase", PortType::Phase),
+        ],
+    )
+}
+
 impl InternalClockProcessNode {
     pub fn new(id: NodeId) -> Self {
         Self {
@@ -62,21 +83,8 @@ impl InternalClockProcessNode {
             lead_beats: 0.0,
             last_beat_time: None,
             last_beat_is_downbeat: false,
-            inputs: vec![
-                PortDef::new("play/stop", PortType::Logic),
-                PortDef::new("bpm", PortType::Untyped),
-                PortDef::new("set bpm", PortType::Logic),
-                PortDef::new("reset", PortType::Logic),
-            ],
-            outputs: vec![
-                PortDef::new("beat", PortType::Logic),
-                // `play` is a held 1/0 level rather than a one-tick
-                // pulse, so expose it as a value (Untyped). Downstream
-                // nodes can treat it like any other 0..1 signal — gate
-                // meters, fade in an effect while playing, etc.
-                PortDef::new("play", PortType::Untyped),
-                PortDef::new("phase", PortType::Phase),
-            ],
+            inputs: ports().0,
+            outputs: ports().1,
         }
     }
 }

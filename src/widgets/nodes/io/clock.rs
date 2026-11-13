@@ -2,7 +2,7 @@ use std::any::Any;
 
 use egui::{self, Ui};
 
-use crate::engine::nodes::io::clock::ClockDisplay;
+use crate::engine::nodes::io::clock::{ports, ClockDisplay};
 use crate::engine::types::*;
 use crate::theme;
 use crate::widgets::nodes::node::NodeWidget;
@@ -13,7 +13,6 @@ const BEAT_FLASH_MS: u128 = 80;
 pub struct ClockWidget {
     id: NodeId,
     shared: SharedState,
-    outputs: Vec<PortDef>,
 }
 
 impl ClockWidget {
@@ -21,13 +20,6 @@ impl ClockWidget {
         Self {
             id,
             shared,
-            outputs: vec![
-                PortDef::new("beat", PortType::Logic),
-                PortDef::new("play", PortType::Logic),
-                PortDef::new("phase", PortType::Phase),
-                PortDef::new("bpm", PortType::Untyped),
-                PortDef::new("peers", PortType::Untyped),
-            ],
         }
     }
 }
@@ -37,10 +29,8 @@ impl NodeWidget for ClockWidget {
     fn type_name(&self) -> &'static str { "Link Clock" }
     fn description(&self) -> &'static str { "Master clock synced to Ableton Link peers; outputs beat, play state, and phase." }
 
-    fn ui_inputs(&self) -> Vec<UiPortDef> { vec![] }
-    fn ui_outputs(&self) -> Vec<UiPortDef> {
-        self.outputs.iter().map(UiPortDef::from_def).collect()
-    }
+    fn ui_inputs(&self) -> Vec<UiPortDef> { UiPortDef::from_defs(&ports().0) }
+    fn ui_outputs(&self) -> Vec<UiPortDef> { UiPortDef::from_defs(&ports().1) }
 
     fn min_width(&self) -> f32 { 150.0 }
     fn min_content_height(&self) -> f32 { 90.0 }

@@ -1,14 +1,9 @@
-use crate::engine::nodes::io::status::status_port;
 use std::any::Any;
 
 use egui::Ui;
 
-use crate::engine::nodes::io::x1::X1Display;
+use crate::engine::nodes::io::x1::{ports, X1Display};
 use crate::engine::types::*;
-use crate::input_controller::x1::{
-    ALL_BUTTONS, ALL_ENCODERS, ALL_POTS,
-    button_led_index, button_name, encoder_name, pot_name,
-};
 use crate::input_controller::{InputControllerKind, SharedControllers};
 use crate::widgets::nodes::io::controller_binding::{ControllerBinding, ControllerSpec};
 use crate::widgets::nodes::node::{NodeLayout, NodeWidget, labelled_layout};
@@ -49,35 +44,8 @@ impl NodeWidget for X1Widget {
          brightness."
     }
 
-    fn ui_inputs(&self) -> Vec<UiPortDef> {
-        ALL_BUTTONS
-            .iter()
-            .copied()
-            .filter(|&b| button_led_index(b).is_some())
-            .map(|b| {
-                UiPortDef::from_def(&PortDef::new(
-                    format!("LED {}", button_name(b)),
-                    PortType::Untyped,
-                ))
-            })
-            .collect()
-    }
-
-    fn ui_outputs(&self) -> Vec<UiPortDef> {
-        let mut v = Vec::with_capacity(2 + ALL_BUTTONS.len() + ALL_ENCODERS.len() + ALL_POTS.len());
-        v.push(UiPortDef::from_def(&status_port()));
-        v.push(UiPortDef::from_def(&PortDef::new("any change", PortType::Logic)));
-        for &b in ALL_BUTTONS {
-            v.push(UiPortDef::from_def(&PortDef::new(button_name(b), PortType::Untyped)));
-        }
-        for &e in ALL_ENCODERS {
-            v.push(UiPortDef::from_def(&PortDef::new(encoder_name(e), PortType::Untyped)));
-        }
-        for &p in ALL_POTS {
-            v.push(UiPortDef::from_def(&PortDef::new(pot_name(p), PortType::Untyped)));
-        }
-        v
-    }
+    fn ui_inputs(&self) -> Vec<UiPortDef> { UiPortDef::from_defs(&ports().0) }
+    fn ui_outputs(&self) -> Vec<UiPortDef> { UiPortDef::from_defs(&ports().1) }
 
     fn show_port_labels(&self) -> bool { true }
     fn layout(&self) -> NodeLayout { labelled_layout(&self.ui_inputs(), &self.ui_outputs()) }

@@ -2,7 +2,7 @@ use std::any::Any;
 
 use egui::{self, Ui};
 
-use crate::engine::nodes::io::internal_clock::InternalClockDisplay;
+use crate::engine::nodes::io::internal_clock::{ports, InternalClockDisplay};
 use crate::engine::types::*;
 use crate::theme;
 use crate::widgets::nodes::node::NodeWidget;
@@ -13,8 +13,6 @@ const BEAT_FLASH_MS: u128 = 80;
 pub struct InternalClockWidget {
     id: NodeId,
     shared: SharedState,
-    inputs: Vec<PortDef>,
-    outputs: Vec<PortDef>,
 }
 
 impl InternalClockWidget {
@@ -22,17 +20,6 @@ impl InternalClockWidget {
         Self {
             id,
             shared,
-            inputs: vec![
-                PortDef::new("play/stop", PortType::Logic),
-                PortDef::new("bpm", PortType::Untyped),
-                PortDef::new("set bpm", PortType::Logic),
-                PortDef::new("reset", PortType::Logic),
-            ],
-            outputs: vec![
-                PortDef::new("beat", PortType::Logic),
-                PortDef::new("play", PortType::Untyped),
-                PortDef::new("phase", PortType::Phase),
-            ],
         }
     }
 }
@@ -43,10 +30,10 @@ impl NodeWidget for InternalClockWidget {
     fn description(&self) -> &'static str { "Standalone BPM clock with manual transport; outputs beat, play state, and phase." }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> {
-        self.inputs.iter().map(UiPortDef::from_def).collect()
+        UiPortDef::from_defs(&ports().0)
     }
     fn ui_outputs(&self) -> Vec<UiPortDef> {
-        self.outputs.iter().map(UiPortDef::from_def).collect()
+        UiPortDef::from_defs(&ports().1)
     }
 
     fn min_width(&self) -> f32 { 150.0 }

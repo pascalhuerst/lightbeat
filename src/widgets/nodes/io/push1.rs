@@ -1,9 +1,8 @@
-use crate::engine::nodes::io::status::status_port;
 use std::any::Any;
 
 use egui::Ui;
 
-use crate::engine::nodes::io::push1::Push1Display;
+use crate::engine::nodes::io::push1::{ports, Push1Display};
 use crate::engine::types::*;
 use crate::input_controller::{InputControllerKind, SharedControllers};
 use crate::widgets::nodes::io::controller_binding::{ControllerBinding, ControllerSpec};
@@ -46,55 +45,8 @@ impl NodeWidget for Push1Widget {
          latched coords and color."
     }
 
-    fn ui_inputs(&self) -> Vec<UiPortDef> {
-        // Mirror the engine port layout.
-        let defs = [
-            ("set pad trigger", PortType::Logic),
-            ("set pad x", PortType::Untyped),
-            ("set pad y", PortType::Untyped),
-            ("set pad color", PortType::Untyped),
-            ("set btn top trigger", PortType::Logic),
-            ("set btn top col", PortType::Untyped),
-            ("set btn top color", PortType::Untyped),
-            ("set btn bot trigger", PortType::Logic),
-            ("set btn bot col", PortType::Untyped),
-            ("set btn bot color", PortType::Untyped),
-        ];
-        let mut v: Vec<UiPortDef> = defs.iter()
-            .map(|(n, t)| UiPortDef::from_def(&PortDef::new((*n).to_string(), *t)))
-            .collect();
-        for name in NAMED {
-            v.push(UiPortDef::from_def(&PortDef::new((*name).to_string(), PortType::Logic)));
-        }
-        v
-    }
-
-    fn ui_outputs(&self) -> Vec<UiPortDef> {
-        let defs = [
-            ("pad trigger", PortType::Logic),
-            ("pad x", PortType::Untyped),
-            ("pad y", PortType::Untyped),
-            ("pad vel", PortType::Untyped),
-            ("btn top trigger", PortType::Logic),
-            ("btn top col", PortType::Untyped),
-            ("btn top val", PortType::Logic),
-            ("btn bot trigger", PortType::Logic),
-            ("btn bot col", PortType::Untyped),
-            ("btn bot val", PortType::Logic),
-            ("enc trigger", PortType::Logic),
-            ("enc idx", PortType::Untyped),
-            ("enc val", PortType::Untyped),
-            ("slider", PortType::Untyped),
-        ];
-        let mut v: Vec<UiPortDef> = std::iter::once(UiPortDef::from_def(&status_port()))
-            .chain(defs.iter()
-                .map(|(n, t)| UiPortDef::from_def(&PortDef::new((*n).to_string(), *t))))
-            .collect();
-        for name in NAMED {
-            v.push(UiPortDef::from_def(&PortDef::new((*name).to_string(), PortType::Logic)));
-        }
-        v
-    }
+    fn ui_inputs(&self) -> Vec<UiPortDef> { UiPortDef::from_defs(&ports().0) }
+    fn ui_outputs(&self) -> Vec<UiPortDef> { UiPortDef::from_defs(&ports().1) }
 
     fn show_port_labels(&self) -> bool { true }
     fn layout(&self) -> NodeLayout { labelled_layout(&self.ui_inputs(), &self.ui_outputs()) }
@@ -119,8 +71,3 @@ impl NodeWidget for Push1Widget {
 
     fn as_any_mut(&mut self) -> &mut dyn Any { self }
 }
-
-const NAMED: &[&str] = &[
-    "Play", "Record", "Stop", "Shift", "Select",
-    "Up", "Down", "Left", "Right", "Octave Up", "Octave Down",
-];
