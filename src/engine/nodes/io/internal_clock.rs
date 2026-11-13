@@ -57,10 +57,8 @@ pub fn ports() -> (Vec<PortDef>, Vec<PortDef>) {
         ],
         vec![
             PortDef::new("beat", PortType::Logic),
-            // `play` is a held 1/0 level rather than a one-tick pulse, so it
-            // is a value (Untyped): downstream nodes can treat it like any
-            // other 0..1 signal, gate meters, fade in an effect while playing.
-            PortDef::new("play", PortType::Untyped),
+            // A held 1/0 state, the same type as the Link clock's `play`.
+            PortDef::new("play", PortType::Logic),
             PortDef::new("phase", PortType::Phase),
         ],
     )

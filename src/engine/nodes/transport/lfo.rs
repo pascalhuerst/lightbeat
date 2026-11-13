@@ -4,6 +4,9 @@ use crate::engine::param_spec::FloatParam;
 use crate::engine::types::*;
 
 const RATE: FloatParam = FloatParam::new("Rate", 0.01, 20.0, 0.01, "Hz").clamped();
+/// Scales the output (Sin and Cos had this as an input). Wide enough to push a
+/// value past 1 or to invert.
+const AMPLITUDE: FloatParam = FloatParam::new("Amplitude", -10.0, 10.0, 0.01, "");
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LfoWaveform {
@@ -14,6 +17,8 @@ pub enum LfoWaveform {
     Square,
     /// Sample-and-hold random — picks a new random value at each cycle start.
     Random,
+    /// Last, so saved waveform indices stay.
+    Cosine,
 }
 
 impl LfoWaveform {
@@ -25,6 +30,7 @@ impl LfoWaveform {
             3 => LfoWaveform::ReverseSaw,
             4 => LfoWaveform::Square,
             5 => LfoWaveform::Random,
+            6 => LfoWaveform::Cosine,
             _ => LfoWaveform::Sine,
         }
     }
@@ -36,6 +42,7 @@ impl LfoWaveform {
             LfoWaveform::ReverseSaw => 3,
             LfoWaveform::Square => 4,
             LfoWaveform::Random => 5,
+            LfoWaveform::Cosine => 6,
         }
     }
 }
@@ -54,6 +61,8 @@ pub struct LfoProcessNode {
     waveform: LfoWaveform,
     /// If true, output is mapped from -1..1 to 0..1.
     unipolar: bool,
+    /// Multiplies the finished output, so a bipolar sine is -amp..amp.
+    amplitude: f32,
     /// When true the phase comes from a wire and the oscillator no longer
     /// runs on its own: no sync input, no phase output.
     phase_input: bool,
@@ -94,6 +103,7 @@ impl LfoProcessNode {
             rate_hz: 1.0,
             waveform: LfoWaveform::Sine,
             unipolar: false,
+            amplitude: 1.0,
             phase_input: false,
             phase_in: 0.0,
             sync_in: 0.0,
@@ -140,6 +150,7 @@ impl LfoProcessNode {
             LfoWaveform::ReverseSaw => 1.0 - p * 2.0,
             LfoWaveform::Square => if p < 0.5 { 1.0 } else { -1.0 },
             LfoWaveform::Random => self.sh_value,
+            LfoWaveform::Cosine => (p * std::f32::consts::TAU).cos(),
         }
     }
 }
@@ -172,7 +183,7 @@ impl ProcessNode for LfoProcessNode {
             }
             self.phase = phase;
             let raw = self.waveform_value();
-            self.value_out = if self.unipolar { raw * 0.5 + 0.5 } else { raw };
+            self.value_out = self.amplitude * if self.unipolar { raw * 0.5 + 0.5 } else { raw };
             return;
         }
 
@@ -207,11 +218,7 @@ impl ProcessNode for LfoProcessNode {
         let _ = prev_phase;
 
         let raw = self.waveform_value();
-        self.value_out = if self.unipolar {
-            raw * 0.5 + 0.5
-        } else {
-            raw
-        };
+        self.value_out = self.amplitude * if self.unipolar { raw * 0.5 + 0.5 } else { raw };
     }
 
     fn read_output(&self, pi: usize) -> f32 {
@@ -235,6 +242,7 @@ impl ProcessNode for LfoProcessNode {
                     "Reverse Saw".into(),
                     "Square".into(),
                     "Random".into(),
+                    "Cosine".into(),
                 ],
             },
             ParamDef::Bool {
@@ -245,6 +253,7 @@ impl ProcessNode for LfoProcessNode {
                 name: "Phase input".into(),
                 value: self.phase_input,
             },
+            AMPLITUDE.def(self.amplitude),
         ]
     }
 
@@ -254,6 +263,7 @@ impl ProcessNode for LfoProcessNode {
             1 => self.waveform = LfoWaveform::from_index(value.as_usize()),
             2 => self.unipolar = matches!(value, ParamValue::Bool(true)),
             3 => self.set_phase_input(matches!(value, ParamValue::Bool(true))),
+            4 => self.amplitude = AMPLITUDE.apply(&value),
             _ => {}
         }
     }
@@ -311,6 +321,19 @@ mod tests {
         assert!((at(&mut sine, 0.25) - 1.0).abs() < 1e-5);
         assert!((at(&mut sine, 1.25) - 1.0).abs() < 1e-5, "it wraps");
         assert!((at(&mut sine, -0.75) - 1.0).abs() < 1e-5, "also below zero");
+    }
+
+    #[test]
+    fn a_phase_driven_bipolar_sine_and_cosine_are_the_old_sin_and_cos_nodes() {
+        let mut sin = lfo(0, false);
+        sin.set_param(4, ParamValue::Float(2.0));
+        let mut cos = lfo(6, false);
+        cos.set_param(4, ParamValue::Float(2.0));
+        for p in [0.0_f32, 0.1, 0.3, 0.5, 0.77] {
+            let a = p * std::f32::consts::TAU;
+            assert!((at(&mut sin, p) - 2.0 * a.sin()).abs() < 1e-5);
+            assert!((at(&mut cos, p) - 2.0 * a.cos()).abs() < 1e-5);
+        }
     }
 
     #[test]

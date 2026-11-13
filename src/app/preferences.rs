@@ -40,10 +40,9 @@ impl LightBeatApp {
                 ui.colored_label(theme::TEXT_DIM, egui::RichText::new("Performance").strong());
                 ui.horizontal(|ui| {
                     ui.label("Idle frame rate");
-                    let drag = egui::DragValue::new(&mut cfg.idle_repaint_hz)
+                    let drag = crate::widgets::setup_ui::unit_drag(&mut cfg.idle_repaint_hz, crate::widgets::setup_ui::Unit::FramesPerSecond)
                         .range(0.0..=120.0)
                         .speed(0.5)
-                        .suffix(" fps")
                         .fixed_decimals(0);
                     let r = ui
                         .add(drag)

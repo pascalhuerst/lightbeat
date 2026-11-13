@@ -46,7 +46,8 @@ fn word_score(entry: &NodeEntry, word: &str) -> Option<usize> {
     let category = entry.category.to_lowercase();
     Some(if label.starts_with(word) {
         0
-    } else if path.split('/').any(|part| part.starts_with(word)) || label.split(|c: char| !c.is_alphanumeric()).any(|part| part.starts_with(word)) {
+    } else if path.split('/').any(|part| part.starts_with(word)) || label.split(|c: char| !c.is_alphanumeric()).any(|part| part.starts_with(word))
+        || crate::widgets::nodes::paths::aliases(&entry.label).iter().any(|a| a.starts_with(word)) {
         1
     } else if label.contains(word) {
         2

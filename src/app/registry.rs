@@ -56,7 +56,6 @@ use crate::engine::nodes::math::palette_select::PaletteSelectProcessNode;
 use crate::engine::nodes::math::palette_to_gradient::PaletteToGradientProcessNode;
 use crate::engine::nodes::meta::subgraph::SubgraphProcessNode;
 use crate::engine::nodes::math::scaler::ScalerProcessNode;
-use crate::engine::nodes::math::oscillator::{OscFunc, OscillatorProcessNode};
 use crate::engine::nodes::math::position_ops::{PositionMergeProcessNode, PositionSplitProcessNode};
 use crate::engine::effects::bar::Bar;
 use crate::engine::effects::fill::Fill;
@@ -128,7 +127,6 @@ use crate::widgets::nodes::math::palette_select::PaletteSelectWidget;
 use crate::widgets::nodes::math::palette_to_gradient::PaletteToGradientWidget;
 use crate::widgets::nodes::meta::subgraph::SubgraphWidget;
 use crate::widgets::nodes::math::scaler::ScalerWidget;
-use crate::widgets::nodes::math::oscillator::OscillatorWidget;
 use crate::widgets::nodes::math::position_ops::{PositionMergeWidget, PositionSplitWidget};
 use crate::widgets::nodes::output::effect_stack::EffectStackWidget;
 use crate::widgets::nodes::transport::clock_divider::ClockDividerWidget;
@@ -423,16 +421,6 @@ pub(crate) fn node_table() -> Vec<NodeDescriptor> {
         |id, _| Box::new(MathProcessNode::new(id, MathOp::Div)),
     ));
     table.push(node(
-        "Math", "Sin", (2, 1),
-        |id, s, _| Box::new(OscillatorWidget::new(id, OscFunc::Sin, s)),
-        |id, _| Box::new(OscillatorProcessNode::new(id, OscFunc::Sin)),
-    ));
-    table.push(node(
-        "Math", "Cos", (2, 1),
-        |id, s, _| Box::new(OscillatorWidget::new(id, OscFunc::Cos, s)),
-        |id, _| Box::new(OscillatorProcessNode::new(id, OscFunc::Cos)),
-    ));
-    table.push(node(
         "Color", "Components to Color", (4, 4),
         |id, s, _| Box::new(ComponentsToColorWidget::new(id, s)),
         |id, _| Box::new(ComponentsToColorProcessNode::new(id)),
@@ -592,7 +580,7 @@ pub(crate) fn node_table() -> Vec<NodeDescriptor> {
         |id, s, _| Box::new(ValueDisplayWidget::new(id, s)),
         |id, _| Box::new(ValueDisplayProcessNode::new(id)),
     ));
-    for kind in [MeterKind::Level, MeterKind::Gauge] {
+    for kind in MeterKind::ALL {
         table.push(node(
             "Display", kind.type_name(), (1, 0),
             move |id, s, _| Box::new(MeterWidget::new(id, s, kind)),

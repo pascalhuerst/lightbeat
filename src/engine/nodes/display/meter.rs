@@ -27,6 +27,11 @@ pub fn ports() -> (Vec<PortDef>, Vec<PortDef>) {
 }
 
 impl MeterKind {
+    pub const ALL: [MeterKind; 2] = [MeterKind::Level, MeterKind::Gauge];
+
+    pub fn from_index(i: usize) -> Self { Self::ALL.get(i).copied().unwrap_or(MeterKind::Level) }
+    pub fn to_index(self) -> usize { Self::ALL.iter().position(|k| *k == self).unwrap_or(0) }
+
     pub fn type_name(self) -> &'static str {
         match self {
             MeterKind::Level => "Level Meter",
@@ -90,7 +95,7 @@ impl MeterProcessNode {
             value: 0.0,
             min: 0.0,
             max: 1.0,
-            vertical: kind == MeterKind::Level,
+            vertical: true,
             inputs,
         }
     }
@@ -111,21 +116,28 @@ impl ProcessNode for MeterProcessNode {
     fn process(&mut self) {}
 
     fn params(&self) -> Vec<ParamDef> {
-        let mut params = vec![
+        // Style comes last so a saved meter's Min, Max and Vertical keep
+        // their indices; the Gauge draws without using Vertical.
+        vec![
             MIN.def(self.min),
             MAX.def(self.max),
-        ];
-        if self.kind == MeterKind::Level {
-            params.push(ParamDef::Bool { name: "Vertical".into(), value: self.vertical });
-        }
-        params
+            ParamDef::Bool { name: "Vertical".into(), value: self.vertical },
+            ParamDef::Choice {
+                name: "Style".into(),
+                value: self.kind.to_index(),
+                options: MeterKind::ALL.iter().map(|k| k.type_name().into()).collect(),
+            },
+        ]
     }
+
+    fn non_promotable_params(&self) -> &'static [&'static str] { &["Style"] }
 
     fn set_param(&mut self, index: usize, value: ParamValue) {
         match index {
             0 => self.min = MIN.apply(&value),
             1 => self.max = MAX.apply(&value),
             2 => self.vertical = value.as_f32() >= 0.5,
+            3 => self.kind = MeterKind::from_index(value.as_usize()),
             _ => {}
         }
     }
@@ -164,11 +176,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn only_the_level_meter_has_an_orientation_and_a_range_can_be_set() {
+    fn both_styles_have_the_same_settings_and_a_range_can_be_set() {
         let level = MeterProcessNode::new(NodeId(1), MeterKind::Level);
         let mut gauge = MeterProcessNode::new(NodeId(2), MeterKind::Gauge);
-        assert_eq!(level.params().len(), 3);
-        assert_eq!(gauge.params().len(), 2);
+        assert_eq!(level.params().len(), gauge.params().len());
         gauge.set_param(0, ParamValue::Float(-50.0));
         gauge.set_param(1, ParamValue::Float(250.0));
         gauge.write_input(0, 10.0);
@@ -176,6 +187,15 @@ mod tests {
         gauge.update_display(&mut shared);
         let d = shared.display.as_ref().unwrap().downcast_ref::<MeterData>().unwrap();
         assert_eq!((d.min, d.max, d.value), (-50.0, 250.0, 10.0));
+    }
+
+    #[test]
+    fn the_style_setting_turns_one_into_the_other() {
+        let mut n = MeterProcessNode::new(NodeId(1), MeterKind::Level);
+        n.set_param(3, ParamValue::Int(1));
+        assert_eq!(n.type_name(), "Gauge");
+        n.set_param(3, ParamValue::Int(0));
+        assert_eq!(n.type_name(), "Level Meter");
     }
 
     #[test]

@@ -15,7 +15,6 @@ pub mod logic_gate;
 pub mod lookup;
 pub mod math_op;
 pub mod multiplex;
-pub mod oscillator;
 pub mod palette_select;
 pub mod palette_to_gradient;
 pub mod phase_accumulator;

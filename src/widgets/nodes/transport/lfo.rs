@@ -34,8 +34,9 @@ impl LfoWidget {
 impl NodeWidget for LfoWidget {
     node_identity!("LFO");
     fn description(&self) -> &'static str {
-        "Low-frequency oscillator: sine, triangle, saw, square, or random; rate in Hz. \
-         With Phase input on (inspector) it follows a phase wire instead of running on its own."
+        "Low-frequency oscillator: sine, cosine, triangle, saw, square, or random; rate in Hz. \
+         With Phase input on (inspector) it follows a phase wire instead of running on its own, \
+         which makes it a sine or cosine of that phase. Amplitude scales the output."
     }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> {
