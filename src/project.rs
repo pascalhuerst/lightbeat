@@ -383,8 +383,31 @@ fn current_type_name(saved: &str) -> &str {
     RENAMED_NODES.iter().find(|(old, _)| *old == saved).map_or(saved, |(_, new)| new)
 }
 
+/// Sin and Cos were removed in favour of the LFO driven by a phase wire. Their
+/// ports line up with the LFO's (phase, then the promoted Amplitude), so the
+/// saved wires need no change. Temporary, like `RENAMED_NODES`.
+fn with_oscillators_as_lfos(project: &ProjectFile) -> Option<ProjectFile> {
+    let is_oscillator = |n: &SavedNode| n.type_name == "Sin" || n.type_name == "Cos";
+    if !project.nodes.iter().any(is_oscillator) {
+        return None;
+    }
+    let mut project = project.clone();
+    for node in project.nodes.iter_mut().filter(|n| is_oscillator(n)) {
+        let cosine = node.type_name == "Cos";
+        node.type_name = "LFO".to_string();
+        node.params = vec![
+            SavedParam { index: 1, value: SavedParamValue::Choice(if cosine { 6 } else { 0 }) },
+            SavedParam { index: 3, value: SavedParamValue::Bool(true) },
+        ];
+        node.promoted = vec![PromotedParam { name: "Amplitude".to_string(), kind: crate::engine::promoted::PromotedKind::Float }];
+    }
+    Some(project)
+}
+
 pub fn load_graph(graph: &mut NodeGraph, project: &ProjectFile) -> Vec<usize> {
     let mut indices = Vec::new();
+    let converted = with_oscillators_as_lfos(project);
+    let project = converted.as_ref().unwrap_or(project);
 
     let project_connections = connections_for_current_layout(project);
 
@@ -966,6 +989,26 @@ mod tests {
         params.truncate(index);
         params.push(ParamDef::Choice { name: "Operation".into(), value: choice, options: Vec::new() });
         g.node_mut(node).shared_state().lock().current_params = params;
+    }
+
+    #[test]
+    fn old_sin_and_cos_nodes_load_as_phase_driven_lfos_with_amplitude_promoted() {
+        let project: ProjectFile = serde_json::from_str(r#"{
+            "version": 4,
+            "nodes": [
+                {"type_name": "Sin", "id": 1, "pos": [0.0, 0.0], "params": []},
+                {"type_name": "Cos", "id": 2, "pos": [0.0, 0.0], "params": []},
+                {"type_name": "Add", "id": 3, "pos": [0.0, 0.0], "params": []}
+            ],
+            "connections": []
+        }"#).unwrap();
+        let converted = with_oscillators_as_lfos(&project).unwrap();
+        let types: Vec<&str> = converted.nodes.iter().map(|n| n.type_name.as_str()).collect();
+        assert_eq!(types, ["LFO", "LFO", "Add"]);
+        assert!(converted.nodes[0].params.contains(&SavedParam { index: 1, value: SavedParamValue::Choice(0) }));
+        assert!(converted.nodes[1].params.contains(&SavedParam { index: 1, value: SavedParamValue::Choice(6) }));
+        assert_eq!(converted.nodes[0].promoted[0].name, "Amplitude");
+        assert!(converted.nodes[2].promoted.is_empty());
     }
 
     #[test]

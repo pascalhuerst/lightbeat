@@ -28,6 +28,15 @@ fn group_of(category: &str) -> String {
     slug(category)
 }
 
+/// Other words a node is looked for by in quick add. Sin and Cos are an LFO
+/// that follows a phase wire.
+pub fn aliases(label: &str) -> &'static [&'static str] {
+    match label {
+        "LFO" => &["sin", "sine", "cos", "cosine"],
+        _ => &[],
+    }
+}
+
 /// Nodes with a shorter or older name than their own, as a second way in.
 /// Anything not listed is `<category>/<name>`.
 fn explicit(label: &str) -> Option<&'static str> {
@@ -82,6 +91,12 @@ mod tests {
         assert_eq!(node_path("Compare", ">="), "compare/gte");
         assert_eq!(node_path("Signal", "Const Value"), "signal/const-value");
         assert_eq!(node_path("Color", "Color to Components"), "color/to-components");
+    }
+
+    #[test]
+    fn the_lfo_is_also_found_as_sin_and_cos() {
+        assert!(aliases("LFO").contains(&"sin") && aliases("LFO").contains(&"cos"));
+        assert!(aliases("Mul").is_empty());
     }
 
     #[test]
