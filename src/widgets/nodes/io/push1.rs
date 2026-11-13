@@ -1,49 +1,39 @@
 use crate::engine::nodes::io::status::status_port;
 use std::any::Any;
 
-use egui::{self, Ui};
+use egui::Ui;
 
 use crate::engine::nodes::io::push1::Push1Display;
 use crate::engine::types::*;
 use crate::input_controller::{InputControllerKind, SharedControllers};
-use crate::theme;
+use crate::widgets::nodes::io::controller_binding::{ControllerBinding, ControllerSpec};
 use crate::widgets::nodes::node::{NodeLayout, NodeWidget, labelled_layout};
 use crate::widgets::nodes::types::UiPortDef;
+
+static SPEC: ControllerSpec = ControllerSpec {
+    label: "Push 1",
+    id_salt: "push1_pick",
+    is_kind: |k| matches!(k, InputControllerKind::Push1 { .. }),
+};
 
 pub struct Push1Widget {
     id: NodeId,
     shared: SharedState,
-    controller_id: u32,
-    controllers: SharedControllers,
-    connected: bool,
-    controller_name: String,
+    binding: ControllerBinding,
 }
 
 impl Push1Widget {
     pub fn new(id: NodeId, shared: SharedState, controllers: SharedControllers) -> Self {
         Self {
             id, shared,
-            controller_id: 0,
-            controllers,
-            connected: false,
-            controller_name: String::new(),
+            binding: ControllerBinding::new(controllers, &SPEC),
         }
-    }
-
-    fn push_config(&self) {
-        let mut shared = self.shared.lock().unwrap();
-        shared.pending_config = Some(serde_json::json!({
-            "controller_id": self.controller_id,
-        }));
     }
 }
 
 impl NodeWidget for Push1Widget {
     fn restore_from_save(&mut self, data: Option<&serde_json::Value>, _params: &[(usize, crate::engine::types::ParamValue)]) {
-        let Some(data) = data else { return };
-        if let Some(id) = data.get("controller_id").and_then(|v| v.as_u64()) {
-            self.controller_id = id as u32;
-        }
+        self.binding.restore_from_save(data);
     }
 
     fn node_id(&self) -> NodeId { self.id }
@@ -119,59 +109,12 @@ impl NodeWidget for Push1Widget {
                 .and_then(|d| d.downcast_ref::<Push1Display>())
                 .map(|d| (d.controller_id, d.controller_name.clone(), d.connected))
         };
-        if let Some((cid, name, connected)) = snap {
-            self.controller_id = cid;
-            self.controller_name = name;
-            self.connected = connected;
-        }
-
-        if self.controller_id == 0 {
-            ui.colored_label(theme::TEXT_DIM, "No Push 1 bound");
-        } else if self.connected {
-            ui.colored_label(theme::SEM_SUCCESS, &self.controller_name);
-        } else {
-            ui.colored_label(theme::SEM_WARNING, format!("{} (not connected)", self.controller_name));
-        }
+        self.binding.sync_from(snap);
+        self.binding.show_status(ui);
     }
 
     fn show_inspector(&mut self, ui: &mut Ui) {
-        // Only show Push 1 controllers — this node is useless with any other.
-        let controllers: Vec<(u32, String)> = {
-            let state = self.controllers.lock().unwrap();
-            state.iter()
-                .filter(|c| matches!(c.kind, InputControllerKind::Push1 { .. }))
-                .map(|c| (c.id, c.name.clone()))
-                .collect()
-        };
-
-        ui.horizontal(|ui| {
-            ui.label("Push 1");
-            let current = controllers.iter()
-                .find(|(id, _)| *id == self.controller_id)
-                .map(|(_, n)| n.clone())
-                .unwrap_or_else(|| "(none)".to_string());
-            egui::ComboBox::from_id_salt(("push1_pick", self.id))
-                .selected_text(current)
-                .show_ui(ui, |ui| {
-                    if ui.selectable_label(self.controller_id == 0, "(none)").clicked() {
-                        self.controller_id = 0;
-                        self.push_config();
-                    }
-                    for (id, name) in &controllers {
-                        if ui.selectable_label(self.controller_id == *id, name).clicked() {
-                            self.controller_id = *id;
-                            self.push_config();
-                        }
-                    }
-                });
-        });
-
-        if controllers.is_empty() {
-            ui.colored_label(
-                theme::TEXT_DIM,
-                "No Push 1 configured. Add one in the Input Controllers window.",
-            );
-        }
+        self.binding.show_picker(ui, self.id, &self.shared);
     }
 
     fn as_any_mut(&mut self) -> &mut dyn Any { self }
