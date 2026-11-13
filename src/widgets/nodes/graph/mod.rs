@@ -933,6 +933,23 @@ impl NodeGraph {
 
         // -- Draw node content (needs &mut node) --
         let canvas_clip = canvas_rect;
+        // Every node's ui starts from the same style, so scale it once.
+        let zoomed_style: Option<std::sync::Arc<egui::Style>> = ((z - 1.0).abs() > 0.01).then(|| {
+            let mut style = (**ui.style()).clone();
+            for (_, font_id) in style.text_styles.iter_mut() {
+                font_id.size *= z;
+            }
+            style.spacing.item_spacing *= z;
+            style.spacing.button_padding *= z;
+            style.spacing.interact_size *= z;
+            style.spacing.icon_width *= z;
+            style.spacing.icon_width_inner *= z;
+            style.spacing.icon_spacing *= z;
+            style.spacing.slider_width *= z;
+            style.spacing.combo_width *= z;
+            style.spacing.text_edit_width *= z;
+            std::sync::Arc::new(style)
+        });
         let level = self.active_mut();
         for i in 0..level.nodes.len() {
             let rect = node_rects[i];
@@ -949,21 +966,8 @@ impl NodeGraph {
                 );
                 content_ui.set_clip_rect(clip_rect);
                 // Scale text and spacing for zoom.
-                if (z - 1.0).abs() > 0.01 {
-                    let mut style = (**content_ui.style()).clone();
-                    for (_, font_id) in style.text_styles.iter_mut() {
-                        font_id.size *= z;
-                    }
-                    style.spacing.item_spacing *= z;
-                    style.spacing.button_padding *= z;
-                    style.spacing.interact_size *= z;
-                    style.spacing.icon_width *= z;
-                    style.spacing.icon_width_inner *= z;
-                    style.spacing.icon_spacing *= z;
-                    style.spacing.slider_width *= z;
-                    style.spacing.combo_width *= z;
-                    style.spacing.text_edit_width *= z;
-                    content_ui.set_style(style);
+                if let Some(style) = &zoomed_style {
+                    content_ui.set_style(style.clone());
                 }
 
                 level.nodes[i].show_content(&mut content_ui, z);
