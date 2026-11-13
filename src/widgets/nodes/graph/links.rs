@@ -75,10 +75,6 @@ impl NodeGraph {
         }
     }
 
-    // -----------------------------------------------------------------------
-    // Main draw
-    // -----------------------------------------------------------------------
-
     pub fn set_stack_names(&mut self, names: crate::widgets::nodes::output::effect::SharedStackNames) {
         self.stack_names = Some(names);
     }
