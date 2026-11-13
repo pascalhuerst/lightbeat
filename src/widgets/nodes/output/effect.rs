@@ -265,7 +265,7 @@ mod tests {
     fn ports_come_from_the_engine_side_effect() {
         let w = ripple();
         let names: Vec<String> = w.ui_inputs().into_iter().map(|p| p.def.name).collect();
-        assert_eq!(names, ["trigger", "color"]);
+        assert_eq!(names, ["trigger", "gradient"]);
         let channels = total_channels(&w.ui_inputs().iter().map(|p| p.def.clone()).collect::<Vec<_>>());
         assert!(channels <= 48, "the shared state is big enough ({channels} channels)");
     }

@@ -718,7 +718,7 @@ mod tests {
         load_graph(&mut g, &project);
 
         let ports: Vec<String> = g.node_and_state(0).0.ui_inputs_full().into_iter().map(|p| p.def.name).collect();
-        assert_eq!(ports, ["color", "Position", "Width"]);
+        assert_eq!(ports, ["gradient", "Position", "Width"]);
         let n = g.node_mut(0);
         assert_eq!(n.as_any_mut().downcast_mut::<EffectWidget>().unwrap().stack(), "Record Shelf");
         let shared = n.shared_state().lock().unwrap();

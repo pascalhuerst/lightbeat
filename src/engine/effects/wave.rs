@@ -37,7 +37,7 @@ impl EffectKind for Wave {
     fn type_name(&self) -> &'static str { "Wave Loop" }
 
     fn inputs(&self) -> Vec<PortDef> {
-        vec![PortDef::new("phase", PortType::Phase), PortDef::new("color", PortType::Gradient)]
+        vec![PortDef::new("phase", PortType::Phase), PortDef::new("gradient", PortType::Gradient)]
     }
 
     fn params(&self) -> Vec<ParamDef> {

@@ -52,7 +52,7 @@ impl EffectKind for Bar {
     fn type_name(&self) -> &'static str { "Bar" }
 
     fn inputs(&self) -> Vec<PortDef> {
-        vec![PortDef::new("color", PortType::Gradient)]
+        vec![PortDef::new("gradient", PortType::Gradient)]
     }
 
     fn params(&self) -> Vec<ParamDef> {

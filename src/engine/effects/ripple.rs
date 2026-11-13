@@ -40,7 +40,7 @@ impl EffectKind for Ripple {
     fn type_name(&self) -> &'static str { "Ripple Burst" }
 
     fn inputs(&self) -> Vec<PortDef> {
-        vec![PortDef::new("trigger", PortType::Logic), PortDef::new("color", PortType::Gradient)]
+        vec![PortDef::new("trigger", PortType::Logic), PortDef::new("gradient", PortType::Gradient)]
     }
 
     fn trigger_ports(&self) -> Vec<usize> { vec![0] }
