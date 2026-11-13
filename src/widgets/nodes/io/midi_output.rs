@@ -119,7 +119,7 @@ impl NodeWidget for MidiOutputWidget {
             self.push_config();
         }
         ui.add_space(4.0);
-        ui.label(egui::RichText::new("Inputs").strong());
+        setup_ui::section(ui, "Inputs");
 
         let learned: Vec<(String, LearnedControl)> = {
             let map = self.learned.lock().unwrap();

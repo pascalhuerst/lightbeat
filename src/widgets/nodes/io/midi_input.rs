@@ -219,7 +219,7 @@ impl NodeWidget for MidiInputWidget {
             self.push_config();
         }
         ui.add_space(4.0);
-        ui.label(egui::RichText::new("Outputs").strong());
+        setup_ui::section(ui, "Outputs");
 
         let mut changed = false;
         let mut remove: Option<usize> = None;

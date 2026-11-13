@@ -341,7 +341,7 @@ impl NodeWidget for DmxInputWidget {
         let universes = self.hub.input_universes(self.config.input);
 
         ui.add_space(4.0);
-        ui.label(egui::RichText::new("Outputs").strong());
+        setup_ui::section(ui, "Outputs");
         let bases = self.bases();
         let live = self.source_values();
         let shared_outputs = self.shared.lock().unwrap().outputs.clone();
@@ -430,7 +430,7 @@ impl NodeWidget for DmxInputWidget {
 
         if self.config.outputs.iter().any(|o| !o.sources.is_empty()) {
             ui.add_space(6.0);
-            ui.label(egui::RichText::new("Channels used, for patching the desk").strong());
+            setup_ui::section(ui, "Channels used, for patching the desk");
             let text = patch_text(&self.config.outputs);
             ui.colored_label(theme::TEXT_DIM, &text);
             if ui.small_button("Copy").clicked() {

@@ -346,7 +346,7 @@ impl NodeWidget for GradientSourceWidget {
         let mut swap: Option<(usize, usize)> = None;
 
         // -- Preset library: load and save -------------------------------
-        ui.label(egui::RichText::new("Preset Library").strong());
+        setup_ui::section(ui, "Preset Library");
         let presets: Vec<(u32, String, Vec<GradientStop>)> = {
             let lib = self.library.lock().unwrap();
             lib.presets.iter().map(|p| (p.id, p.name.clone(), p.stops.clone())).collect()

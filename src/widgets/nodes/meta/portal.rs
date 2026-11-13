@@ -133,7 +133,7 @@ impl NodeWidget for PortalSendWidget {
             ui.colored_label(theme::SEM_DANGER, "Another Portal Send already uses this name.");
         }
         ui.separator();
-        ui.label(egui::RichText::new("Ports").strong());
+        setup_ui::section(ui, "Ports");
         let mut remove: Option<usize> = None;
         for (i, port) in self.port_defs.iter_mut().enumerate() {
             ui.horizontal(|ui| {

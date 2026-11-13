@@ -6,6 +6,7 @@ use crate::engine::nodes::ui::common::MouseOverrideMode;
 use crate::engine::nodes::ui::fader_group::FaderGroupDisplay;
 use crate::engine::types::*;
 use crate::theme;
+use crate::widgets::setup_ui;
 use crate::widgets::fader::{self, highlight_alpha, FaderStyle, Orientation};
 use crate::widgets::nodes::node::{NodeLayout, NodeWidget};
 use crate::widgets::nodes::types::UiPortDef;
@@ -347,7 +348,7 @@ impl NodeWidget for FaderGroupWidget {
         });
 
         ui.separator();
-        ui.label(egui::RichText::new("Outputs").strong());
+        setup_ui::section(ui, "Outputs");
 
         egui::ScrollArea::horizontal().show(ui, |ui| {
             egui::Grid::new(("fg_table", self.id))

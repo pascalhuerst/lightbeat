@@ -220,14 +220,14 @@ impl NodeWidget for SubgraphWidget {
                 ui.colored_label(theme::TEXT, &self.name);
             });
             ui.separator();
-            ui.label(egui::RichText::new("Description").strong());
+            setup_ui::section(ui, "Description");
             if self.macro_description.is_empty() {
                 ui.colored_label(theme::TEXT_DIM, "(no description)");
             } else {
                 ui.label(&self.macro_description);
             }
             ui.separator();
-            ui.label(egui::RichText::new("Path").strong());
+            setup_ui::section(ui, "Path");
             if self.macro_path.is_empty() {
                 ui.colored_label(theme::TEXT_DIM, "(unknown)");
             } else {
@@ -247,7 +247,7 @@ impl NodeWidget for SubgraphWidget {
         ui.separator();
 
         // Input ports.
-        ui.label(egui::RichText::new("Inputs").strong());
+        setup_ui::section(ui, "Inputs");
         let mut input_changed = false;
         let mut remove_input = None;
         for (i, port) in self.input_defs.iter_mut().enumerate() {
@@ -288,7 +288,7 @@ impl NodeWidget for SubgraphWidget {
         ui.separator();
 
         // Output ports.
-        ui.label(egui::RichText::new("Outputs").strong());
+        setup_ui::section(ui, "Outputs");
         let mut output_changed = false;
         let mut remove_output = None;
         for (i, port) in self.output_defs.iter_mut().enumerate() {

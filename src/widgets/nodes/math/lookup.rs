@@ -293,7 +293,7 @@ impl NodeWidget for LookupWidget {
         let mut changed = false;
 
         // -- Columns --
-        ui.label(egui::RichText::new("Columns").strong());
+        setup_ui::section(ui, "Columns");
         let mut remove_col: Option<usize> = None;
         let mut retype: Option<(usize, PortType)> = None;
         let cols_snapshot: Vec<(String, PortType)> =
@@ -343,7 +343,7 @@ impl NodeWidget for LookupWidget {
         ui.separator();
 
         // -- Rows table --
-        ui.label(egui::RichText::new("Rows").strong());
+        setup_ui::section(ui, "Rows");
         let stride = self.row_stride();
         let cur = self.current_row;
         let mut remove_row: Option<usize> = None;
@@ -584,7 +584,7 @@ fn edit_cell(
                             );
                             return;
                         }
-                        ui.label(egui::RichText::new("Pick a preset").strong());
+                        setup_ui::section(ui, "Pick a preset");
                         for (_id, name, stops) in &presets {
                             let row_resp = ui.horizontal(|ui| {
                                 let bar = ui.allocate_response(

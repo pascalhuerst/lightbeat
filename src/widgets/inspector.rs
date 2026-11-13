@@ -4,6 +4,7 @@ use super::nodes::node::NodeWidget;
 use super::nodes::types::PortTypeUi;
 use crate::engine::types::{ParamDef, ParamValue, PortDef, PortType, PromotedKind, PromotedParam};
 use crate::theme;
+use super::setup_ui;
 
 /// Read params from a node's shared state.
 fn read_params(node: &dyn NodeWidget) -> Vec<ParamDef> {
@@ -325,7 +326,7 @@ pub fn show_inspector(ui: &mut Ui, node: &mut dyn NodeWidget) {
     if !hide_default_ports {
         let inputs = node.ui_inputs();
         if !inputs.is_empty() {
-            ui.label(egui::RichText::new("Inputs").strong().size(11.0));
+            setup_ui::section(ui, "Inputs");
             let shared = node.shared_state().lock().unwrap();
             let values = shared.inputs.clone();
             drop(shared);
@@ -340,7 +341,7 @@ pub fn show_inspector(ui: &mut Ui, node: &mut dyn NodeWidget) {
 
         let outputs = node.ui_outputs();
         if !outputs.is_empty() {
-            ui.label(egui::RichText::new("Outputs").strong().size(11.0));
+            setup_ui::section(ui, "Outputs");
             let shared = node.shared_state().lock().unwrap();
             let values = shared.outputs.clone();
             drop(shared);
@@ -361,7 +362,7 @@ pub fn show_inspector(ui: &mut Ui, node: &mut dyn NodeWidget) {
         .filter(|(i, _)| !hidden.contains(i)).count();
     if !params.is_empty() && visible_count > 0 {
         ui.separator();
-        ui.label(egui::RichText::new("Parameters").strong().size(11.0));
+        setup_ui::section(ui, "Parameters");
         ui.add_space(4.0);
 
         let promo = PromoteCtx::read(node);
@@ -372,7 +373,7 @@ pub fn show_inspector(ui: &mut Ui, node: &mut dyn NodeWidget) {
             if group != last_group {
                 if let Some(g) = &group {
                     ui.add_space(6.0);
-                    ui.label(egui::RichText::new(g).strong());
+                    setup_ui::section(ui, g);
                 }
                 last_group = group;
             }
@@ -430,7 +431,7 @@ pub fn show_multi_inspector(ui: &mut Ui, nodes: Vec<&mut Box<dyn NodeWidget>>) {
         return;
     }
 
-    ui.label(egui::RichText::new("Common Parameters").strong().size(11.0));
+    setup_ui::section(ui, "Common Parameters");
     ui.add_space(4.0);
 
     for param in &common {

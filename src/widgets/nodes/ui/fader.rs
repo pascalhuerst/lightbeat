@@ -263,7 +263,7 @@ impl NodeWidget for FaderWidget {
         }
 
         ui.separator();
-        ui.label(egui::RichText::new("Output").strong());
+        setup_ui::section(ui, "Output");
         if cell_inspector_section(
             ui,
             self.id.0,
@@ -302,7 +302,7 @@ pub fn cell_inspector_section(
     let mut changed = false;
     egui::Frame::group(ui.style()).show(ui, |ui| {
         if let Some(l) = label {
-            ui.label(egui::RichText::new(l).strong());
+            setup_ui::section(ui, l);
         }
         if ui.checkbox(inputs_enabled, "Input enabled").changed() {
             changed = true;

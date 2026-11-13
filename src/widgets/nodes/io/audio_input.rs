@@ -7,6 +7,7 @@ use crate::audio::manager::{AudioInputManager, SharedAudioInputs};
 use crate::engine::nodes::io::audio_input::AudioInputDisplay;
 use crate::engine::types::*;
 use crate::theme;
+use crate::widgets::setup_ui;
 use crate::widgets::fader::FaderStyle;
 use crate::widgets::nodes::node::NodeWidget;
 use crate::widgets::nodes::types::UiPortDef;
@@ -415,7 +416,7 @@ impl NodeWidget for AudioInputWidget {
 
         if !self.outputs.is_empty() {
             ui.separator();
-            ui.label(egui::RichText::new("Live Outputs").strong());
+            setup_ui::section(ui, "Live Outputs");
             for (name, _ty, value) in &self.outputs {
                 ui.horizontal(|ui| {
                     ui.label(name);

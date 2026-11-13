@@ -523,7 +523,7 @@ impl NodeWidget for EffectStackWidget {
             }
 
             ui.add_space(4.0);
-            ui.label(egui::RichText::new("Groups").strong());
+            setup_ui::section(ui, "Groups");
             let groups: Vec<(u32, String)> =
                 self.group_ctx.lock().unwrap().groups.iter().map(|g| (g.id, g.name.clone())).collect();
             for (gid, name) in &groups {
@@ -544,7 +544,7 @@ impl NodeWidget for EffectStackWidget {
 
         ui.add_space(6.0);
         ui.separator();
-        ui.label(egui::RichText::new("Selected layer").strong());
+        setup_ui::section(ui, "Selected layer");
         match self.selected.and_then(|n| self.config.layers.iter().position(|l| l.node_id == n)) {
             None => {
                 ui.colored_label(theme::TEXT_DIM, "Click a layer in the stack.");

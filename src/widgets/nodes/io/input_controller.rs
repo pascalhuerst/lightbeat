@@ -6,6 +6,7 @@ use crate::engine::nodes::io::input_controller::InputControllerDisplay;
 use crate::engine::types::*;
 use crate::input_controller::SharedControllers;
 use crate::theme;
+use crate::widgets::setup_ui;
 use crate::widgets::nodes::node::NodeWidget;
 use crate::widgets::nodes::types::UiPortDef;
 
@@ -173,7 +174,7 @@ impl NodeWidget for InputControllerWidget {
 
         if !self.outputs.is_empty() {
             ui.separator();
-            ui.label(egui::RichText::new("Live Values").strong());
+            setup_ui::section(ui, "Live Values");
             for (name, _ty, value) in &self.outputs {
                 ui.horizontal(|ui| {
                     ui.label(name);

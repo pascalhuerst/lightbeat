@@ -170,7 +170,7 @@ impl NodeWidget for PaletteSelectWidget {
             .collect();
         drop(ctx);
 
-        ui.label(egui::RichText::new("Palette Groups (ordered)").strong());
+        setup_ui::section(ui, "Palette Groups (ordered)");
 
         // Show selected groups with remove + move buttons.
         let mut changed = false;
