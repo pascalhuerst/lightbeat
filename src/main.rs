@@ -104,6 +104,7 @@ struct LightBeatApp {
     after_save_as: Option<PendingAction>,
     /// File errors (project, setup, macros, autosave) shown until dismissed.
     notices: Vec<String>,
+    engine_stop_reported: bool,
     /// Set when the setup file existed but could not be read: every setup save
     /// is refused for the session so the empty setup never replaces it.
     setup_save_blocked: bool,
@@ -225,6 +226,7 @@ impl LightBeatApp {
             unsaved_prompt: None,
             after_save_as: None,
             notices: Vec::new(),
+            engine_stop_reported: false,
             setup_save_blocked: false,
             setup_baseline: setup::SetupFile::default(),
             setup_changed_at: None,

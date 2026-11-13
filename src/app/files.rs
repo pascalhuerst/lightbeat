@@ -82,6 +82,15 @@ impl LightBeatApp {
         }
     }
 
+    /// Tell the user once that the engine thread has died; the status bar
+    /// keeps showing it. There is no recovery, the lights hold their last look.
+    pub(crate) fn check_engine_health(&mut self) {
+        if !self.engine.is_running() && !self.engine_stop_reported {
+            self.engine_stop_reported = true;
+            self.report_error("The engine has stopped and the lights are frozen. Save the project and restart LightBeat.".to_string());
+        }
+    }
+
     /// Write the project to `path` and make it the current file. False on failure.
     fn write_project_to(&mut self, path: PathBuf) -> bool {
         if let Err(e) = project::save_to_file(&self.graph, self.view_state(), &path) {

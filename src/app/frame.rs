@@ -137,6 +137,7 @@ impl LightBeatApp {
         // Drain any "save current as preset" requests from Gradient Source
         // widgets into the preset manager, then re-sync the shared mirror.
         self.drain_pending_gradient_saves();
+        self.check_engine_health();
         // Keep the shared library in sync with the manager every frame —
         // the management window edits `gradient_preset_manager.presets`
         // directly (rename / delete / add), and those changes need to be
@@ -630,6 +631,18 @@ impl LightBeatApp {
                         "Live"
                     };
                     ui.colored_label(theme::TEXT_DIM, status);
+
+                    if !self.engine.is_running() {
+                        ui.separator();
+                        ui.colored_label(theme::SEM_DANGER, egui::RichText::new("Engine stopped").strong())
+                            .on_hover_text("The engine thread has stopped, so the output is frozen at its last look. Save the project and restart the app.");
+                    }
+                    let dropped = self.engine.dropped_commands();
+                    if dropped > 0 {
+                        ui.separator();
+                        ui.colored_label(theme::SEM_WARNING, format!("Engine busy: {dropped} changes lost"))
+                            .on_hover_text("The engine could not keep up and dropped some changes, so the graph on screen may differ from what runs. Reload the project to be safe.");
+                    }
 
                     let missing = {
                         let mut m = self.input_controllers.missing_controllers();
