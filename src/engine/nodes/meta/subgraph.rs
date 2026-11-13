@@ -422,13 +422,30 @@ impl InnerGraph {
     fn sync_shared_state(&mut self) {
         let sync_save_data = self.save_data_gate.due();
         for (i, node) in self.nodes.iter().enumerate() {
+            let disabled = self.disabled_mask[i];
+            // One `params()` per node (it allocates), shared by the promoted
+            // entries' refresh and the UI copy.
+            let params = (!disabled || self.promoted[i].wants_refresh()).then(|| node.params());
+            if self.promoted[i].wants_refresh()
+                && let Some(params) = &params
+            {
+                self.promoted[i].refresh(params);
+            }
+            let (active, fading, progress) = self.promoted[i].snapshot_state();
+
             let mut shared = self.shared_states[i].lock().unwrap();
             shared.inputs_connected.clear();
             shared
                 .inputs_connected
                 .extend_from_slice(&self.plan.connected[i]);
-            shared.non_promotable = node.non_promotable_params();
-            if self.disabled_mask[i] {
+            let non_promotable = node.non_promotable_params();
+            if !std::ptr::eq(shared.non_promotable, non_promotable) {
+                shared.non_promotable = non_promotable;
+            }
+            shared.snapshot_active = active;
+            shared.snapshot_fading = fading;
+            shared.snapshot_progress = progress;
+            if disabled {
                 continue;
             }
             let total_out = total_channels(node.outputs());
@@ -439,19 +456,13 @@ impl InnerGraph {
             for ch in 0..total_in.min(shared.inputs.len()) {
                 shared.inputs[ch] = node.read_input(ch);
             }
-            shared.current_params = node.params();
+            if let Some(params) = params {
+                shared.current_params = params;
+            }
             if sync_save_data {
                 shared.save_data = node.save_data();
             }
             node.update_display(&mut shared);
-        }
-        for (i, node) in self.nodes.iter().enumerate() {
-            self.promoted[i].refresh(node.as_ref());
-            let (active, fading, progress) = self.promoted[i].snapshot_state();
-            let mut shared = self.shared_states[i].lock().unwrap();
-            shared.snapshot_active = active;
-            shared.snapshot_fading = fading;
-            shared.snapshot_progress = progress;
         }
     }
 }
