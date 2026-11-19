@@ -958,8 +958,8 @@ mod tests {
     #[test]
     fn values_on_the_front_panel_stay_per_instance() {
         let mut base = pair();
-        for i in 0..2 {
-            let g = base.nodes[i].inner_graph.as_mut().unwrap();
+        for (i, node) in base.nodes.iter_mut().enumerate().take(2) {
+            let g = node.inner_graph.as_mut().unwrap();
             g.nodes[0].panel = Some(PanelItem { order: 0, whole: true, params: vec![] });
             g.nodes[0].data = Some(serde_json::json!({"v": i}));
             set_param(&mut g.nodes[0], 0, i as f64);
@@ -987,8 +987,8 @@ mod tests {
     #[test]
     fn turning_a_panel_value_in_one_instance_does_nothing_to_the_others() {
         let mut base = pair();
-        for i in 0..2 {
-            base.nodes[i].inner_graph.as_mut().unwrap().nodes[0].panel = Some(PanelItem { order: 0, whole: true, params: vec![] });
+        for node in base.nodes.iter_mut().take(2) {
+            node.inner_graph.as_mut().unwrap().nodes[0].panel = Some(PanelItem { order: 0, whole: true, params: vec![] });
         }
         let mut cur = base.clone();
         set_param(&mut cur.nodes[0].inner_graph.as_mut().unwrap().nodes[0], 0, 0.99);
@@ -1046,8 +1046,8 @@ mod tests {
     fn a_turned_front_panel_value_is_not_copied() {
         use crate::engine::types::PanelItem;
         let mut base = pair();
-        for i in 0..2 {
-            base.nodes[i].inner_graph.as_mut().unwrap().nodes[1].panel = Some(PanelItem { order: 0, whole: true, params: vec![] });
+        for node in base.nodes.iter_mut().take(2) {
+            node.inner_graph.as_mut().unwrap().nodes[1].panel = Some(PanelItem { order: 0, whole: true, params: vec![] });
         }
         let mut cur = base.clone();
         set_param(&mut cur.nodes[0].inner_graph.as_mut().unwrap().nodes[1], 0, 0.99);
@@ -1332,8 +1332,8 @@ mod tests {
     fn a_library_update_replaces_every_instance_and_keeps_front_panel_values() {
         use crate::engine::types::PanelItem;
         let mut p = pair();
-        for i in 0..2 {
-            let g = p.nodes[i].inner_graph.as_mut().unwrap();
+        for (i, node) in p.nodes.iter_mut().enumerate().take(2) {
+            let g = node.inner_graph.as_mut().unwrap();
             g.nodes[0].panel = Some(PanelItem { order: 0, whole: true, params: vec![] });
             set_param(&mut g.nodes[0], 0, 0.1 + i as f64);
         }

@@ -595,8 +595,8 @@ mod tests {
         assert_eq!(g.panel_members(level).len(), 2);
 
         g.refresh_panels(0);
-        for i in 0..2 {
-            let sub = g.levels[0].nodes[i].as_any_mut().downcast_mut::<SubgraphWidget>().unwrap();
+        for (i, node) in g.levels[0].nodes.iter_mut().enumerate().take(2) {
+            let sub = node.as_any_mut().downcast_mut::<SubgraphWidget>().unwrap();
             assert!(sub.has_panel(), "subgraph {i} shows a panel");
         }
     }
