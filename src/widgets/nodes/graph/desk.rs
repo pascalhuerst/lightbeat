@@ -6,11 +6,36 @@ use super::*;
 use crate::engine::types::{DeskItem, DeskRect};
 use crate::widgets::nodes::desk::{self as geometry, DeskDoc};
 
-/// One node on the Desk, as the Desk sees it this frame.
+/// What of a node is on the Desk: the node itself, or its snapshot list as a
+/// row of buttons. Each is its own item with its own page and place.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum DeskKind {
+    Node,
+    Snapshots,
+}
+
+impl DeskKind {
+    fn slot(self, item: &DeskItem) -> Option<&DeskRect> {
+        match self {
+            DeskKind::Node => item.node.as_ref(),
+            DeskKind::Snapshots => item.snapshots.as_ref(),
+        }
+    }
+
+    pub(super) fn slot_mut(self, item: &mut DeskItem) -> &mut Option<DeskRect> {
+        match self {
+            DeskKind::Node => &mut item.node,
+            DeskKind::Snapshots => &mut item.snapshots,
+        }
+    }
+}
+
+/// One item on the Desk, as the Desk sees it this frame.
 pub(super) struct DeskEntry {
     pub level: usize,
     pub index: usize,
     pub id: NodeId,
+    pub kind: DeskKind,
     /// The page it is drawn on: the one it names, or the first when that is gone.
     pub page: u64,
     pub rect: Rect,
@@ -28,17 +53,20 @@ pub(super) fn collect_desk(levels: &[GraphLevel], reachable: &[usize], doc: &Des
                 continue;
             }
             let shared = node.shared_state().lock();
-            let Some(r) = shared.desk.as_ref().and_then(|d| d.node.as_ref()) else { continue };
-            if r.is_unplaced() {
-                continue;
+            for kind in [DeskKind::Node, DeskKind::Snapshots] {
+                let Some(r) = shared.desk.as_ref().and_then(|d| kind.slot(d)) else { continue };
+                if r.is_unplaced() {
+                    continue;
+                }
+                out.push(DeskEntry {
+                    level,
+                    index,
+                    id,
+                    kind,
+                    page: doc.resolve(r.page).unwrap_or(0),
+                    rect: geometry::rect_of(r),
+                });
             }
-            out.push(DeskEntry {
-                level,
-                index,
-                id,
-                page: doc.resolve(r.page).unwrap_or(0),
-                rect: geometry::rect_of(r),
-            });
         }
     }
     out
@@ -84,11 +112,12 @@ impl NodeGraph {
         }
     }
 
-    /// Remove one node from the Desk, wherever it is.
-    pub(super) fn remove_from_desk(&mut self, id: NodeId) {
+    /// Take one item (a node, or its snapshot row) off the Desk, wherever the
+    /// node is. What else of the node is on the Desk stays.
+    pub(super) fn remove_from_desk(&mut self, id: NodeId, kind: DeskKind) {
         for level in &self.levels {
             if let Some(node) = level.nodes.iter().find(|n| n.node_id() == id) {
-                set_node_on_desk(node.as_ref(), false);
+                DeskItem::edit(&mut node.shared_state().lock().desk, |d| *kind.slot_mut(d) = None);
             }
         }
     }
@@ -98,12 +127,14 @@ impl NodeGraph {
     /// its size: the current page, the first free spot, what the node asks for.
     pub(super) fn place_new_desk_items(&mut self) {
         let reachable = self.reachable_levels();
-        let mut waiting: Vec<(usize, usize)> = Vec::new();
+        let mut waiting: Vec<(usize, usize, DeskKind)> = Vec::new();
         for &li in &reachable {
             for (i, n) in self.levels[li].nodes.iter().enumerate() {
-                let new = n.shared_state().lock().desk.as_ref().and_then(|d| d.node.as_ref()).is_some_and(DeskRect::is_unplaced);
-                if new {
-                    waiting.push((li, i));
+                let shared = n.shared_state().lock();
+                for kind in [DeskKind::Node, DeskKind::Snapshots] {
+                    if shared.desk.as_ref().and_then(|d| kind.slot(d)).is_some_and(DeskRect::is_unplaced) {
+                        waiting.push((li, i, kind));
+                    }
                 }
             }
         }
@@ -117,15 +148,19 @@ impl NodeGraph {
             .filter(|e| e.page == page)
             .map(|e| e.rect)
             .collect();
-        for (li, i) in waiting {
+        for (li, i, kind) in waiting {
             let level = &self.levels[li];
             let node = level.nodes[i].as_ref();
-            let title_h = node.layout().title_h;
-            let cell = crate::widgets::nodes::panel::cell_size(&node.layout(), node_size(node, level.states[i].size_override));
-            let size = geometry::default_size(cell, title_h);
+            let size = match kind {
+                DeskKind::Node => {
+                    let cell = crate::widgets::nodes::panel::cell_size(&node.layout(), node_size(node, level.states[i].size_override));
+                    geometry::default_size(cell, node.layout().title_h)
+                }
+                DeskKind::Snapshots => geometry::snapshot_row_size(node.shared_state().lock().snapshots.snapshots.len()),
+            };
             let rect = Rect::from_min_size(geometry::free_spot(&taken, size), size);
             taken.push(rect);
-            DeskItem::edit(&mut node.shared_state().lock().desk, |d| d.node = Some(geometry::desk_rect(page, rect)));
+            DeskItem::edit(&mut node.shared_state().lock().desk, |d| *kind.slot_mut(d) = Some(geometry::desk_rect(page, rect)));
         }
     }
 }
@@ -142,7 +177,7 @@ fn set_node_on_desk(node: &dyn NodeWidget, on: bool) {
 #[cfg(test)]
 mod tests {
     use super::super::*;
-    use super::collect_desk;
+    use super::{DeskKind, collect_desk};
     use crate::engine::types::{DeskItem, DeskRect, new_shared_state};
     use crate::widgets::nodes::desk::{DeskDoc, DeskPage};
     use crate::widgets::nodes::math::constant::ConstantWidget;
@@ -304,7 +339,11 @@ mod tests {
     }
 
     fn entries(g: &NodeGraph) -> Vec<(u64, u64)> {
-        let mut v: Vec<(u64, u64)> = collect_desk(&g.levels, &g.reachable_levels(), g.desk()).iter().map(|e| (e.id.0, e.page)).collect();
+        let mut v: Vec<(u64, u64)> = collect_desk(&g.levels, &g.reachable_levels(), g.desk())
+            .iter()
+            .filter(|e| e.kind == DeskKind::Node)
+            .map(|e| (e.id.0, e.page))
+            .collect();
         v.sort_unstable();
         v
     }
@@ -385,10 +424,10 @@ mod tests {
     fn removing_from_the_desk_keeps_the_node_and_its_snapshot_row() {
         let mut g = loaded();
         let inner = inner_level(&g);
-        g.remove_from_desk(NodeId(3));
+        g.remove_from_desk(NodeId(3), DeskKind::Node);
         let left = desk_of(&g, inner, 3).expect("the snapshot row is still on the Desk");
         assert!(left.node.is_none() && left.snapshots.is_some());
-        g.remove_from_desk(NodeId(1));
+        g.remove_from_desk(NodeId(1), DeskKind::Node);
         assert!(desk_of(&g, 0, 1).is_none(), "an item with nothing left is dropped");
         assert_eq!(entries(&g), vec![]);
     }
@@ -410,8 +449,11 @@ mod tests {
         assert_eq!(entries(&g), vec![(1, 7), (3, 7)]);
         assert_eq!(g.desk_ui.page, Some(7), "the page shown is the neighbour");
         let rects: Vec<Rect> = collect_desk(&g.levels, &g.reachable_levels(), g.desk()).iter().map(|e| e.rect).collect();
-        assert!(!crate::widgets::nodes::desk::overlaps(&rects[0], &rects[1]));
-        assert_eq!(g.desk_items_on(7), 2);
+        assert_eq!(rects.len(), 3, "the snapshot row of node 3 moved with it");
+        for (a, b) in [(0, 1), (0, 2), (1, 2)] {
+            assert!(!crate::widgets::nodes::desk::overlaps(&rects[a], &rects[b]), "{rects:?}");
+        }
+        assert_eq!(g.desk_items_on(7), 3);
     }
 
     /// One frame of the Desk with a real egui context, as the app runs it.
@@ -502,7 +544,7 @@ mod tests {
         g.desk_ui.page = Some(7);
         let mut p = Pointer::new();
         p.frame(&mut g, vec![]);
-        let (_, strip, item) = *g.desk_ui.shown.iter().find(|(id, _, _)| *id == NodeId(1)).expect("drawn");
+        let (_, _, strip, item) = *g.desk_ui.shown.iter().find(|(id, kind, _, _)| *id == NodeId(1) && *kind == DeskKind::Node).expect("drawn");
         (g, p, strip, item)
     }
 
@@ -553,9 +595,81 @@ mod tests {
         let (mut g, mut p, _, item) = drawn();
         g.desk.locked = false;
         p.right_click(&mut g, item.center());
-        assert_eq!(g.desk_ui.menu.map(|m| m.0), Some(NodeId(1)));
-        g.remove_from_desk(NodeId(1));
+        assert_eq!(g.desk_ui.menu.map(|m| (m.0, m.1)), Some((NodeId(1), DeskKind::Node)));
+        g.remove_from_desk(NodeId(1), DeskKind::Node);
         assert!(entries(&g).iter().all(|e| e.0 != 1));
+    }
+
+    /// A node with three snapshots whose row is on the Desk, drawn once.
+    fn with_a_snapshot_row() -> (NodeGraph, Pointer) {
+        let mut g = fresh();
+        {
+            let mut shared = g.levels[0].nodes[0].shared_state().lock();
+            for name in ["Intro", "Drop", "Outro"] {
+                shared.snapshots.add(Some(name.to_string()), vec![]);
+            }
+            shared.snapshot_active = Some(shared.snapshots.snapshots[1].id);
+            DeskItem::edit(&mut shared.desk, |d| d.snapshots = Some(DeskRect::UNPLACED));
+        }
+        let mut p = Pointer::new();
+        p.frame(&mut g, vec![]);
+        p.frame(&mut g, vec![]);
+        (g, p)
+    }
+
+    fn snapshot_item(g: &NodeGraph) -> (Rect, Rect) {
+        let (_, _, strip, item) = *g.desk_ui.shown.iter().find(|(id, kind, _, _)| *id == NodeId(1) && *kind == DeskKind::Snapshots).expect("the row is drawn");
+        (strip, item)
+    }
+
+    #[test]
+    fn a_snapshot_row_is_its_own_item_placed_by_the_graph() {
+        let (g, _) = with_a_snapshot_row();
+        let all = collect_desk(&g.levels, &g.reachable_levels(), g.desk());
+        assert_eq!(all.len(), 1);
+        assert_eq!(all[0].kind, DeskKind::Snapshots);
+        assert!(all[0].rect.width() >= 3.0 * crate::widgets::nodes::desk::SNAP_BUTTON.x, "all three buttons in a line: {:?}", all[0].rect);
+        assert!(entries(&g).is_empty(), "the node itself is not on the Desk");
+    }
+
+    #[test]
+    fn a_click_on_a_snapshot_button_recalls_it_even_on_a_locked_desk() {
+        let (mut g, mut p) = with_a_snapshot_row();
+        g.desk.locked = true;
+        p.frame(&mut g, vec![]);
+        let (_, item) = snapshot_item(&g);
+        let body = crate::widgets::nodes::desk::strip_and_cell(item, 0.0).1;
+        let buttons = crate::widgets::nodes::desk::snapshot_buttons(body, 3);
+        p.go(&mut g, buttons[2].center());
+        p.button(&mut g, egui::PointerButton::Primary, true);
+        p.button(&mut g, egui::PointerButton::Primary, false);
+        assert_eq!(g.levels[0].nodes[0].shared_state().lock().pending_recall, Some(2));
+    }
+
+    #[test]
+    fn the_snapshot_row_moves_alone_and_leaves_the_node_where_it_is() {
+        let (mut g, mut p) = with_a_snapshot_row();
+        g.desk.locked = false;
+        p.frame(&mut g, vec![]);
+        let (strip, item) = snapshot_item(&g);
+        let before = g.levels[0].nodes[0].shared_state().lock().desk.clone().unwrap().snapshots.unwrap();
+        p.drag(&mut g, strip.center() + Vec2::new(40.0, 0.0), Vec2::new(100.0, 60.0));
+        let after = g.levels[0].nodes[0].shared_state().lock().desk.clone().unwrap();
+        assert_eq!(after.snapshots.unwrap().size, before.size);
+        assert_eq!(after.snapshots.unwrap().pos, [snap_to(before.pos[0] + 100.0), snap_to(before.pos[1] + 60.0)]);
+        assert!(after.node.is_none());
+        let _ = item;
+    }
+
+    fn snap_to(v: f32) -> f32 {
+        crate::widgets::nodes::desk::snap(v)
+    }
+
+    #[test]
+    fn the_snapshot_row_can_be_taken_off_alone() {
+        let (mut g, _) = with_a_snapshot_row();
+        g.remove_from_desk(NodeId(1), DeskKind::Snapshots);
+        assert!(desk_of(&g, 0, 1).is_none());
     }
 
     #[test]

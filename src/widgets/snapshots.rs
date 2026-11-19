@@ -109,6 +109,15 @@ pub fn show(ui: &mut Ui, node: &dyn NodeWidget) {
                 edit = Some(Edit::Add);
             }
         });
+        let mut on_desk = node.shared_state().lock().desk.as_ref().is_some_and(|d| d.snapshots.is_some());
+        if ui.checkbox(&mut on_desk, "Show on Desk")
+            .on_hover_text("Put the snapshots on the Desk as a row of buttons, one click to recall each.")
+            .changed()
+        {
+            crate::engine::types::DeskItem::edit(&mut node.shared_state().lock().desk, |d| {
+                d.snapshots = on_desk.then_some(crate::engine::types::DeskRect::UNPLACED);
+            });
+        }
         let mut sel = select_on;
         if ui.checkbox(&mut sel, "Select input")
             .on_hover_text("Add an input that picks the snapshot: its number, counting from 0.")

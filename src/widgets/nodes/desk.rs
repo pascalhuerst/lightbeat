@@ -192,6 +192,37 @@ pub fn default_size(cell_min: Vec2, title_h: f32) -> Vec2 {
     snap_size(min, min)
 }
 
+/// A button of a snapshot row, and the gap around the buttons.
+pub const SNAP_BUTTON: Vec2 = Vec2::new(84.0, 26.0);
+pub const SNAP_GAP: f32 = 4.0;
+/// A snapshot row is never wider than this when it is first put on the Desk.
+const SNAP_ROW_MAX: f32 = 1000.0;
+
+/// The room a snapshot row needs at least: one button under the strip.
+pub fn snapshot_row_min() -> Vec2 {
+    Vec2::new(SNAP_BUTTON.x + 2.0 * SNAP_GAP, TITLE_H + SNAP_BUTTON.y + 2.0 * SNAP_GAP)
+}
+
+/// The size of a new snapshot row: all the buttons in one line, up to a limit.
+pub fn snapshot_row_size(count: usize) -> Vec2 {
+    let min = snapshot_row_min();
+    let wide = count.max(1) as f32 * (SNAP_BUTTON.x + SNAP_GAP) + SNAP_GAP;
+    snap_size(Vec2::new(wide.min(SNAP_ROW_MAX), min.y), min)
+}
+
+/// The buttons of a snapshot row in `body`, wrapping to a new line when the
+/// next one does not fit; at least one per line.
+pub fn snapshot_buttons(body: Rect, count: usize) -> Vec<Rect> {
+    let columns = (((body.width() - SNAP_GAP) / (SNAP_BUTTON.x + SNAP_GAP)).floor() as usize).max(1);
+    (0..count)
+        .map(|i| {
+            let (col, row) = ((i % columns) as f32, (i / columns) as f32);
+            let min = body.min + Vec2::new(SNAP_GAP + col * (SNAP_BUTTON.x + SNAP_GAP), SNAP_GAP + row * (SNAP_BUTTON.y + SNAP_GAP));
+            Rect::from_min_size(min, SNAP_BUTTON)
+        })
+        .collect()
+}
+
 /// Put the window in or out of full screen, so that the Desk has all of it.
 pub fn toggle_fullscreen(ctx: &egui::Context) {
     let on = ctx.input(|i| i.viewport().fullscreen.unwrap_or(false));
@@ -322,6 +353,23 @@ mod tests {
         assert_eq!(cell.max, item.max);
         assert_eq!(item_min(Vec2::new(60.0, 40.0), 0.0), Vec2::new(60.0, 40.0 + TITLE_H));
         assert_eq!(default_size(Vec2::new(105.0, 33.0), 14.0), Vec2::new(120.0, 40.0));
+    }
+
+    #[test]
+    fn snapshot_buttons_wrap_to_the_width_and_a_new_row_fits_them_in_a_line() {
+        let body = Rect::from_min_size(Pos2::new(10.0, 10.0), Vec2::new(300.0, 100.0));
+        let buttons = snapshot_buttons(body, 5);
+        // 300 wide holds three of 84 + 4.
+        assert_eq!(buttons[0].min, Pos2::new(14.0, 14.0));
+        assert_eq!(buttons[2].min.y, buttons[0].min.y);
+        assert_eq!(buttons[3].min, Pos2::new(14.0, 14.0 + SNAP_BUTTON.y + SNAP_GAP));
+        let narrow = snapshot_buttons(Rect::from_min_size(Pos2::ZERO, Vec2::new(10.0, 10.0)), 3);
+        assert_eq!(narrow.iter().map(|r| r.min.x).collect::<Vec<_>>(), vec![4.0; 3], "one column at least");
+        let size = snapshot_row_size(4);
+        assert!(size.x >= 4.0 * SNAP_BUTTON.x && size.y >= snapshot_row_min().y);
+        assert_eq!((size.x % GRID, size.y % GRID), (0.0, 0.0));
+        assert!(snapshot_row_size(500).x <= SNAP_ROW_MAX + GRID);
+        assert!(snapshot_row_size(0).x >= snapshot_row_min().x);
     }
 
     #[test]

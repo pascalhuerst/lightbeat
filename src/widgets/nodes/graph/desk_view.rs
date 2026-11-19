@@ -6,7 +6,7 @@
 //! keep the engine and the widgets in step is `NodeGraph::maintain`; this file
 //! only draws and edits the placements.
 
-use super::desk::{DeskEntry, collect_desk};
+use super::desk::{DeskEntry, DeskKind, collect_desk};
 use super::panel::{PanelPaint, draw_cell};
 use super::*;
 use crate::engine::types::DeskItem;
@@ -23,11 +23,11 @@ pub(super) struct DeskUi {
     renaming: Option<Renaming>,
     confirm_delete: Option<u64>,
     /// The right-click menu: the node it is for and where it sits.
-    pub menu: Option<(NodeId, Pos2)>,
+    pub menu: Option<(NodeId, DeskKind, Pos2)>,
     drag: Option<ItemDrag>,
     /// Where the items of the page were drawn this frame, bottom to top:
     /// their title strip and their whole rectangle on screen.
-    pub shown: Vec<(NodeId, Rect, Rect)>,
+    pub shown: Vec<(NodeId, DeskKind, Rect, Rect)>,
 }
 
 struct Renaming {
@@ -41,7 +41,8 @@ struct Renaming {
 #[derive(Clone, Copy)]
 struct ItemDrag {
     id: NodeId,
-    kind: Drag,
+    part: DeskKind,
+    what: Drag,
     start: Rect,
     press: Pos2,
 }
@@ -110,9 +111,9 @@ impl NodeGraph {
             if !locked
                 && let Some(p) = right_click
                 && ui.rect_contains_pointer(canvas)
-                && let Some((id, _, _)) = self.desk_ui.shown.iter().rev().find(|(_, _, item)| item.contains(p))
+                && let Some((id, kind, _, _)) = self.desk_ui.shown.iter().rev().find(|(_, _, _, item)| item.contains(p))
             {
-                self.desk_ui.menu = Some((*id, p));
+                self.desk_ui.menu = Some((*id, *kind, p));
                 opened_menu = true;
             }
         });
@@ -125,8 +126,8 @@ impl NodeGraph {
         outcome
     }
 
-    /// One item: its node in its rectangle, and, unless the Desk is locked,
-    /// the handles that move and resize it.
+    /// One item: a node in its rectangle, or a node's snapshot row, and,
+    /// unless the Desk is locked, the handles that move and resize it.
     fn draw_desk_item(&mut self, ui: &mut Ui, e: &DeskEntry, origin: Vec2, locked: bool, view: Rect) {
         let item = e.rect.translate(origin);
         if !item.intersects(view) {
@@ -136,32 +137,33 @@ impl NodeGraph {
         // drawing (panels nested in the node borrow other levels), and put
         // back below whatever happens in between.
         let mut nodes = std::mem::take(&mut self.levels[e.level].nodes);
-        let layout = nodes[e.index].layout();
-        let min = geometry::item_min(
-            cell_geometry::cell_size(&layout, node_size(nodes[e.index].as_ref(), None)),
-            layout.title_h,
-        );
-        let (strip, cell) = geometry::strip_and_cell(item, layout.title_h);
-        self.desk_ui.shown.push((e.id, strip, item));
-
-        {
-            let painter = ui.painter().with_clip_rect(view);
-            if layout.title_h <= 0.0 {
-                painter.rect_filled(strip, NODE_CORNER_RADIUS, theme::BG_HIGH);
-                painter.text(
-                    strip.left_center() + Vec2::new(6.0, 0.0),
-                    egui::Align2::LEFT_CENTER,
-                    nodes[e.index].display_title(),
-                    egui::FontId::proportional(10.0),
-                    theme::TEXT_DIM,
+        let (min, strip) = match e.kind {
+            DeskKind::Node => {
+                let layout = nodes[e.index].layout();
+                let min = geometry::item_min(
+                    cell_geometry::cell_size(&layout, node_size(nodes[e.index].as_ref(), None)),
+                    layout.title_h,
                 );
+                let (strip, cell) = geometry::strip_and_cell(item, layout.title_h);
+                let painter = ui.painter().with_clip_rect(view);
+                if layout.title_h <= 0.0 {
+                    draw_strip(&painter, strip, nodes[e.index].display_title());
+                }
+                let mut paint = PanelPaint { ui: &mut *ui, clip: view, style: &None, zoom: 1.0 };
+                draw_cell(&mut self.levels, &mut nodes, e.index, None, cell, "desk", &mut paint, 0);
+                (min, strip)
             }
-            let mut paint = PanelPaint { ui: &mut *ui, clip: view, style: &None, zoom: 1.0 };
-            draw_cell(&mut self.levels, &mut nodes, e.index, None, cell, "desk", &mut paint, 0);
-        }
+            DeskKind::Snapshots => {
+                let (strip, body) = geometry::strip_and_cell(item, 0.0);
+                let title = format!("{}: snapshots", nodes[e.index].display_title());
+                draw_snapshot_row(ui, nodes[e.index].as_ref(), item, strip, body, &title, view);
+                (geometry::snapshot_row_min(), strip)
+            }
+        };
+        self.desk_ui.shown.push((e.id, e.kind, strip, item));
 
         if !locked {
-            let id = ui.id().with(("desk_item", e.id.0));
+            let id = ui.id().with(("desk_item", e.id.0, e.kind == DeskKind::Snapshots));
             let handle = Rect::from_min_size(item.max - Vec2::splat(geometry::HANDLE), Vec2::splat(geometry::HANDLE));
             let strip_resp = ui.interact(strip, id.with("move"), Sense::drag()).on_hover_cursor(CursorIcon::Grab);
             let handle_resp = ui.interact(handle, id.with("size"), Sense::drag()).on_hover_cursor(CursorIcon::ResizeNwSe);
@@ -171,26 +173,29 @@ impl NodeGraph {
                 Stroke::new(1.5_f32, theme::TEXT_DIM),
             );
             let mut new_rect = None;
-            for (resp, kind) in [(&strip_resp, Drag::Move), (&handle_resp, Drag::Resize)] {
+            for (resp, what) in [(&strip_resp, Drag::Move), (&handle_resp, Drag::Resize)] {
                 if resp.drag_started() {
                     let press = ui.input(|i| i.pointer.press_origin()).unwrap_or(item.center());
-                    self.desk_ui.drag = Some(ItemDrag { id: e.id, kind, start: e.rect, press });
+                    self.desk_ui.drag = Some(ItemDrag { id: e.id, part: e.kind, what, start: e.rect, press });
                 }
                 if resp.dragged()
-                    && let Some(d) = self.desk_ui.drag.filter(|d| d.id == e.id && d.kind == kind)
+                    && let Some(d) = self.desk_ui.drag.filter(|d| d.id == e.id && d.part == e.kind && d.what == what)
                     && let Some(p) = ui.input(|i| i.pointer.interact_pos())
                 {
-                    new_rect = Some(geometry::dragged(d.start, p - d.press, kind, min));
+                    new_rect = Some(geometry::dragged(d.start, p - d.press, what, min));
                 }
                 if resp.drag_stopped() {
                     self.desk_ui.drag = None;
                 }
             }
-            if self.desk_ui.drag.is_some_and(|d| d.id == e.id) || strip_resp.hovered() || handle_resp.hovered() {
+            let dragging = self.desk_ui.drag.is_some_and(|d| d.id == e.id && d.part == e.kind);
+            if dragging || strip_resp.hovered() || handle_resp.hovered() {
                 painter.rect_stroke(item, NODE_CORNER_RADIUS, Stroke::new(1.5_f32, theme::SEM_PRIMARY), StrokeKind::Inside);
             }
             if let Some(r) = new_rect {
-                DeskItem::edit(&mut nodes[e.index].shared_state().lock().desk, |d| d.node = Some(geometry::desk_rect(e.page, r)));
+                DeskItem::edit(&mut nodes[e.index].shared_state().lock().desk, |d| {
+                    *e.kind.slot_mut(d) = Some(geometry::desk_rect(e.page, r));
+                });
             }
         }
         self.levels[e.level].nodes = nodes;
@@ -351,7 +356,7 @@ impl NodeGraph {
                 let rect = Rect::from_min_size(geometry::free_spot(&taken, e.rect.size()), e.rect.size());
                 taken.push(rect);
                 let node = &self.levels[e.level].nodes[e.index];
-                DeskItem::edit(&mut node.shared_state().lock().desk, |d| d.node = Some(geometry::desk_rect(target, rect)));
+                DeskItem::edit(&mut node.shared_state().lock().desk, |d| *e.kind.slot_mut(d) = Some(geometry::desk_rect(target, rect)));
             }
         }
         self.desk.remove_page(id);
@@ -361,7 +366,7 @@ impl NodeGraph {
     }
 
     fn show_desk_menu(&mut self, ui: &mut Ui, just_opened: bool, outcome: &mut DeskOutcome) {
-        let Some((id, pos)) = self.desk_ui.menu else { return };
+        let Some((id, kind, pos)) = self.desk_ui.menu else { return };
         let mut show_in_patch = false;
         let mut remove = false;
         let area = egui::Area::new(egui::Id::new("desk_item_menu"))
@@ -385,7 +390,7 @@ impl NodeGraph {
             }
         } else if remove {
             self.desk_ui.menu = None;
-            self.remove_from_desk(id);
+            self.remove_from_desk(id, kind);
         } else if !just_opened
             && ui.input(|i| i.pointer.any_pressed())
             && let Some(p) = ui.input(|i| i.pointer.interact_pos())
@@ -409,5 +414,58 @@ fn draw_desk_grid(ui: &Ui, canvas: Rect, view: Rect) {
     while y <= view.max.y {
         painter.line_segment([Pos2::new(view.min.x, y), Pos2::new(view.max.x, y)], Stroke::new(1.0_f32, theme::BG_GRID));
         y += step;
+    }
+}
+
+fn draw_strip(painter: &Painter, strip: Rect, title: &str) {
+    painter.rect_filled(strip, NODE_CORNER_RADIUS, theme::BG_HIGH);
+    painter.text(
+        strip.left_center() + Vec2::new(6.0, 0.0),
+        egui::Align2::LEFT_CENTER,
+        title,
+        egui::FontId::proportional(10.0),
+        theme::TEXT_DIM,
+    );
+}
+
+/// A node's snapshots as a row of buttons, the one in effect lit. A click
+/// recalls it the way the inspector's list does (`pending_recall`), so it
+/// fades or cuts as the node is set to, and works on a locked Desk.
+fn draw_snapshot_row(ui: &mut Ui, node: &dyn NodeWidget, item: Rect, strip: Rect, body: Rect, title: &str, view: Rect) {
+    let (snapshots, active) = {
+        let shared = node.shared_state().lock();
+        let list: Vec<(String, u64)> = shared.snapshots.snapshots.iter().map(|s| (s.name.clone(), s.id)).collect();
+        (list, shared.snapshot_active.or(shared.snapshots.active))
+    };
+    let painter = ui.painter().with_clip_rect(view);
+    painter.rect_filled(item, NODE_CORNER_RADIUS, theme::BG);
+    painter.rect_stroke(item, NODE_CORNER_RADIUS, Stroke::new(1.0_f32, theme::STROKE), StrokeKind::Inside);
+    draw_strip(&painter, strip, title);
+    if snapshots.is_empty() {
+        painter.text(body.center(), egui::Align2::CENTER_CENTER, "no snapshots yet", egui::FontId::proportional(11.0), theme::TEXT_DIM);
+        return;
+    }
+    let clip = body.intersect(view);
+    let painter = ui.painter().with_clip_rect(clip);
+    let buttons = geometry::snapshot_buttons(body, snapshots.len());
+    for (i, ((name, id), rect)) in snapshots.iter().zip(buttons).enumerate() {
+        if !rect.intersects(clip) {
+            continue;
+        }
+        let resp = ui.interact(rect.intersect(clip), ui.id().with(("desk_snapshot", node.node_id().0, *id)), Sense::click());
+        let lit = active == Some(*id);
+        let fill = if lit { theme::SEM_SUCCESS } else if resp.hovered() { theme::BG_HIGH } else { theme::BG_DEEP };
+        painter.rect_filled(rect, NODE_CORNER_RADIUS, fill);
+        painter.rect_stroke(rect, NODE_CORNER_RADIUS, Stroke::new(1.0_f32, theme::STROKE), StrokeKind::Inside);
+        painter.with_clip_rect(rect.intersect(clip)).text(
+            rect.center(),
+            egui::Align2::CENTER_CENTER,
+            name,
+            egui::FontId::proportional(11.0),
+            if lit { theme::ON_LIGHT } else { theme::TEXT },
+        );
+        if resp.clicked() {
+            node.shared_state().lock().pending_recall = Some(i);
+        }
     }
 }
