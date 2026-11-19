@@ -278,12 +278,31 @@ impl NodeGraph {
         self.at_level(level, |g| g.push_engine_cmd(EngineCommand::SetLanes { node_id, extra }));
     }
 
+    /// A Bus Split follows the width of the wire on its bus input and drops
+    /// the outputs past it, wires and all. Refuse a wire that would make it
+    /// narrower than its last wired output; the user removes those first.
+    fn would_cut_a_followers_wires(&self, from: PortId, to: PortId) -> bool {
+        let level = self.active();
+        let bus = &level.bus;
+        let Some(dst) = bus.model.iter().find(|n| n.id == to.node && n.follows) else { return false };
+        if to.index != 0 {
+            return false;
+        }
+        let mut wires: Vec<Connection> = level.connections.iter().filter(|c| c.to != to).cloned().collect();
+        wires.push(Connection { from, to });
+        let width = lanes::infer(&bus.model, &wires).follow.get(&dst.id).copied().unwrap_or(1);
+        level.connections.iter().any(|c| c.from.node == dst.id && c.from.index >= width)
+    }
+
     /// Whether wire `from` -> `to` fits the widths, tried out on a copy of the
     /// level's wires: it must not be stale itself, and must not make another
     /// wire stale (two wide wires of different widths into one node).
     pub(super) fn wire_fits(&self, from: PortId, to: PortId) -> bool {
         let level = self.active();
         let bus = &level.bus;
+        if self.would_cut_a_followers_wires(from, to) {
+            return false;
+        }
         let narrow_source = bus.model.iter().find(|n| n.id == from.node).is_none_or(|n| {
             n.outputs.get(from.index).copied().unwrap_or(1) == 1 && bus.widths.of_node(n.id) == 1
         });
@@ -434,6 +453,21 @@ mod tests {
         assert_eq!(g.active().bus.widths.of_node(NodeId(2)), 6);
         assert_eq!(g.active().nodes[2].ui_outputs().len(), 6);
         assert_eq!(g.active().connections.len(), 2, "a chain that can follow follows");
+    }
+
+    #[test]
+    fn a_wire_that_would_shrink_a_split_below_its_wired_outputs_is_refused() {
+        let mut g = graph();
+        g.tidy_ports();
+        wire(&mut g, out(1, 0), inp(3, 0));
+        assert_eq!(g.active().nodes[2].ui_outputs().len(), 4);
+        // Output 0 only: the Split may be narrowed.
+        wire(&mut g, out(3, 0), inp(2, 0));
+        assert!(g.wire_fits(out(10, 0), inp(3, 0)));
+        // A wire on output 2 is in the way.
+        wire(&mut g, out(3, 2), inp(2, 1));
+        assert!(!g.wire_fits(out(10, 0), inp(3, 0)), "a single wire would drop the wire on output 2");
+        assert!(g.wire_fits(out(1, 0), inp(3, 0)), "the same bus again is fine");
     }
 
     fn lane_commands(g: &mut NodeGraph) -> Vec<(u64, usize)> {
