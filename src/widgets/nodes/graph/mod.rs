@@ -18,6 +18,8 @@ mod instances;
 mod instances_tests;
 #[cfg(test)]
 mod instances_desk_tests;
+#[cfg(test)]
+mod bus_through_tests;
 
 use draw::*;
 

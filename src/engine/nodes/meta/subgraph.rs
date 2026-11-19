@@ -90,6 +90,21 @@ pub struct SubgraphConfig {
     /// (`linked.rs`); absent means a plain subgraph.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub definition: Option<u64>,
+    /// How many lanes each port carries. Never saved: the UI derives the
+    /// widths from the wires and pushes them, and the node's own `save_data`
+    /// leaves them out. Absent leaves the widths as they are; a config that
+    /// names the ports without them makes every port one lane wide.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub input_lanes: Option<Vec<usize>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub output_lanes: Option<Vec<usize>>,
+}
+
+/// Give each port the width `lanes` names for it (1 when it names none).
+pub fn apply_lanes(ports: &mut [PortDef], lanes: &[usize]) {
+    for (i, port) in ports.iter_mut().enumerate() {
+        port.lanes = lanes.get(i).copied().unwrap_or(1).clamp(1, MAX_LANES);
+    }
 }
 
 impl SubgraphConfig {
@@ -457,6 +472,61 @@ impl InnerGraph {
         clock.lap(self.laps[4]);
     }
 
+    /// Defensive guard against a malformed path; the user is unlikely to nest
+    /// this deep by hand.
+    const MAX_SUBGRAPH_NEST_DEPTH: usize = 32;
+
+    /// A command from the UI, applied to this graph as the root. What is not
+    /// about the graph (the DMX interfaces) is handed back.
+    pub fn apply_command(&mut self, cmd: EngineCommand) -> Option<EngineCommand> {
+        let inner = match cmd {
+            EngineCommand::AddNode { node, shared } => SubgraphInnerCmd::AddNode { node, shared },
+            EngineCommand::RemoveNode(id) => SubgraphInnerCmd::RemoveNode(id),
+            EngineCommand::AddConnection(conn) => SubgraphInnerCmd::AddConnection(conn),
+            EngineCommand::RemoveConnectionTo(to) => SubgraphInnerCmd::RemoveConnectionTo(to),
+            EngineCommand::NotifyConnect { node_id, input_port, source_type } => {
+                SubgraphInnerCmd::NotifyConnect { node_id, input_port, source_type }
+            }
+            EngineCommand::NotifyDisconnect { node_id, input_port } => {
+                SubgraphInnerCmd::NotifyDisconnect { node_id, input_port }
+            }
+            EngineCommand::LoadData { node_id, data } => SubgraphInnerCmd::LoadData { node_id, data },
+            EngineCommand::SetLanes { node_id, extra } => SubgraphInnerCmd::SetLanes { node_id, extra },
+            EngineCommand::RemoveAllNodes => {
+                self.clear();
+                return None;
+            }
+            EngineCommand::SubgraphInnerCommand { subgraph_path, command } => {
+                self.mark_plan_dirty();
+                self.apply_at_path(&subgraph_path, *command);
+                return None;
+            }
+            other @ EngineCommand::SetInterfaces(_) => return Some(other),
+        };
+        self.apply(inner);
+        None
+    }
+
+    fn apply_at_path(&mut self, path: &[NodeId], cmd: SubgraphInnerCmd) {
+        if path.is_empty() {
+            return;
+        }
+        if path.len() > Self::MAX_SUBGRAPH_NEST_DEPTH {
+            eprintln!(
+                "Subgraph nesting depth {} exceeds limit {}; dropping command",
+                path.len(), Self::MAX_SUBGRAPH_NEST_DEPTH,
+            );
+            return;
+        }
+        let Some(node) = self.nodes.iter_mut().find(|n| n.node_id() == path[0]) else {
+            return;
+        };
+        let Some(sg) = node.as_any_mut().and_then(|a| a.downcast_mut::<SubgraphProcessNode>()) else {
+            return;
+        };
+        sg.apply_inner_cmd_at_path(&path[1..], cmd);
+    }
+
     /// The structural edits, for the root graph and for every subgraph.
     pub fn apply(&mut self, cmd: SubgraphInnerCmd) {
         self.plan_dirty = true;
@@ -758,6 +828,12 @@ impl ProcessNode for SubgraphProcessNode {
         if let Some(outputs) = cfg.outputs {
             self.ext_outputs = outputs.iter().map(SubgraphPortDef::to_port_def).collect();
         }
+        if let Some(lanes) = &cfg.input_lanes {
+            apply_lanes(&mut self.ext_inputs, lanes);
+        }
+        if let Some(lanes) = &cfg.output_lanes {
+            apply_lanes(&mut self.ext_outputs, lanes);
+        }
         if let Some(b) = cfg.locked {
             self.locked = b;
         }
@@ -798,6 +874,8 @@ impl ProcessNode for SubgraphProcessNode {
             macro_path: Some(self.macro_path.clone()),
             macro_hash: self.macro_hash.clone(),
             definition: self.definition,
+            input_lanes: None,
+            output_lanes: None,
         }.to_value())
     }
 

@@ -681,17 +681,17 @@ pub(crate) fn node_table() -> Vec<NodeDescriptor> {
     ));
     // Start with generous shared state; will resize as ports are added.
     table.push(node(
-        "Route", "Subgraph", (12, 12),
+        "Route", "Subgraph", (MAX_LANES * 40, MAX_LANES * 40),
         |id, s, _| Box::new(SubgraphWidget::new(id, s)),
         |id, _| Box::new(SubgraphProcessNode::new(id)),
     ));
     table.push(node(
-        "Portal", "Portal Send", (64, 0),
+        "Portal", "Portal Send", (MAX_LANES * 40, 0),
         |id, s, _| Box::new(widgets::nodes::meta::portal::PortalSendWidget::new(id, s)),
         |id, ctx| Box::new(engine::nodes::meta::portal::PortalSendProcessNode::new(id, ctx.portals.clone())),
     ));
     table.push(node(
-        "Portal", "Portal Receive", (0, 64),
+        "Portal", "Portal Receive", (0, MAX_LANES * 40),
         |id, s, ctx| Box::new(widgets::nodes::meta::portal::PortalReceiveWidget::new(id, s, ctx.portals.clone())),
         |id, ctx| Box::new(engine::nodes::meta::portal::PortalReceiveProcessNode::new(id, ctx.portals.clone())),
     ));
@@ -843,6 +843,28 @@ impl LightBeatApp {
     }
 }
 
+/// Handles to hubs and registries that nothing listens on, for tests of the
+/// app and of the graph that need the real node table.
+#[cfg(test)]
+pub(crate) fn test_context() -> NodeContext {
+    NodeContext {
+        snapshot: Arc::new(parking_lot::Mutex::new(crate::beat_clock::LinkSnapshot::default())),
+        input_controllers: crate::input_controller::InputControllerManager::new().shared,
+        audio_inputs: crate::audio::manager::AudioInputManager::new().shared,
+        dmx_inputs: crate::dmx_input::DmxInputHub::idle(),
+        midi_hub: crate::midi_io::MidiHub::idle(),
+        midi_learned: widgets::nodes::io::midi_common::new_shared_learned(),
+        gradient_library: widgets::nodes::math::gradient_source::new_shared_gradient_library(),
+        palette_ctx: widgets::nodes::math::palette_select::new_shared_palette_context(),
+        group_ctx: widgets::group_context::new_shared_group_context(),
+        stack_names: widgets::nodes::output::effect::new_shared_stack_names(),
+        portals: Arc::new(parking_lot::Mutex::new(engine::nodes::meta::portal::PortalRegistry::default())),
+        effect_hub: engine::effects::EffectHub::new(),
+        object_store: crate::dmx_io::new_shared_object_store(),
+        wanted_beats: Rc::new(RefCell::new(Vec::new())),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -850,22 +872,7 @@ mod tests {
     use crate::engine::types::total_channels;
 
     fn context() -> NodeContext {
-        NodeContext {
-            snapshot: Arc::new(parking_lot::Mutex::new(crate::beat_clock::LinkSnapshot::default())),
-            input_controllers: crate::input_controller::InputControllerManager::new().shared,
-            audio_inputs: crate::audio::manager::AudioInputManager::new().shared,
-            dmx_inputs: crate::dmx_input::DmxInputHub::idle(),
-            midi_hub: crate::midi_io::MidiHub::idle(),
-            midi_learned: widgets::nodes::io::midi_common::new_shared_learned(),
-            gradient_library: widgets::nodes::math::gradient_source::new_shared_gradient_library(),
-            palette_ctx: widgets::nodes::math::palette_select::new_shared_palette_context(),
-            group_ctx: widgets::group_context::new_shared_group_context(),
-            stack_names: widgets::nodes::output::effect::new_shared_stack_names(),
-            portals: Arc::new(parking_lot::Mutex::new(engine::nodes::meta::portal::PortalRegistry::default())),
-            effect_hub: engine::effects::EffectHub::new(),
-            object_store: crate::dmx_io::new_shared_object_store(),
-            wanted_beats: Rc::new(RefCell::new(Vec::new())),
-        }
+        test_context()
     }
 
     /// Every top-level key a node type saves in `data` and that is NOT running

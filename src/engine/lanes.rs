@@ -56,6 +56,11 @@ pub struct LaneNode {
     /// A node whose bus input (port 0) takes any width and that reshapes its
     /// own ports to match (Bus Split, Bus Pick).
     pub follows: bool,
+    /// A node whose inputs all take whatever width their wire has and pass it
+    /// on to the other side of a level boundary (a Subgraph, the Graph Output
+    /// bridge, a Portal Send). Its inputs are reported as plain ones; the
+    /// width each got is in `Widths::adapt`.
+    pub adapts: bool,
     /// Lanes of each input port, promoted ports (past the node's own) included.
     pub inputs: Vec<usize>,
     pub outputs: Vec<usize>,
@@ -79,6 +84,8 @@ pub struct Widths {
     pub wire: HashMap<PortId, usize>,
     /// What each following node's bus input is fed with.
     pub follow: HashMap<NodeId, usize>,
+    /// Width of the wire into each input port of an adapting node, when wider than 1.
+    pub adapt: HashMap<PortId, usize>,
     /// Destination ports of the wires that do not fit and are to be dropped.
     pub stale: Vec<PortId>,
 }
@@ -90,6 +97,10 @@ impl Widths {
 
     pub fn of_wire(&self, to: PortId) -> usize {
         self.wire.get(&to).copied().unwrap_or(1)
+    }
+
+    pub fn of_adapted(&self, to: PortId) -> usize {
+        self.adapt.get(&to).copied().unwrap_or(1)
     }
 }
 
@@ -144,6 +155,12 @@ pub fn infer(nodes: &[LaneNode], wires: &[Connection]) -> Widths {
         if ws > 1 {
             out.wire.insert(c.to, ws);
         }
+        if dst.adapts {
+            if ws > 1 {
+                out.adapt.insert(c.to, ws);
+            }
+            continue;
+        }
         if dst.follows && c.to.index == 0 {
             out.follow.insert(dst.id, ws);
             continue;
@@ -167,12 +184,12 @@ mod tests {
     use crate::engine::types::PortDir;
 
     fn out(id: u64, lanes: usize) -> LaneNode {
-        LaneNode { id: NodeId(id), max_lanes: 1, follows: false, inputs: vec![], outputs: vec![lanes] }
+        LaneNode { id: NodeId(id), max_lanes: 1, follows: false, adapts: false, inputs: vec![], outputs: vec![lanes] }
     }
 
     /// A node that can be laned, with `inputs` plain inputs.
     fn laned(id: u64, inputs: usize) -> LaneNode {
-        LaneNode { id: NodeId(id), max_lanes: MAX_LANES, follows: false, inputs: vec![1; inputs], outputs: vec![1] }
+        LaneNode { id: NodeId(id), max_lanes: MAX_LANES, follows: false, adapts: false, inputs: vec![1; inputs], outputs: vec![1] }
     }
 
     fn plain(id: u64, inputs: usize) -> LaneNode {
@@ -180,7 +197,7 @@ mod tests {
     }
 
     fn split(id: u64) -> LaneNode {
-        LaneNode { id: NodeId(id), max_lanes: 1, follows: true, inputs: vec![1], outputs: vec![1; 4] }
+        LaneNode { id: NodeId(id), max_lanes: 1, follows: true, adapts: false, inputs: vec![1], outputs: vec![1; 4] }
     }
 
     fn wire(from: u64, to: u64, input: usize) -> Connection {
@@ -243,7 +260,7 @@ mod tests {
 
     #[test]
     fn a_single_wire_into_a_bus_port_does_not_fit() {
-        let sink = LaneNode { id: NodeId(2), max_lanes: 1, follows: false, inputs: vec![4], outputs: vec![] };
+        let sink = LaneNode { id: NodeId(2), max_lanes: 1, follows: false, adapts: false, inputs: vec![4], outputs: vec![] };
         assert_eq!(infer(&[out(1, 1), sink.clone()], &[wire(1, 2, 0)]).stale, vec![to(2, 0)]);
         assert!(infer(&[out(1, 4), sink.clone()], &[wire(1, 2, 0)]).stale.is_empty());
         assert_eq!(infer(&[out(1, 5), sink], &[wire(1, 2, 0)]).stale, vec![to(2, 0)]);
@@ -322,6 +339,23 @@ mod tests {
         assert_eq!(w.of_wire(to(3, 1)), 4);
         let w = infer(&[out(2, 4), laned(3, 1)], &[wire(2, 3, 1)]);
         assert_eq!(w.of_node(NodeId(3)), 4, "a bus on a setting alone is enough");
+    }
+
+    fn adapter(id: u64, inputs: usize) -> LaneNode {
+        LaneNode { id: NodeId(id), max_lanes: 1, follows: false, adapts: true, inputs: vec![1; inputs], outputs: vec![1; inputs] }
+    }
+
+    #[test]
+    fn an_adapting_node_takes_any_width_and_reports_it() {
+        let w = infer(&[out(1, 16), out(2, 1), adapter(3, 2)], &[wire(1, 3, 0), wire(2, 3, 1)]);
+        assert!(w.stale.is_empty());
+        assert_eq!((w.of_adapted(to(3, 0)), w.of_adapted(to(3, 1))), (16, 1));
+    }
+
+    #[test]
+    fn a_chain_ahead_of_an_adapting_node_is_what_it_reports() {
+        let w = infer(&[out(1, 6), laned(2, 1), adapter(3, 1)], &[wire(1, 2, 0), wire(2, 3, 0)]);
+        assert_eq!(w.of_adapted(to(3, 0)), 6);
     }
 
     #[test]

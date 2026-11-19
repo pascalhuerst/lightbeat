@@ -62,6 +62,12 @@ impl UiPortDef {
         defs.iter().map(Self::from_def).collect()
     }
 
+    /// A port of the list `defs` at `index`, as wide as `lanes` says for it
+    /// (the widths a graph derived from the wires, see `BusEnd`).
+    pub fn wide(def: &PortDef, lanes: &[usize], index: usize) -> Self {
+        Self::from_def(&def.clone().with_lanes(lanes.get(index).copied().unwrap_or(1)))
+    }
+
     pub fn with_fill(mut self, color: Color32) -> Self {
         self.fill_color = Some(color);
         self
@@ -76,4 +82,9 @@ impl UiPortDef {
         self.disabled = disabled;
         self
     }
+}
+
+/// `lanes` for exactly `n` ports: cut off or filled up with 1s.
+pub fn fit_lanes(lanes: &[usize], n: usize) -> Vec<usize> {
+    (0..n).map(|i| lanes.get(i).copied().unwrap_or(1)).collect()
 }

@@ -12,6 +12,7 @@ use super::connections::LevelPorts;
 use super::*;
 use crate::engine::lanes::{self, LaneNode, Widths};
 use crate::engine::types::{EngineCommand, MAX_LANES, ProcessNode};
+use crate::widgets::nodes::types::fit_lanes;
 
 /// Makes a fresh engine node of a type, for the extra lanes of a laned node.
 /// The app provides it: only the app knows how to construct engine nodes.
@@ -45,34 +46,47 @@ impl NodeGraph {
     }
 
     fn lane_limit(&self, type_name: &str) -> usize {
-        // The bridges inside a subgraph carry no buses (yet).
+        // The bridges are not run as copies either: there is one inner graph,
+        // and their ports take the width of the wires instead.
         if matches!(type_name, "Graph Input" | "Graph Output") {
             return 1;
         }
         self.lane_limits.get(type_name).copied().unwrap_or(MAX_LANES)
     }
 
-    fn lane_nodes(&self, level: &GraphLevel, ports: Option<&LevelPorts>) -> Vec<LaneNode> {
-        level
+    /// The nodes of a level as `lanes::infer` sees them, with where each gets
+    /// its port widths from. The ports that depend on another level (`BusEnd`)
+    /// are not read from the widget: `derive_buses` fills them in.
+    fn lane_nodes(&self, level: &GraphLevel, ports: Option<&LevelPorts>) -> (Vec<LaneNode>, Vec<BusEnd>) {
+        let mut ends = Vec::with_capacity(level.nodes.len());
+        let nodes = level
             .nodes
             .iter()
             .zip(&level.states)
             .enumerate()
             .map(|(i, (node, state))| {
                 let lanes = |ports: &[UiPortDef]| ports.iter().map(|p| p.def.lanes).collect::<Vec<_>>();
-                let (inputs, outputs) = match ports {
+                let (mut inputs, outputs) = match ports {
                     Some(p) => (lanes(&p.inputs[i]), lanes(&p.outputs[i])),
                     None => (lanes(&node.ui_inputs_full()), lanes(&node.ui_outputs())),
                 };
+                let end = node.bus_end();
+                let adapts = matches!(end, BusEnd::Subgraph | BusEnd::GraphOutput | BusEnd::PortalSend);
+                if adapts {
+                    inputs.iter_mut().for_each(|l| *l = 1);
+                }
+                ends.push(end);
                 LaneNode {
                     id: state.id,
                     max_lanes: self.lane_limit(node.type_name()),
                     follows: node.follows_bus(),
+                    adapts,
                     inputs,
                     outputs,
                 }
             })
-            .collect()
+            .collect();
+        (nodes, ends)
     }
 
     fn level_signature(&self, level: &GraphLevel, ports: Option<&LevelPorts>) -> u64 {
@@ -93,21 +107,126 @@ impl NodeGraph {
         h.finish()
     }
 
-    /// Re-derive the widths of every level whose wires or ports changed, and
-    /// tell the nodes that follow a bus how wide theirs is. `ports` are the
-    /// open level's port lists; returns true when a following node changed its
-    /// own ports, so the caller's copy is out of date.
-    pub(super) fn refresh_buses(&mut self, ports: &LevelPorts) -> bool {
-        let mut followed = false;
-        for li in 0..self.levels.len() {
-            let open = li == self.active_level;
-            let level = &self.levels[li];
-            let sig = self.level_signature(level, open.then_some(ports));
-            if sig == level.bus.sig && open == level.bus.deep {
-                continue;
+    /// The widths of every level, from the wires. A bus can cross a Subgraph
+    /// port or a Portal, so one level's widths depend on another's: an input of
+    /// a Subgraph is as wide as the wire into it, and that is the width of the
+    /// Graph Input bridge's port inside; an output is as wide as the wire into
+    /// the Graph Output inside; a Portal Receive is as wide as its Send. So the
+    /// levels are worked out again and again, each time with what the others
+    /// gave, until nothing moves. It starts from 1 everywhere each time, so a
+    /// loop through a portal that has no real source stays at 1. The bound only
+    /// matters for loops whose sources contradict each other.
+    fn derive_buses(&self, models: &mut [(Vec<LaneNode>, Vec<BusEnd>)]) -> Vec<Widths> {
+        let n = self.levels.len();
+        let inner_of: HashMap<NodeId, usize> =
+            self.levels.iter().enumerate().filter_map(|(li, l)| Some((l.subgraph_id?, li))).collect();
+        let find = |li: usize, end: BusEnd| models[li].1.iter().position(|e| *e == end);
+        let bridges: Vec<(Option<usize>, Option<usize>)> =
+            (0..n).map(|li| (find(li, BusEnd::GraphInput), find(li, BusEnd::GraphOutput))).collect();
+
+        // What the nodes whose outputs are given from elsewhere get, by node index.
+        let mut given: Vec<HashMap<usize, Vec<usize>>> = (0..n)
+            .map(|li| {
+                let (nodes, ends) = &models[li];
+                ends.iter()
+                    .enumerate()
+                    .filter(|(_, e)| matches!(e, BusEnd::Subgraph | BusEnd::GraphInput | BusEnd::PortalReceive))
+                    .map(|(k, _)| (k, vec![1; nodes[k].outputs.len()]))
+                    .collect()
+            })
+            .collect();
+        let mut widths: Vec<Widths> = vec![Widths::default(); n];
+        let mut dirty = vec![true; n];
+
+        for _ in 0..2 * n + 6 {
+            if !dirty.contains(&true) {
+                break;
             }
-            let model = self.lane_nodes(level, open.then_some(ports));
-            let widths = lanes::infer(&model, &level.connections);
+            for li in 0..n {
+                if !std::mem::take(&mut dirty[li]) {
+                    continue;
+                }
+                for (&k, out) in &given[li] {
+                    models[li].0[k].outputs.clone_from(out);
+                }
+                widths[li] = lanes::infer(&models[li].0, &self.levels[li].connections);
+            }
+
+            // What each adapting node took, by input port.
+            let taken = |li: usize, k: usize| -> Vec<usize> {
+                let node = &models[li].0[k];
+                (0..node.inputs.len())
+                    .map(|index| widths[li].of_adapted(PortId { node: node.id, index, dir: PortDir::Input }))
+                    .collect()
+            };
+            let mut hand = |li: usize, k: usize, wanted: Vec<usize>, dirty: &mut [bool]| {
+                let len = models[li].0[k].outputs.len();
+                let wanted = fit_lanes(&wanted, len);
+                if given[li].get(&k) != Some(&wanted) {
+                    given[li].insert(k, wanted);
+                    dirty[li] = true;
+                }
+            };
+
+            let mut sends: HashMap<String, Vec<usize>> = HashMap::new();
+            for (li, (nodes, ends)) in models.iter().enumerate() {
+                for (k, end) in ends.iter().enumerate() {
+                    match end {
+                        BusEnd::Subgraph => {
+                            let Some(&inner) = inner_of.get(&nodes[k].id) else { continue };
+                            if let Some(gi) = bridges[inner].0 {
+                                hand(inner, gi, taken(li, k), &mut dirty);
+                            }
+                            let out = bridges[inner].1.map(|go| taken(inner, go)).unwrap_or_default();
+                            hand(li, k, out, &mut dirty);
+                        }
+                        BusEnd::PortalSend => {
+                            if let Some(name) = self.levels[li].nodes[k].link_key() {
+                                sends.entry(name).or_insert_with(|| taken(li, k));
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            for (li, (_, ends)) in models.iter().enumerate() {
+                for (k, end) in ends.iter().enumerate() {
+                    if *end == BusEnd::PortalReceive {
+                        let wanted = self.levels[li].nodes[k].link_key().and_then(|name| sends.get(&name).cloned());
+                        hand(li, k, wanted.unwrap_or_default(), &mut dirty);
+                    }
+                }
+            }
+        }
+        widths
+    }
+
+    /// Re-derive the widths of every level when the wires or ports of any of
+    /// them changed, and tell the nodes that follow a bus how wide theirs is.
+    /// `ports` are the open level's port lists; returns true when a following
+    /// node changed its own ports, so the caller's copy is out of date.
+    pub(super) fn refresh_buses(&mut self, ports: &LevelPorts) -> bool {
+        let sigs: Vec<u64> = (0..self.levels.len())
+            .map(|li| self.level_signature(&self.levels[li], (li == self.active_level).then_some(ports)))
+            .collect();
+        let current = self
+            .levels
+            .iter()
+            .zip(&sigs)
+            .enumerate()
+            .all(|(li, (level, sig))| *sig == level.bus.sig && (li == self.active_level) == level.bus.deep);
+        if current {
+            return false;
+        }
+
+        let mut models: Vec<(Vec<LaneNode>, Vec<BusEnd>)> = (0..self.levels.len())
+            .map(|li| self.lane_nodes(&self.levels[li], (li == self.active_level).then_some(ports)))
+            .collect();
+        let all_widths = self.derive_buses(&mut models);
+
+        let mut followed = false;
+        for (li, ((model, ends), widths)) in models.into_iter().zip(all_widths).enumerate() {
+            let open = li == self.active_level;
             let level = &mut self.levels[li];
             for (node, state) in level.nodes.iter_mut().zip(&level.states) {
                 if let Some(&w) = widths.follow.get(&state.id) {
@@ -115,6 +234,16 @@ impl NodeGraph {
                     node.follow_bus(w);
                     followed |= open && node.ui_outputs().len() != before;
                 }
+            }
+            for (k, end) in ends.iter().enumerate() {
+                if *end == BusEnd::None {
+                    continue;
+                }
+                let id = model[k].id;
+                let taken: Vec<usize> = (0..model[k].inputs.len())
+                    .map(|index| widths.of_adapted(PortId { node: id, index, dir: PortDir::Input }))
+                    .collect();
+                level.nodes[k].set_bus_lanes(&taken, &model[k].outputs);
             }
             let mut applied = std::mem::take(&mut level.bus.applied);
             applied.retain(|id, _| level.states.iter().any(|s| s.id == *id));
@@ -129,7 +258,7 @@ impl NodeGraph {
                     shared.view_lane = shared.view_lane.min(width - 1);
                 }
             }
-            level.bus = BusState { widths, model, sig, deep: open, applied };
+            level.bus = BusState { widths, model, sig: sigs[li], deep: open, applied };
             for (node_id, type_name, width) in changes {
                 self.send_lanes(li, node_id, type_name, width);
             }
