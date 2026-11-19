@@ -250,6 +250,8 @@ pub struct NodeGraph {
     quick_add: Option<QuickAdd>,
     /// The Ctrl+F search box.
     find: Option<find::FindState>,
+    /// A node to jump to, set by a double-click on a Portal Receive.
+    pending_jump: Option<NodeId>,
     /// A portal waiting for its name before it is put on the canvas.
     portal_prompt: Option<PortalPrompt>,
     /// Pending macro action emitted by the right-click menu, consumed by the
@@ -341,6 +343,7 @@ impl NodeGraph {
             port_menu: None,
             quick_add: None,
             find: None,
+            pending_jump: None,
             portal_prompt: None,
             pending_macro_request: None,
             selected_nodes: Vec::new(),
@@ -670,6 +673,7 @@ impl NodeGraph {
         }
 
         self.reconcile_effect_stacks();
+        self.refresh_link_peers();
         self.remap_promoted_connections();
         self.remap_removed_ports();
         for level in &mut self.levels {
@@ -1187,6 +1191,8 @@ impl NodeGraph {
                 .unwrap_or(Pos2::new(100.0, 100.0));
             self.paste(pos);
         }
+
+        self.handle_jumps();
 
         // -- Check for subgraph open requests --
         let mut open_subgraph_idx = None;

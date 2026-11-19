@@ -61,6 +61,7 @@ fn sections() -> Vec<(&'static str, Vec<(Keys, &'static str)>)> {
                 (Shortcut(CTRL_V), "Paste at the pointer"),
                 (Text("H"), "Hide or show unused ports of the selected nodes"),
                 (Text("Double-click a subgraph"), "Open it"),
+                (Text("Double-click a Portal Receive"), "Go to its Portal Send"),
                 (Text("Right-click a selected node or a port"), "More actions"),
             ],
         ),

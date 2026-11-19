@@ -1,5 +1,8 @@
 use super::*;
 
+/// Jump entries in the node menu; the rest are in the inspector.
+const MENU_JUMPS: usize = 8;
+
 impl NodeGraph {
     /// True if `screen_pos` lies inside any currently-selected node's screen rect.
     pub(super) fn is_pos_on_selected_node(&self, screen_pos: Pos2, canvas_rect: Rect) -> bool {
@@ -211,6 +214,11 @@ impl NodeGraph {
         let mut do_save_macro: Option<NodeId> = None;
         let mut do_embed: Option<NodeId> = None;
         let mut do_unpack: Option<usize> = None;
+        let mut do_jump: Option<NodeId> = None;
+        let peers = match self.selected_nodes[..] {
+            [i] => self.link_peers_of(self.active_level, i),
+            _ => Vec::new(),
+        };
         let area_resp = egui::Area::new(egui::Id::new("selection_ctx_menu"))
             .order(egui::Order::Foreground)
             .fixed_pos(menu_pos)
@@ -240,6 +248,17 @@ impl NodeGraph {
                     if ui.button("Move to Subgraph").clicked() {
                         move_to_sub = true;
                     }
+                    if !peers.is_empty() {
+                        ui.separator();
+                    }
+                    for peer in peers.iter().take(MENU_JUMPS) {
+                        if ui.button(format!("Go to {}", peer.path)).clicked() {
+                            do_jump = Some(peer.node_id);
+                        }
+                    }
+                    if peers.len() > MENU_JUMPS {
+                        ui.colored_label(theme::TEXT_DIM, format!("{} more in the inspector", peers.len() - MENU_JUMPS));
+                    }
                     if let Some((id, locked)) = single_subgraph {
                         ui.separator();
                         if !locked && ui.button("Save as macro...").clicked() {
@@ -266,6 +285,11 @@ impl NodeGraph {
                 }
             }
             self.context_menu_pos = None;
+            return;
+        }
+        if let Some(id) = do_jump {
+            self.context_menu_pos = None;
+            self.go_to_node(id);
             return;
         }
         if toggle_enabled {

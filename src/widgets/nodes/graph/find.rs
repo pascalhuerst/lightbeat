@@ -93,7 +93,7 @@ impl NodeGraph {
     }
 
     /// Titles of the subgraphs on the way to `level`, root first.
-    fn level_titles(&self, level: usize) -> Option<Vec<String>> {
+    pub(super) fn level_titles(&self, level: usize) -> Option<Vec<String>> {
         let mut cur = 0;
         let mut titles = Vec::new();
         for sid in self.level_chain(level)? {

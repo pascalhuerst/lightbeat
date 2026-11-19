@@ -21,6 +21,72 @@ impl NodeGraph {
         names
     }
 
+    /// The nodes the node at `index` of `level` is linked to by name, on any
+    /// reachable level: a Portal Send's Receives, a Receive's Send, the stack
+    /// an effect or a stack is sent to. The registries only hold names, so
+    /// this is where the levels are searched.
+    pub(super) fn link_peers_of(&self, level: usize, index: usize) -> Vec<LinkedNode> {
+        let node = &self.levels[level].nodes[index];
+        let own = node.node_id();
+        let name = node.title().to_string();
+        let wanted: Box<dyn Fn(&dyn NodeWidget) -> bool> = match node.type_name() {
+            "Portal Send" if !name.is_empty() => Box::new(move |n| n.type_name() == "Portal Receive" && n.title() == name),
+            "Portal Receive" if !name.is_empty() => Box::new(move |n| n.type_name() == "Portal Send" && n.title() == name),
+            _ => match node.linked_stack() {
+                Some(stack) => Box::new(move |n| n.stack_name().as_deref() == Some(stack.as_str())),
+                None => return Vec::new(),
+            },
+        };
+        let mut peers = Vec::new();
+        for (li, lvl) in self.levels.iter().enumerate() {
+            let Some(titles) = self.level_titles(li) else { continue };
+            let prefix: String = titles.iter().map(|t| format!("{t} / ")).collect();
+            for n in &lvl.nodes {
+                if n.node_id() != own && wanted(n.as_ref()) {
+                    peers.push(LinkedNode { node_id: n.node_id(), path: format!("{prefix}{}", n.display_title()) });
+                }
+            }
+        }
+        peers
+    }
+
+    /// Open the level holding node `id` and select and centre it.
+    pub fn go_to_node(&mut self, id: NodeId) -> bool {
+        let found = (0..self.levels.len()).find(|&li| {
+            self.level_chain(li).is_some() && self.levels[li].nodes.iter().any(|n| n.node_id() == id)
+        });
+        match found {
+            Some(li) => {
+                self.go_to(li, &find::FindTarget::Node(id));
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// Hand the one selected node the list its inspector shows jumps from.
+    pub(super) fn refresh_link_peers(&mut self) {
+        if let [i] = self.selected_nodes[..]
+            && i < self.active().nodes.len()
+        {
+            let peers = self.link_peers_of(self.active_level, i);
+            self.active_mut().nodes[i].set_link_peers(peers);
+        }
+    }
+
+    /// Carry out jumps asked for by a double-click or by a node's own buttons.
+    pub(super) fn handle_jumps(&mut self) {
+        let mut target = self.pending_jump.take();
+        for node in self.active_mut().nodes.iter_mut() {
+            if let Some(id) = node.take_jump() {
+                target = Some(id);
+            }
+        }
+        if let Some(id) = target {
+            self.go_to_node(id);
+        }
+    }
+
     pub(super) fn show_portal_prompt(&mut self, ctx: &egui::Context) {
         let Some(mut prompt) = self.portal_prompt.take() else { return };
         let taken = self.portal_send_names();
@@ -357,5 +423,57 @@ mod stack_tree_tests {
         let w = g.node_mut(child).as_any_mut().downcast_mut::<EffectStackWidget>().unwrap();
         assert_eq!(w.config().parent, "Shelf");
         assert_eq!(names.lock().parent_of.get("Colour").map(String::as_str), Some("Shelf"));
+    }
+
+    #[test]
+    fn a_stack_and_its_effects_and_child_stacks_can_be_jumped_between() {
+        use crate::widgets::nodes::output::effect::{EffectWidget, RIPPLE_BURST};
+        let (mut g, names) = graph();
+        let master = add(&mut g, 1, "Master", "", &[1]);
+        let child = add(&mut g, 2, "Colour", "Master", &[]);
+        let mut fx = EffectWidget::new(NodeId(3), new_shared_state(48, 0), RIPPLE_BURST, names);
+        fx.set_stack("Master");
+        let effect = g.add_node(Box::new(fx), Pos2::ZERO);
+
+        let ids = |peers: Vec<LinkedNode>| peers.iter().map(|p| p.node_id.0).collect::<Vec<_>>();
+        assert_eq!(ids(g.link_peers_of(0, effect)), vec![1], "an effect goes to its stack");
+        assert_eq!(ids(g.link_peers_of(0, child)), vec![1], "a stack goes to the stack it is sent to");
+        assert!(g.link_peers_of(0, master).is_empty(), "a root has nowhere to go");
+    }
+
+    #[test]
+    fn a_portal_send_and_its_receives_find_each_other_on_every_level() {
+        use crate::widgets::nodes::meta::portal::{PortalReceiveWidget, PortalSendWidget};
+        use crate::widgets::nodes::meta::subgraph::SubgraphWidget;
+        let named = |name: &str| serde_json::json!({ "name": name, "bound_name": name });
+        let mut g = NodeGraph::new();
+        let mut sub = SubgraphWidget::new(NodeId(1), new_shared_state(0, 0));
+        sub.restore_from_save(Some(&serde_json::json!({ "name": "Lights" })), &[]);
+        g.add_node(Box::new(sub), Pos2::ZERO);
+        let mut send = PortalSendWidget::new(NodeId(2), new_shared_state(1, 0));
+        send.restore_from_save(Some(&named("beat")), &[]);
+        let send = g.add_node(Box::new(send), Pos2::ZERO);
+        g.navigate_into_by_index(0);
+        let mut receive = PortalReceiveWidget::new(NodeId(3), new_shared_state(0, 1), Default::default());
+        receive.restore_from_save(Some(&named("beat")), &[]);
+        let receive = g.add_node(Box::new(receive), Pos2::new(300.0, 100.0));
+        let mut other = PortalReceiveWidget::new(NodeId(4), new_shared_state(0, 1), Default::default());
+        other.restore_from_save(Some(&named("other")), &[]);
+        g.add_node(Box::new(other), Pos2::ZERO);
+
+        let from_receive = g.link_peers_of(1, receive);
+        assert_eq!(from_receive, vec![LinkedNode { node_id: NodeId(2), path: "beat".into() }]);
+        g.navigate_to_level(0);
+        let from_send = g.link_peers_of(0, send);
+        assert_eq!(from_send, vec![LinkedNode { node_id: NodeId(3), path: "Lights / beat".into() }]);
+
+        // Jumping from the root into the subgraph, and back out again.
+        assert!(g.go_to_node(NodeId(3)));
+        assert_eq!(g.active_level_index(), 1);
+        g.pending_jump = Some(NodeId(2));
+        g.handle_jumps();
+        assert_eq!(g.active_level_index(), 0);
+        assert_eq!(g.active().states[g.selected_nodes[0]].id, NodeId(2));
+        assert!(!g.go_to_node(NodeId(99)));
     }
 }

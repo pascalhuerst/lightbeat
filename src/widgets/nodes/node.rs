@@ -58,6 +58,52 @@ pub struct StackMember {
     pub kind: &'static str,
 }
 
+/// A node that another is linked to by name (a Portal Send and its Receives,
+/// an effect and its stack), with where it is, for a jump.
+#[derive(Clone, Debug, PartialEq)]
+pub struct LinkedNode {
+    pub node_id: NodeId,
+    /// "LaunchPad / Sequence / Send": the subgraphs it sits in, then its title.
+    pub path: String,
+}
+
+/// What a widget keeps to offer jumps to the nodes it is linked to: the list
+/// the graph hands over every frame and the node the user asked to go to.
+#[derive(Default)]
+pub struct LinkJump {
+    peers: Vec<LinkedNode>,
+    jump: Option<NodeId>,
+}
+
+impl LinkJump {
+    pub fn set_peers(&mut self, peers: Vec<LinkedNode>) {
+        self.peers = peers;
+    }
+
+    pub fn request(&mut self, node: NodeId) {
+        self.jump = Some(node);
+    }
+
+    pub fn take(&mut self) -> Option<NodeId> {
+        self.jump.take()
+    }
+
+    /// One click-to-jump row per linked node, under `heading`.
+    pub fn show(&mut self, ui: &mut Ui, heading: &str) {
+        if self.peers.is_empty() {
+            return;
+        }
+        ui.add_space(4.0);
+        crate::widgets::setup_ui::section(ui, heading);
+        for peer in &self.peers {
+            let text = format!("{} {}", egui_phosphor::regular::ARROW_SQUARE_OUT, peer.path);
+            if ui.add(egui::Button::new(text).truncate()).on_hover_text("Go to this node").clicked() {
+                self.jump = Some(peer.node_id);
+            }
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // NodeWidget trait (UI-only)
 // ---------------------------------------------------------------------------
@@ -181,6 +227,13 @@ pub trait NodeWidget: Any {
 
     /// Called every frame on a stack with the effects currently linked to it.
     fn set_stack_members(&mut self, _members: Vec<StackMember>) {}
+
+    /// Told every frame, for the one selected node, which nodes it is linked to
+    /// by name (see `LinkJump`), wherever they are in the graph.
+    fn set_link_peers(&mut self, _peers: Vec<LinkedNode>) {}
+
+    /// The node the user asked to jump to from the inspector or the node, once.
+    fn take_jump(&mut self) -> Option<NodeId> { None }
 
     /// How the node uses its rectangle. Most nodes keep the standard layout
     /// (title bar with an enable switch, ports below, a padded body); a

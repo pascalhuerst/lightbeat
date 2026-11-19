@@ -783,6 +783,11 @@ impl NodeGraph {
                                 && !sub.locked {
                                     sub.wants_open = true;
                                 }
+                    // Double-click on a Portal Receive goes to its Send, the
+                    // wire that cannot be followed by eye.
+                    if double_clicked && self.active().nodes[i].type_name() == "Portal Receive" {
+                        self.pending_jump = self.link_peers_of(self.active_level, i).first().map(|p| p.node_id);
+                    }
 
                     let title_rect = title_bar_rect(node_rects[i], &self.active().nodes[i].layout(), z);
                     // Don't start a drag when modifier-clicking — the user is
