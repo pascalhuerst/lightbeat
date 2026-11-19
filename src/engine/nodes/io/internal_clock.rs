@@ -151,6 +151,8 @@ impl InternalClockProcessNode {
 }
 
 impl ProcessNode for InternalClockProcessNode {
+    fn max_lanes(&self) -> usize { 1 }
+
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { "Internal Clock" }
     fn inputs(&self) -> &[PortDef] { &self.inputs }

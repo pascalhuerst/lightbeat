@@ -423,6 +423,15 @@ pub(super) fn draw_scope(ui: &mut Ui, samples: &[f32], line_color: Color32) {
     }
 }
 
+/// A small count in a rounded box, centred on `at`: the number of wires in a
+/// cable or of lanes in a bus.
+pub(super) fn draw_count_label(painter: &Painter, at: Pos2, text: &str, zoom: f32) {
+    let galley = painter.layout_no_wrap(text.to_string(), egui::FontId::proportional(11.0 * zoom), theme::TEXT_BRIGHT);
+    let label = Rect::from_center_size(at, galley.size() + Vec2::new(8.0, 2.0) * zoom);
+    painter.rect_filled(label, 4.0 * zoom, theme::OVERLAY_BG);
+    painter.galley(label.center() - galley.size() * 0.5, galley, theme::TEXT_BRIGHT);
+}
+
 fn draw_port(
     painter: &Painter,
     pos: Pos2,
@@ -450,6 +459,10 @@ fn draw_port(
     } else {
         painter.circle_filled(pos, r, fill);
         painter.circle_stroke(pos, r, Stroke::new(stroke_width, type_color));
+        // A bus port carries several lanes: a second ring says so.
+        if ui_port.def.lanes > 1 {
+            painter.circle_stroke(pos, r + 3.0 * zoom, Stroke::new(1.5_f32, type_color));
+        }
     }
     // Optional centered glyph (e.g. "+" for the variadic add port).
     if let Some(glyph) = ui_port.marker {

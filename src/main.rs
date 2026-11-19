@@ -91,6 +91,8 @@ struct LightBeatApp {
     link_prev_editing: Option<Vec<u64>>,
     /// Per node type, the saved-data keys that are running state.
     running_state: std::collections::HashMap<String, &'static [&'static str]>,
+    /// Per node type, the lanes it may be run at, for types below the maximum.
+    lane_limits: std::collections::HashMap<String, usize>,
     beat_clock: BeatClock,
     _subs: Vec<SubscriptionHandle>,
     config: AppConfig,
@@ -235,6 +237,7 @@ impl LightBeatApp {
             link_last_level: 0,
             link_prev_editing: None,
             running_state: std::collections::HashMap::new(),
+            lane_limits: std::collections::HashMap::new(),
             beat_clock,
             _subs: Vec::new(),
             config,

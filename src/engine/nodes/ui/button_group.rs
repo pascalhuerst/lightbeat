@@ -103,6 +103,8 @@ impl ButtonGroupProcessNode {
 }
 
 impl ProcessNode for ButtonGroupProcessNode {
+    fn max_lanes(&self) -> usize { 1 }
+
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { "Button Group" }
     fn inputs(&self) -> &[PortDef] { &self.inputs }

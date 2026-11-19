@@ -1,4 +1,5 @@
 mod quick_add;
+mod bus;
 mod frames;
 mod links;
 mod connections;
@@ -170,6 +171,8 @@ pub struct GraphLevel {
     /// No engine semantics; nodes "in" a frame are just nodes whose rect
     /// overlaps the frame's rect.
     pub frames: Vec<GraphFrame>,
+    /// Widths of the wires and nodes, derived from the wires (`bus.rs`).
+    bus: bus::BusState,
 }
 
 /// A purely-visual rectangle drawn behind nodes for grouping purposes.
@@ -305,6 +308,9 @@ pub struct NodeGraph {
     /// Per node type, the saved-data keys that are running state (linked
     /// subgraphs keep them per instance); set by the app.
     running: HashMap<String, &'static [&'static str]>,
+    /// Per node type, how many lanes it may be run at (`ProcessNode::max_lanes`);
+    /// set by the app.
+    lane_limits: HashMap<String, usize>,
 }
 
 #[derive(Clone)]
@@ -346,6 +352,7 @@ impl NodeGraph {
                 parent_level_idx: None,
                 label: "Root".to_string(),
                 frames: Vec::new(),
+                bus: Default::default(),
             }],
             active_level: 0,
             drag: DragState::default(),
@@ -376,6 +383,7 @@ impl NodeGraph {
             collapse_wires: true,
             notices: Vec::new(),
             running: HashMap::new(),
+            lane_limits: HashMap::new(),
         }
     }
 
@@ -927,15 +935,7 @@ impl NodeGraph {
                 };
                 draw_bezier(&painter, a, b, dim(color), CABLE_THICKNESS);
                 if z >= 0.4 && (b.x - a.x).abs() > 30.0 * z {
-                    let galley = painter.layout_no_wrap(
-                        cable.wires.len().to_string(),
-                        egui::FontId::proportional(11.0 * z),
-                        theme::TEXT_BRIGHT,
-                    );
-                    let mid = Pos2::new((a.x + b.x) * 0.5, (a.y + b.y) * 0.5);
-                    let label = Rect::from_center_size(mid, galley.size() + Vec2::new(8.0, 2.0) * z);
-                    painter.rect_filled(label, 4.0 * z, theme::OVERLAY_BG);
-                    painter.galley(label.center() - galley.size() * 0.5, galley, theme::TEXT_BRIGHT);
+                    draw_count_label(&painter, Pos2::new((a.x + b.x) * 0.5, (a.y + b.y) * 0.5), &cable.wires.len().to_string(), z);
                 }
             }
         }
@@ -948,15 +948,21 @@ impl NodeGraph {
             if selected {
                 // Soft white halo behind the wire, then redraw the wire
                 // on top so the type colour still reads.
-                draw_bezier(&painter, e.from, e.to, theme::WIRE_HALO, CONNECTION_THICKNESS + 4.0);
+                let halo = if level.bus.widths.of_wire(conn.to) > 1 { CABLE_THICKNESS } else { CONNECTION_THICKNESS };
+                draw_bezier(&painter, e.from, e.to, theme::WIRE_HALO, halo + 4.0);
             }
             let color = if faded {
                 e.port_type.color().linear_multiply(theme::WIRE_DIM)
             } else {
                 e.port_type.color()
             };
-            draw_bezier(&painter, e.from, e.to, color,
-                CONNECTION_THICKNESS + if selected { 1.5 } else { 0.0 });
+            // A bus is one wire drawn as thick as a cable, with its lane count on it.
+            let lanes = level.bus.widths.of_wire(conn.to);
+            let base = if lanes > 1 { CABLE_THICKNESS } else { CONNECTION_THICKNESS };
+            draw_bezier(&painter, e.from, e.to, color, base + if selected { 1.5 } else { 0.0 });
+            if lanes > 1 && z >= 0.4 && (e.to.x - e.from.x).abs() > 30.0 * z {
+                draw_count_label(&painter, e.from + (e.to - e.from) * 0.5, &lanes.to_string(), z);
+            }
         }
 
         // -- Draw in-progress connection --

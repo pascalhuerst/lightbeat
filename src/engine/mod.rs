@@ -1,6 +1,7 @@
 pub mod config_json;
 pub mod effects;
 pub mod graph;
+pub mod lanes;
 pub mod nodes;
 pub mod param_spec;
 pub mod probe;

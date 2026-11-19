@@ -302,6 +302,11 @@ pub trait NodeWidget: Any {
     /// inspector like any other promoted param.
     fn default_promoted(&self) -> &'static [(&'static str, PromotedKind)] { &[] }
 
+    /// True for a node whose own bus input takes whatever width its wire has
+    /// (Bus Split, Bus Pick). The graph tells it the width with `follow_bus`.
+    fn follows_bus(&self) -> bool { false }
+    fn follow_bus(&mut self, _width: usize) {}
+
     /// How the inspector and a promoted port show a param: an optional group
     /// heading it is listed under, and its label. Params are keyed by name,
     /// so a node whose names are internal can present them differently here.

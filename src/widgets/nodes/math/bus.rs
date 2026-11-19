@@ -6,7 +6,7 @@
 use egui::Ui;
 
 use crate::engine::nodes::math::bus::{
-    BUS_DEFAULT_LANES, BusDisplay, PICK_PARAM_TYPE, clamp_lanes,
+    BUS_DEFAULT_LANES, BusDisplay, PICK_PARAM_LANES, PICK_PARAM_TYPE, clamp_lanes,
     clamp_merge_inputs, merge_ports, pick_ports, split_ports,
 };
 use crate::engine::nodes::math::multiplex::{MUX_TYPE_NAMES, type_from_index, type_to_index};
@@ -112,6 +112,23 @@ impl NodeWidget for BusWidget {
     fn layout(&self) -> NodeLayout { labelled_layout(&self.ui_inputs(), &self.ui_outputs()) }
     fn min_width(&self) -> f32 { 100.0 }
     fn min_content_height(&self) -> f32 { 14.0 }
+
+    fn follows_bus(&self) -> bool { self.kind != Kind::Merge }
+
+    fn follow_bus(&mut self, width: usize) {
+        let width = clamp_lanes(width);
+        if self.kind == Kind::Merge || width == self.count {
+            return;
+        }
+        self.count = width;
+        let param = if self.kind == Kind::Pick { PICK_PARAM_LANES } else { 1 };
+        self.shared.lock().pending_params.push((param, ParamValue::Int(width as i64)));
+    }
+
+    fn hidden_param_indices(&self) -> Vec<usize> {
+        // The width of Split and Pick is the wire's, not a setting.
+        if self.kind == Kind::Merge { Vec::new() } else { vec![1] }
+    }
 
     fn default_promoted(&self) -> &'static [(&'static str, PromotedKind)] {
         if self.kind == Kind::Pick { &[("Index", PromotedKind::Int)] } else { &[] }

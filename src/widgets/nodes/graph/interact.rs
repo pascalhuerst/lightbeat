@@ -436,6 +436,7 @@ impl NodeGraph {
             let dc_from_dir = dc.from.dir;
             let dc_from_type = dc.from_type;
             let dc_from_node = dc.from.node;
+            let dc_from_port = dc.from;
 
             let level = self.active();
             let mut best_dist = MAGNETIC_RADIUS;
@@ -469,6 +470,11 @@ impl NodeGraph {
                     let pos = level.nodes[i].port_pos(node_rect, target_dir, pi, z);
                     let dist = pos.distance(pointer_pos);
                     if dist < best_dist {
+                        let candidate = make_port_id(level.states[i].id, target_dir, pi);
+                        let (from, to) = if dc_from_dir == PortDir::Output { (dc_from_port, candidate) } else { (candidate, dc_from_port) };
+                        if !self.wire_fits(from, to) {
+                            continue;
+                        }
                         best_dist = dist;
                         best_pos = pos;
                         best_target =

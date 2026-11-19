@@ -153,6 +153,8 @@ impl Drop for PortalSendProcessNode {
 }
 
 impl ProcessNode for PortalSendProcessNode {
+    fn max_lanes(&self) -> usize { 1 }
+
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { "Portal Send" }
     fn inputs(&self) -> &[PortDef] { &self.ports }
@@ -257,6 +259,8 @@ impl PortalReceiveProcessNode {
 }
 
 impl ProcessNode for PortalReceiveProcessNode {
+    fn max_lanes(&self) -> usize { 1 }
+
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { "Portal Receive" }
     fn inputs(&self) -> &[PortDef] { &[] }

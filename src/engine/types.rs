@@ -504,6 +504,13 @@ pub trait ProcessNode: Send {
     /// native input port.
     fn non_promotable_params(&self) -> &'static [&'static str] { &[] }
 
+    /// How many lanes the graph may run this node at. A node that gets a bus
+    /// on a plain input is run as that many copies (`engine::lanes`); one that
+    /// makes no sense as copies (hardware, effects, subgraphs, controls, the
+    /// bus tools) says 1 and a bus into it is refused. The UI reads the same
+    /// answer, through the registry, so the two cannot disagree.
+    fn max_lanes(&self) -> usize { MAX_LANES }
+
     /// Top-level keys of `save_data` that hold what the node is doing right
     /// now (a count, a latched state, a held value) rather than how it is set
     /// up. In a linked subgraph these belong to each instance; every other key

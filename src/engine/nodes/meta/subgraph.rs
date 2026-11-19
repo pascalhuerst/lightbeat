@@ -555,6 +555,8 @@ impl SubgraphProcessNode {
 }
 
 impl ProcessNode for SubgraphProcessNode {
+    fn max_lanes(&self) -> usize { 1 }
+
     fn node_id(&self) -> NodeId {
         self.id
     }

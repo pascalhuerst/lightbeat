@@ -221,6 +221,18 @@ pub(crate) fn running_state_keys(ctx: &NodeContext) -> std::collections::HashMap
         .collect()
 }
 
+/// The node types that cannot be run at the full `MAX_LANES` and what they
+/// can: the one place the UI learns `ProcessNode::max_lanes` from.
+pub(crate) fn lane_limits(ctx: &NodeContext) -> std::collections::HashMap<String, usize> {
+    node_table()
+        .iter()
+        .filter_map(|d| {
+            let lanes = (d.engine)(NodeId(0), ctx).max_lanes();
+            (lanes < MAX_LANES).then(|| (d.name.to_string(), lanes))
+        })
+        .collect()
+}
+
 pub(crate) fn node_table() -> Vec<NodeDescriptor> {
     let mut table = Vec::new();
     table.push(node(
@@ -748,6 +760,10 @@ impl LightBeatApp {
             self.running_state = running_state_keys(&ctx);
         }
         self.graph.set_running_state(self.running_state.clone());
+        if self.lane_limits.is_empty() {
+            self.lane_limits = lane_limits(&ctx);
+        }
+        self.graph.set_lane_limits(self.lane_limits.clone());
         for desc in node_table() {
             let (inputs, outputs) = desc.channels;
             let ctx = ctx.clone();
@@ -1106,6 +1122,37 @@ mod tests {
             }
         }
         assert!(bad.is_empty(), "ports differ:\n{}", bad.join("\n"));
+    }
+
+    #[test]
+    fn the_nodes_that_cannot_be_run_as_lanes_are_the_ones_listed_here() {
+        let mut limited: Vec<String> = lane_limits(&context()).into_keys().collect();
+        limited.sort();
+        let mut expected = vec![
+            // Hardware and setup-bound inputs.
+            "Link Clock", "Internal Clock", "Input Controller", "DMX Input", "MIDI Input", "MIDI Output",
+            "Push 1", "X1", "Launchpad S", "Audio Input",
+            // Controls with a face of their own, and the banks that have a bus output.
+            "Button", "Fader", "Button Group", "Fader Group", "XY Pad", "Color Mixer", "Peak Level Meter",
+            "Trigger Bank", "Toggle Bank",
+            // Structure.
+            "Subgraph", "Portal Send", "Portal Receive", "Effect Stack",
+            // The bus tools themselves.
+            "Bus Merge", "Bus Split", "Bus Pick",
+        ];
+        expected.extend(["Fill", "Bar", "Wave Loop", "Ripple Burst", "Spark Burst"]);
+        expected.sort();
+        assert_eq!(limited, expected);
+    }
+
+    #[test]
+    fn a_node_with_a_bus_port_of_its_own_is_never_run_as_lanes() {
+        let ctx = context();
+        for desc in node_table() {
+            let engine = (desc.engine)(NodeId(1), &ctx);
+            let has_bus = engine.inputs().iter().chain(engine.outputs()).any(|p| p.lanes > 1);
+            assert!(!has_bus || engine.max_lanes() == 1, "{}", desc.name);
+        }
     }
 
     #[test]

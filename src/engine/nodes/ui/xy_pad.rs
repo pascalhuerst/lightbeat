@@ -48,6 +48,8 @@ impl XyPadProcessNode {
 }
 
 impl ProcessNode for XyPadProcessNode {
+    fn max_lanes(&self) -> usize { 1 }
+
     fn node_id(&self) -> NodeId {
         self.id
     }

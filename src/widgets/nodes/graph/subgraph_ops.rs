@@ -77,6 +77,7 @@ impl NodeGraph {
                 parent_level_idx: Some(parent),
                 label,
                 frames: Vec::new(),
+                bus: Default::default(),
             });
             self.active_level = self.levels.len() - 1;
         }
@@ -332,6 +333,7 @@ impl NodeGraph {
             parent_level_idx: Some(parent_idx),
             label,
             frames: Vec::new(),
+            bus: Default::default(),
         });
 
         // Engine-side path to the new subgraph's inner graph. If the user

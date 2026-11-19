@@ -313,6 +313,8 @@ fn build_inputs() -> Vec<PortDef> {
 }
 
 impl ProcessNode for Push1ProcessNode {
+    fn max_lanes(&self) -> usize { 1 }
+
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { "Push 1" }
     fn inputs(&self) -> &[PortDef] { &self.inputs }

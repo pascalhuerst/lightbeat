@@ -3,9 +3,9 @@ use super::*;
 /// Every node's input (with promoted) and output ports of one level, listed
 /// once so that the passes of a frame do not each rebuild them.
 pub(super) struct LevelPorts {
-    index: std::collections::HashMap<NodeId, usize>,
-    inputs: Vec<Vec<UiPortDef>>,
-    outputs: Vec<Vec<UiPortDef>>,
+    pub(super) index: std::collections::HashMap<NodeId, usize>,
+    pub(super) inputs: Vec<Vec<UiPortDef>>,
+    pub(super) outputs: Vec<Vec<UiPortDef>>,
 }
 
 impl LevelPorts {
@@ -54,6 +54,8 @@ impl NodeGraph {
             };
             if src_port.disabled || dst_port.disabled { continue; }
             if !src_port.def.port_type.can_feed(&dst_port.def.port_type) { continue; }
+            let wire = (make_port_id(src_node_id, PortDir::Output, si), make_port_id(dst_node_id, PortDir::Input, di));
+            if !self.wire_fits(wire.0, wire.1) { continue; }
             pairs.push((si, di));
         }
 
@@ -328,7 +330,7 @@ impl NodeGraph {
 
     /// Run `f` as if `level` were the one on screen: wires and engine commands
     /// of that level are the ones it touches.
-    fn at_level<R>(&mut self, level: usize, f: impl FnOnce(&mut Self) -> R) -> R {
+    pub(super) fn at_level<R>(&mut self, level: usize, f: impl FnOnce(&mut Self) -> R) -> R {
         let before = self.active_level;
         self.active_level = level;
         let r = f(self);
@@ -409,7 +411,7 @@ impl NodeGraph {
                 (Some(s), Some(d)) => !s.can_feed(&d),
                 _ => true, // missing endpoint = stale
             }
-        }).map(|c| c.to).collect();
+        }).map(|c| c.to).chain(level.bus.widths.stale.iter().copied()).collect();
 
         for port_id in stale {
             self.remove_connection_to(port_id);
@@ -419,7 +421,12 @@ impl NodeGraph {
     /// The per-frame passes that look at every node's ports share one set of
     /// port lists. None of them changes a port, so it stays valid.
     pub(super) fn tidy_ports(&mut self) {
-        let ports = LevelPorts::build(self.active());
+        let mut ports = LevelPorts::build(self.active());
+        // A node that follows a bus reshapes its ports, so the lists are
+        // taken again before anything looks at them.
+        if self.refresh_buses(&ports) {
+            ports = LevelPorts::build(self.active());
+        }
         self.refresh_hidden_ports_with(&ports);
         self.cleanup_stale_connections_with(&ports);
     }

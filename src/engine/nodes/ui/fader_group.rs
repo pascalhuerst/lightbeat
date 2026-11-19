@@ -122,6 +122,8 @@ impl FaderGroupProcessNode {
 }
 
 impl ProcessNode for FaderGroupProcessNode {
+    fn max_lanes(&self) -> usize { 1 }
+
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { "Fader Group" }
     fn inputs(&self) -> &[PortDef] { &self.inputs }

@@ -59,6 +59,8 @@ impl ToggleBankProcessNode {
 }
 
 impl ProcessNode for ToggleBankProcessNode {
+    fn max_lanes(&self) -> usize { 1 }
+
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { "Toggle Bank" }
     fn inputs(&self) -> &[PortDef] { &self.inputs }

@@ -126,6 +126,8 @@ impl ProcessNode for BusReshapeProcessNode {
 
     fn process(&mut self) {}
 
+    fn max_lanes(&self) -> usize { 1 }
+
     fn non_promotable_params(&self) -> &'static [&'static str] {
         &["Type", "Inputs", "Lanes"]
     }
@@ -233,6 +235,8 @@ impl ProcessNode for BusPickProcessNode {
     }
 
     fn process(&mut self) {}
+
+    fn max_lanes(&self) -> usize { 1 }
 
     fn non_promotable_params(&self) -> &'static [&'static str] {
         &["Type", "Lanes"]

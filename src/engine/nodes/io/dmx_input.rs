@@ -343,6 +343,8 @@ fn evaluate(o: &DmxOutput, v: &[f32], state: &mut OutputState, baselined: bool, 
 }
 
 impl ProcessNode for DmxInputProcessNode {
+    fn max_lanes(&self) -> usize { 1 }
+
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { "DMX Input" }
     fn inputs(&self) -> &[PortDef] { &[] }
