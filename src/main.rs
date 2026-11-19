@@ -9,6 +9,7 @@ mod engine;
 mod input_controller;
 mod macros;
 mod midi_io;
+mod migrate;
 mod setup;
 mod interfaces;
 mod latency;
@@ -104,6 +105,9 @@ struct LightBeatApp {
     after_save_as: Option<PendingAction>,
     /// File errors (project, setup, macros, autosave) shown until dismissed.
     notices: Vec<String>,
+    /// Things about files the user should know that are not problems (a
+    /// project converted from an older format). Shown with `notices`.
+    file_notes: Vec<String>,
     engine_stop_reported: bool,
     /// A failed settings write waits here for `report_settings_failure`.
     settings_save_error: Option<String>,
@@ -229,6 +233,7 @@ impl LightBeatApp {
             unsaved_prompt: None,
             after_save_as: None,
             notices: Vec::new(),
+            file_notes: Vec::new(),
             engine_stop_reported: false,
             settings_save_error: None,
             settings_failure_reported: false,

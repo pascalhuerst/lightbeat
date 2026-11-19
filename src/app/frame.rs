@@ -940,9 +940,11 @@ impl LightBeatApp {
             }
         }
 
-        if !self.notices.is_empty() {
+        if !self.notices.is_empty() || !self.file_notes.is_empty() {
             let mut dismiss = false;
-            egui::Window::new("File problems")
+            let title = if self.notices.is_empty() { "Files" } else { "File problems" };
+            egui::Window::new(title)
+                .id(egui::Id::new("file notices"))
                 .collapsible(false)
                 .resizable(false)
                 .anchor(egui::Align2::RIGHT_BOTTOM, egui::vec2(-8.0, -36.0))
@@ -951,11 +953,15 @@ impl LightBeatApp {
                     for line in &self.notices {
                         ui.add(egui::Label::new(egui::RichText::new(line).color(theme::SEM_DANGER)).wrap());
                     }
+                    for line in &self.file_notes {
+                        ui.add(egui::Label::new(line).wrap());
+                    }
                     ui.add_space(4.0);
                     if ui.button("Dismiss").clicked() { dismiss = true; }
                 });
             if dismiss {
                 self.notices.clear();
+                self.file_notes.clear();
             }
         }
 
@@ -985,7 +991,7 @@ impl LightBeatApp {
                 });
             if do_recover
                 && let Some(autosave) = self.recover_prompt.take() {
-                    match project::load_from_file(&autosave) {
+                    match project::read_file(&autosave) {
                         Ok(proj) => {
                             self.apply_project(&proj);
                             self.graph.fit_to_content();

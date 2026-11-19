@@ -905,10 +905,11 @@ mod tests {
             let ctx = ctx.clone();
             g.register_node(desc.category, desc.name, move |id| (desc.widget)(id, new_shared_state(inputs, outputs), &ctx));
         }
-        let project: crate::project::ProjectFile = serde_json::from_str(&format!(
-            r#"{{"nodes": [{{"type_name": "{old}", "id": 1, "pos": [0.0, 0.0], "params": []}}], "connections": []}}"#
-        ))
-        .unwrap();
+        let (project, _): (crate::project::ProjectFile, _) = crate::migrate::project::SCHEMA
+            .parse(&format!(
+                r#"{{"nodes": [{{"type_name": "{old}", "id": 1, "pos": [0.0, 0.0], "params": []}}], "connections": []}}"#
+            ))
+            .unwrap();
         let loaded = crate::project::load_graph(&mut g, &project);
         loaded.first().map(|i| g.node_mut(*i).type_name().to_string())
     }
@@ -951,15 +952,6 @@ mod tests {
     #[test]
     fn adsr_loads_as_envelope() {
         assert_eq!(loaded_as("ADSR").as_deref(), Some("Envelope"));
-    }
-
-    #[test]
-    fn every_rename_points_at_a_registered_node_and_no_old_name_is_registered() {
-        let table = node_table();
-        for (old, new) in crate::project::RENAMED_NODES {
-            assert!(table.iter().any(|d| d.name == new), "{new} is not registered");
-            assert!(table.iter().all(|d| d.name != old), "{old} is still registered");
-        }
     }
 
     /// The two halves state their ports separately for the nodes that have not
