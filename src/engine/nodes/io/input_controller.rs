@@ -83,6 +83,8 @@ impl InputControllerProcessNode {
 }
 
 impl ProcessNode for InputControllerProcessNode {
+    fn max_lanes(&self) -> usize { 1 }
+
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { "Input Controller" }
     fn inputs(&self) -> &[PortDef] { &self.inputs }

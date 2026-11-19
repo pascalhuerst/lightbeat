@@ -55,7 +55,8 @@ pub struct FaderGroupProcessNode {
 /// The ports, stated once: the widget builds its own from this, so the two
 /// halves cannot disagree.
 /// A side with no enabled cell has no ports at all; otherwise every cell has
-/// one and the widget grays out the disabled ones.
+/// one and the widget grays out the disabled ones. The outputs start with all
+/// the cells as one bus (`bus_lanes`).
 pub fn ports_for(rows: usize, cols: usize, any_input: bool, any_output: bool) -> (Vec<PortDef>, Vec<PortDef>) {
     let cells = |any: bool| {
         if !any {
@@ -65,7 +66,19 @@ pub fn ports_for(rows: usize, cols: usize, any_input: bool, any_output: bool) ->
             .flat_map(move |r| (0..cols).map(move |c| PortDef::new(format!("{},{}", r + 1, c + 1), PortType::Untyped)))
             .collect::<Vec<_>>()
     };
-    (cells(any_input), cells(any_output))
+    let mut outputs = cells(any_output);
+    if any_output {
+        outputs.insert(0, PortDef::new("bus", PortType::Untyped).with_lanes(bus_lanes(rows * cols)));
+    }
+    (cells(any_input), outputs)
+}
+
+/// How many cells the bus output carries: all of them, up to the most lanes a
+/// bus can have (a 16 x 16 grid is cut off at the 64th cell). Where a source's
+/// width comes from is this one function, so a width that follows something
+/// else later changes here.
+pub fn bus_lanes(cells: usize) -> usize {
+    cells.clamp(1, MAX_LANES)
 }
 
 impl FaderGroupProcessNode {
@@ -122,6 +135,8 @@ impl FaderGroupProcessNode {
 }
 
 impl ProcessNode for FaderGroupProcessNode {
+    fn max_lanes(&self) -> usize { 1 }
+
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { "Fader Group" }
     fn inputs(&self) -> &[PortDef] { &self.inputs }
@@ -159,11 +174,14 @@ impl ProcessNode for FaderGroupProcessNode {
         }
     }
 
-    fn read_output(&self, pi: usize) -> f32 {
+    fn read_output(&self, ch: usize) -> f32 {
+        // The bus lanes come first, then one output per cell.
+        let bus = bus_lanes(self.cell_count());
+        let cell = if ch < bus { ch } else { ch - bus };
         // Disabled outputs read as 0 (they shouldn't be wired anyway, but
         // belt-and-braces for any stale connections).
-        if !self.outputs_enabled.get(pi).copied().unwrap_or(false) { return 0.0; }
-        self.output_values.get(pi).copied().unwrap_or(0.0)
+        if !self.outputs_enabled.get(cell).copied().unwrap_or(false) { return 0.0; }
+        self.output_values.get(cell).copied().unwrap_or(0.0)
     }
 
     fn save_data(&self) -> Option<serde_json::Value> {
@@ -294,5 +312,31 @@ mod tests {
         let mut b = FaderGroupProcessNode::new(NodeId(2));
         b.load_data(&saved);
         assert_eq!(b.save_data().unwrap(), saved);
+    }
+}
+
+#[cfg(test)]
+mod bus_tests {
+    use super::*;
+
+    #[test]
+    fn the_bus_carries_every_cell_and_a_disabled_cell_reads_zero_on_it() {
+        let mut n = FaderGroupProcessNode::new(NodeId(1));
+        n.load_data(&serde_json::json!({
+            "mouse_values": [0.1, 0.2, 0.3, 0.4],
+            "outputs_enabled": [true, true, false, true],
+        }));
+        n.process();
+        let out = n.outputs();
+        assert_eq!((out[0].name.as_str(), out[0].lanes), ("bus", 4));
+        assert_eq!((0..4).map(|k| n.read_output(k)).collect::<Vec<_>>(), vec![0.1, 0.2, 0.0, 0.4]);
+        assert_eq!(n.read_output(port_base_index(out, 4)), 0.4);
+    }
+
+    #[test]
+    fn with_no_output_enabled_there_is_no_bus_either() {
+        let mut n = FaderGroupProcessNode::new(NodeId(1));
+        n.load_data(&serde_json::json!({ "outputs_enabled": [false, false, false, false] }));
+        assert!(n.outputs().is_empty());
     }
 }

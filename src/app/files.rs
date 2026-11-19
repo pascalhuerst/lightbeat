@@ -418,6 +418,7 @@ impl LightBeatApp {
     /// active subgraph path across the rebuild.
     pub(crate) fn apply_project(&mut self, proj: &project::ProjectFile) {
         let view = self.graph.capture_view_state();
+        self.quiet_links_for_a_while();
 
         self.engine.send(EngineCommand::RemoveAllNodes);
         self.graph = NodeGraph::new();
@@ -441,6 +442,7 @@ impl LightBeatApp {
         match project::load_from_file(path) {
             Ok((proj, migration)) => {
                 self.apply_project(&proj);
+                self.check_links_after_load();
                 self.graph.fit_to_content();
                 self.project_path = Some(path.to_path_buf());
                 // Reset history so undo doesn't go back to the empty pre-load graph.
@@ -474,6 +476,7 @@ impl LightBeatApp {
             connections: Vec::new(),
             frames: Vec::new(),
             view: None,
+            desk: None,
             bridge_in_pos: None,
             bridge_out_pos: None,
         };

@@ -6,6 +6,7 @@ pub(crate) const SAVE: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMA
 pub(crate) const OPEN: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::O);
 pub(crate) const QUIT: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::Q);
 pub(crate) const UNDO: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::Z);
+pub(crate) const FIND: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::F);
 pub(crate) const REDO: KeyboardShortcut =
     KeyboardShortcut::new(Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::Z);
 
@@ -32,6 +33,19 @@ fn sections() -> Vec<(&'static str, Vec<(Keys, &'static str)>)> {
                 (Shortcut(UNDO), "Undo (project or setup, whichever changed last)"),
                 (Shortcut(REDO), "Redo"),
                 (Shortcut(REDO_Y), "Redo"),
+                (Shortcut(FIND), "Find a node, frame, portal or stack on any level and jump to it"),
+                (Text("Tab"), "Switch between the Patch and the Desk (not while typing)"),
+                (Text("F11"), "Full screen on or off"),
+            ],
+        ),
+        (
+            "Desk",
+            vec![
+                (Text("Lock (top bar of the Desk)"), "Only play: no moving, resizing or editing, and the side panels go away"),
+                (Text("Drag an item's title"), "Move it (snaps to the grid)"),
+                (Text("Drag an item's corner"), "Resize it"),
+                (Text("Double-click a page tab"), "Rename the page"),
+                (Text("Right-click an item"), "Show it in the patch, or remove it from the Desk"),
             ],
         ),
         (
@@ -54,11 +68,13 @@ fn sections() -> Vec<(&'static str, Vec<(Keys, &'static str)>)> {
                 (Text("Drag on empty canvas"), "Select; dragging left selects everything touched, right only what is fully inside"),
                 (Text("Ctrl+click or Shift+click"), "Add to or remove from the selection"),
                 (Text("Delete or Backspace"), "Delete the selection"),
-                (Shortcut(CTRL_D), "Duplicate the selected nodes"),
+                (Shortcut(CTRL_D), "Duplicate the selected nodes (a subgraph becomes another instance of the same definition)"),
+                (Text("Ctrl+Shift+D"), "Duplicate with subgraphs as unique copies"),
                 (Shortcut(CTRL_C), "Copy the selected nodes"),
                 (Shortcut(CTRL_V), "Paste at the pointer"),
                 (Text("H"), "Hide or show unused ports of the selected nodes"),
                 (Text("Double-click a subgraph"), "Open it"),
+                (Text("Double-click a Portal Receive"), "Go to its Portal Send"),
                 (Text("Right-click a selected node or a port"), "More actions"),
             ],
         ),

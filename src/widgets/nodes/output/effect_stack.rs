@@ -17,7 +17,7 @@ use crate::engine::types::*;
 use crate::objects::channel::ChannelKind;
 use crate::theme;
 use crate::widgets::setup_ui;
-use crate::widgets::nodes::node::{NodeWidget, StackMember, node_identity};
+use crate::widgets::nodes::node::{LinkJump, LinkedNode, NodeWidget, StackMember, node_identity};
 use crate::widgets::group_context::SharedGroupContext;
 use crate::widgets::nodes::output::effect::SharedStackNames;
 use crate::widgets::nodes::types::UiPortDef;
@@ -70,6 +70,7 @@ pub struct EffectStackWidget {
     selected: Option<u64>,
     /// Set when the user renames the stack, for the graph to retarget effects.
     renamed_from: Option<String>,
+    links: LinkJump,
 }
 
 impl EffectStackWidget {
@@ -85,6 +86,7 @@ impl EffectStackWidget {
             conflicts: Vec::new(),
             selected: None,
             renamed_from: None,
+            links: LinkJump::default(),
         }
     }
 
@@ -311,6 +313,9 @@ impl NodeWidget for EffectStackWidget {
         self.renamed_from.take().map(|from| (from, self.config.name.clone()))
     }
 
+    fn set_link_peers(&mut self, peers: Vec<LinkedNode>) { self.links.set_peers(peers); }
+    fn take_jump(&mut self) -> Option<NodeId> { self.links.take() }
+
     fn set_stack_members(&mut self, members: Vec<StackMember>) {
         let mut changed = self.refresh_targets();
         // Keep the order of effects already listed, drop the ones that left,
@@ -424,6 +429,9 @@ impl NodeWidget for EffectStackWidget {
                                     .truncate();
                                 if ui.add(label).clicked() {
                                     select = Some(layer.node_id);
+                                }
+                                if ui.small_button(egui_phosphor::regular::ARROW_SQUARE_OUT).on_hover_text("Go to this node").clicked() {
+                                    self.links.request(NodeId(layer.node_id));
                                 }
 
                                 // Activity: lights up when the effect is drawing.
@@ -545,6 +553,7 @@ impl NodeWidget for EffectStackWidget {
             }
         } else {
             ui.colored_label(theme::TEXT_DIM, format!("Writes to the groups of {}.", self.config.parent));
+            self.links.show(ui, "Sent to");
         }
 
         ui.add_space(6.0);
@@ -558,6 +567,9 @@ impl NodeWidget for EffectStackWidget {
                 let label = self.label_of(self.config.layers[i].node_id);
                 let kind = self.kind_of(self.config.layers[i].node_id);
                 ui.colored_label(theme::TEXT, format!("{label}  ({kind})"));
+                if ui.button(format!("{} Go to it", egui_phosphor::regular::ARROW_SQUARE_OUT)).clicked() {
+                    self.links.request(NodeId(self.config.layers[i].node_id));
+                }
                 let layer = &mut self.config.layers[i];
                 ui.horizontal(|ui| {
                     ui.label("Blend");

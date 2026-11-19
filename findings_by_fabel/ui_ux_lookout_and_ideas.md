@@ -14,7 +14,14 @@ abstractions that are *orthogonal* to nesting:
 Plus one repair to nesting itself: **subgraphs that are instances of one
 definition** rather than copies.
 
-Everything below is a proposal; nothing was changed in the code.
+## Status (2026-11-19)
+
+All five steps of section 7 are implemented (branches `feature/step1-navigation`
+to `feature/step5-desk`, merged together); `CLAUDE.md` section 3e describes
+what was built. Of section 6, items 1, 2 and 4 are done; 3 and 5 to 9 are open.
+Differences from the proposal: every instance of a linked subgraph keeps its
+full inner graph in the file (the file does not shrink); a bus cannot cross a
+subgraph port or a portal yet. The text below is the original proposal.
 
 ---
 

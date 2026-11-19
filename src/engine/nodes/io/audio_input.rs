@@ -77,6 +77,8 @@ impl AudioInputProcessNode {
 }
 
 impl ProcessNode for AudioInputProcessNode {
+    fn max_lanes(&self) -> usize { 1 }
+
     fn node_id(&self) -> NodeId {
         self.id
     }

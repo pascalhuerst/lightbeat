@@ -3,6 +3,7 @@ use egui::{self, Ui};
 use super::nodes::node::NodeWidget;
 use super::nodes::types::PortTypeUi;
 use crate::engine::types::{ParamDef, ParamValue, PortDef, PortType, PromotedKind, PromotedParam};
+use crate::engine::nodes::meta::subgraph::{BRIDGE_IN_NODE_ID, BRIDGE_OUT_NODE_ID};
 use crate::theme;
 use super::setup_ui;
 
@@ -232,6 +233,33 @@ const INPUT_SWITCH_PARAM: &str = "Input enabled";
 /// Div; the compares; the gates; the constants).
 const OPERATION_PARAM: &str = "Operation";
 
+/// The setting `name` of `node` as a row, for a subgraph's front panel: the
+/// same control the inspector draws, with nothing but the setting's own name.
+pub fn param_control(ui: &mut Ui, node: &dyn NodeWidget, name: &str) {
+    let params = read_params(node);
+    let Some(param) = params.iter().find(|p| p.name() == name) else { return };
+    let (_, label) = node.param_display(name);
+    let locked = PromoteCtx::read(node).driven(name);
+    param_row(ui, &[node], param, &label, None, None, locked);
+}
+
+/// Which settings of a node sit on its subgraph's front panel.
+struct PanelCtx {
+    params: Vec<String>,
+}
+
+/// The pin that puts a setting on the front panel and takes it off again.
+fn panel_toggle(ui: &mut Ui, node: &dyn NodeWidget, panel: &PanelCtx, name: &str) {
+    let on = panel.params.iter().any(|p| p == name);
+    if ui
+        .selectable_label(on, egui_phosphor::regular::PUSH_PIN)
+        .on_hover_text("Show this setting on the subgraph's front panel")
+        .clicked()
+    {
+        crate::engine::types::PanelItem::set_param(&mut node.shared_state().lock().panel, name, !on);
+    }
+}
+
 /// One setting as a row. Every selected node gets the change, so the single
 /// and the multi-selection inspector draw their settings the same way; only
 /// the single one passes `promo` and offers to expose the setting as an input.
@@ -241,6 +269,7 @@ fn param_row(
     param: &ParamDef,
     label: &str,
     promo: Option<&PromoteCtx>,
+    panel: Option<&PanelCtx>,
     locked: bool,
 ) {
     let name = param.name();
@@ -316,11 +345,45 @@ fn param_row(
         if let Some(promo) = promo {
             promote_checkbox(ui, nodes[0], promo, param);
         }
+        if let Some(panel) = panel {
+            panel_toggle(ui, nodes[0], panel, name);
+        }
     });
 }
 
 /// Draw the inspector panel for a single selected node.
-pub fn show_inspector(ui: &mut Ui, node: &mut dyn NodeWidget) {
+/// For a node that runs once per lane of a bus, or has a bus port: which lane
+/// its body, its port values and the hover scope show.
+fn lane_stepper(ui: &mut Ui, node: &mut dyn NodeWidget) {
+    let widest_port = node.ui_inputs().iter().chain(node.ui_outputs().iter()).map(|p| p.def.lanes).max().unwrap_or(1);
+    let (lanes, mut view) = {
+        let shared = node.shared_state().lock();
+        (widest_port.max(shared.lanes), shared.view_lane)
+    };
+    if lanes <= 1 {
+        return;
+    }
+    view = view.min(lanes - 1);
+    let before = view;
+    ui.horizontal(|ui| {
+        ui.colored_label(theme::LANE_BADGE, crate::widgets::nodes::node::count_badge(lanes));
+        ui.label("Lane")
+            .on_hover_text("This node works on every lane of its bus at once; the lane shown on the node and in the port values is this one.");
+        if ui.add_enabled(view > 0, egui::Button::new(egui_phosphor::regular::CARET_LEFT)).clicked() {
+            view -= 1;
+        }
+        ui.label(format!("{} / {}", view + 1, lanes));
+        if ui.add_enabled(view + 1 < lanes, egui::Button::new(egui_phosphor::regular::CARET_RIGHT)).clicked() {
+            view += 1;
+        }
+    });
+    if view != before {
+        node.shared_state().lock().view_lane = view;
+    }
+    ui.separator();
+}
+
+pub fn show_inspector(ui: &mut Ui, node: &mut dyn NodeWidget, in_subgraph: bool) {
     let title = node.title();
     let type_name = node.type_name();
     // User-set custom title takes the big heading slot; an empty title means
@@ -342,6 +405,34 @@ pub fn show_inspector(ui: &mut Ui, node: &mut dyn NodeWidget) {
     }
     ui.separator();
 
+    lane_stepper(ui, node);
+
+    let is_bridge = [BRIDGE_IN_NODE_ID, BRIDGE_OUT_NODE_ID].contains(&node.node_id());
+    if !is_bridge {
+        let mut shared = node.shared_state().lock();
+        let mut on = shared.desk.as_ref().is_some_and(|d| d.node.is_some());
+        if ui.checkbox(&mut on, "Show on Desk")
+            .on_hover_text("Put this node on the Desk, the view for playing")
+            .changed()
+        {
+            crate::engine::types::DeskItem::edit(&mut shared.desk, |d| {
+                d.node = on.then_some(crate::engine::types::DeskRect::UNPLACED);
+            });
+        }
+    }
+    if in_subgraph && !is_bridge {
+        let mut shared = node.shared_state().lock();
+        let mut on = shared.panel.as_ref().is_some_and(|p| p.whole);
+        if ui.checkbox(&mut on, "Show on parent")
+            .on_hover_text("Draw this node on the subgraph's front panel")
+            .changed()
+        {
+            crate::engine::types::PanelItem::set_whole(&mut shared.panel, on);
+        }
+        drop(shared);
+        ui.separator();
+    }
+
     let hide_default_ports = node.inspector_hides_default_ports();
 
     // Ports info
@@ -354,7 +445,7 @@ pub fn show_inspector(ui: &mut Ui, node: &mut dyn NodeWidget) {
             drop(shared);
             let mut ch_base = 0;
             for port in &inputs {
-                let cpe = port.def.port_type.channel_count();
+                let cpe = port.def.channels();
                 show_port_value(ui, &port.def, &values, ch_base);
                 ch_base += cpe;
             }
@@ -369,7 +460,7 @@ pub fn show_inspector(ui: &mut Ui, node: &mut dyn NodeWidget) {
             drop(shared);
             let mut ch_base = 0;
             for port in &outputs {
-                let cpe = port.def.port_type.channel_count();
+                let cpe = port.def.channels();
                 show_port_value(ui, &port.def, &values, ch_base);
                 ch_base += cpe;
             }
@@ -388,6 +479,9 @@ pub fn show_inspector(ui: &mut Ui, node: &mut dyn NodeWidget) {
         ui.add_space(4.0);
 
         let promo = PromoteCtx::read(node);
+        let panel = (in_subgraph && !is_bridge).then(|| PanelCtx {
+            params: node.shared_state().lock().panel.as_ref().map(|p| p.params.clone()).unwrap_or_default(),
+        });
         let mut last_group: Option<String> = None;
         for (i, param) in params.iter().enumerate() {
             if hidden.contains(&i) { continue; }
@@ -402,7 +496,7 @@ pub fn show_inspector(ui: &mut Ui, node: &mut dyn NodeWidget) {
             // A wired promoted param is driven by its signal; editing it by
             // hand would only be overwritten on the next tick.
             let locked = promo.driven(param.name());
-            param_row(ui, &[&*node], param, &label, Some(&promo), locked);
+            param_row(ui, &[&*node], param, &label, Some(&promo), panel.as_ref(), locked);
         }
     }
 
@@ -458,7 +552,7 @@ pub fn show_multi_inspector(ui: &mut Ui, nodes: Vec<&mut Box<dyn NodeWidget>>) {
 
     for param in &common {
         let (_, label) = refs[0].param_display(param.name());
-        param_row(ui, &refs, param, &label, None, false);
+        param_row(ui, &refs, param, &label, None, None, false);
     }
 }
 

@@ -4,6 +4,8 @@ pub(crate) mod macros;
 pub(crate) mod panels;
 pub(crate) mod files;
 pub(crate) mod frame;
+pub(crate) mod linked;
 pub(crate) mod undo;
 pub(crate) mod shortcuts;
 pub(crate) mod preferences;
+pub(crate) mod view;

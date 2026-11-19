@@ -120,6 +120,8 @@ impl ClockProcessNode {
 }
 
 impl ProcessNode for ClockProcessNode {
+    fn max_lanes(&self) -> usize { 1 }
+
     fn node_id(&self) -> NodeId {
         self.id
     }

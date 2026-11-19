@@ -106,6 +106,8 @@ pub(super) fn draw_node_chrome(
     // `time` is seconds since an arbitrary epoch (callers pass
     // `ctx.input(|i| i.time)`). Used to animate the portal-peer halo.
     time: f64,
+    // How many lanes the node runs at; above 1 the header says so.
+    lanes: usize,
     zoom: f32,
 ) {
     // Shadow
@@ -179,6 +181,15 @@ pub(super) fn draw_node_chrome(
     }
     let title_pos = Pos2::new(cursor_x, center_y - title_galley.size().y * 0.5);
     painter.galley(title_pos, title_galley, title_color);
+    if lanes > 1 && layout.show_title {
+        let badge = painter.layout_no_wrap(
+            count_badge(lanes),
+            egui::FontId::proportional(10.0 * zoom),
+            if disabled { theme::TEXT_DIM } else { theme::LANE_BADGE },
+        );
+        let at = Pos2::new(title_rect.min.x + 6.0 * zoom, center_y - badge.size().y * 0.5);
+        painter.galley(at, badge, theme::LANE_BADGE);
+    }
 
     // Enable / disable toggle at the right of the title bar.
     if layout.toggle {
@@ -423,6 +434,15 @@ pub(super) fn draw_scope(ui: &mut Ui, samples: &[f32], line_color: Color32) {
     }
 }
 
+/// A small count in a rounded box, centred on `at`: the number of wires in a
+/// cable or of lanes in a bus.
+pub(super) fn draw_count_label(painter: &Painter, at: Pos2, text: &str, zoom: f32) {
+    let galley = painter.layout_no_wrap(text.to_string(), egui::FontId::proportional(11.0 * zoom), theme::TEXT_BRIGHT);
+    let label = Rect::from_center_size(at, galley.size() + Vec2::new(8.0, 2.0) * zoom);
+    painter.rect_filled(label, 4.0 * zoom, theme::OVERLAY_BG);
+    painter.galley(label.center() - galley.size() * 0.5, galley, theme::TEXT_BRIGHT);
+}
+
 fn draw_port(
     painter: &Painter,
     pos: Pos2,
@@ -450,6 +470,10 @@ fn draw_port(
     } else {
         painter.circle_filled(pos, r, fill);
         painter.circle_stroke(pos, r, Stroke::new(stroke_width, type_color));
+        // A bus port carries several lanes: a second ring says so.
+        if ui_port.def.lanes > 1 {
+            painter.circle_stroke(pos, r + 3.0 * zoom, Stroke::new(1.5_f32, type_color));
+        }
     }
     // Optional centered glyph (e.g. "+" for the variadic add port).
     if let Some(glyph) = ui_port.marker {
@@ -594,19 +618,30 @@ pub(super) fn bezier_sample(from: Pos2, to: Pos2, segments: usize) -> Vec<Pos2> 
     points
 }
 
-pub(super) fn draw_bezier(painter: &Painter, from: Pos2, to: Pos2, color: Color32, thickness: f32) {
-    // A bezier stays inside the hull of its control points, so a wire whose
-    // hull is off screen cannot be seen. Most wires are off screen once the
-    // user zooms in.
+/// Where a wire starts and ends on screen this frame, and its type.
+#[derive(Clone, Copy)]
+pub(super) struct WireEnds {
+    pub from: Pos2,
+    pub to: Pos2,
+    pub port_type: PortType,
+}
+
+/// A bezier stays inside the hull of its control points, so a wire whose hull
+/// is off screen cannot be seen or hit.
+pub(super) fn wire_hull(from: Pos2, to: Pos2, pad: f32) -> Rect {
     let dx = (to.x - from.x).abs() * 0.5;
-    let hull = Rect::from_points(&[
+    Rect::from_points(&[
         from,
         to,
         Pos2::new(from.x + dx, from.y),
         Pos2::new(to.x - dx, to.y),
     ])
-    .expand(thickness);
-    if !painter.clip_rect().intersects(hull) {
+    .expand(pad)
+}
+
+pub(super) fn draw_bezier(painter: &Painter, from: Pos2, to: Pos2, color: Color32, thickness: f32) {
+    // Most wires are off screen once the user zooms in.
+    if !painter.clip_rect().intersects(wire_hull(from, to, thickness)) {
         return;
     }
 

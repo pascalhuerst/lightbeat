@@ -26,11 +26,12 @@ pub struct ToggleBankProcessNode {
 }
 
 /// The ports, stated once: the widget builds its own from this, so the two
-/// halves cannot disagree.
+/// halves cannot disagree. The first output is all the states as one bus.
 pub fn ports_for(n: usize) -> (Vec<PortDef>, Vec<PortDef>) {
+    let outs = (0..n).map(|i| PortDef::new(format!("out {}", i + 1), PortType::Logic));
     (
         (0..n).map(|i| PortDef::new(format!("trigger {}", i + 1), PortType::Logic)).collect(),
-        (0..n).map(|i| PortDef::new(format!("out {}", i + 1), PortType::Logic)).collect(),
+        std::iter::once(PortDef::new("bus", PortType::Logic).with_lanes(n)).chain(outs).collect(),
     )
 }
 
@@ -59,6 +60,8 @@ impl ToggleBankProcessNode {
 }
 
 impl ProcessNode for ToggleBankProcessNode {
+    fn max_lanes(&self) -> usize { 1 }
+
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { "Toggle Bank" }
     fn inputs(&self) -> &[PortDef] { &self.inputs }
@@ -83,8 +86,10 @@ impl ProcessNode for ToggleBankProcessNode {
         }
     }
 
-    fn read_output(&self, pi: usize) -> f32 {
-        if let Some(&b) = self.states.get(pi) {
+    fn read_output(&self, ch: usize) -> f32 {
+        // The bus lanes come first, then the single outputs, all of one kind.
+        let state = if ch < self.n { ch } else { ch - self.n };
+        if let Some(&b) = self.states.get(state) {
             if b { 1.0 } else { 0.0 }
         } else {
             0.0
@@ -113,6 +118,9 @@ impl ProcessNode for ToggleBankProcessNode {
             }
         }
     }
+
+    /// Which toggles are on is what the node is doing, not how it is set up.
+    fn running_state_keys(&self) -> &'static [&'static str] { &["states"] }
 
     fn save_data(&self) -> Option<serde_json::Value> {
         Some(serde_json::json!({
@@ -143,5 +151,23 @@ impl ProcessNode for ToggleBankProcessNode {
             n: self.n,
             states: self.states.clone(),
         }));
+    }
+}
+
+#[cfg(test)]
+mod bus_tests {
+    use super::*;
+
+    #[test]
+    fn the_bus_carries_the_same_states_as_the_single_outputs() {
+        let mut n = ToggleBankProcessNode::new(NodeId(1));
+        n.write_input(1, 1.0);
+        n.process();
+        let out = n.outputs();
+        assert_eq!((out[0].name.as_str(), out[0].lanes), ("bus", 4));
+        let lanes: Vec<f32> = (0..4).map(|k| n.read_output(k)).collect();
+        let own: Vec<f32> = (1..=4).map(|p| n.read_output(port_base_index(out, p))).collect();
+        assert_eq!(lanes, vec![0.0, 1.0, 0.0, 0.0]);
+        assert_eq!(own, lanes);
     }
 }

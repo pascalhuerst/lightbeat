@@ -1,5 +1,8 @@
 use super::*;
 
+/// Jump entries in the node menu; the rest are in the inspector.
+const MENU_JUMPS: usize = 8;
+
 impl NodeGraph {
     /// True if `screen_pos` lies inside any currently-selected node's screen rect.
     pub(super) fn is_pos_on_selected_node(&self, screen_pos: Pos2, canvas_rect: Rect) -> bool {
@@ -173,16 +176,16 @@ impl NodeGraph {
         // Macro-context info: when exactly one Subgraph is selected,
         // show "Save as macro..." + "Embed". Embed is a no-op if the
         // subgraph isn't actually locked (cheap and harmless).
-        let single_subgraph: Option<(NodeId, bool)> = if self.selected_nodes.len() == 1 {
+        let single_subgraph: Option<(NodeId, bool, Option<usize>)> = if self.selected_nodes.len() == 1 {
             let i = self.selected_nodes[0];
             let level = self.active_mut();
             if i < level.nodes.len() && level.nodes[i].type_name() == "Subgraph" {
                 let id = level.states[i].id;
-                let locked = level.nodes[i].as_any_mut()
+                let (locked, instances) = level.nodes[i].as_any_mut()
                     .downcast_mut::<SubgraphWidget>()
-                    .map(|w| w.locked)
-                    .unwrap_or(false);
-                Some((id, locked))
+                    .map(|w| (w.locked, w.definition.map(|_| w.instances())))
+                    .unwrap_or((false, None));
+                Some((id, locked, instances))
             } else { None }
         } else { None };
 
@@ -196,6 +199,20 @@ impl NodeGraph {
             if all_hidden { "Show all ports" } else { "Hide unused ports" }
         };
         let mut toggle_hide = false;
+        // Controls of a subgraph can be put on its front panel; at the root
+        // there is no panel to put them on.
+        let panel_label = (self.active_level > 0).then(|| {
+            let level = self.active();
+            let all_on = self
+                .selected_nodes
+                .iter()
+                .filter_map(|&i| level.nodes.get(i))
+                .all(|n| n.shared_state().lock().panel.as_ref().is_some_and(|p| p.whole));
+            if all_on { "Remove from parent panel" } else { "Show on parent" }
+        });
+        let mut toggle_panel = false;
+        let desk_label = if self.selection_all_on_desk() { "Remove from Desk" } else { "Show on Desk" };
+        let mut toggle_desk = false;
         // Compact nodes have no enable switch in their header, so the menu is
         // the one place every node can be frozen from.
         let all_disabled = {
@@ -210,7 +227,13 @@ impl NodeGraph {
         let mut do_auto_connect = false;
         let mut do_save_macro: Option<NodeId> = None;
         let mut do_embed: Option<NodeId> = None;
+        let mut do_unique: Option<NodeId> = None;
         let mut do_unpack: Option<usize> = None;
+        let mut do_jump: Option<NodeId> = None;
+        let peers = match self.selected_nodes[..] {
+            [i] => self.link_peers_of(self.active_level, i),
+            _ => Vec::new(),
+        };
         let area_resp = egui::Area::new(egui::Id::new("selection_ctx_menu"))
             .order(egui::Order::Foreground)
             .fixed_pos(menu_pos)
@@ -231,6 +254,14 @@ impl NodeGraph {
                     if ui.button(hide_label).on_hover_text("Show only the ports that have a wire (H)").clicked() {
                         toggle_hide = true;
                     }
+                    if let Some(label) = panel_label
+                        && ui.button(label).on_hover_text("Draw this on the subgraph's node, so it can be used without opening it").clicked()
+                    {
+                        toggle_panel = true;
+                    }
+                    if ui.button(desk_label).on_hover_text("Put this on the Desk, the view for playing, on the current page").clicked() {
+                        toggle_desk = true;
+                    }
                     if ui.button(if all_disabled { "Enable" } else { "Disable" })
                         .on_hover_text("A disabled node keeps its last output")
                         .clicked()
@@ -240,8 +271,25 @@ impl NodeGraph {
                     if ui.button("Move to Subgraph").clicked() {
                         move_to_sub = true;
                     }
-                    if let Some((id, locked)) = single_subgraph {
+                    if !peers.is_empty() {
                         ui.separator();
+                    }
+                    for peer in peers.iter().take(MENU_JUMPS) {
+                        if ui.button(format!("Go to {}", peer.path)).clicked() {
+                            do_jump = Some(peer.node_id);
+                        }
+                    }
+                    if peers.len() > MENU_JUMPS {
+                        ui.colored_label(theme::TEXT_DIM, format!("{} more in the inspector", peers.len() - MENU_JUMPS));
+                    }
+                    if let Some((id, locked, instances)) = single_subgraph {
+                        ui.separator();
+                        if let Some(n) = instances {
+                            ui.colored_label(theme::LINK_BADGE, format!("Instance, used {n} times"));
+                            if ui.button("Make unique").on_hover_text("This instance leaves the definition and keeps its own copy").clicked() {
+                                do_unique = Some(id);
+                            }
+                        }
                         if !locked && ui.button("Save as macro...").clicked() {
                             do_save_macro = Some(id);
                         }
@@ -268,11 +316,29 @@ impl NodeGraph {
             self.context_menu_pos = None;
             return;
         }
+        if let Some(id) = do_jump {
+            self.context_menu_pos = None;
+            self.go_to_node(id);
+            return;
+        }
         if toggle_enabled {
             let level = self.active();
             for n in self.selected_nodes.iter().filter_map(|&i| level.nodes.get(i)) {
                 n.shared_state().lock().disabled = !all_disabled;
             }
+            self.context_menu_pos = None;
+            return;
+        }
+        if toggle_panel {
+            let on = panel_label == Some("Show on parent");
+            for i in self.selected_nodes.clone() {
+                self.set_panel_whole(i, on);
+            }
+            self.context_menu_pos = None;
+            return;
+        }
+        if toggle_desk {
+            self.set_selection_on_desk(desk_label == "Show on Desk");
             self.context_menu_pos = None;
             return;
         }
@@ -295,12 +361,22 @@ impl NodeGraph {
             self.context_menu_pos = None;
             return;
         }
+        if let Some(id) = do_unique {
+            self.make_unique(id);
+            self.context_menu_pos = None;
+            return;
+        }
         if let Some(id) = do_embed {
             // Find the subgraph widget and clear its locked flag.
             let level = self.active_mut();
             if let Some(idx) = level.states.iter().position(|s| s.id == id)
                 && let Some(w) = level.nodes[idx].as_any_mut().downcast_mut::<SubgraphWidget>() {
+                    // Unlocking a macro instance unlocks the whole definition
+                    // (the sync carries it to the other instances) and drops
+                    // the library origin, which would no longer describe it.
                     w.locked = false;
+                    w.macro_path.clear();
+                    w.macro_hash = None;
                     w.push_config();
                 }
             self.context_menu_pos = None;

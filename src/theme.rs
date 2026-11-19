@@ -161,6 +161,11 @@ pub const ACCENT_SUBGRAPH: Color32 = Color32::from_rgb(190, 90, 150);
 /// (macros instantiated from the library) use this so they read as distinct
 /// from editable Subgraphs at a glance.
 pub const ACCENT_MACRO: Color32 = Color32::from_rgb(140, 110, 220);
+/// The "xN" badge of a linked subgraph and the banner inside its definition.
+pub const LINK_BADGE: Color32 = Color32::from_rgb(120, 200, 220);
+/// The "x16" on a node that runs once per lane of a bus.
+pub const LANE_BADGE: Color32 = Color32::from_rgb(240, 190, 80);
+pub const LINK_BANNER_FILL: Color32 = Color32::from_rgba_premultiplied(20, 44, 52, 220);
 
 /// Linear blend from `a` toward `b` by `t` (0..=1). Used to tint accent
 /// colours with the neutral title-bar dark so white text stays readable.
@@ -185,6 +190,10 @@ pub const SEM_PRIMARY_FILL: Color32 = Color32::from_rgba_premultiplied(100, 160,
 pub const SEM_WARNING_FILL: Color32 = Color32::from_rgba_premultiplied(220, 150, 40, 130);
 /// White halo behind selected wires — premultiplied form of white at α180.
 pub const WIRE_HALO: Color32 = Color32::from_rgba_premultiplied(180, 180, 180, 180);
+/// A cable that carries wires of different port types.
+pub const WIRE_CABLE: Color32 = Color32::from_gray(175);
+/// Factor applied to wires that are not part of the focused selection or run.
+pub const WIRE_DIM: f32 = 0.22;
 /// Wash drawn on top of disabled nodes to flatten them.
 pub const DISABLED_WASH: Color32 = Color32::from_rgba_premultiplied(25, 25, 26, 225);
 /// Darker band drawn over peak-meter bars to indicate RMS level.

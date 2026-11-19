@@ -8,7 +8,7 @@ use crate::beat_clock::BeatListener;
 use crate::engine::types::{NodeId, SharedState};
 use crate::widgets::nodes::node::NodeWidget;
 use crate::beat_clock::BeatPattern;
-use crate::engine::types::{new_shared_state, EngineCommand, PortType, ProcessNode, SubgraphInnerCmd};
+use crate::engine::types::{new_shared_state, EngineCommand, PortType, ProcessNode, SubgraphInnerCmd, MAX_LANES};
 use crate::engine::nodes::display::color_display::ColorDisplayProcessNode;
 use crate::engine::nodes::display::scope::ScopeProcessNode;
 use crate::engine::nodes::display::led_display::LedDisplayProcessNode;
@@ -38,6 +38,7 @@ use crate::engine::nodes::math::toggle_bank::ToggleBankProcessNode;
 use crate::engine::nodes::math::gain::GainProcessNode;
 use crate::engine::nodes::math::phase_accumulator::PhaseAccumulatorProcessNode;
 use crate::engine::nodes::math::port_hub::PortHubProcessNode;
+use crate::engine::nodes::math::bus::{BusPickProcessNode, BusReshapeProcessNode};
 use crate::engine::nodes::math::trigger_bank::TriggerBankProcessNode;
 use crate::engine::nodes::math::flipflop::{FlipFlopProcessNode, JkFlipFlopProcessNode};
 use crate::engine::nodes::math::color_modifier::ColorModifierProcessNode;
@@ -108,6 +109,7 @@ use crate::widgets::nodes::math::toggle_bank::ToggleBankWidget;
 use crate::widgets::nodes::math::gain::GainWidget;
 use crate::widgets::nodes::math::phase_accumulator::PhaseAccumulatorWidget;
 use crate::widgets::nodes::math::port_hub::PortHubWidget;
+use crate::widgets::nodes::math::bus::BusWidget;
 use crate::widgets::nodes::math::trigger_bank::TriggerBankWidget;
 use crate::widgets::nodes::math::flipflop::{FlipFlopKind, FlipFlopWidget};
 use crate::widgets::nodes::math::color_modifier::ColorModifierWidget;
@@ -208,6 +210,29 @@ pub(crate) const CATEGORIES: [&str; 14] = [
 ];
 
 /// Every node type, grouped in the order of `CATEGORIES`.
+/// What each node type declares as running state, collected once.
+pub(crate) fn running_state_keys(ctx: &NodeContext) -> std::collections::HashMap<String, &'static [&'static str]> {
+    node_table()
+        .iter()
+        .filter_map(|d| {
+            let keys = (d.engine)(NodeId(0), ctx).running_state_keys();
+            (!keys.is_empty()).then(|| (d.name.to_string(), keys))
+        })
+        .collect()
+}
+
+/// The node types that cannot be run at the full `MAX_LANES` and what they
+/// can: the one place the UI learns `ProcessNode::max_lanes` from.
+pub(crate) fn lane_limits(ctx: &NodeContext) -> std::collections::HashMap<String, usize> {
+    node_table()
+        .iter()
+        .filter_map(|d| {
+            let lanes = (d.engine)(NodeId(0), ctx).max_lanes();
+            (lanes < MAX_LANES).then(|| (d.name.to_string(), lanes))
+        })
+        .collect()
+}
+
 pub(crate) fn node_table() -> Vec<NodeDescriptor> {
     let mut table = Vec::new();
     table.push(node(
@@ -264,11 +289,12 @@ pub(crate) fn node_table() -> Vec<NodeDescriptor> {
         |id, s, ctx| Box::new(X1Widget::new(id, s, ctx.input_controllers.clone())),
         |id, ctx| Box::new(X1ProcessNode::new(id, ctx.input_controllers.clone())),
     ));
-    // 82 outputs = 64 pads + 8 side + 8 top + "any change" + "connected".
+    // 146 output channels = "connected" + the 64 lane pad bus + 64 pads + 8 side
+    // + 8 top + "any change".
     // 80 LED feedback inputs, each `Color` (3 channels) = 240
     // channels. 256 gives a bit of headroom.
     table.push(node(
-        "Input", "Launchpad S", (256, 82),
+        "Input", "Launchpad S", (256, 146),
         |id, s, ctx| Box::new(LaunchpadWidget::new(id, s, ctx.input_controllers.clone())),
         |id, ctx| Box::new(LaunchpadProcessNode::new(id, ctx.input_controllers.clone())),
     ));
@@ -290,12 +316,12 @@ pub(crate) fn node_table() -> Vec<NodeDescriptor> {
         |id, _| Box::new(FaderProcessNode::new(id)),
     ));
     table.push(node(
-        "Input", "Button Group", (256, 256),
+        "Input", "Button Group", (256, 320),
         |id, s, _| Box::new(ButtonGroupWidget::new(id, s)),
         |id, _| Box::new(ButtonGroupProcessNode::new(id)),
     ));
     table.push(node(
-        "Input", "Fader Group", (256, 256),
+        "Input", "Fader Group", (256, 320),
         |id, s, _| Box::new(FaderGroupWidget::new(id, s)),
         |id, _| Box::new(FaderGroupProcessNode::new(id)),
     ));
@@ -468,13 +494,13 @@ pub(crate) fn node_table() -> Vec<NodeDescriptor> {
     ));
     // Up to 16 channels, each Logic in and out.
     table.push(node(
-        "Trigger", "Toggle Bank", (16, 16),
+        "Trigger", "Toggle Bank", (16, 32),
         |id, s, _| Box::new(ToggleBankWidget::new(id, s)),
         |id, _| Box::new(ToggleBankProcessNode::new(id)),
     ));
     // Up to 16 channels, each Untyped in and Logic out.
     table.push(node(
-        "Trigger", "Trigger Bank", (16, 16),
+        "Trigger", "Trigger Bank", (16, 32),
         |id, s, _| Box::new(TriggerBankWidget::new(id, s)),
         |id, _| Box::new(TriggerBankProcessNode::new(id)),
     ));
@@ -494,6 +520,22 @@ pub(crate) fn node_table() -> Vec<NodeDescriptor> {
         "Route", "Port Hub", (1024, 1024),
         |id, s, _| Box::new(PortHubWidget::new(id, s)),
         |id, _| Box::new(PortHubProcessNode::new(id)),
+    ));
+    // A bus of up to MAX_LANES lanes of the widest type (Gradient, 40 channels).
+    table.push(node(
+        "Route", "Bus Merge", (MAX_LANES * 40, MAX_LANES * 40),
+        |id, s, _| Box::new(BusWidget::merge(id, s)),
+        |id, _| Box::new(BusReshapeProcessNode::merge(id)),
+    ));
+    table.push(node(
+        "Route", "Bus Split", (MAX_LANES * 40, MAX_LANES * 40),
+        |id, s, _| Box::new(BusWidget::split(id, s)),
+        |id, _| Box::new(BusReshapeProcessNode::split(id)),
+    ));
+    table.push(node(
+        "Route", "Bus Pick", (MAX_LANES * 40, 40),
+        |id, s, _| Box::new(BusWidget::pick(id, s)),
+        |id, _| Box::new(BusPickProcessNode::new(id)),
     ));
     table.push(node(
         "Compare", ">=", (2, 1),
@@ -715,6 +757,23 @@ impl LightBeatApp {
         // reads names through this link, so it has to be remade each time.
         self.graph.set_stack_names(self.stack_names.clone());
         let ctx = self.node_context();
+        if self.running_state.is_empty() {
+            self.running_state = running_state_keys(&ctx);
+        }
+        self.graph.set_running_state(self.running_state.clone());
+        if self.lane_limits.is_empty() {
+            self.lane_limits = lane_limits(&ctx);
+        }
+        self.graph.set_lane_limits(self.lane_limits.clone());
+        // The copies of a laned node are made by the same constructors as the
+        // node. A beat subscription (only the Link Clock asks for one, and it
+        // is never laned) would go nowhere.
+        let table = Rc::new(node_table());
+        let make_ctx = ctx.clone();
+        self.graph.set_engine_factory(Rc::new(move |type_name, id| {
+            let desc = table.iter().find(|d| d.name == type_name)?;
+            Some((desc.engine)(id, &make_ctx))
+        }));
         for desc in node_table() {
             let (inputs, outputs) = desc.channels;
             let ctx = ctx.clone();
@@ -809,6 +868,97 @@ mod tests {
         }
     }
 
+    /// Every top-level key a node type saves in `data` and that is NOT running
+    /// state: setup, which follows the definition in a linked subgraph. A
+    /// control's value (Fader, Button, the groups, Color Mixer) is the user's
+    /// setting and counts as setup unless the control is on the front panel.
+    /// Running state is declared by the node (`running_state_keys`); a type that
+    /// saves a key found in neither list fails `every_saved_key_is_classified`.
+    const SETUP_KEYS: &[(&str, &[&str])] = &[
+        ("Input Controller", &["controller_id"]),
+        ("DMX Input", &["input", "outputs"]),
+        ("MIDI Input", &["entries", "port"]),
+        ("MIDI Output", &["entries", "port"]),
+        ("Push 1", &["controller_id"]),
+        ("X1", &["controller_id"]),
+        ("Launchpad S", &["controller_id"]),
+        ("Audio Input", &["input_id", "params"]),
+        ("Button", &["label", "override_state", "state"]),
+        ("Fader", &["mouse_value", "name", "override_value"]),
+        ("Button Group", &["cols", "inputs_enabled", "mode", "name", "override_enabled", "override_states", "reset_mode", "rows", "states"]),
+        ("Fader Group", &["bipolar", "cols", "inputs_enabled", "mouse_override", "mouse_values", "name", "outputs_enabled", "override_values", "rows"]),
+        ("XY Pad", &["name"]),
+        ("Color Mixer", &["mode", "name", "values"]),
+        ("Phase Scaler", &["extra"]),
+        ("Clock Divider", &["extra"]),
+        ("Step Sequencer", &["mode", "values"]),
+        ("Toggle Bank", &["n"]),
+        ("Trigger Bank", &["n"]),
+        ("Formula", &["formula"]),
+        ("Add", &["input_count"]),
+        ("Sub", &["input_count"]),
+        ("Mul", &["input_count"]),
+        ("Div", &["input_count"]),
+        ("AND", &["input_count"]),
+        ("OR", &["input_count"]),
+        ("XOR", &["input_count"]),
+        ("NOT", &["input_count"]),
+        ("Palette Select", &["group_ids", "groups"]),
+        ("Gradient Source", &["stops"]),
+        ("Lookup Table", &["columns", "data", "row_count"]),
+        ("Subgraph", &["inputs", "locked", "macro_description", "macro_path", "name", "outputs"]),
+        ("Portal Send", &["name", "ports"]),
+        ("Portal Receive", &["bound_name", "ports"]),
+        ("Peak Level Meter", &["name", "orientation"]),
+        ("Value Display", &["name"]),
+        ("Level Meter", &["name", "unit"]),
+        ("Gauge", &["name", "unit"]),
+        ("LED Display", &["name"]),
+        ("Effect Stack", &["blend", "folded", "group_ids", "group_names", "layers", "mode", "name", "parent", "targets"]),
+        ("Fill", &["stack"]),
+        ("Bar", &["stack"]),
+        ("Wave Loop", &["stack"]),
+        ("Ripple Burst", &["stack"]),
+        ("Spark Burst", &["stack"]),
+    ];
+
+    #[test]
+    fn every_saved_key_is_classified_as_setup_or_declared_running_state() {
+        let ctx = context();
+        let setup: std::collections::HashMap<&str, &[&str]> = SETUP_KEYS.iter().copied().collect();
+        assert_eq!(setup.len(), SETUP_KEYS.len(), "a type is listed twice");
+        for desc in &node_table() {
+            let engine = (desc.engine)(NodeId(1), &ctx);
+            let running = engine.running_state_keys();
+            let saved: Vec<String> = engine
+                .save_data()
+                .and_then(|d| d.as_object().map(|o| o.keys().cloned().collect()))
+                .unwrap_or_default();
+            let listed = setup.get(desc.name).copied().unwrap_or(&[]);
+            for key in &saved {
+                let r = running.contains(&key.as_str());
+                let s = listed.contains(&key.as_str());
+                assert!(r || s, "{} saves \"{key}\": declare it in running_state_keys or list it as setup in SETUP_KEYS", desc.name);
+                assert!(!(r && s), "{}: \"{key}\" is both running state and setup", desc.name);
+            }
+            for key in running.iter().chain(listed.iter()) {
+                assert!(saved.iter().any(|k| k == key), "{} lists \"{key}\" but does not save it", desc.name);
+            }
+        }
+        let names: std::collections::HashSet<&str> = node_table().iter().map(|d| d.name).collect();
+        for (name, _) in SETUP_KEYS {
+            assert!(names.contains(name), "SETUP_KEYS lists {name}, which is not a node type");
+        }
+    }
+
+    #[test]
+    fn the_collected_running_state_has_the_nodes_that_declare_it() {
+        let map = running_state_keys(&context());
+        assert_eq!(map.get("Counter").copied(), Some(&["count"][..]));
+        assert_eq!(map.get("Toggle Bank").copied(), Some(&["states"][..]));
+        assert!(!map.contains_key("Fader"), "a fader's value is a setting");
+    }
+
     #[test]
     fn every_entry_makes_both_halves_under_its_own_name() {
         let ctx = context();
@@ -845,7 +995,7 @@ mod tests {
         with_defaults.sort();
         assert_eq!(
             with_defaults,
-            ["Bipolar", "Counter", "Palette to Gradient", "Phase Scaler", "Range to Unit", "Scale Offset", "Trigger Hold"],
+            ["Bipolar", "Bus Pick", "Counter", "Palette to Gradient", "Phase Scaler", "Range to Unit", "Scale Offset", "Trigger Hold"],
         );
     }
 
@@ -960,15 +1110,15 @@ mod tests {
     #[test]
     fn the_widget_and_the_engine_node_have_the_same_ports() {
         let ctx = context();
-        let describe = |ports: Vec<(String, PortType)>| ports.iter().map(|(n, t)| format!("{n}:{t:?}")).collect::<Vec<_>>().join(", ");
+        let describe = |ports: Vec<(String, PortType, usize)>| ports.iter().map(|(n, t, l)| format!("{n}:{t:?}x{l}")).collect::<Vec<_>>().join(", ");
         let mut bad = Vec::new();
         for desc in node_table() {
             let widget = (desc.widget)(NodeId(1), new_shared_state(desc.channels.0, desc.channels.1), &ctx);
             let engine = (desc.engine)(NodeId(1), &ctx);
-            let w_in: Vec<_> = widget.ui_inputs().iter().filter(|p| p.marker.is_none()).map(|p| (p.def.name.clone(), p.def.port_type)).collect();
-            let w_out: Vec<_> = widget.ui_outputs().iter().filter(|p| p.marker.is_none()).map(|p| (p.def.name.clone(), p.def.port_type)).collect();
-            let e_in: Vec<_> = engine.inputs().iter().map(|p| (p.name.clone(), p.port_type)).collect();
-            let e_out: Vec<_> = engine.outputs().iter().map(|p| (p.name.clone(), p.port_type)).collect();
+            let w_in: Vec<_> = widget.ui_inputs().iter().filter(|p| p.marker.is_none()).map(|p| (p.def.name.clone(), p.def.port_type, p.def.lanes)).collect();
+            let w_out: Vec<_> = widget.ui_outputs().iter().filter(|p| p.marker.is_none()).map(|p| (p.def.name.clone(), p.def.port_type, p.def.lanes)).collect();
+            let e_in: Vec<_> = engine.inputs().iter().map(|p| (p.name.clone(), p.port_type, p.lanes)).collect();
+            let e_out: Vec<_> = engine.outputs().iter().map(|p| (p.name.clone(), p.port_type, p.lanes)).collect();
             // A Portal Send's ports are its widget's own config, which the engine
             // takes on the first tick.
             if w_in != e_in && desc.name != "Portal Send" {
@@ -976,12 +1126,43 @@ mod tests {
             }
             // These two name their outputs after the ratio they were set to.
             let relabelled = matches!(desc.name, "Clock Divider" | "Phase Scaler");
-            let types = |v: &[(String, PortType)]| v.iter().map(|(_, t)| *t).collect::<Vec<_>>();
+            let types = |v: &[(String, PortType, usize)]| v.iter().map(|(_, t, l)| (*t, *l)).collect::<Vec<_>>();
             if w_out != e_out && !(relabelled && types(&w_out) == types(&e_out)) {
                 bad.push(format!("{} outputs: widget [{}] engine [{}]", desc.name, describe(w_out), describe(e_out)));
             }
         }
         assert!(bad.is_empty(), "ports differ:\n{}", bad.join("\n"));
+    }
+
+    #[test]
+    fn the_nodes_that_cannot_be_run_as_lanes_are_the_ones_listed_here() {
+        let mut limited: Vec<String> = lane_limits(&context()).into_keys().collect();
+        limited.sort();
+        let mut expected = vec![
+            // Hardware and setup-bound inputs.
+            "Link Clock", "Internal Clock", "Input Controller", "DMX Input", "MIDI Input", "MIDI Output",
+            "Push 1", "X1", "Launchpad S", "Audio Input",
+            // Controls with a face of their own, and the banks that have a bus output.
+            "Button", "Fader", "Button Group", "Fader Group", "XY Pad", "Color Mixer", "Peak Level Meter",
+            "Trigger Bank", "Toggle Bank",
+            // Structure.
+            "Subgraph", "Portal Send", "Portal Receive", "Effect Stack",
+            // The bus tools themselves.
+            "Bus Merge", "Bus Split", "Bus Pick",
+        ];
+        expected.extend(["Fill", "Bar", "Wave Loop", "Ripple Burst", "Spark Burst"]);
+        expected.sort();
+        assert_eq!(limited, expected);
+    }
+
+    #[test]
+    fn a_node_with_a_bus_port_of_its_own_is_never_run_as_lanes() {
+        let ctx = context();
+        for desc in node_table() {
+            let engine = (desc.engine)(NodeId(1), &ctx);
+            let has_bus = engine.inputs().iter().chain(engine.outputs()).any(|p| p.lanes > 1);
+            assert!(!has_bus || engine.max_lanes() == 1, "{}", desc.name);
+        }
     }
 
     #[test]

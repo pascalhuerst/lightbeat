@@ -138,7 +138,8 @@ impl NodeWidget for ButtonGroupWidget {
     fn resizable(&self) -> bool { true }
 
     fn output_highlight(&self, port_idx: usize, now: f64) -> f32 {
-        let last = self.last_click_time.get(port_idx).copied().flatten();
+        // Port 0 is the bus.
+        let last = port_idx.checked_sub(1).and_then(|cell| self.last_click_time.get(cell).copied().flatten());
         highlight_alpha(last, now, HIGHLIGHT_DURATION)
     }
     fn input_highlight(&self, port_idx: usize, now: f64) -> f32 {

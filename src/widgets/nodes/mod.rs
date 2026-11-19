@@ -1,5 +1,7 @@
+pub mod desk;
 pub mod graph;
 pub mod node;
+pub mod panel;
 pub mod paths;
 pub mod types;
 

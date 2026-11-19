@@ -18,7 +18,7 @@ use crate::engine::effects::spark::SparkBurst;
 use crate::engine::effects::wave::Wave;
 use crate::engine::types::*;
 use crate::theme;
-use crate::widgets::nodes::node::{NodeWidget, node_identity};
+use crate::widgets::nodes::node::{LinkJump, LinkedNode, NodeWidget, node_identity};
 use crate::widgets::nodes::types::UiPortDef;
 
 /// The stacks in the graph and which stack each is sent to, kept up to date
@@ -129,11 +129,12 @@ pub struct EffectWidget {
     spec: EffectSpec,
     names: SharedStackNames,
     stack: String,
+    links: LinkJump,
 }
 
 impl EffectWidget {
     pub fn new(id: NodeId, shared: SharedState, spec: EffectSpec, names: SharedStackNames) -> Self {
-        Self { id, shared, spec, names, stack: String::new() }
+        Self { id, shared, spec, names, stack: String::new(), links: LinkJump::default() }
     }
 
     #[cfg(test)]
@@ -184,6 +185,8 @@ impl NodeWidget for EffectWidget {
         (!self.stack.is_empty()).then(|| self.stack.clone())
     }
     fn effect_kind(&self) -> &'static str { self.spec.kind }
+    fn set_link_peers(&mut self, peers: Vec<LinkedNode>) { self.links.set_peers(peers); }
+    fn take_jump(&mut self) -> Option<NodeId> { self.links.take() }
     fn rename_linked_stack(&mut self, from: &str, to: &str) {
         if self.stack == from {
             self.set_stack(to);
@@ -235,6 +238,7 @@ impl NodeWidget for EffectWidget {
         if !self.stack.is_empty() {
             ui.colored_label(theme::TEXT_DIM, "Blend, opacity, order, mute and solo are set in the stack.");
         }
+        self.links.show(ui, "Go to stack");
     }
 }
 

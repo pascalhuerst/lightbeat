@@ -12,6 +12,7 @@ use crate::app::macros::MacroDragPayload;
 use crate::app::files::PendingAction;
 use crate::app::undo::UndoDoc;
 use crate::app::shortcuts;
+use crate::app::view::{View, add_nodes_panel_allowed, inspector_allowed};
 use crate::app::panels::{NodeDragPayload, FrameDragPayload, show_frame_inspector, show_frames_colour_inspector};
 use std::path::PathBuf;
 use eframe::egui;
@@ -39,13 +40,17 @@ impl LightBeatApp {
         self.input_controllers.reap_lost_sessions();
 
         // "Add Nodes" side panel (left) — unified node-registry + macro library.
-        if self.show_add_nodes {
+        if self.show_add_nodes && add_nodes_panel_allowed(self.view) {
             egui::SidePanel::left("add_nodes_panel")
                 .default_width(220.0)
                 .show(ctx, |ui| {
                     self.show_add_nodes_panel(ui);
                 });
         }
+
+        self.drain_graph_notices();
+        self.refresh_library_state();
+        self.run_link_check();
 
         // Pump pending macro requests from the graph (right-click actions).
         if let Some(req) = self.graph.take_macro_request() {
@@ -183,11 +188,29 @@ impl LightBeatApp {
         const SNAPSHOT_MIN_INTERVAL: f64 = 0.1;
         let in_window = now - self.last_interaction_time < UNDO_SETTLE_WINDOW;
         engine::sync_hint::set_interacting(in_window);
-        let due = now - self.last_snapshot_time >= SNAPSHOT_MIN_INTERVAL;
+        // Leaving a level settles the edits made in it at once.
+        let level_now = self.graph.active_level_index();
+        let navigated = level_now != self.link_last_level;
+        self.link_last_level = level_now;
+        // Which instance the user can be editing: the one just left when a
+        // level was left, otherwise the one the open level is inside of.
+        let editing_now = self.graph.editing_path();
+        let editing = if navigated { self.link_prev_editing.clone() } else { editing_now.clone() };
+        self.link_prev_editing = editing_now;
+        let due = navigated || now - self.last_snapshot_time >= SNAPSHOT_MIN_INTERVAL;
         if in_window && due {
             self.last_snapshot_time = now;
             let started = std::time::Instant::now();
-            let current_project = project::save_graph(&self.graph);
+            let mut current_project = project::save_graph(&self.graph);
+            // An edit inside a linked subgraph is copied to its instances
+            // before the undoer sees the state, so edit and sync are one step.
+            if self.project_baseline.as_ref().is_some_and(|b| *b != current_project) {
+                let baseline = self.project_baseline.take();
+                if let Some(base) = &baseline {
+                    current_project = self.sync_links(base, current_project, editing);
+                }
+                self.project_baseline = baseline;
+            }
             let current_setup = self.current_setup();
             self.ui_timers
                 .record_snapshot(&self.perf, started.elapsed().as_micros() as u64);
@@ -344,12 +367,29 @@ impl LightBeatApp {
                         self.pending_undo_action = redo_action;
                     }
                     ui.separator();
+                    if ui.add(egui::Button::new("Find...").shortcut_text(ctx.format_shortcut(&shortcuts::FIND))).clicked() {
+                        ui.close_menu();
+                        self.graph.open_find();
+                    }
+                    if ui.button("Link identical subgraphs")
+                        .on_hover_text("Subgraphs whose insides are the same become instances of one definition")
+                        .clicked()
+                    {
+                        ui.close_menu();
+                        self.link_identical_subgraphs();
+                    }
                     if ui.button("Preferences...").clicked() {
                         ui.close_menu();
                         self.show_preferences = true;
                     }
                 });
                 ui.menu_button("View", |ui| {
+                    let mut desk = self.view == View::Desk;
+                    if ui.checkbox(&mut desk, "Desk").on_hover_text("Tab switches between the Patch and the Desk").changed() {
+                        self.view = if desk { View::Desk } else { View::Patch };
+                        ui.close_menu();
+                    }
+                    ui.separator();
                     if ui.checkbox(&mut self.show_add_nodes, "Add nodes").changed() {
                         ui.close_menu();
                     }
@@ -360,6 +400,10 @@ impl LightBeatApp {
                         ui.close_menu();
                     }
                     if ui.checkbox(&mut self.config.snap_to_grid, "Snap to grid").changed() {
+                        self.save_settings();
+                        ui.close_menu();
+                    }
+                    if ui.checkbox(&mut self.config.collapse_parallel_wires, "Collapse parallel wires").changed() {
                         self.save_settings();
                         ui.close_menu();
                     }
@@ -528,11 +572,13 @@ impl LightBeatApp {
         let frame_selected_count = self.graph.selected_frame_ids().count();
         let has_selection = !self.graph.selected_nodes_mut().is_empty()
             || frame_selected_count > 0;
-        let show_inspector = match self.config.inspector_mode {
+        let show_inspector = inspector_allowed(self.view, self.graph.desk().locked);
+        let show_inspector = show_inspector && match self.config.inspector_mode {
             InspectorMode::Show => true,
             InspectorMode::Hide => false,
             InspectorMode::Auto => has_selection,
         };
+        let in_subgraph = self.graph.active_level_index() != 0;
         if show_inspector {
             egui::SidePanel::right("inspector")
                 .default_width(250.0)
@@ -576,7 +622,7 @@ impl LightBeatApp {
                                 ui.label("Select a node or frame to inspect.");
                             } else if selected.len() == 1 {
                                 let node = &mut *selected.into_iter().next().unwrap();
-                                widgets::inspector::show_inspector(ui, node.as_mut());
+                                widgets::inspector::show_inspector(ui, node.as_mut(), in_subgraph);
                             } else {
                                 ui.heading(format!("{} nodes selected", selected.len()));
                                 ui.separator();
@@ -761,9 +807,17 @@ impl LightBeatApp {
     fn show_canvas(&mut self, ctx: &egui::Context) {
         // Node graph.
         let graph_started = std::time::Instant::now();
+        let mut to_patch = false;
         egui::CentralPanel::default().show(ctx, |ui| {
-            self.graph.show(ui, self.config.snap_to_grid);
+            self.graph.collapse_wires = self.config.collapse_parallel_wires;
+            match self.view {
+                View::Patch => self.graph.show(ui, self.config.snap_to_grid),
+                View::Desk => to_patch = self.graph.show_desk(ui).to_patch,
+            }
         });
+        if to_patch {
+            self.view = View::Patch;
+        }
         self.ui_timers
             .record_graph(&self.perf, graph_started.elapsed().as_micros() as u64);
 
@@ -773,7 +827,8 @@ impl LightBeatApp {
         // continue aiming. `take_payload` always removes the payload even
         // when the type doesn't match, so dispatch via the non-consuming
         // `has_payload_of_type` first and only `take_payload` the right one.
-        if ctx.input(|i| i.pointer.any_released())
+        if self.view == View::Patch
+            && ctx.input(|i| i.pointer.any_released())
             && let Some(pos) = ctx.pointer_interact_pos()
             && self.graph.canvas_rect().contains(pos) {
                 let world = self.graph.screen_to_world(pos);
@@ -831,6 +886,22 @@ impl LightBeatApp {
         let typing = ctx.wants_keyboard_input();
         if ctx.input(|i| i.modifiers.command && i.key_pressed(egui::Key::S)) {
             self.save_command(ctx, None);
+        }
+        if self.view == View::Patch && ctx.input(|i| i.modifiers.command && !i.modifiers.shift && i.key_pressed(egui::Key::F)) {
+            self.graph.open_find();
+        }
+        if ctx.input(|i| i.key_pressed(egui::Key::F11)) {
+            widgets::nodes::desk::toggle_fullscreen(ctx);
+        }
+        if !typing && ctx.input(|i| i.modifiers.is_none() && i.key_pressed(egui::Key::Tab)) {
+            self.toggle_view();
+            // Tab also moves the keyboard focus to the next widget, which is
+            // not wanted here.
+            ctx.memory_mut(|m| {
+                if let Some(id) = m.focused() {
+                    m.surrender_focus(id);
+                }
+            });
         }
         if !typing && ctx.input(|i| i.modifiers.command && i.key_pressed(egui::Key::O)) {
             self.request_action(ctx, PendingAction::Open);
@@ -994,6 +1065,7 @@ impl LightBeatApp {
                     match project::read_file(&autosave) {
                         Ok(proj) => {
                             self.apply_project(&proj);
+                            self.check_links_after_load();
                             self.graph.fit_to_content();
                             // Keep project_path pointing at the real project:
                             // recovering from autosave should NOT silently save

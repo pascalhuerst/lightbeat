@@ -55,8 +55,21 @@ pub struct LaunchpadProcessNode {
 /// The ports, stated once: the widget builds its own from this, so the two
 /// halves cannot disagree.
 pub fn ports() -> (Vec<PortDef>, Vec<PortDef>) {
-    (build_inputs(), with_status_port(build_outputs()))
+    (build_inputs(), outputs_with_status_and_bus(build_outputs()))
 }
+
+/// The grid's 64 pads as one bus, right after `connected`, next to the single
+/// pad ports. A bus of all 64 and not eight rows: any shape can be made from
+/// 64 lanes (Bus Pick by row * 8 + column), while a row bus cannot be turned
+/// into another (Bus Merge takes single wires only).
+fn outputs_with_status_and_bus(mut outputs: Vec<PortDef>) -> Vec<PortDef> {
+    outputs.insert(0, PortDef::new("pads", PortType::Untyped).with_lanes(pad_lanes()));
+    with_status_port(outputs)
+}
+
+/// How many pads the bus carries. Where a source's width comes from is this
+/// one function.
+fn pad_lanes() -> usize { N_PADS }
 
 impl LaunchpadProcessNode {
     pub fn new(id: NodeId, controllers: SharedControllers) -> Self {
@@ -72,7 +85,7 @@ impl LaunchpadProcessNode {
             controller_id: 0,
             controllers,
             inputs,
-            outputs: with_status_port(outputs),
+            outputs: outputs_with_status_and_bus(outputs),
             out_values: vec![0.0; n_out],
             prev_control_values: Vec::new(),
             in_values: vec![0.0; n_in_channels],
@@ -86,6 +99,8 @@ impl LaunchpadProcessNode {
 }
 
 impl ProcessNode for LaunchpadProcessNode {
+    fn max_lanes(&self) -> usize { 1 }
+
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { "Launchpad S" }
     fn inputs(&self) -> &[PortDef] { &self.inputs }
@@ -163,10 +178,15 @@ impl ProcessNode for LaunchpadProcessNode {
         }
     }
 
-    fn read_output(&self, pi: usize) -> f32 {
-        match pi.checked_sub(1) {
-            None => level(self.connected),
-            Some(i) => self.out_values.get(i).copied().unwrap_or(0.0),
+    fn read_output(&self, ch: usize) -> f32 {
+        // Channel 0 is `connected`, then the pad bus, then the single ports
+        // from "any change" on, which `out_values` holds.
+        let bus = pad_lanes();
+        match ch {
+            0 => level(self.connected),
+            // The pads follow "any change" in `out_values`.
+            c if c <= bus => self.out_values.get(c).copied().unwrap_or(0.0),
+            c => self.out_values.get(c - 1 - bus).copied().unwrap_or(0.0),
         }
     }
     fn read_input(&self, pi: usize) -> f32 {
@@ -287,5 +307,42 @@ fn rebuild_maps(
             out_map[ctrl_idx + 1] = rt_idx;
             in_map[ctrl_idx] = rt_idx;
         }
+    }
+}
+
+#[cfg(test)]
+mod bus_tests {
+    use super::*;
+
+    fn node() -> LaunchpadProcessNode {
+        LaunchpadProcessNode::new(NodeId(1), crate::input_controller::InputControllerManager::new().shared)
+    }
+
+    #[test]
+    fn the_pad_bus_sits_right_after_connected_and_is_as_wide_as_the_grid() {
+        let n = node();
+        let out = n.outputs();
+        assert_eq!(out[0].name, "connected");
+        assert_eq!((out[1].name.as_str(), out[1].lanes, out[1].port_type), ("pads", 64, PortType::Untyped));
+        assert_eq!(out[2].name, "any change");
+        assert_eq!(out[3].name, "pad r1c1");
+    }
+
+    #[test]
+    fn a_pad_reads_the_same_on_its_lane_and_on_its_own_port() {
+        let mut n = node();
+        // out_values: "any change" first, then the 64 pads, 8 side, 8 top.
+        for (i, v) in n.out_values.iter_mut().enumerate() {
+            *v = i as f32 / 100.0;
+        }
+        let lane = |k: usize| n.read_output(port_base_index(n.outputs(), 1) + k);
+        let own = |pad: usize| n.read_output(port_base_index(n.outputs(), 3 + pad));
+        for pad in [0, 9, 63] {
+            assert_eq!(lane(pad), own(pad), "pad {pad}");
+            assert_eq!(own(pad), (pad + 1) as f32 / 100.0);
+        }
+        assert_eq!(n.read_output(port_base_index(n.outputs(), 2)), 0.0, "any change is out_values[0]");
+        // The last port, top "Mixer".
+        assert_eq!(n.read_output(total_channels(n.outputs()) - 1), 80.0 / 100.0);
     }
 }

@@ -158,6 +158,9 @@ impl ProcessNode for RandomProcessNode {
         }
     }
 
+    /// The value last drawn is what the node is doing, not how it is set up.
+    fn running_state_keys(&self) -> &'static [&'static str] { &["value"] }
+
     fn save_data(&self) -> Option<serde_json::Value> {
         Some(serde_json::json!({ "value": self.target }))
     }

@@ -102,7 +102,9 @@ impl NodeGraph {
             let mut snapshots = shared.snapshots.clone();
             snapshots.active = shared.snapshot_active.or(snapshots.active);
             let hide_unused_ports = shared.hide_unused_ports;
+            let panel = shared.panel.clone();
             drop(shared);
+            let data = node.live_data().or(data);
 
             // For Subgraph nodes, snapshot the inner level so duplicate
             // recreates the nested content instead of leaving an empty
@@ -121,6 +123,7 @@ impl NodeGraph {
                 promoted,
                 snapshots,
                 hide_unused_ports,
+                panel,
                 data,
                 offset: state.pos - origin,
                 original_id: state.id,
@@ -176,6 +179,27 @@ impl NodeGraph {
         let clip = std::mem::take(&mut self.clipboard);
         let conns = std::mem::take(&mut self.clipboard_connections);
 
+        // A definition must not end up inside one of its own instances.
+        let mut inside = std::collections::HashSet::new();
+        for cn in &clip {
+            crate::linked::definitions_in(cn.data.as_ref(), cn.inner_graph.as_ref(), &mut inside);
+        }
+        if self.paste_would_nest(&inside) {
+            self.notices.push("Not pasted: it would put a linked subgraph inside itself.".to_string());
+            self.clipboard = clip;
+            self.clipboard_connections = conns;
+            return;
+        }
+        // A linked subgraph pastes as another instance while its definition
+        // is in the project, and as a plain copy otherwise (another project).
+        let mut definition_uses: std::collections::HashMap<u64, usize> = std::collections::HashMap::new();
+        for cn in clip.iter().filter(|c| c.type_name == "Subgraph") {
+            if let Some(d) = cn.data.as_ref().and_then(|d| d.get("definition")).and_then(|v| v.as_u64()) {
+                *definition_uses.entry(d).or_insert(0) += 1;
+            }
+        }
+        let known: std::collections::HashSet<u64> = definition_uses.keys().copied().filter(|&d| self.definition_exists(d)).collect();
+
         // original_id → new_id. Populated as we create each duplicate so
         // we can rewrite the captured connections.
         let mut id_map: std::collections::HashMap<NodeId, NodeId> =
@@ -201,6 +225,7 @@ impl NodeGraph {
                         state.pending_snapshots = Some(cn.snapshots.clone());
                     }
                     state.hide_unused_ports = cn.hide_unused_ports;
+                    state.panel = cn.panel.clone();
                 }
 
                 if let Some(size) = cn.size {
@@ -208,6 +233,16 @@ impl NodeGraph {
                 }
 
                 let mut data = cn.data.clone();
+                if cn.type_name == "Subgraph"
+                    && let Some(d) = data.as_ref().and_then(|d| d.get("definition")).and_then(|v| v.as_u64())
+                    && !known.contains(&d)
+                    && definition_uses.get(&d).copied().unwrap_or(0) < 2
+                {
+                    // The copy is plain; a plain subgraph has no definition tag.
+                    if let Some(map) = data.as_mut().and_then(|d| d.as_object_mut()) {
+                        map.remove("definition");
+                    }
+                }
                 // A Portal Send publishes under a unique name, so the copy
                 // gets the next number. A Portal Receive keeps its
                 // `bound_name` so the copy stays bound to the same Send.
@@ -247,6 +282,7 @@ impl NodeGraph {
                 if cn.type_name == "Subgraph"
                     && let Some(inner) = cn.inner_graph.clone() {
                         let mut inner = inner;
+                        crate::project::strip_desk(&mut inner);
                         crate::project::remap_ids_inplace(&mut inner, &mut || self.alloc_id().0);
                         let parent_level = self.active_level;
                         self.navigate_into(idx);
@@ -274,8 +310,35 @@ impl NodeGraph {
         self.clipboard_connections = conns;
     }
 
+    /// Ctrl+D: a duplicated subgraph is another instance of the same
+    /// definition (a plain one becomes the first instance of a new one).
     pub(super) fn duplicate_selected(&mut self) {
+        let subgraphs: Vec<NodeId> = self.selected_nodes.iter()
+            .filter_map(|&i| self.active().nodes.get(i).filter(|n| n.type_name() == "Subgraph").map(|n| n.node_id()))
+            .collect();
+        for id in subgraphs {
+            self.ensure_definition(id);
+        }
+        self.duplicate_copy();
+    }
+
+    /// Ctrl+Shift+D: unique copies, as before linked subgraphs existed.
+    pub(super) fn duplicate_selected_unique(&mut self) {
         self.copy_selected();
+        for cn in self.clipboard.iter_mut().filter(|c| c.type_name == "Subgraph") {
+            if let Some(map) = cn.data.as_mut().and_then(|d| d.as_object_mut()) {
+                map.remove("definition");
+            }
+        }
+        self.paste_beside();
+    }
+
+    fn duplicate_copy(&mut self) {
+        self.copy_selected();
+        self.paste_beside();
+    }
+
+    fn paste_beside(&mut self) {
         // Paste offset from the first selected node.
         let base = if let Some(&i) = self.selected_nodes.first() {
             self.active().states[i].pos + Vec2::new(GRID_SPACING * 2.0, GRID_SPACING * 2.0)

@@ -149,6 +149,8 @@ impl Drop for MidiInputProcessNode {
 }
 
 impl ProcessNode for MidiInputProcessNode {
+    fn max_lanes(&self) -> usize { 1 }
+
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { "MIDI Input" }
     fn inputs(&self) -> &[PortDef] { &[] }

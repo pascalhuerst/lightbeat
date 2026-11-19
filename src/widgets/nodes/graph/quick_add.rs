@@ -61,7 +61,7 @@ fn word_score(entry: &NodeEntry, word: &str) -> Option<usize> {
 }
 
 /// True when the letters of `needle` appear in `haystack` in that order.
-fn is_subsequence(needle: &str, haystack: &str) -> bool {
+pub(super) fn is_subsequence(needle: &str, haystack: &str) -> bool {
     let mut hay = haystack.chars();
     needle.chars().all(|n| hay.any(|h| h == n))
 }

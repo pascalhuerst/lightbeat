@@ -1,4 +1,5 @@
 mod quick_add;
+mod bus;
 mod frames;
 mod links;
 mod connections;
@@ -7,15 +8,27 @@ mod menus;
 mod interact;
 mod subgraph_ops;
 mod draw;
+mod wires;
+mod find;
+mod panel;
+mod desk;
+mod desk_view;
+mod instances;
+#[cfg(test)]
+mod instances_tests;
+#[cfg(test)]
+mod instances_desk_tests;
 
 use draw::*;
 
 use egui::{self, Color32, CursorIcon, Painter, Pos2, Rect, Sense, Stroke, StrokeKind, Ui, Vec2};
 
+use std::collections::HashMap;
+
 use super::node::*;
 use super::types::*;
 use crate::engine::nodes::meta::subgraph::{SubgraphPortDef, port_type_to_idx, BRIDGE_IN_NODE_ID, BRIDGE_OUT_NODE_ID};
-use crate::engine::types::{Connection, NodeId, ParamDef, ParamValue, PortDir, PortId, PortType, SubgraphInnerCmd};
+use crate::engine::types::{Connection, NodeId, PanelItem, ParamDef, ParamValue, PortDir, PortId, PortType, SubgraphInnerCmd};
 use crate::widgets::nodes::meta::portal::{
     PortalReceiveWidget, PortalSendWidget,
 };
@@ -27,6 +40,9 @@ const MIN_BEZIER_SEGMENTS: usize = 8;
 /// Straight-line distance covered by one bezier segment before it is subdivided.
 const WIRE_SEGMENT_PX: f32 = 10.0;
 const CONNECTION_THICKNESS: f32 = 2.5;
+/// A cable of parallel wires, and how far its wires fan out before it starts.
+const CABLE_THICKNESS: f32 = 5.5;
+const CABLE_FAN: f32 = 24.0;
 const NODE_CORNER_RADIUS: f32 = 6.0;
 
 use crate::theme;
@@ -159,6 +175,8 @@ pub struct GraphLevel {
     /// No engine semantics; nodes "in" a frame are just nodes whose rect
     /// overlaps the frame's rect.
     pub frames: Vec<GraphFrame>,
+    /// Widths of the wires and nodes, derived from the wires (`bus.rs`).
+    bus: bus::BusState,
 }
 
 /// A purely-visual rectangle drawn behind nodes for grouping purposes.
@@ -194,6 +212,8 @@ pub struct ViewState {
 pub enum MacroRequest {
     /// Open "Save as macro" dialog for this Subgraph.
     SaveAs { node_id: NodeId, subgraph_path: Vec<NodeId> },
+    /// Replace the definition of this macro instance with the library file's.
+    UpdateFromLibrary { node_id: NodeId },
 }
 
 /// A copied node snapshot for clipboard operations.
@@ -204,6 +224,7 @@ struct ClipboardNode {
     promoted: Vec<PromotedParam>,
     snapshots: crate::engine::types::SnapshotSet,
     hide_unused_ports: bool,
+    panel: Option<PanelItem>,
     data: Option<serde_json::Value>,
     /// Offset from the first copied node's position.
     offset: Vec2,
@@ -243,6 +264,10 @@ pub struct NodeGraph {
     port_menu: Option<PortMenu>,
     /// Type-to-add search opened by right-clicking empty canvas.
     quick_add: Option<QuickAdd>,
+    /// The Ctrl+F search box.
+    find: Option<find::FindState>,
+    /// A node to jump to, set by a double-click on a Portal Receive.
+    pending_jump: Option<NodeId>,
     /// A portal waiting for its name before it is put on the canvas.
     portal_prompt: Option<PortalPrompt>,
     /// Pending macro action emitted by the right-click menu, consumed by the
@@ -280,6 +305,22 @@ pub struct NodeGraph {
     fit_pending: bool,
     /// The overview in the corner of the canvas (toggle with M).
     pub show_minimap: bool,
+    /// Draw parallel wires as one cable (View menu).
+    pub collapse_wires: bool,
+    /// Messages for the user that came up inside the graph; the app shows them.
+    notices: Vec<String>,
+    /// Per node type, the saved-data keys that are running state (linked
+    /// subgraphs keep them per instance); set by the app.
+    running: HashMap<String, &'static [&'static str]>,
+    /// Per node type, how many lanes it may be run at (`ProcessNode::max_lanes`);
+    /// set by the app.
+    lane_limits: HashMap<String, usize>,
+    /// Makes engine nodes for the extra lanes of laned nodes; set by the app.
+    engine_factory: Option<bus::EngineFactory>,
+    /// The Desk's pages and lock flag (saved once, at the root).
+    desk: super::desk::DeskDoc,
+    /// Which page is shown and the Desk's other session state (not saved).
+    desk_ui: desk_view::DeskUi,
 }
 
 #[derive(Clone)]
@@ -321,6 +362,7 @@ impl NodeGraph {
                 parent_level_idx: None,
                 label: "Root".to_string(),
                 frames: Vec::new(),
+                bus: Default::default(),
             }],
             active_level: 0,
             drag: DragState::default(),
@@ -331,6 +373,8 @@ impl NodeGraph {
             context_menu_pos: None,
             port_menu: None,
             quick_add: None,
+            find: None,
+            pending_jump: None,
             portal_prompt: None,
             pending_macro_request: None,
             selected_nodes: Vec::new(),
@@ -346,7 +390,27 @@ impl NodeGraph {
             clipboard_connections: Vec::new(),
             fit_pending: false,
             show_minimap: true,
+            collapse_wires: true,
+            notices: Vec::new(),
+            running: HashMap::new(),
+            lane_limits: HashMap::new(),
+            engine_factory: None,
+            desk: Default::default(),
+            desk_ui: Default::default(),
         }
+    }
+
+    pub fn desk(&self) -> &super::desk::DeskDoc {
+        &self.desk
+    }
+
+    pub fn set_desk(&mut self, desk: super::desk::DeskDoc) {
+        self.desk = desk;
+    }
+
+    /// Ids of the selected nodes of `level` (the active one).
+    fn selected_node_ids(&self, level: &GraphLevel) -> std::collections::HashSet<NodeId> {
+        self.selected_nodes.iter().filter_map(|&i| level.states.get(i).map(|s| s.id)).collect()
     }
 
     fn active(&self) -> &GraphLevel { &self.levels[self.active_level] }
@@ -389,6 +453,7 @@ impl NodeGraph {
                 EngineCommand::NotifyDisconnect { node_id, input_port } => {
                     SubgraphInnerCmd::NotifyDisconnect { node_id, input_port }
                 }
+                EngineCommand::SetLanes { node_id, extra } => SubgraphInnerCmd::SetLanes { node_id, extra },
                 other => {
                     // Commands that don't have inner equivalents go directly.
                     self.pending_engine_cmds.push(other);
@@ -614,6 +679,29 @@ impl NodeGraph {
             .map(|e| (e.factory)(id))
     }
 
+    /// What keeps the engine and the widgets in step with each other, with
+    /// nothing drawn: both views run it every frame, so a Desk that is open
+    /// for a whole set does not let the graph go stale. It works on the open
+    /// level (the one the inspector and the canvas are on), apart from the
+    /// parts that look at every level.
+    pub(super) fn maintain(&mut self) {
+        self.reconcile_effect_stacks();
+        self.refresh_link_peers();
+        self.refresh_instance_counts();
+        self.remap_promoted_connections();
+        self.remap_removed_ports();
+        for level in &mut self.levels {
+            for node in &mut level.nodes {
+                node.follow_params();
+            }
+        }
+        // Hidden ports, then stale connections (ports removed by dynamic nodes).
+        self.tidy_ports();
+        self.apply_panel_requests();
+        self.handle_subgraph_requests();
+        self.place_new_desk_items();
+    }
+
     pub fn show(&mut self, ui: &mut Ui, snap_to_grid: bool) {
         // -- Breadcrumb bar when inside a subgraph --
         // Walk from the active level up via `parent_level_idx` to get the
@@ -653,16 +741,8 @@ impl NodeGraph {
             ui.separator();
         }
 
-        self.reconcile_effect_stacks();
-        self.remap_promoted_connections();
-        self.remap_removed_ports();
-        for level in &mut self.levels {
-            for node in &mut level.nodes {
-                node.follow_params();
-            }
-        }
-        // Hidden ports, then stale connections (ports removed by dynamic nodes).
-        self.tidy_ports();
+        self.maintain();
+        self.refresh_panels(self.active_level);
 
         let (response, painter) =
             ui.allocate_painter(ui.available_size(), Sense::click_and_drag());
@@ -825,22 +905,96 @@ impl NodeGraph {
         let ports = PortCache::build(level);
 
         // -- Draw connections --
-        for conn in &level.connections {
-            if let (Some(from_pos), Some(from_type), Some(to_pos)) = (
-                ports.port_pos(&node_rects, conn.from, z),
-                ports.port_type(conn.from),
-                ports.port_pos(&node_rects, conn.to, z),
-            ) {
-                let selected = self.selected_connections.contains(conn);
-                if selected {
-                    // Soft white halo behind the wire, then redraw the wire
-                    // on top so the type colour still reads.
-                    draw_bezier(&painter, from_pos, to_pos,
-                        theme::WIRE_HALO,
-                        CONNECTION_THICKNESS + 4.0);
+        let ends: Vec<Option<WireEnds>> = level.connections.iter().map(|conn| {
+            Some(WireEnds {
+                from: ports.port_pos(&node_rects, conn.from, z)?,
+                to: ports.port_pos(&node_rects, conn.to, z)?,
+                port_type: ports.port_type(conn.from)?,
+            })
+        }).collect();
+        let wire_pointer = self.wire_pointer(ui, &response, &node_rects);
+        let hovered_wire = wire_pointer.and_then(|p| self.wire_at(p, &ends));
+        // Which wires keep their colour: the run through a hovered wire, else
+        // the wires of the selected nodes, else all of them.
+        let lit: Option<Vec<bool>> = if let Some(h) = hovered_wire {
+            Some(wires::wires_in_run(&level.connections, h))
+        } else if !self.selected_nodes.is_empty() {
+            Some(wires::wires_of_nodes(&level.connections, &self.selected_node_ids(level)))
+        } else {
+            None
+        };
+        let is_lit = |wi: usize| lit.as_ref().is_none_or(|l| l[wi]);
+
+        // Parallel wires are drawn as one cable, except where the user is
+        // looking: under the pointer, at a selected node or a selected wire.
+        let mut in_cable = vec![false; level.connections.len()];
+        if self.collapse_wires {
+            let selected_ids = self.selected_node_ids(level);
+            for cable in wires::cable_groups(&level.connections) {
+                if cable.wires.iter().any(|&w| ends[w].is_none()) { continue; }
+                if selected_ids.contains(&cable.from) || selected_ids.contains(&cable.to)
+                    || cable.wires.iter().any(|&w| self.selected_connections.contains(&level.connections[w]))
+                    || hovered_wire.is_some_and(|h| cable.wires.contains(&h))
+                {
+                    continue;
                 }
-                draw_bezier(&painter, from_pos, to_pos, from_type.color(),
-                    CONNECTION_THICKNESS + if selected { 1.5 } else { 0.0 });
+                let (from_pts, to_pts): (Vec<Pos2>, Vec<Pos2>) = cable.wires.iter()
+                    .filter_map(|&w| ends[w]).map(|e| (e.from, e.to)).unzip();
+                let (a, b) = wires::cable_anchors(&from_pts, &to_pts, CABLE_FAN * z);
+                if wire_pointer.is_some_and(|p| {
+                    let tolerance = (6.0 * z).max(4.0);
+                    wire_hull(a, b, tolerance).contains(p)
+                        && point_to_polyline_distance(p, &bezier_sample(a, b, 20)) <= tolerance
+                }) {
+                    continue;
+                }
+                for &w in &cable.wires { in_cable[w] = true; }
+                let every = from_pts.iter().chain(&to_pts).copied().chain([a, b]).collect::<Vec<_>>();
+                if !painter.clip_rect().intersects(Rect::from_points(&every).expand(CABLE_THICKNESS)) {
+                    continue;
+                }
+                let first_type = ends[cable.wires[0]].map(|e| e.port_type);
+                let same_type = cable.wires.iter().all(|&w| ends[w].map(|e| e.port_type) == first_type);
+                let bright = cable.wires.iter().any(|&w| is_lit(w));
+                let dim = |c: Color32| if bright { c } else { c.linear_multiply(theme::WIRE_DIM) };
+                for &w in &cable.wires {
+                    let Some(e) = ends[w] else { continue };
+                    painter.line_segment([e.from, a], Stroke::new(CONNECTION_THICKNESS, dim(e.port_type.color())));
+                    painter.line_segment([b, e.to], Stroke::new(CONNECTION_THICKNESS, dim(e.port_type.color())));
+                }
+                let color = match (same_type, first_type) {
+                    (true, Some(t)) => t.color(),
+                    _ => theme::WIRE_CABLE,
+                };
+                draw_bezier(&painter, a, b, dim(color), CABLE_THICKNESS);
+                if z >= 0.4 && (b.x - a.x).abs() > 30.0 * z {
+                    draw_count_label(&painter, Pos2::new((a.x + b.x) * 0.5, (a.y + b.y) * 0.5), &cable.wires.len().to_string(), z);
+                }
+            }
+        }
+
+        for (wi, conn) in level.connections.iter().enumerate() {
+            let Some(e) = ends[wi] else { continue };
+            if in_cable[wi] { continue; }
+            let selected = self.selected_connections.contains(conn);
+            let faded = !selected && !is_lit(wi);
+            if selected {
+                // Soft white halo behind the wire, then redraw the wire
+                // on top so the type colour still reads.
+                let halo = if level.bus.widths.of_wire(conn.to) > 1 { CABLE_THICKNESS } else { CONNECTION_THICKNESS };
+                draw_bezier(&painter, e.from, e.to, theme::WIRE_HALO, halo + 4.0);
+            }
+            let color = if faded {
+                e.port_type.color().linear_multiply(theme::WIRE_DIM)
+            } else {
+                e.port_type.color()
+            };
+            // A bus is one wire drawn as thick as a cable, with its lane count on it.
+            let lanes = level.bus.widths.of_wire(conn.to);
+            let base = if lanes > 1 { CABLE_THICKNESS } else { CONNECTION_THICKNESS };
+            draw_bezier(&painter, e.from, e.to, color, base + if selected { 1.5 } else { 0.0 });
+            if lanes > 1 && z >= 0.4 && (e.to.x - e.from.x).abs() > 30.0 * z {
+                draw_count_label(&painter, e.from + (e.to - e.from) * 0.5, &lanes.to_string(), z);
             }
         }
 
@@ -900,8 +1054,20 @@ impl NodeGraph {
             // The margin covers what is drawn outside the rect: port dots, the
             // selection outline and the pulse of a linked node.
             if !canvas_rect.intersects(node_rect.expand(12.0 + 12.0 * z)) { continue; }
-            let inputs = level.nodes[i].ui_inputs_full();
-            let outputs = level.nodes[i].ui_outputs();
+            let mut inputs = level.nodes[i].ui_inputs_full();
+            let mut outputs = level.nodes[i].ui_outputs();
+            // The ports of a laned node and the ones a bus ends at are drawn as
+            // wide ones; only this frame's copy of the port list says so.
+            let node_id = level.states[i].id;
+            let lanes = level.bus.widths.of_node(node_id);
+            if lanes > 1 {
+                outputs.iter_mut().for_each(|p| p.def.lanes = lanes);
+            }
+            if !level.bus.widths.wire.is_empty() {
+                for (pi, p) in inputs.iter_mut().enumerate() {
+                    p.def.lanes = p.def.lanes.max(level.bus.widths.of_wire(make_port_id(node_id, PortDir::Input, pi)));
+                }
+            }
             let out_highlights: Vec<f32> = (0..outputs.len())
                 .map(|pi| level.nodes[i].output_highlight(pi, now))
                 .collect();
@@ -928,6 +1094,7 @@ impl NodeGraph {
                 portal_peer,
                 level.nodes[i].show_port_labels(),
                 now,
+                lanes,
                 z,
             );
         }
@@ -956,9 +1123,9 @@ impl NodeGraph {
             style.spacing.text_edit_width *= z;
             std::sync::Arc::new(style)
         });
-        let level = self.active_mut();
+        let active = self.active_level;
         for (i, &rect) in node_rects.iter().enumerate() {
-            let content_rect = content_rect(rect, &level.nodes[i].layout(), z);
+            let content_rect = content_rect(rect, &self.levels[active].nodes[i].layout(), z);
             // Intersect with the canvas so node UI doesn't paint over panels
             // (inspector, status bar) when a node is partially off-canvas.
             let clip_rect = content_rect.intersect(canvas_clip);
@@ -975,7 +1142,25 @@ impl NodeGraph {
                     content_ui.set_style(style.clone());
                 }
 
-                level.nodes[i].show_content(&mut content_ui, z);
+                // A Subgraph with a front panel draws the controls of its inner
+                // nodes under its header. Their widgets are taken out of the
+                // inner level for the time, so `levels` stays free for the
+                // panels nested in them.
+                let inner = panel::panel_owner(self.levels[active].nodes[i].as_mut())
+                    .and_then(|id| self.levels.iter().position(|l| l.subgraph_id == Some(id)));
+                let mut taken = inner.map(|k| std::mem::take(&mut self.levels[k].nodes));
+                self.levels[active].nodes[i].show_content(&mut content_ui, z);
+                if let (Some(k), Some(inner_nodes)) = (inner, taken.as_mut()) {
+                    let region = panel::panel_region(content_rect, z);
+                    if let Some(w) = self.levels[active].nodes[i].as_any_mut().downcast_mut::<SubgraphWidget>() {
+                        w.set_panel_screen(Some(region.intersect(clip_rect)));
+                    }
+                    let mut paint = panel::PanelPaint { ui: &mut *ui, clip: clip_rect, style: &zoomed_style, zoom: z };
+                    panel::draw_panel(&mut self.levels, k, inner_nodes, region, &mut paint, 0);
+                }
+                if let (Some(k), Some(nodes)) = (inner, taken) {
+                    self.levels[k].nodes = nodes;
+                }
             }
         }
 
@@ -1016,6 +1201,7 @@ impl NodeGraph {
         // -- Handle interactions --
         self.handle_interactions(ui, &response, &node_rects, snap_to_grid);
         self.show_minimap(ui, canvas_rect);
+        self.show_link_banner(ui, canvas_rect);
 
         // -- Port-hover scope tooltip --
         // Skipped while a drag is in progress (wire draw / node move / frame)
@@ -1059,7 +1245,7 @@ impl NodeGraph {
         // Works even without pointer over canvas — handy when nodes end up
         // off-screen and you don't know where to pan to reach them.
         if !text_has_focus
-            && ui.input(|i| i.key_pressed(egui::Key::F) || i.key_pressed(egui::Key::Home))
+            && ui.input(|i| (!ctrl && i.key_pressed(egui::Key::F)) || i.key_pressed(egui::Key::Home))
         {
             self.fit_pending = true;
         }
@@ -1077,9 +1263,13 @@ impl NodeGraph {
             self.toggle_hide_unused_ports();
         }
 
-        // -- Duplicate (Ctrl+D) --
+        // -- Duplicate (Ctrl+D; with Shift, subgraphs are copied unlinked) --
         if !text_has_focus && ctrl && ui.input(|i| i.key_pressed(egui::Key::D)) && !self.selected_nodes.is_empty() {
-            self.duplicate_selected();
+            if ui.input(|i| i.modifiers.shift) {
+                self.duplicate_selected_unique();
+            } else {
+                self.duplicate_selected();
+            }
         }
 
         // -- Copy (Ctrl+C) --
@@ -1095,6 +1285,8 @@ impl NodeGraph {
                 .unwrap_or(Pos2::new(100.0, 100.0));
             self.paste(pos);
         }
+
+        self.handle_jumps();
 
         // -- Check for subgraph open requests --
         let mut open_subgraph_idx = None;
@@ -1144,6 +1336,7 @@ impl NodeGraph {
         self.show_port_menu(ui, just_opened);
         self.show_quick_add(ui, just_opened);
         self.show_portal_prompt(ui.ctx());
+        self.show_find(ui);
     }
 
     /// Close the open context menu when the user clicks outside its rect.

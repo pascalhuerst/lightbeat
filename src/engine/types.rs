@@ -1,3 +1,4 @@
+use serde::{Deserialize, Serialize};
 pub use super::promoted::{PromotedKind, PromotedParam};
 pub use super::snapshots::SnapshotSet;
 use std::borrow::Cow;
@@ -96,11 +97,19 @@ impl PortType {
     }
 }
 
+/// The most lanes a bus can have: the width of any wire and of any laned node.
+pub const MAX_LANES: usize = 64;
+
 /// Port definition — engine side (no color info).
 #[derive(Debug, Clone)]
 pub struct PortDef {
     pub name: String,
     pub port_type: PortType,
+    /// How many values of `port_type` the port carries side by side. 1 for
+    /// nearly every port; more only on a node's own bus ports (Bus Merge's
+    /// output, the bus outputs of a controller). A laned node's ports stay at 1:
+    /// the graph runs several copies of the node instead (`engine::lanes`).
+    pub lanes: usize,
 }
 
 impl PortDef {
@@ -108,26 +117,38 @@ impl PortDef {
         Self {
             name: name.into(),
             port_type,
+            lanes: 1,
         }
+    }
+
+    pub fn with_lanes(mut self, lanes: usize) -> Self {
+        self.lanes = lanes.clamp(1, MAX_LANES);
+        self
+    }
+
+    /// Floats the port occupies in a node's flat channel buffer: lane `k`
+    /// starts at `k * port_type.channel_count()`.
+    pub fn channels(&self) -> usize {
+        self.lanes * self.port_type.channel_count()
     }
 }
 
 /// Compute the internal channel base index for a given logical port index.
-/// Accounts for multi-channel ports (Color=3, Position=2).
+/// Accounts for multi-channel ports (Color=3, Position=2) and bus ports.
 pub fn port_base_index(ports: &[PortDef], logical_index: usize) -> usize {
     let mut base = 0;
     for (i, p) in ports.iter().enumerate() {
         if i == logical_index {
             return base;
         }
-        base += p.port_type.channel_count();
+        base += p.channels();
     }
     base
 }
 
 /// Total number of internal float channels for a list of ports.
 pub fn total_channels(ports: &[PortDef]) -> usize {
-    ports.iter().map(|p| p.port_type.channel_count()).sum()
+    ports.iter().map(PortDef::channels).sum()
 }
 
 // ---------------------------------------------------------------------------
@@ -293,10 +314,27 @@ pub struct NodeSharedState {
     /// Show only the ports that have a wire (plus the variadic "+" ports).
     /// UI-owned and saved with the project; the engine never reads it.
     pub hide_unused_ports: bool,
+    /// Shown on the front panel of the subgraph this node sits in. UI-owned
+    /// and saved with the project; the engine never reads it.
+    pub panel: Option<PanelItem>,
+    /// Where the node (and its snapshot row) sits on the Desk. UI-owned and
+    /// saved with the project; the engine never reads it. Per node, and per
+    /// instance inside a linked subgraph (`linked.rs`).
+    pub desk: Option<DeskItem>,
+    /// The node's identity inside a linked subgraph definition: equal in every
+    /// instance for "the same" node (`linked.rs`). UI-owned and saved with
+    /// the project; the engine never reads it.
+    pub def_node: Option<u64>,
     /// Which ports are hidden right now, by port index; empty when none are.
     /// Kept up to date by the graph each frame.
     pub hidden_inputs: Vec<bool>,
     pub hidden_outputs: Vec<bool>,
+    /// Which copy of a laned node the mirror shows: its ports, settings and
+    /// display come from that lane. UI-owned; the engine clamps it.
+    pub view_lane: usize,
+    /// How many lanes the node runs at, as the engine has it (written by the
+    /// engine), so the UI can keep `view_lane` inside it.
+    pub lanes: usize,
 }
 
 impl NodeSharedState {
@@ -323,9 +361,98 @@ impl NodeSharedState {
             snapshot_progress: 1.0,
             non_promotable: &[],
             hide_unused_ports: false,
+            panel: None,
+            desk: None,
+            def_node: None,
             hidden_inputs: Vec::new(),
             hidden_outputs: Vec::new(),
+            view_lane: 0,
+            lanes: 1,
         }
+    }
+}
+
+/// What a node inside a subgraph puts on the subgraph's front panel (see
+/// `widgets/nodes/panel.rs`). Lives on the node, not in the Subgraph, so it
+/// survives the id remapping of duplicate and macro instantiation.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct PanelItem {
+    /// Position among the panel's items. `PANEL_LAST` means "just added":
+    /// the graph numbers the items 0.. in order each frame.
+    pub order: u32,
+    /// The whole node is drawn on the panel.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub whole: bool,
+    /// Single settings of the node, by param name, drawn on the panel.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub params: Vec<String>,
+}
+
+pub const PANEL_LAST: u32 = u32::MAX;
+
+/// A rectangle on a page of the Desk (`widgets/nodes/desk.rs`). The page is
+/// named by its stable id, so reordering or deleting pages repoints nothing.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct DeskRect {
+    pub page: u64,
+    pub pos: [f32; 2],
+    pub size: [f32; 2],
+}
+
+impl DeskRect {
+    /// "Put this on the Desk": the page, place and size are chosen by the
+    /// graph on its next frame (the current page, the first free spot, the
+    /// node's own size), so the inspector and the menus need no geometry.
+    pub const UNPLACED: DeskRect = DeskRect { page: 0, pos: [0.0, 0.0], size: [0.0, 0.0] };
+
+    pub fn is_unplaced(&self) -> bool {
+        self.size == [0.0, 0.0]
+    }
+}
+
+/// What a node puts on the Desk: itself, its snapshot list, or both. Lives on
+/// the node, so it follows the node between levels.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct DeskItem {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub node: Option<DeskRect>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub snapshots: Option<DeskRect>,
+}
+
+impl DeskItem {
+    pub fn is_empty(&self) -> bool {
+        self.node.is_none() && self.snapshots.is_none()
+    }
+
+    /// `slot` with `f` applied, and an item that holds nothing dropped.
+    pub fn edit(slot: &mut Option<DeskItem>, f: impl FnOnce(&mut DeskItem)) {
+        let mut item = slot.take().unwrap_or_default();
+        f(&mut item);
+        *slot = (!item.is_empty()).then_some(item);
+    }
+}
+
+impl PanelItem {
+    /// Put the whole node on the panel, or take it off (single settings stay).
+    pub fn set_whole(slot: &mut Option<PanelItem>, on: bool) {
+        let mut item = slot.take().unwrap_or(PanelItem { order: PANEL_LAST, whole: false, params: Vec::new() });
+        item.whole = on;
+        *slot = (!item.is_empty()).then_some(item);
+    }
+
+    /// Put one setting on the panel, or take it off.
+    pub fn set_param(slot: &mut Option<PanelItem>, name: &str, on: bool) {
+        let mut item = slot.take().unwrap_or(PanelItem { order: PANEL_LAST, whole: false, params: Vec::new() });
+        item.params.retain(|p| p != name);
+        if on {
+            item.params.push(name.to_string());
+        }
+        *slot = (!item.is_empty()).then_some(item);
+    }
+
+    pub fn is_empty(&self) -> bool {
+        !self.whole && self.params.is_empty()
     }
 }
 
@@ -371,6 +498,13 @@ pub enum EngineCommand {
         subgraph_path: Vec<NodeId>,
         command: Box<SubgraphInnerCmd>,
     },
+    /// Run the node as `extra.len() + 1` lanes. `extra` are freshly made nodes
+    /// of the same type (the engine does not construct nodes); the engine keeps
+    /// the copies it already has and starts new ones as copies of lane 0.
+    SetLanes {
+        node_id: NodeId,
+        extra: Vec<Box<dyn ProcessNode>>,
+    },
 }
 
 /// Commands for a subgraph's inner graph (routed via SubgraphInnerCommand).
@@ -394,6 +528,10 @@ pub enum SubgraphInnerCmd {
     NotifyDisconnect {
         node_id: NodeId,
         input_port: usize,
+    },
+    SetLanes {
+        node_id: NodeId,
+        extra: Vec<Box<dyn ProcessNode>>,
     },
 }
 
@@ -432,6 +570,21 @@ pub trait ProcessNode: Send {
     /// reshapes the node's ports or buffers, and ones already served by a
     /// native input port.
     fn non_promotable_params(&self) -> &'static [&'static str] { &[] }
+
+    /// How many lanes the graph may run this node at. A node that gets a bus
+    /// on a plain input is run as that many copies (`engine::lanes`); one that
+    /// makes no sense as copies (hardware, effects, subgraphs, controls, the
+    /// bus tools) says 1 and a bus into it is refused. The UI reads the same
+    /// answer, through the registry, so the two cannot disagree.
+    fn max_lanes(&self) -> usize { MAX_LANES }
+
+    /// Top-level keys of `save_data` that hold what the node is doing right
+    /// now (a count, a latched state, a held value) rather than how it is set
+    /// up. In a linked subgraph these belong to each instance; every other key
+    /// follows the definition. A control's value (a fader's position, a
+    /// button's latch) is the user's setting, not running state: it follows the
+    /// definition unless the control is on the front panel.
+    fn running_state_keys(&self) -> &'static [&'static str] { &[] }
 
     /// Float params, by name, whose input port passes any value through
     /// instead of clamping it to the slider's range: the slider is for the

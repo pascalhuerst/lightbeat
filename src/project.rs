@@ -3,9 +3,10 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 
 use crate::engine::nodes::meta::subgraph::{BRIDGE_IN_NODE_ID, BRIDGE_OUT_NODE_ID};
-use crate::engine::types::{NodeId, ParamDef, ParamValue, PortDir, PortId, PromotedParam, SnapshotSet};
+use crate::engine::types::{DeskItem, NodeId, PanelItem, ParamDef, ParamValue, PortDir, PortId, PromotedParam, SnapshotSet};
 use crate::migrate::project::SCHEMA;
 use crate::migrate::Migration;
+use crate::widgets::nodes::desk::DeskDoc;
 use crate::widgets::nodes::{GraphLevel, NodeGraph};
 
 // ---------------------------------------------------------------------------
@@ -31,6 +32,10 @@ pub struct ProjectFile {
     /// (subgraph) levels — only the root level carries view state.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub view: Option<ProjectViewState>,
+    /// The Desk's pages and lock flag. Root level only, like `view`; where
+    /// each node sits is on the node (`SavedNode::desk`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub desk: Option<DeskDoc>,
     /// Canvas position of the Graph Input bridge pseudo-node inside a
     /// subgraph level. Not persisted via the `nodes` vec — bridges are
     /// auto-reconstructed on navigate_into, but their positions are
@@ -91,6 +96,16 @@ pub struct SavedNode {
     /// Show only the wired ports.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub hide_unused_ports: bool,
+    /// What the node puts on its subgraph's front panel.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub panel: Option<PanelItem>,
+    /// Where the node sits on the Desk.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub desk: Option<DeskItem>,
+    /// Identity of the node inside a linked subgraph definition: instances
+    /// carry the same value for "the same" node (`linked.rs`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub def_node: Option<u64>,
     /// Named sets of the node's settings (see `engine::snapshots`).
     #[serde(default, skip_serializing_if = "SnapshotSet::is_empty")]
     pub snapshots: SnapshotSet,
@@ -128,12 +143,46 @@ impl SavedParamValue {
     }
 }
 
-#[derive(Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SavedConnection {
     pub from_node: u64,
     pub from_port: usize,
     pub to_node: u64,
     pub to_port: usize,
+}
+
+/// A saved param as the value to write to the node: the declared kind decides
+/// how it is read, since the file keeps a number as a number.
+pub fn saved_param_value(declared: Option<&ParamDef>, sp: &SavedParam) -> ParamValue {
+    if let Some(decl) = declared {
+        match decl {
+            ParamDef::Float { .. } => ParamValue::Float(sp.value.as_f64() as f32),
+            ParamDef::Int { .. } => ParamValue::Int(sp.value.as_f64() as i64),
+            ParamDef::Bool { .. } => ParamValue::Bool(sp.value.as_f64() != 0.0),
+            ParamDef::Choice { .. } => ParamValue::Choice(sp.value.as_f64() as usize),
+        }
+    } else {
+        match &sp.value {
+            SavedParamValue::Float(v) => ParamValue::Float(*v as f32),
+            SavedParamValue::Int(v) => ParamValue::Int(*v),
+            SavedParamValue::Bool(v) => ParamValue::Bool(*v),
+            SavedParamValue::Choice(v) => ParamValue::Choice(*v),
+        }
+    }
+}
+
+pub fn frames_from_saved(frames: &[SavedFrame]) -> Vec<crate::widgets::nodes::graph::GraphFrame> {
+    frames
+        .iter()
+        .map(|sf| crate::widgets::nodes::graph::GraphFrame {
+            id: sf.id,
+            title: sf.title.clone(),
+            color: egui::Color32::from_rgba_unmultiplied(sf.color[0], sf.color[1], sf.color[2], sf.color[3]),
+            notes: sf.notes.clone(),
+            pos: egui::pos2(sf.pos[0], sf.pos[1]),
+            size: egui::vec2(sf.size[0], sf.size[1]),
+        })
+        .collect()
 }
 
 /// Rewrite every `NodeId` inside `project` to a freshly allocated id.
@@ -197,9 +246,13 @@ pub fn save_level(level: &GraphLevel, graph: &NodeGraph) -> ProjectFile {
         let disabled = shared.disabled;
         let promoted = shared.promoted.clone();
         let hide_unused_ports = shared.hide_unused_ports;
+        let panel = shared.panel.clone();
+        let desk = shared.desk.clone();
+        let def_node = shared.def_node;
         let mut snapshots = shared.snapshots.clone();
         snapshots.active = shared.snapshot_active.or(snapshots.active);
         drop(shared);
+        let data = node.live_data().or(data);
 
         // For Subgraph nodes, recursively save the inner level.
         let inner_graph = if node.type_name() == "Subgraph" {
@@ -221,6 +274,9 @@ pub fn save_level(level: &GraphLevel, graph: &NodeGraph) -> ProjectFile {
             disabled,
             promoted,
             hide_unused_ports,
+            panel,
+            desk,
+            def_node,
             snapshots,
         });
     }
@@ -269,6 +325,7 @@ pub fn save_level(level: &GraphLevel, graph: &NodeGraph) -> ProjectFile {
         connections,
         frames,
         view: None,
+        desk: None,
         bridge_in_pos,
         bridge_out_pos,
     }
@@ -276,7 +333,21 @@ pub fn save_level(level: &GraphLevel, graph: &NodeGraph) -> ProjectFile {
 
 pub fn save_graph(graph: &NodeGraph) -> ProjectFile {
     // Always save the root level, regardless of which level is active.
-    save_level(graph.root_level(), graph)
+    let mut project = save_level(graph.root_level(), graph);
+    project.desk = Some(graph.desk().clone()).filter(|d| !d.is_default());
+    project
+}
+
+/// Take the Desk placements out of a level and everything below it: a copy of
+/// a node (duplicate, paste, a macro) is not on the Desk, or two items would
+/// sit on top of each other.
+pub fn strip_desk(project: &mut ProjectFile) {
+    for n in &mut project.nodes {
+        n.desk = None;
+        if let Some(inner) = n.inner_graph.as_mut() {
+            strip_desk(inner);
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -289,6 +360,9 @@ pub fn save_graph(graph: &NodeGraph) -> ProjectFile {
 /// this build.
 pub fn load_graph(graph: &mut NodeGraph, project: &ProjectFile) -> Vec<usize> {
     let mut indices = Vec::new();
+    if let Some(desk) = &project.desk {
+        graph.set_desk(desk.clone());
+    }
     for saved in &project.nodes {
         let id = NodeId(saved.id);
         if let Some(node) = graph.create_from_registry(&saved.type_name, id) {
@@ -308,28 +382,15 @@ pub fn load_graph(graph: &mut NodeGraph, project: &ProjectFile) -> Vec<usize> {
                 };
                 let mut shared = n.shared_state().lock();
                 for sp in &saved.params {
-                    let val = if let Some(decl) = declared.get(sp.index) {
-                        match decl {
-                            ParamDef::Float { .. } => ParamValue::Float(sp.value.as_f64() as f32),
-                            ParamDef::Int { .. } => ParamValue::Int(sp.value.as_f64() as i64),
-                            ParamDef::Bool { .. } => ParamValue::Bool(sp.value.as_f64() != 0.0),
-                            ParamDef::Choice { .. } => {
-                                ParamValue::Choice(sp.value.as_f64() as usize)
-                            }
-                        }
-                    } else {
-                        match &sp.value {
-                            SavedParamValue::Float(v) => ParamValue::Float(*v as f32),
-                            SavedParamValue::Int(v) => ParamValue::Int(*v),
-                            SavedParamValue::Bool(v) => ParamValue::Bool(*v),
-                            SavedParamValue::Choice(v) => ParamValue::Choice(*v),
-                        }
-                    };
+                    let val = saved_param_value(declared.get(sp.index), sp);
                     shared.pending_params.push((sp.index, val.clone()));
                     restore_params.push((sp.index, val));
                 }
                 shared.disabled = saved.disabled;
                 shared.hide_unused_ports = saved.hide_unused_ports;
+                shared.panel = saved.panel.clone();
+                shared.desk = saved.desk.clone();
+                shared.def_node = saved.def_node;
                 // Set before connections are restored so the extra ports exist.
                 let promoted = saved.promoted.clone();
                 shared.promoted = promoted.clone();
@@ -418,19 +479,7 @@ pub fn load_graph(graph: &mut NodeGraph, project: &ProjectFile) -> Vec<usize> {
     // user's frames there would silently discard them on every macro drop.
     if !project.frames.is_empty() {
         let target = graph.frames_mut();
-        target.clear();
-        for sf in &project.frames {
-            target.push(crate::widgets::nodes::graph::GraphFrame {
-                id: sf.id,
-                title: sf.title.clone(),
-                color: egui::Color32::from_rgba_unmultiplied(
-                    sf.color[0], sf.color[1], sf.color[2], sf.color[3],
-                ),
-                notes: sf.notes.clone(),
-                pos: egui::pos2(sf.pos[0], sf.pos[1]),
-                size: egui::vec2(sf.size[0], sf.size[1]),
-            });
-        }
+        *target = frames_from_saved(&project.frames);
     }
     // Bump the id counter past any restored frame ids so freshly added
     // frames don't collide.

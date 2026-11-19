@@ -40,7 +40,7 @@ impl NodeGraph {
         // Find hit port (try input first, then output).
         let hit = {
             let level = self.active();
-            let mut found: Option<(PortId, String, PortType, usize)> = None;
+            let mut found: Option<(PortId, String, PortType, usize, usize)> = None;
             'outer: for i in 0..level.nodes.len() {
                 if i >= node_rects.len() { break; }
                 let rect = node_rects[i];
@@ -50,7 +50,7 @@ impl NodeGraph {
                 let mut base = 0usize;
                 for (pi, up) in inputs.iter().enumerate() {
                     if level.nodes[i].is_port_hidden(PortDir::Input, pi) {
-                        base += up.def.port_type.channel_count();
+                        base += up.def.channels();
                         continue;
                     }
                     let pos = level.nodes[i].port_pos(rect, PortDir::Input, pi, z);
@@ -60,16 +60,17 @@ impl NodeGraph {
                             up.def.name.clone(),
                             up.def.port_type,
                             base,
+                            up.def.lanes,
                         ));
                         break 'outer;
                     }
-                    base += up.def.port_type.channel_count();
+                    base += up.def.channels();
                 }
                 let outputs = level.nodes[i].ui_outputs();
                 let mut base = 0usize;
                 for (pi, up) in outputs.iter().enumerate() {
                     if level.nodes[i].is_port_hidden(PortDir::Output, pi) {
-                        base += up.def.port_type.channel_count();
+                        base += up.def.channels();
                         continue;
                     }
                     let pos = level.nodes[i].port_pos(rect, PortDir::Output, pi, z);
@@ -79,16 +80,17 @@ impl NodeGraph {
                             up.def.name.clone(),
                             up.def.port_type,
                             base,
+                            up.def.lanes,
                         ));
                         break 'outer;
                     }
-                    base += up.def.port_type.channel_count();
+                    base += up.def.channels();
                 }
             }
             found
         };
 
-        let Some((port_id, port_name, port_type, channel_base)) = hit else {
+        let Some((port_id, port_name, port_type, channel_base, native_lanes)) = hit else {
             self.hover_port = None;
             self.hover_samples.clear();
             return;
@@ -109,6 +111,25 @@ impl NodeGraph {
             self.hover_port = Some(port_id);
             self.hover_samples.clear();
         }
+
+        // A bus port has its lanes side by side; a laned node shows the lane
+        // its inspector says. Either way the scope and the numbers are that one.
+        let widths = &self.active().bus.widths;
+        let lanes = if native_lanes > 1 {
+            native_lanes
+        } else if port_id.dir == PortDir::Output {
+            widths.of_node(port_id.node)
+        } else {
+            widths.of_wire(port_id)
+        };
+        let view_lane = if lanes > 1 {
+            let level = self.active();
+            level.states.iter().position(|s| s.id == port_id.node)
+                .map_or(0, |i| level.nodes[i].shared_state().lock().view_lane.min(lanes - 1))
+        } else {
+            0
+        };
+        let channel_base = if native_lanes > 1 { channel_base + view_lane * port_type.channel_count() } else { channel_base };
 
         // Read all channels of this port's current value from shared state.
         let values: Vec<f32> = {
@@ -175,6 +196,10 @@ impl NodeGraph {
                         },
                     );
                 });
+                if lanes > 1 {
+                    ui.colored_label(theme::LANE_BADGE, format!("{lanes} lanes"));
+                    ui.colored_label(theme::TEXT_DIM, format!("showing lane {}", view_lane + 1));
+                }
                 match port_type {
                     PortType::Color => {
                         ui.label(format!("RGB {:.2} {:.2} {:.2}",
@@ -299,6 +324,43 @@ impl NodeGraph {
         }
     }
 
+    /// The pointer when it can mean a wire: not over a node, a panel or during
+    /// any drag, since a wire behind a node is not what the user points at.
+    pub(super) fn wire_pointer(
+        &self,
+        ui: &Ui,
+        response: &egui::Response,
+        node_rects: &[Rect],
+    ) -> Option<Pos2> {
+        let busy = self.drag.drawing_conn.is_some()
+            || self.drag.dragging_nodes
+            || self.drag.resizing_node.is_some()
+            || self.drag.panning
+            || self.frame_drag.is_some()
+            || self.drag.selection_rect_start.is_some();
+        if busy || ui.ctx().is_pointer_over_area() || !response.contains_pointer() {
+            return None;
+        }
+        let pointer = ui.input(|i| i.pointer.hover_pos())?;
+        (!node_rects.iter().any(|r| r.contains(pointer))).then_some(pointer)
+    }
+
+    /// Index of the wire nearest to `pointer` within the click tolerance, from
+    /// the endpoints already looked up for this frame.
+    pub(super) fn wire_at(&self, pointer: Pos2, ends: &[Option<WireEnds>]) -> Option<usize> {
+        let tolerance = (6.0 * self.active().zoom).max(4.0);
+        let mut best: Option<(f32, usize)> = None;
+        for (i, e) in ends.iter().enumerate() {
+            let Some(e) = e else { continue };
+            if !wire_hull(e.from, e.to, tolerance).contains(pointer) { continue; }
+            let d = point_to_polyline_distance(pointer, &bezier_sample(e.from, e.to, 20));
+            if d <= tolerance && best.is_none_or(|(db, _)| d < db) {
+                best = Some((d, i));
+            }
+        }
+        best.map(|(_, i)| i)
+    }
+
     /// Return the connection whose bezier passes near `pointer_pos`, if
     /// any. Tolerance scales with zoom so hit-tests feel consistent at any
     /// zoom level.
@@ -399,6 +461,7 @@ impl NodeGraph {
             let dc_from_dir = dc.from.dir;
             let dc_from_type = dc.from_type;
             let dc_from_node = dc.from.node;
+            let dc_from_port = dc.from;
 
             let level = self.active();
             let mut best_dist = MAGNETIC_RADIUS;
@@ -432,6 +495,11 @@ impl NodeGraph {
                     let pos = level.nodes[i].port_pos(node_rect, target_dir, pi, z);
                     let dist = pos.distance(pointer_pos);
                     if dist < best_dist {
+                        let candidate = make_port_id(level.states[i].id, target_dir, pi);
+                        let (from, to) = if dc_from_dir == PortDir::Output { (dc_from_port, candidate) } else { (candidate, dc_from_port) };
+                        if !self.wire_fits(from, to) {
+                            continue;
+                        }
                         best_dist = dist;
                         best_pos = pos;
                         best_target =
@@ -743,9 +811,15 @@ impl NodeGraph {
                     if double_clicked
                         && self.active().nodes[i].type_name() == "Subgraph"
                             && let Some(sub) = self.active_mut().nodes[i].as_any_mut().downcast_mut::<SubgraphWidget>()
-                                && !sub.locked {
+                                && !sub.locked
+                                && !sub.panel_contains(pointer_pos) {
                                     sub.wants_open = true;
                                 }
+                    // Double-click on a Portal Receive goes to its Send, the
+                    // wire that cannot be followed by eye.
+                    if double_clicked && self.active().nodes[i].type_name() == "Portal Receive" {
+                        self.pending_jump = self.link_peers_of(self.active_level, i).first().map(|p| p.node_id);
+                    }
 
                     let title_rect = title_bar_rect(node_rects[i], &self.active().nodes[i].layout(), z);
                     // Don't start a drag when modifier-clicking — the user is

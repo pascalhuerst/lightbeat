@@ -157,8 +157,12 @@ impl NodeWidget for FaderGroupWidget {
     }
     fn ui_outputs(&self) -> Vec<UiPortDef> {
         let ports = ports_for(self.rows, self.cols, self.any_input_enabled, self.any_output_enabled).1;
+        // The bus comes first and is never grayed out; the cells follow it.
         UiPortDef::from_defs(&ports).into_iter().enumerate()
-            .map(|(i, p)| p.with_disabled(!self.outputs_enabled.get(i).copied().unwrap_or(false)))
+            .map(|(i, p)| match i.checked_sub(1) {
+                None => p,
+                Some(cell) => p.with_disabled(!self.outputs_enabled.get(cell).copied().unwrap_or(false)),
+            })
             .collect()
     }
 
@@ -168,7 +172,8 @@ impl NodeWidget for FaderGroupWidget {
     fn resizable(&self) -> bool { true }
 
     fn output_highlight(&self, port_idx: usize, now: f64) -> f32 {
-        let last = self.last_edit_time.get(port_idx).copied().flatten();
+        // Port 0 is the bus.
+        let last = port_idx.checked_sub(1).and_then(|cell| self.last_edit_time.get(cell).copied().flatten());
         highlight_alpha(last, now, HIGHLIGHT_DURATION)
     }
     fn input_highlight(&self, port_idx: usize, now: f64) -> f32 {

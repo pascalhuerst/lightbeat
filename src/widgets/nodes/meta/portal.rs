@@ -8,7 +8,7 @@ use crate::engine::nodes::meta::subgraph::PORT_TYPE_NAMES;
 use crate::engine::types::*;
 use crate::widgets::setup_ui;
 use crate::theme;
-use crate::widgets::nodes::node::{NodeWidget, node_identity};
+use crate::widgets::nodes::node::{LinkJump, LinkedNode, NodeWidget, node_identity};
 use crate::widgets::nodes::types::UiPortDef;
 
 /// Index into `PORT_TYPE_NAMES` of the plain number type, which a new port starts as.
@@ -27,6 +27,7 @@ pub struct PortalSendWidget {
     /// Set when a port is removed from the middle of the list, for the graph to
     /// move the wires after it.
     removed: Option<usize>,
+    links: LinkJump,
 }
 
 impl PortalSendWidget {
@@ -39,6 +40,7 @@ impl PortalSendWidget {
             port_defs: vec![PortalPortDef { name: "in 1".into(), port_type_idx: DEFAULT_PORT_TYPE }],
             conflict: false,
             removed: None,
+            links: LinkJump::default(),
         };
         w.push_config();
         w
@@ -89,6 +91,8 @@ impl NodeWidget for PortalSendWidget {
     fn take_removed_port(&mut self) -> Option<(PortDir, usize)> {
         self.removed.take().map(|i| (PortDir::Input, i))
     }
+    fn set_link_peers(&mut self, peers: Vec<LinkedNode>) { self.links.set_peers(peers); }
+    fn take_jump(&mut self) -> Option<NodeId> { self.links.take() }
 
     fn min_width(&self) -> f32 { 160.0 }
     fn min_content_height(&self) -> f32 { 18.0 }
@@ -157,6 +161,7 @@ impl NodeWidget for PortalSendWidget {
             changed = true;
         }
         if changed { self.push_config(); }
+        self.links.show(ui, "Receives");
     }
 
     fn show_port_labels(&self) -> bool { true }
@@ -173,11 +178,12 @@ pub struct PortalReceiveWidget {
     bound_name: String,
     port_defs: Vec<PortalPortDef>,
     connected: bool,
+    links: LinkJump,
 }
 
 impl PortalReceiveWidget {
     pub fn new(id: NodeId, shared: SharedState, registry: SharedPortalRegistry) -> Self {
-        Self { id, shared, registry, bound_name: String::new(), port_defs: Vec::new(), connected: false }
+        Self { id, shared, registry, bound_name: String::new(), port_defs: Vec::new(), connected: false, links: LinkJump::default() }
     }
 
     pub fn bound_name(&self) -> &str { &self.bound_name }
@@ -220,6 +226,9 @@ impl NodeWidget for PortalReceiveWidget {
         self.bound_name = name.to_string();
         self.push_config();
     }
+
+    fn set_link_peers(&mut self, peers: Vec<LinkedNode>) { self.links.set_peers(peers); }
+    fn take_jump(&mut self) -> Option<NodeId> { self.links.take() }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> { vec![] }
     fn ui_outputs(&self) -> Vec<UiPortDef> {
@@ -273,6 +282,7 @@ impl NodeWidget for PortalReceiveWidget {
         } else if !self.connected {
             ui.colored_label(theme::SEM_WARNING, "No Portal Send publishes this name.");
         }
+        self.links.show(ui, "Portal Send");
     }
 
     fn show_port_labels(&self) -> bool { true }

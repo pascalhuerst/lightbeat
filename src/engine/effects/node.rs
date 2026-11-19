@@ -114,6 +114,8 @@ impl<E: EffectKind> Drop for EffectNode<E> {
 }
 
 impl<E: EffectKind> ProcessNode for EffectNode<E> {
+    fn max_lanes(&self) -> usize { 1 }
+
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { self.kind.type_name() }
     fn inputs(&self) -> &[PortDef] { &self.inputs }
