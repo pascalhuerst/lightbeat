@@ -23,8 +23,11 @@ pub(super) struct DeskUi {
     renaming: Option<Renaming>,
     confirm_delete: Option<u64>,
     /// The right-click menu: the node it is for and where it sits.
-    menu: Option<(NodeId, Pos2)>,
+    pub menu: Option<(NodeId, Pos2)>,
     drag: Option<ItemDrag>,
+    /// Where the items of the page were drawn this frame, bottom to top:
+    /// their title strip and their whole rectangle on screen.
+    pub shown: Vec<(NodeId, Rect, Rect)>,
 }
 
 struct Renaming {
@@ -80,6 +83,7 @@ impl NodeGraph {
 
         let page = self.current_desk_page();
         let items: Vec<DeskEntry> = entries.into_iter().filter(|e| Some(e.page) == page).collect();
+        self.desk_ui.shown.clear();
         let mut opened_menu = false;
         egui::ScrollArea::both().auto_shrink([false, false]).drag_to_scroll(false).show(ui, |ui| {
             let rects: Vec<Rect> = items.iter().map(|e| e.rect).collect();
@@ -106,9 +110,9 @@ impl NodeGraph {
             if !locked
                 && let Some(p) = right_click
                 && ui.rect_contains_pointer(canvas)
-                && let Some(hit) = items.iter().rev().find(|e| e.rect.translate(canvas.min.to_vec2()).contains(p))
+                && let Some((id, _, _)) = self.desk_ui.shown.iter().rev().find(|(_, _, item)| item.contains(p))
             {
-                self.desk_ui.menu = Some((hit.id, p));
+                self.desk_ui.menu = Some((*id, p));
                 opened_menu = true;
             }
         });
@@ -138,6 +142,7 @@ impl NodeGraph {
             layout.title_h,
         );
         let (strip, cell) = geometry::strip_and_cell(item, layout.title_h);
+        self.desk_ui.shown.push((e.id, strip, item));
 
         {
             let painter = ui.painter().with_clip_rect(view);
@@ -202,6 +207,8 @@ impl NodeGraph {
         let mut add = false;
         let mut shift: Option<(u64, bool)> = None;
         let mut delete = None;
+        let mut toggle_lock = false;
+        let mut fullscreen = false;
         ui.horizontal(|ui| {
             for (n, page) in pages.iter().enumerate() {
                 if let Some(r) = self.desk_ui.renaming.as_mut().filter(|r| r.page == page.id) {
@@ -243,7 +250,28 @@ impl NodeGraph {
             if !locked && setup_ui::add_button(ui, "Page") {
                 add = true;
             }
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                let on_screen = ui.ctx().input(|i| i.viewport().fullscreen.unwrap_or(false));
+                let (glyph, hover) = if on_screen { (icon::ARROWS_IN, "Leave full screen (F11)") } else { (icon::ARROWS_OUT, "Full screen (F11)") };
+                fullscreen = ui.button(glyph).on_hover_text(hover).clicked();
+                let (glyph, hover) = if locked {
+                    (icon::LOCK, "Unlock: items can be moved and edited again")
+                } else {
+                    (icon::LOCK_OPEN, "Lock: only playing, no moving, resizing or editing")
+                };
+                toggle_lock = ui.selectable_label(locked, format!("{glyph} Lock")).on_hover_text(hover).clicked();
+            });
         });
+        if toggle_lock {
+            self.desk.locked = !locked;
+            self.desk_ui.renaming = None;
+            self.desk_ui.menu = None;
+            self.desk_ui.drag = None;
+            self.desk_ui.confirm_delete = None;
+        }
+        if fullscreen {
+            geometry::toggle_fullscreen(ui.ctx());
+        }
 
         if let Some(id) = select {
             self.desk_ui.page = Some(id);

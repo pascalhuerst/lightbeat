@@ -12,7 +12,7 @@ use crate::app::macros::MacroDragPayload;
 use crate::app::files::PendingAction;
 use crate::app::undo::UndoDoc;
 use crate::app::shortcuts;
-use crate::app::view::View;
+use crate::app::view::{View, add_nodes_panel_allowed, inspector_allowed};
 use crate::app::panels::{NodeDragPayload, FrameDragPayload, show_frame_inspector, show_frames_colour_inspector};
 use std::path::PathBuf;
 use eframe::egui;
@@ -40,7 +40,7 @@ impl LightBeatApp {
         self.input_controllers.reap_lost_sessions();
 
         // "Add Nodes" side panel (left) — unified node-registry + macro library.
-        if self.show_add_nodes && self.view == View::Patch {
+        if self.show_add_nodes && add_nodes_panel_allowed(self.view) {
             egui::SidePanel::left("add_nodes_panel")
                 .default_width(220.0)
                 .show(ctx, |ui| {
@@ -572,7 +572,7 @@ impl LightBeatApp {
         let frame_selected_count = self.graph.selected_frame_ids().count();
         let has_selection = !self.graph.selected_nodes_mut().is_empty()
             || frame_selected_count > 0;
-        let show_inspector = self.view == View::Patch || !self.graph.desk().locked;
+        let show_inspector = inspector_allowed(self.view, self.graph.desk().locked);
         let show_inspector = show_inspector && match self.config.inspector_mode {
             InspectorMode::Show => true,
             InspectorMode::Hide => false,
@@ -889,6 +889,9 @@ impl LightBeatApp {
         }
         if self.view == View::Patch && ctx.input(|i| i.modifiers.command && !i.modifiers.shift && i.key_pressed(egui::Key::F)) {
             self.graph.open_find();
+        }
+        if ctx.input(|i| i.key_pressed(egui::Key::F11)) {
+            widgets::nodes::desk::toggle_fullscreen(ctx);
         }
         if !typing && ctx.input(|i| i.modifiers.is_none() && i.key_pressed(egui::Key::Tab)) {
             self.toggle_view();

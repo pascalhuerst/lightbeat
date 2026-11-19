@@ -447,6 +447,127 @@ mod tests {
         assert_eq!(g.desk().pages.len(), 1);
     }
 
+    /// A pointer driving the Desk frame by frame, as a window would deliver it.
+    struct Pointer {
+        ctx: egui::Context,
+        time: f64,
+        at: Pos2,
+    }
+
+    impl Pointer {
+        fn new() -> Self {
+            Pointer { ctx: egui::Context::default(), time: 0.0, at: Pos2::new(1.0, 1.0) }
+        }
+
+        fn frame(&mut self, g: &mut NodeGraph, events: Vec<egui::Event>) {
+            self.time += 0.05;
+            let input = egui::RawInput { time: Some(self.time), events, ..Default::default() };
+            let _ = self.ctx.run(input, |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    g.show_desk(ui);
+                });
+            });
+        }
+
+        fn go(&mut self, g: &mut NodeGraph, to: Pos2) {
+            self.at = to;
+            self.frame(g, vec![egui::Event::PointerMoved(to)]);
+        }
+
+        fn button(&mut self, g: &mut NodeGraph, button: egui::PointerButton, pressed: bool) {
+            let event = egui::Event::PointerButton { pos: self.at, button, pressed, modifiers: egui::Modifiers::NONE };
+            self.frame(g, vec![event]);
+        }
+
+        /// Press at `from`, drag by `by` in a few steps and let go.
+        fn drag(&mut self, g: &mut NodeGraph, from: Pos2, by: Vec2) {
+            self.go(g, from);
+            self.button(g, egui::PointerButton::Primary, true);
+            for step in 1..=4 {
+                self.go(g, from + by * (step as f32 / 4.0));
+            }
+            self.button(g, egui::PointerButton::Primary, false);
+        }
+
+        fn right_click(&mut self, g: &mut NodeGraph, at: Pos2) {
+            self.go(g, at);
+            self.button(g, egui::PointerButton::Secondary, true);
+            self.button(g, egui::PointerButton::Secondary, false);
+        }
+    }
+
+    /// The root node 1 on page 7, drawn once so that its place on screen is known.
+    fn drawn() -> (NodeGraph, Pointer, Rect, Rect) {
+        let mut g = loaded();
+        g.desk_ui.page = Some(7);
+        let mut p = Pointer::new();
+        p.frame(&mut g, vec![]);
+        let (_, strip, item) = *g.desk_ui.shown.iter().find(|(id, _, _)| *id == NodeId(1)).expect("drawn");
+        (g, p, strip, item)
+    }
+
+    fn rect_of_node_1(g: &NodeGraph) -> Rect {
+        let r = g.levels[0].nodes[0].shared_state().lock().desk.clone().unwrap().node.unwrap();
+        crate::widgets::nodes::desk::rect_of(&r)
+    }
+
+    #[test]
+    fn dragging_the_title_moves_an_item_on_the_grid() {
+        let (mut g, mut p, strip, _) = drawn();
+        g.desk.locked = false;
+        let before = rect_of_node_1(&g);
+        p.drag(&mut g, strip.center(), Vec2::new(47.0, 33.0));
+        let after = rect_of_node_1(&g);
+        assert_eq!(after.size(), before.size(), "a move does not resize");
+        assert_eq!(after.min, Pos2::new(60.0, 80.0), "from (20, 40) by (47, 33), snapped");
+    }
+
+    #[test]
+    fn dragging_the_corner_resizes_an_item_on_the_grid() {
+        let (mut g, mut p, _, item) = drawn();
+        g.desk.locked = false;
+        let before = rect_of_node_1(&g);
+        p.drag(&mut g, item.max - Vec2::splat(4.0), Vec2::new(80.0, 60.0));
+        let after = rect_of_node_1(&g);
+        assert_eq!(after.min, before.min);
+        assert!(after.width() > before.width() && after.height() > before.height(), "{before:?} -> {after:?}");
+        assert_eq!((after.width() % 20.0, after.height() % 20.0), (0.0, 0.0));
+    }
+
+    #[test]
+    fn a_locked_desk_cannot_move_or_resize_or_open_the_menu() {
+        let (mut g, mut p, strip, item) = drawn();
+        assert!(g.desk().locked, "the project was saved locked");
+        let before = rect_of_node_1(&g);
+        p.drag(&mut g, strip.center(), Vec2::new(47.0, 33.0));
+        p.drag(&mut g, item.max - Vec2::splat(4.0), Vec2::new(80.0, 60.0));
+        assert_eq!(rect_of_node_1(&g), before);
+        p.right_click(&mut g, item.center());
+        assert!(g.desk_ui.menu.is_none());
+        p.frame(&mut g, vec![]);
+        assert!(g.desk().locked);
+    }
+
+    #[test]
+    fn right_clicking_an_item_of_an_unlocked_desk_opens_its_menu() {
+        let (mut g, mut p, _, item) = drawn();
+        g.desk.locked = false;
+        p.right_click(&mut g, item.center());
+        assert_eq!(g.desk_ui.menu.map(|m| m.0), Some(NodeId(1)));
+        g.remove_from_desk(NodeId(1));
+        assert!(entries(&g).iter().all(|e| e.0 != 1));
+    }
+
+    #[test]
+    fn a_jump_asked_for_on_the_desk_opens_the_node_and_asks_for_the_patch() {
+        let mut g = loaded();
+        g.pending_jump = Some(NodeId(3));
+        let outcome = frame(&mut g);
+        assert!(outcome.to_patch);
+        assert_eq!(g.active_level, inner_level(&g));
+        assert_eq!(g.selected_nodes.len(), 1);
+    }
+
     #[test]
     fn pages_are_named_by_id() {
         let doc: DeskDoc = serde_json::from_str(r#"{"pages": [{"id": 3, "name": "A"}]}"#).unwrap();

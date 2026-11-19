@@ -192,6 +192,12 @@ pub fn default_size(cell_min: Vec2, title_h: f32) -> Vec2 {
     snap_size(min, min)
 }
 
+/// Put the window in or out of full screen, so that the Desk has all of it.
+pub fn toggle_fullscreen(ctx: &egui::Context) {
+    let on = ctx.input(|i| i.viewport().fullscreen.unwrap_or(false));
+    ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(!on));
+}
+
 /// Room the page needs, for the scroll area.
 pub fn extent(rects: &[Rect]) -> Vec2 {
     rects.iter().fold(Vec2::ZERO, |m, r| Vec2::new(m.x.max(r.max.x), m.y.max(r.max.y)))
