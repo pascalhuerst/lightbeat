@@ -444,7 +444,15 @@ impl NodeGraph {
         if let Some([x, y]) = new.bridge_out_pos {
             self.set_node_pos(BRIDGE_OUT_NODE_ID, Pos2::new(x, y));
         }
+        // Loading nested subgraphs navigates, which clears what the user has
+        // selected and any drag; on a level the user is not on, those are
+        // theirs to keep.
+        let user_state = (level != before).then(|| (std::mem::take(&mut self.selected_nodes), std::mem::take(&mut self.drag)));
         let loaded = project::load_graph(self, new);
+        if let Some((selected, drag)) = user_state {
+            self.selected_nodes = selected;
+            self.drag = drag;
+        }
         // What the engine will say once it has caught up; saved forms read
         // before that would otherwise lack the data.
         for (saved, idx) in new.nodes.iter().zip(loaded.iter()) {

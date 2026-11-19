@@ -478,6 +478,32 @@ fn an_instance_inside_a_subgraph_inside_another_instance_follows_its_own_definit
     assert_eq!(g.instance_counts()[&def(&g)], 2);
 }
 
+#[test]
+fn rebuilding_a_sibling_keeps_the_selection_and_the_drag_of_the_level_the_user_is_on() {
+    let mut g = with_two_instances();
+    // The definition contains a nested subgraph, which the rebuild has to navigate into.
+    let outer = g.level_of_subgraph(NodeId(1)).unwrap();
+    g.active_level = outer;
+    let nested = g.alloc_id();
+    let node = g.create_from_registry("Subgraph", nested).unwrap();
+    let at = g.add_node(node, Pos2::ZERO);
+    g.navigate_into_by_index(at);
+    add_const_inside(&mut g, nested.0);
+    g.active_level = 0;
+    let base = project::save_graph(&g);
+    sync(&mut g, &base);
+    // The user is on the root with the first instance selected and a drag going.
+    let base = project::save_graph(&g);
+    add_const_inside(&mut g, 1);
+    g.selected_nodes = vec![0];
+    g.drag.dragging_nodes = true;
+    sync(&mut g, &base);
+    assert_eq!(inner_ids(&g, root_ids(&g)[1]).len(), 4, "the sibling was rebuilt with the new node");
+    assert_eq!(g.selected_nodes, vec![0]);
+    assert!(g.drag.dragging_nodes);
+    assert_eq!(g.active_level, 0);
+}
+
 fn input_ports(n: usize) -> Vec<serde_json::Value> {
     (0..n).map(|i| serde_json::json!({"name": format!("in {i}"), "port_type_idx": 2})).collect()
 }
