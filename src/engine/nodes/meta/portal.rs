@@ -396,6 +396,58 @@ mod tests {
     }
 
     #[test]
+    fn a_bus_into_a_send_comes_out_of_every_receive_as_wide() {
+        let reg: SharedPortalRegistry = Default::default();
+        let mut tx = send(1, &reg, "bus");
+        tx.load_data(&serde_json::json!({"lanes": [8]}));
+        assert_eq!(tx.inputs()[0].lanes, 8);
+        assert_eq!(total_channels(tx.inputs()), 8);
+        let mut receives: Vec<_> = (2..4)
+            .map(|id| {
+                let mut rx = PortalReceiveProcessNode::new(NodeId(id), reg.clone());
+                rx.load_data(&serde_json::json!({"bound_name": "bus"}));
+                rx
+            })
+            .collect();
+        for lane in 0..8 {
+            tx.write_input(lane, lane as f32 * 0.1);
+        }
+        tx.process();
+        for rx in &mut receives {
+            rx.process();
+            assert_eq!(rx.outputs()[0].lanes, 8, "the Receive takes the Send's width");
+            assert_eq!((rx.read_output(0), rx.read_output(7)), (0.0, 0.7));
+        }
+    }
+
+    #[test]
+    fn the_widths_are_not_part_of_what_is_saved() {
+        let reg: SharedPortalRegistry = Default::default();
+        let mut tx = send(1, &reg, "bus");
+        let saved = tx.save_data();
+        tx.load_data(&serde_json::json!({"lanes": [8]}));
+        assert_eq!(tx.save_data(), saved);
+    }
+
+    #[test]
+    fn a_receive_that_takes_a_wider_port_makes_the_routing_plan_look_again() {
+        use crate::engine::routing::RoutePlan;
+        let reg: SharedPortalRegistry = Default::default();
+        let mut tx = send(1, &reg, "bus");
+        let mut rx = PortalReceiveProcessNode::new(NodeId(2), reg.clone());
+        rx.load_data(&serde_json::json!({"bound_name": "bus"}));
+        tx.process();
+        rx.process();
+        let mut nodes: Vec<Box<dyn ProcessNode>> = vec![Box::new(rx)];
+        let plan = RoutePlan::build(&nodes, &[Vec::new()], &HashMap::from([(NodeId(2), 0)]), &[], &[Default::default()], &[], &[], None, None);
+        assert!(plan.is_current(&nodes, &[], &[]));
+        tx.load_data(&serde_json::json!({"lanes": [8]}));
+        tx.process();
+        nodes[0].process();
+        assert!(!plan.is_current(&nodes, &[], &[]), "same port count, more channels");
+    }
+
+    #[test]
     fn a_second_send_cannot_take_a_name() {
         let reg: SharedPortalRegistry = Default::default();
         let mut first = send(1, &reg, "bus");

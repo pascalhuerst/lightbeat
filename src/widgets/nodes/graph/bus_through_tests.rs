@@ -128,6 +128,32 @@ impl Rig {
         self.root.nodes[i].read_output(channel)
     }
 
+    /// Output `channel` of a node inside the subgraphs `path` names.
+    pub(super) fn read_at(&self, path: &[NodeId], node: NodeId, channel: usize) -> f32 {
+        use crate::engine::nodes::meta::subgraph::SubgraphProcessNode;
+        let mut graph = &self.root;
+        for id in path {
+            let i = graph.index_of(*id).expect("a subgraph on the path, after a tick");
+            graph = &graph.nodes[i].as_any().downcast_ref::<SubgraphProcessNode>().expect("a subgraph").inner;
+        }
+        graph.nodes[graph.index_of(node).expect("a node, after a tick")].read_output(channel)
+    }
+
+    /// A Portal Send (one number port) or Receive of a name, with the config
+    /// a load would have handed its engine half.
+    pub(super) fn portal(&mut self, send: bool, name: &str) -> NodeId {
+        let ports = serde_json::json!([{"name": "in 1", "port_type_idx": 2}]);
+        let (type_name, data) = if send {
+            ("Portal Send", serde_json::json!({"name": name, "ports": ports}))
+        } else {
+            ("Portal Receive", serde_json::json!({"bound_name": name, "ports": ports}))
+        };
+        let id = self.add_with(type_name, Some(&data), &[]);
+        let i = self.g.active().states.iter().position(|s| s.id == id).unwrap();
+        self.g.node_mut(i).shared_state().lock().pending_config = Some(data);
+        id
+    }
+
     pub(super) fn level(&self, sub: NodeId) -> usize {
         self.g.level_of_subgraph(sub).expect("an opened subgraph")
     }
@@ -275,6 +301,87 @@ fn nothing_about_widths_is_saved_and_a_loaded_project_derives_them_again() {
     assert_eq!(again.g.active_level_index(), 0, "the inner level was never open for this");
     assert_eq!(again.width(again.level(sub), inner), 8);
     assert_eq!(lane_values(&again, split, 8), PATTERN.to_vec());
+}
+
+/// A Receive of "bus" and a Split behind it in the open level.
+fn receive_into_split(r: &mut Rig) -> (NodeId, NodeId) {
+    let rx = r.portal(false, "bus");
+    let split = r.add("Bus Split", &[]);
+    r.wire((rx, 0), (split, 0));
+    (rx, split)
+}
+
+#[test]
+fn a_bus_through_a_portal_arrives_as_wide_on_every_level() {
+    let mut r = Rig::new();
+    let merge = source(&mut r, 8);
+    let send = r.portal(true, "bus");
+    let (root_rx, root_split) = receive_into_split(&mut r);
+    let x = r.subgraph(0, 0);
+    let y = r.subgraph(0, 0);
+    r.enter(x);
+    let (x_rx, x_split) = receive_into_split(&mut r);
+    r.up();
+    r.enter(y);
+    let (y_rx, y_split) = receive_into_split(&mut r);
+    r.up();
+    r.wire((merge, 0), (send, 0));
+    r.pump();
+    r.tick(60);
+
+    assert_eq!(r.outputs_of(0, root_rx), vec![8]);
+    assert_eq!(r.outputs_of(r.level(x), x_rx), vec![8]);
+    assert_eq!(r.outputs_of(r.level(y), y_rx), vec![8]);
+    assert_eq!(lane_values(&r, root_split, 8), PATTERN.to_vec());
+    let at = |path: &[NodeId], split| (0..8).map(|k| r.read_at(path, split, k)).collect::<Vec<_>>();
+    assert_eq!(at(&[x], x_split), PATTERN.to_vec());
+    assert_eq!(at(&[y], y_split), PATTERN.to_vec());
+    assert_eq!(r.g.levels[r.level(x)].connections.len(), 1, "the wire behind the Receive stayed");
+
+    // The wide source goes: every Receive is a single wire again.
+    r.g.remove_connection_to(inp(send, 0));
+    r.pump();
+    r.tick(20);
+    assert_eq!(r.outputs_of(0, root_rx), vec![1]);
+    assert_eq!(r.outputs_of(r.level(x), x_rx), vec![1]);
+    assert_eq!(r.outputs_of(r.level(y), y_rx), vec![1]);
+    assert_eq!(r.outputs_of(r.level(y), y_split).len(), 1);
+}
+
+#[test]
+fn a_portal_loop_with_no_source_stays_one_wide() {
+    // Send -> Receive -> (laned) Schmitt -> Send: nothing in it is wide.
+    let mut r = Rig::new();
+    let send = r.portal(true, "loop");
+    let rx = r.portal(false, "loop");
+    let schmitt = r.add("Schmitt Trigger", &[]);
+    r.wire((rx, 0), (schmitt, 0));
+    r.wire((schmitt, 0), (send, 0));
+    r.pump();
+    assert_eq!(r.outputs_of(0, rx), vec![1]);
+    assert_eq!(r.width(0, schmitt), 1);
+}
+
+#[test]
+fn a_bus_into_a_loop_through_a_portal_settles() {
+    // Merge(8) and a Receive both feed an Add laned to 8, which feeds the Send
+    // the Receive listens to. The loop takes the source's width and stays there.
+    let mut r = Rig::new();
+    let merge = source(&mut r, 8);
+    let send = r.portal(true, "loop");
+    let rx = r.portal(false, "loop");
+    let add = r.add("Add", &[]);
+    r.wire((merge, 0), (add, 0));
+    r.wire((rx, 0), (add, 1));
+    r.wire((add, 0), (send, 0));
+    r.pump();
+    assert_eq!((r.outputs_of(0, rx), r.width(0, add)), (vec![8], 8));
+    assert_eq!(r.g.levels[0].bus.widths.stale.len(), 0);
+
+    // Without the source the loop has nothing to hold it up.
+    r.g.remove_connection_to(inp(add, 0));
+    r.pump();
+    assert_eq!((r.outputs_of(0, rx), r.width(0, add)), (vec![1], 1));
 }
 
 /// Merge(8) -> Schmitt Trigger (run as lanes) -> Split, all at the root.
