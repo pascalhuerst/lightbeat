@@ -363,6 +363,10 @@ impl LightBeatApp {
                         self.save_settings();
                         ui.close_menu();
                     }
+                    if ui.checkbox(&mut self.config.collapse_parallel_wires, "Collapse parallel wires").changed() {
+                        self.save_settings();
+                        ui.close_menu();
+                    }
                     ui.separator();
                     ui.menu_button("Inspector", |ui| {
                         let mut changed = false;
@@ -762,6 +766,7 @@ impl LightBeatApp {
         // Node graph.
         let graph_started = std::time::Instant::now();
         egui::CentralPanel::default().show(ctx, |ui| {
+            self.graph.collapse_wires = self.config.collapse_parallel_wires;
             self.graph.show(ui, self.config.snap_to_grid);
         });
         self.ui_timers

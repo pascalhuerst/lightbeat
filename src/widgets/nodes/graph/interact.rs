@@ -299,16 +299,14 @@ impl NodeGraph {
         }
     }
 
-    /// Index of the wire under the pointer, for highlighting its run. Nothing
-    /// while the pointer is over a node, a panel or during any drag: a wire
-    /// behind a node is not what the user is pointing at.
-    pub(super) fn wire_under_pointer(
+    /// The pointer when it can mean a wire: not over a node, a panel or during
+    /// any drag, since a wire behind a node is not what the user points at.
+    pub(super) fn wire_pointer(
         &self,
         ui: &Ui,
         response: &egui::Response,
         node_rects: &[Rect],
-        ports: &PortCache,
-    ) -> Option<usize> {
+    ) -> Option<Pos2> {
         let busy = self.drag.drawing_conn.is_some()
             || self.drag.dragging_nodes
             || self.drag.resizing_node.is_some()
@@ -319,19 +317,18 @@ impl NodeGraph {
             return None;
         }
         let pointer = ui.input(|i| i.pointer.hover_pos())?;
-        if node_rects.iter().any(|r| r.contains(pointer)) {
-            return None;
-        }
-        let level = self.active();
-        let tolerance = (6.0 * level.zoom).max(4.0);
+        (!node_rects.iter().any(|r| r.contains(pointer))).then_some(pointer)
+    }
+
+    /// Index of the wire nearest to `pointer` within the click tolerance, from
+    /// the endpoints already looked up for this frame.
+    pub(super) fn wire_at(&self, pointer: Pos2, ends: &[Option<WireEnds>]) -> Option<usize> {
+        let tolerance = (6.0 * self.active().zoom).max(4.0);
         let mut best: Option<(f32, usize)> = None;
-        for (i, conn) in level.connections.iter().enumerate() {
-            let (Some(from_pos), Some(to_pos)) = (
-                ports.port_pos(node_rects, conn.from, level.zoom),
-                ports.port_pos(node_rects, conn.to, level.zoom),
-            ) else { continue };
-            if !wire_hull(from_pos, to_pos, tolerance).contains(pointer) { continue; }
-            let d = point_to_polyline_distance(pointer, &bezier_sample(from_pos, to_pos, 20));
+        for (i, e) in ends.iter().enumerate() {
+            let Some(e) = e else { continue };
+            if !wire_hull(e.from, e.to, tolerance).contains(pointer) { continue; }
+            let d = point_to_polyline_distance(pointer, &bezier_sample(e.from, e.to, 20));
             if d <= tolerance && best.is_none_or(|(db, _)| d < db) {
                 best = Some((d, i));
             }

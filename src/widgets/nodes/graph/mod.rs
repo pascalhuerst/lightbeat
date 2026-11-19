@@ -28,6 +28,9 @@ const MIN_BEZIER_SEGMENTS: usize = 8;
 /// Straight-line distance covered by one bezier segment before it is subdivided.
 const WIRE_SEGMENT_PX: f32 = 10.0;
 const CONNECTION_THICKNESS: f32 = 2.5;
+/// A cable of parallel wires, and how far its wires fan out before it starts.
+const CABLE_THICKNESS: f32 = 5.5;
+const CABLE_FAN: f32 = 24.0;
 const NODE_CORNER_RADIUS: f32 = 6.0;
 
 use crate::theme;
@@ -281,6 +284,8 @@ pub struct NodeGraph {
     fit_pending: bool,
     /// The overview in the corner of the canvas (toggle with M).
     pub show_minimap: bool,
+    /// Draw parallel wires as one cable (View menu).
+    pub collapse_wires: bool,
 }
 
 #[derive(Clone)]
@@ -347,7 +352,13 @@ impl NodeGraph {
             clipboard_connections: Vec::new(),
             fit_pending: false,
             show_minimap: true,
+            collapse_wires: true,
         }
+    }
+
+    /// Ids of the selected nodes of `level` (the active one).
+    fn selected_node_ids(&self, level: &GraphLevel) -> std::collections::HashSet<NodeId> {
+        self.selected_nodes.iter().filter_map(|&i| level.states.get(i).map(|s| s.id)).collect()
     }
 
     fn active(&self) -> &GraphLevel { &self.levels[self.active_level] }
@@ -826,42 +837,99 @@ impl NodeGraph {
         let ports = PortCache::build(level);
 
         // -- Draw connections --
-        let hovered_wire = self.wire_under_pointer(ui, &response, &node_rects, &ports);
+        let ends: Vec<Option<WireEnds>> = level.connections.iter().map(|conn| {
+            Some(WireEnds {
+                from: ports.port_pos(&node_rects, conn.from, z)?,
+                to: ports.port_pos(&node_rects, conn.to, z)?,
+                port_type: ports.port_type(conn.from)?,
+            })
+        }).collect();
+        let wire_pointer = self.wire_pointer(ui, &response, &node_rects);
+        let hovered_wire = wire_pointer.and_then(|p| self.wire_at(p, &ends));
         // Which wires keep their colour: the run through a hovered wire, else
         // the wires of the selected nodes, else all of them.
         let lit: Option<Vec<bool>> = if let Some(h) = hovered_wire {
             Some(wires::wires_in_run(&level.connections, h))
         } else if !self.selected_nodes.is_empty() {
-            let ids: std::collections::HashSet<NodeId> = self.selected_nodes.iter()
-                .filter_map(|&i| level.states.get(i).map(|s| s.id))
-                .collect();
-            Some(wires::wires_of_nodes(&level.connections, &ids))
+            Some(wires::wires_of_nodes(&level.connections, &self.selected_node_ids(level)))
         } else {
             None
         };
-        for (wi, conn) in level.connections.iter().enumerate() {
-            if let (Some(from_pos), Some(from_type), Some(to_pos)) = (
-                ports.port_pos(&node_rects, conn.from, z),
-                ports.port_type(conn.from),
-                ports.port_pos(&node_rects, conn.to, z),
-            ) {
-                let selected = self.selected_connections.contains(conn);
-                let faded = !selected && lit.as_ref().is_some_and(|l| !l[wi]);
-                if selected {
-                    // Soft white halo behind the wire, then redraw the wire
-                    // on top so the type colour still reads.
-                    draw_bezier(&painter, from_pos, to_pos,
-                        theme::WIRE_HALO,
-                        CONNECTION_THICKNESS + 4.0);
+        let is_lit = |wi: usize| lit.as_ref().is_none_or(|l| l[wi]);
+
+        // Parallel wires are drawn as one cable, except where the user is
+        // looking: under the pointer, at a selected node or a selected wire.
+        let mut in_cable = vec![false; level.connections.len()];
+        if self.collapse_wires {
+            let selected_ids = self.selected_node_ids(level);
+            for cable in wires::cable_groups(&level.connections) {
+                if cable.wires.iter().any(|&w| ends[w].is_none()) { continue; }
+                if selected_ids.contains(&cable.from) || selected_ids.contains(&cable.to)
+                    || cable.wires.iter().any(|&w| self.selected_connections.contains(&level.connections[w]))
+                    || hovered_wire.is_some_and(|h| cable.wires.contains(&h))
+                {
+                    continue;
                 }
-                let color = if faded {
-                    from_type.color().linear_multiply(theme::WIRE_DIM)
-                } else {
-                    from_type.color()
+                let (from_pts, to_pts): (Vec<Pos2>, Vec<Pos2>) = cable.wires.iter()
+                    .filter_map(|&w| ends[w]).map(|e| (e.from, e.to)).unzip();
+                let (a, b) = wires::cable_anchors(&from_pts, &to_pts, CABLE_FAN * z);
+                if wire_pointer.is_some_and(|p| {
+                    let tolerance = (6.0 * z).max(4.0);
+                    wire_hull(a, b, tolerance).contains(p)
+                        && point_to_polyline_distance(p, &bezier_sample(a, b, 20)) <= tolerance
+                }) {
+                    continue;
+                }
+                for &w in &cable.wires { in_cable[w] = true; }
+                let every = from_pts.iter().chain(&to_pts).copied().chain([a, b]).collect::<Vec<_>>();
+                if !painter.clip_rect().intersects(Rect::from_points(&every).expand(CABLE_THICKNESS)) {
+                    continue;
+                }
+                let first_type = ends[cable.wires[0]].map(|e| e.port_type);
+                let same_type = cable.wires.iter().all(|&w| ends[w].map(|e| e.port_type) == first_type);
+                let bright = cable.wires.iter().any(|&w| is_lit(w));
+                let dim = |c: Color32| if bright { c } else { c.linear_multiply(theme::WIRE_DIM) };
+                for &w in &cable.wires {
+                    let Some(e) = ends[w] else { continue };
+                    painter.line_segment([e.from, a], Stroke::new(CONNECTION_THICKNESS, dim(e.port_type.color())));
+                    painter.line_segment([b, e.to], Stroke::new(CONNECTION_THICKNESS, dim(e.port_type.color())));
+                }
+                let color = match (same_type, first_type) {
+                    (true, Some(t)) => t.color(),
+                    _ => theme::WIRE_CABLE,
                 };
-                draw_bezier(&painter, from_pos, to_pos, color,
-                    CONNECTION_THICKNESS + if selected { 1.5 } else { 0.0 });
+                draw_bezier(&painter, a, b, dim(color), CABLE_THICKNESS);
+                if z >= 0.4 && (b.x - a.x).abs() > 30.0 * z {
+                    let galley = painter.layout_no_wrap(
+                        cable.wires.len().to_string(),
+                        egui::FontId::proportional(11.0 * z),
+                        theme::TEXT_BRIGHT,
+                    );
+                    let mid = Pos2::new((a.x + b.x) * 0.5, (a.y + b.y) * 0.5);
+                    let label = Rect::from_center_size(mid, galley.size() + Vec2::new(8.0, 2.0) * z);
+                    painter.rect_filled(label, 4.0 * z, theme::OVERLAY_BG);
+                    painter.galley(label.center() - galley.size() * 0.5, galley, theme::TEXT_BRIGHT);
+                }
             }
+        }
+
+        for (wi, conn) in level.connections.iter().enumerate() {
+            let Some(e) = ends[wi] else { continue };
+            if in_cable[wi] { continue; }
+            let selected = self.selected_connections.contains(conn);
+            let faded = !selected && !is_lit(wi);
+            if selected {
+                // Soft white halo behind the wire, then redraw the wire
+                // on top so the type colour still reads.
+                draw_bezier(&painter, e.from, e.to, theme::WIRE_HALO, CONNECTION_THICKNESS + 4.0);
+            }
+            let color = if faded {
+                e.port_type.color().linear_multiply(theme::WIRE_DIM)
+            } else {
+                e.port_type.color()
+            };
+            draw_bezier(&painter, e.from, e.to, color,
+                CONNECTION_THICKNESS + if selected { 1.5 } else { 0.0 });
         }
 
         // -- Draw in-progress connection --

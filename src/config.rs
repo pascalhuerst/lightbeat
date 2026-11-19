@@ -73,6 +73,9 @@ pub struct AppConfig {
     /// to this room and this computer.
     #[serde(default)]
     pub latency_ms: f32,
+    /// Draw wires that run between the same two nodes as one cable.
+    #[serde(default = "default_true")]
+    pub collapse_parallel_wires: bool,
     /// Which panels and windows are open, so the next start looks the same.
     #[serde(default = "default_true")]
     pub show_add_nodes: bool,
@@ -108,6 +111,7 @@ impl Default for AppConfig {
             check_for_updates: true,
             update_channel: crate::update::Channel::default(),
             latency_ms: 0.0,
+            collapse_parallel_wires: true,
             show_add_nodes: true,
             show_setup: false,
             show_dmx_monitor: false,

@@ -594,6 +594,14 @@ pub(super) fn bezier_sample(from: Pos2, to: Pos2, segments: usize) -> Vec<Pos2> 
     points
 }
 
+/// Where a wire starts and ends on screen this frame, and its type.
+#[derive(Clone, Copy)]
+pub(super) struct WireEnds {
+    pub from: Pos2,
+    pub to: Pos2,
+    pub port_type: PortType,
+}
+
 /// A bezier stays inside the hull of its control points, so a wire whose hull
 /// is off screen cannot be seen or hit.
 pub(super) fn wire_hull(from: Pos2, to: Pos2, pad: f32) -> Rect {
