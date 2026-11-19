@@ -138,6 +138,8 @@ impl LightBeatApp {
         // update from the library finds them again); the project's own
         // definition ids mean nothing in a file.
         linked::strip_definitions(&mut inner);
+        // Where a node sits on this project's Desk means nothing in a file.
+        project::strip_desk(&mut inner);
 
         // Capture the subgraph's external port defs so the macro can
         // re-instantiate with the same I/O shape.
@@ -280,6 +282,7 @@ impl LightBeatApp {
             promoted: Vec::new(),
             hide_unused_ports: false,
             panel: None,
+            desk: None,
             def_node: None,
             snapshots: Default::default(),
         };
@@ -292,6 +295,7 @@ impl LightBeatApp {
             connections: Vec::new(),
             frames: Vec::new(),
             view: None,
+            desk: None,
             bridge_in_pos: None,
             bridge_out_pos: None,
         };

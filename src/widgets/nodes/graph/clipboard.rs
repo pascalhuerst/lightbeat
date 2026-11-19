@@ -282,6 +282,7 @@ impl NodeGraph {
                 if cn.type_name == "Subgraph"
                     && let Some(inner) = cn.inner_graph.clone() {
                         let mut inner = inner;
+                        crate::project::strip_desk(&mut inner);
                         crate::project::remap_ids_inplace(&mut inner, &mut || self.alloc_id().0);
                         let parent_level = self.active_level;
                         self.navigate_into(idx);

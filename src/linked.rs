@@ -217,7 +217,10 @@ fn fresh_copy(s: &SavedNode, mut alloc: &mut dyn FnMut() -> u64) -> SavedNode {
     let mut n = s.clone();
     n.id = alloc();
     n.def_node = Some(def_key(s));
+    // A new node of this instance is not on the Desk, whatever the source's is.
+    n.desk = None;
     if let Some(inner) = n.inner_graph.as_mut() {
+        crate::project::strip_desk(inner);
         assign_def_nodes(inner);
         remap_ids_inplace(inner, &mut alloc);
     }
@@ -231,6 +234,9 @@ fn merge_node(s: &SavedNode, d: &SavedNode, known: &Known, alloc: &mut dyn FnMut
     let mut n = s.clone();
     n.id = d.id;
     n.def_node = d.def_node;
+    // Where a node sits on the Desk is the instance's: two instances of a
+    // voice put their faders on different pages.
+    n.desk = d.desk.clone();
     if let Some(panel) = &s.panel {
         if panel.whole {
             n.params = d.params.clone();
@@ -290,6 +296,7 @@ fn empty_level(like: &ProjectFile) -> ProjectFile {
         connections: Vec::new(),
         frames: Vec::new(),
         view: None,
+        desk: None,
         bridge_in_pos: None,
         bridge_out_pos: None,
     }
@@ -349,6 +356,7 @@ pub fn sync_level(src: &ProjectFile, dst: &ProjectFile, known: &Known, alloc: &m
         connections,
         frames: src.frames.clone(),
         view: None,
+        desk: None,
         bridge_in_pos: src.bridge_in_pos,
         bridge_out_pos: src.bridge_out_pos,
     }
@@ -417,6 +425,7 @@ impl std::fmt::Debug for SavedNode {
 /// two instances must agree on.
 fn mask_node(n: &mut SavedNode, known: &Known) {
     n.snapshots.active = None;
+    n.desk = None;
     if n.type_name == "Subgraph" {
         if let Some(inner) = n.inner_graph.as_mut() {
             for c in &mut inner.nodes {
@@ -735,6 +744,7 @@ mod tests {
             promoted: Vec::new(),
             hide_unused_ports: false,
             panel: None,
+            desk: None,
             def_node: None,
             snapshots: Default::default(),
         }
@@ -750,6 +760,7 @@ mod tests {
                 .collect(),
             frames: Vec::new(),
             view: None,
+            desk: None,
             bridge_in_pos: None,
             bridge_out_pos: None,
         }

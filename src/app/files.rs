@@ -476,6 +476,7 @@ impl LightBeatApp {
             connections: Vec::new(),
             frames: Vec::new(),
             view: None,
+            desk: None,
             bridge_in_pos: None,
             bridge_out_pos: None,
         };

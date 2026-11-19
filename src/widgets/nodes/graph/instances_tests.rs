@@ -183,6 +183,7 @@ fn a_wrapper_holding_an_instance_is_refused_inside_that_definition_too() {
         promoted: vec![],
         hide_unused_ports: false,
         panel: None,
+        desk: None,
         def_node: None,
         snapshots: Default::default(),
     };

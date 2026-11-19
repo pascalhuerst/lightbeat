@@ -11,9 +11,12 @@ mod draw;
 mod wires;
 mod find;
 mod panel;
+mod desk;
 mod instances;
 #[cfg(test)]
 mod instances_tests;
+#[cfg(test)]
+mod instances_desk_tests;
 
 use draw::*;
 
@@ -313,6 +316,8 @@ pub struct NodeGraph {
     lane_limits: HashMap<String, usize>,
     /// Makes engine nodes for the extra lanes of laned nodes; set by the app.
     engine_factory: Option<bus::EngineFactory>,
+    /// The Desk's pages and lock flag (saved once, at the root).
+    desk: super::desk::DeskDoc,
 }
 
 #[derive(Clone)]
@@ -387,7 +392,16 @@ impl NodeGraph {
             running: HashMap::new(),
             lane_limits: HashMap::new(),
             engine_factory: None,
+            desk: Default::default(),
         }
+    }
+
+    pub fn desk(&self) -> &super::desk::DeskDoc {
+        &self.desk
+    }
+
+    pub fn set_desk(&mut self, desk: super::desk::DeskDoc) {
+        self.desk = desk;
     }
 
     /// Ids of the selected nodes of `level` (the active one).

@@ -468,6 +468,7 @@ impl NodeGraph {
             shared.disabled = sn.disabled;
             shared.hide_unused_ports = sn.hide_unused_ports;
             shared.panel = sn.panel.clone();
+            shared.desk = sn.desk.clone();
             shared.def_node = sn.def_node;
             // Which snapshot is current is state of the instance, not of the definition.
             let mut ours = shared.snapshots.clone();

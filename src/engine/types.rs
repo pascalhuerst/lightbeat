@@ -317,6 +317,10 @@ pub struct NodeSharedState {
     /// Shown on the front panel of the subgraph this node sits in. UI-owned
     /// and saved with the project; the engine never reads it.
     pub panel: Option<PanelItem>,
+    /// Where the node (and its snapshot row) sits on the Desk. UI-owned and
+    /// saved with the project; the engine never reads it. Per node, and per
+    /// instance inside a linked subgraph (`linked.rs`).
+    pub desk: Option<DeskItem>,
     /// The node's identity inside a linked subgraph definition: equal in every
     /// instance for "the same" node (`linked.rs`). UI-owned and saved with
     /// the project; the engine never reads it.
@@ -358,6 +362,7 @@ impl NodeSharedState {
             non_promotable: &[],
             hide_unused_ports: false,
             panel: None,
+            desk: None,
             def_node: None,
             hidden_inputs: Vec::new(),
             hidden_outputs: Vec::new(),
@@ -384,6 +389,25 @@ pub struct PanelItem {
 }
 
 pub const PANEL_LAST: u32 = u32::MAX;
+
+/// A rectangle on a page of the Desk (`widgets/nodes/desk.rs`). The page is
+/// named by its stable id, so reordering or deleting pages repoints nothing.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct DeskRect {
+    pub page: u64,
+    pub pos: [f32; 2],
+    pub size: [f32; 2],
+}
+
+/// What a node puts on the Desk: itself, its snapshot list, or both. Lives on
+/// the node, so it follows the node between levels.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct DeskItem {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub node: Option<DeskRect>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub snapshots: Option<DeskRect>,
+}
 
 impl PanelItem {
     /// Put the whole node on the panel, or take it off (single settings stay).

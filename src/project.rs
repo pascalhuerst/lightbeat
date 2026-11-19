@@ -3,9 +3,10 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 
 use crate::engine::nodes::meta::subgraph::{BRIDGE_IN_NODE_ID, BRIDGE_OUT_NODE_ID};
-use crate::engine::types::{NodeId, PanelItem, ParamDef, ParamValue, PortDir, PortId, PromotedParam, SnapshotSet};
+use crate::engine::types::{DeskItem, NodeId, PanelItem, ParamDef, ParamValue, PortDir, PortId, PromotedParam, SnapshotSet};
 use crate::migrate::project::SCHEMA;
 use crate::migrate::Migration;
+use crate::widgets::nodes::desk::DeskDoc;
 use crate::widgets::nodes::{GraphLevel, NodeGraph};
 
 // ---------------------------------------------------------------------------
@@ -31,6 +32,10 @@ pub struct ProjectFile {
     /// (subgraph) levels — only the root level carries view state.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub view: Option<ProjectViewState>,
+    /// The Desk's pages and lock flag. Root level only, like `view`; where
+    /// each node sits is on the node (`SavedNode::desk`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub desk: Option<DeskDoc>,
     /// Canvas position of the Graph Input bridge pseudo-node inside a
     /// subgraph level. Not persisted via the `nodes` vec — bridges are
     /// auto-reconstructed on navigate_into, but their positions are
@@ -94,6 +99,9 @@ pub struct SavedNode {
     /// What the node puts on its subgraph's front panel.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub panel: Option<PanelItem>,
+    /// Where the node sits on the Desk.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub desk: Option<DeskItem>,
     /// Identity of the node inside a linked subgraph definition: instances
     /// carry the same value for "the same" node (`linked.rs`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -239,6 +247,7 @@ pub fn save_level(level: &GraphLevel, graph: &NodeGraph) -> ProjectFile {
         let promoted = shared.promoted.clone();
         let hide_unused_ports = shared.hide_unused_ports;
         let panel = shared.panel.clone();
+        let desk = shared.desk.clone();
         let def_node = shared.def_node;
         let mut snapshots = shared.snapshots.clone();
         snapshots.active = shared.snapshot_active.or(snapshots.active);
@@ -266,6 +275,7 @@ pub fn save_level(level: &GraphLevel, graph: &NodeGraph) -> ProjectFile {
             promoted,
             hide_unused_ports,
             panel,
+            desk,
             def_node,
             snapshots,
         });
@@ -315,6 +325,7 @@ pub fn save_level(level: &GraphLevel, graph: &NodeGraph) -> ProjectFile {
         connections,
         frames,
         view: None,
+        desk: None,
         bridge_in_pos,
         bridge_out_pos,
     }
@@ -322,7 +333,21 @@ pub fn save_level(level: &GraphLevel, graph: &NodeGraph) -> ProjectFile {
 
 pub fn save_graph(graph: &NodeGraph) -> ProjectFile {
     // Always save the root level, regardless of which level is active.
-    save_level(graph.root_level(), graph)
+    let mut project = save_level(graph.root_level(), graph);
+    project.desk = Some(graph.desk().clone()).filter(|d| !d.is_default());
+    project
+}
+
+/// Take the Desk placements out of a level and everything below it: a copy of
+/// a node (duplicate, paste, a macro) is not on the Desk, or two items would
+/// sit on top of each other.
+pub fn strip_desk(project: &mut ProjectFile) {
+    for n in &mut project.nodes {
+        n.desk = None;
+        if let Some(inner) = n.inner_graph.as_mut() {
+            strip_desk(inner);
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -335,6 +360,9 @@ pub fn save_graph(graph: &NodeGraph) -> ProjectFile {
 /// this build.
 pub fn load_graph(graph: &mut NodeGraph, project: &ProjectFile) -> Vec<usize> {
     let mut indices = Vec::new();
+    if let Some(desk) = &project.desk {
+        graph.set_desk(desk.clone());
+    }
     for saved in &project.nodes {
         let id = NodeId(saved.id);
         if let Some(node) = graph.create_from_registry(&saved.type_name, id) {
@@ -361,6 +389,7 @@ pub fn load_graph(graph: &mut NodeGraph, project: &ProjectFile) -> Vec<usize> {
                 shared.disabled = saved.disabled;
                 shared.hide_unused_ports = saved.hide_unused_ports;
                 shared.panel = saved.panel.clone();
+                shared.desk = saved.desk.clone();
                 shared.def_node = saved.def_node;
                 // Set before connections are restored so the extra ports exist.
                 let promoted = saved.promoted.clone();
