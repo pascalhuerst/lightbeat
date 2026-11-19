@@ -1,6 +1,7 @@
 use egui::{self, Ui};
 use egui_extras::{Column, TableBuilder};
 
+use crate::dmx_input::{ARTNET_PORT, FoundNode, format_address};
 use crate::objects::output::OutputConfig;
 use crate::theme;
 use crate::widgets::setup_ui;
@@ -71,8 +72,89 @@ impl InterfaceManager {
         self.needs_sync = true;
     }
 
+    /// Whether an Art-Net interface already sends to `node`.
+    fn has_node(&self, node: &FoundNode) -> bool {
+        let ip = node.ip.to_string();
+        self.interfaces.iter().any(|e| matches!(&e.config, OutputConfig::ArtNet { host, .. } if host.trim() == ip))
+    }
+
+    /// An Art-Net interface that sends straight to `node`, named after it.
+    fn add_node(&mut self, node: &FoundNode) {
+        let id = self.next_id;
+        self.next_id += 1;
+        let name = if node.name.is_empty() { format!("Art-Net {}", node.ip) } else { node.name.clone() };
+        self.interfaces.push(InterfaceEntry {
+            id,
+            name,
+            config: OutputConfig::ArtNet { host: node.ip.to_string(), port: ARTNET_PORT },
+            enabled: true,
+        });
+        self.needs_sync = true;
+    }
+
+    /// The Art-Net nodes that answered the search, each with a button that
+    /// makes an interface of it.
+    fn show_found(&mut self, ui: &mut Ui, found: &[FoundNode], error: Option<&str>) {
+        ui.add_space(8.0);
+        setup_ui::section(ui, "Found on the network");
+        if let Some(error) = error {
+            ui.colored_label(theme::SEM_WARNING, format!("Cannot look for Art-Net nodes: {error}"));
+            return;
+        }
+        if found.is_empty() {
+            ui.horizontal(|ui| {
+                ui.spinner();
+                ui.colored_label(theme::TEXT_DIM, "Looking for Art-Net nodes...");
+            });
+            return;
+        }
+        let mut add = None;
+        TableBuilder::new(ui)
+            .id_salt("found_nodes")
+            .striped(true)
+            .column(Column::remainder().at_least(140.0).clip(true)) // Name
+            .column(Column::auto().at_least(110.0))                  // Address
+            .column(Column::remainder().at_least(120.0).clip(true)) // Universes
+            .column(Column::exact(120.0))                             // add
+            .header(20.0, |mut header| {
+                header.col(|ui| { ui.strong("Name"); });
+                header.col(|ui| { ui.strong("Address"); });
+                header.col(|ui| { ui.strong("Universes"); });
+                header.col(|_ui| {});
+            })
+            .body(|mut body| {
+                for (index, node) in found.iter().enumerate() {
+                    body.row(22.0, |mut row| {
+                        row.col(|ui| {
+                            let name = if node.name.is_empty() { "(no name)" } else { &node.name };
+                            let label = ui.label(name);
+                            if !node.long_name.is_empty() {
+                                label.on_hover_text(&node.long_name);
+                            }
+                        });
+                        row.col(|ui| { ui.label(node.ip.to_string()); });
+                        row.col(|ui| {
+                            let list: Vec<String> = node.universes.iter().map(|u| format_address(*u)).collect();
+                            ui.label(list.join(", ")).on_hover_text("The universes this node outputs as DMX (net.sub-net.universe)");
+                        });
+                        row.col(|ui| {
+                            if self.has_node(node) {
+                                ui.colored_label(theme::TEXT_DIM, "in the list");
+                            } else if setup_ui::add_button(ui, "Add interface") {
+                                add = Some(index);
+                            }
+                        });
+                    });
+                }
+            });
+        if let Some(index) = add {
+            self.add_node(&found[index]);
+        }
+    }
+
     /// `object_interface_ids`: the interface id of every object, to say what uses an interface.
-    pub fn show(&mut self, ui: &mut Ui, object_interface_ids: &[u32]) {
+    /// `found` and `discovery_error`: what the search for Art-Net nodes came up with.
+    pub fn show(&mut self, ui: &mut Ui, object_interface_ids: &[u32], found: &[FoundNode], discovery_error: Option<&str>) {
         if self.interfaces.is_empty() {
             setup_ui::empty_state(ui, "No interfaces yet. Add one below.");
         } else {
@@ -153,7 +235,7 @@ impl InterfaceManager {
                     name: format!("Art-Net {}", id),
                     config: OutputConfig::ArtNet {
                         host: "255.255.255.255".to_string(),
-                        port: 6454,
+                        port: ARTNET_PORT,
                     },
                     enabled: true,
                 });
@@ -173,6 +255,8 @@ impl InterfaceManager {
                 self.needs_sync = true;
             }
         });
+
+        self.show_found(ui, found, discovery_error);
     }
 }
 
@@ -233,5 +317,25 @@ mod tests {
         assert!(!m.interfaces[1].enabled);
         assert!(matches!(&m.interfaces[1].config, OutputConfig::ArtNet { host, .. } if host == "10.0.0.5"));
         assert!(m.needs_sync);
+    }
+
+    #[test]
+    fn a_found_node_becomes_an_interface_once() {
+        let node = FoundNode {
+            ip: std::net::Ipv4Addr::new(10, 0, 0, 7),
+            name: "Shelf left".into(),
+            long_name: String::new(),
+            universes: vec![0, 1],
+        };
+        let mut m = InterfaceManager::new();
+        assert!(!m.has_node(&node));
+        m.add_node(&node);
+        assert!(m.has_node(&node) && m.needs_sync);
+        assert_eq!(m.interfaces[0].name, "Shelf left");
+        assert!(matches!(&m.interfaces[0].config, OutputConfig::ArtNet { host, port } if host == "10.0.0.7" && *port == 6454));
+
+        let unnamed = FoundNode { ip: std::net::Ipv4Addr::new(10, 0, 0, 8), name: String::new(), ..node };
+        m.add_node(&unnamed);
+        assert_eq!(m.interfaces[1].name, "Art-Net 10.0.0.8");
     }
 }

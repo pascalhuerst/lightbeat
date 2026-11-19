@@ -4,14 +4,20 @@
 //! ArtPoll the way a node does: as one that *outputs* the universes of its
 //! DMX inputs (to Art-Net a receiver is an output). It also announces itself
 //! when the setup changes.
+//!
+//! The same socket looks for nodes to send to: while the setup's Interfaces
+//! tab asks for it, an ArtPoll goes out as a broadcast every few seconds and
+//! the ArtPollReply packets that come back are kept. It has to be this socket,
+//! because replies go to port 6454 of the asker and a second socket on that
+//! port would only get some of them.
 
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4, UdpSocket};
 use std::time::{Duration, Instant};
 
-use artnet_protocol::{ArtCommand, PollReply};
+use artnet_protocol::{ArtCommand, Poll, PollReply};
 use socket2::{Domain, Protocol, Socket, Type};
 
-use super::{ARTNET_PORT, DmxInputConfig, DmxInputHub, split_address};
+use super::{ARTNET_PORT, DmxInputConfig, DmxInputHub, NodeReply, join_address, split_address};
 
 /// Universes one ArtPollReply can describe.
 const PORTS_PER_REPLY: usize = 4;
@@ -23,15 +29,54 @@ const GOOD_OUTPUT_DATA: u8 = 0x80;
 const RETRY: Duration = Duration::from_secs(2);
 /// The manufacturer code range ESTA keeps for prototypes and experiments.
 const ESTA_PROTOTYPE: u16 = 0x7FF0;
+/// How often nodes are asked to identify themselves while they are looked for.
+const POLL_EVERY: Duration = Duration::from_millis(2500);
+/// How our own poll replies start, to tell them from other nodes'.
+const OWN_LONG_NAME: &str = "LightBeat DMX input";
+const OP_POLL_REPLY: u16 = 0x2100;
 
 #[derive(Debug, PartialEq)]
 pub enum Packet {
     Dmx { universe: u16, data: Vec<u8> },
     Poll,
+    PollReply(NodeReply),
     Other,
 }
 
-pub fn parse(bytes: &[u8]) -> Packet {
+/// A fixed-size text field up to its terminator.
+fn field_text(bytes: &[u8]) -> String {
+    let end = bytes.iter().position(|b| *b == 0).unwrap_or(bytes.len());
+    String::from_utf8_lossy(&bytes[..end]).trim().to_string()
+}
+
+/// Read an ArtPollReply by its offsets. Devices send this packet in several
+/// lengths (the tail grew with every revision of Art-Net), so only the part
+/// that is needed has to be there.
+fn parse_poll_reply(bytes: &[u8], from: Ipv4Addr) -> Option<NodeReply> {
+    const SW_OUT_END: usize = 194;
+    if bytes.len() < SW_OUT_END || &bytes[..8] != b"Art-Net\0" || u16::from_le_bytes([bytes[8], bytes[9]]) != OP_POLL_REPLY {
+        return None;
+    }
+    let (net, sub) = (bytes[18] & 0x7F, bytes[19] & 0x0F);
+    let ports = (bytes[173] as usize).min(PORTS_PER_REPLY);
+    let universes = (0..ports)
+        .filter(|slot| bytes[174 + slot] & PORT_TYPE_OUTPUT_DMX != 0)
+        .map(|slot| join_address(net, sub, bytes[190 + slot] & 0x0F))
+        .collect();
+    Some(NodeReply {
+        // Where the packet came from is where DMX can be sent; the address
+        // inside it is whatever the device believes about itself.
+        ip: from,
+        name: field_text(&bytes[26..44]),
+        long_name: field_text(&bytes[44..108]),
+        universes,
+    })
+}
+
+pub fn parse(bytes: &[u8], from: Ipv4Addr) -> Packet {
+    if let Some(reply) = parse_poll_reply(bytes, from) {
+        return Packet::PollReply(reply);
+    }
     match ArtCommand::from_buffer(bytes) {
         Ok(ArtCommand::Output(o)) => Packet::Dmx { universe: o.port_address.into(), data: o.data.as_ref().clone() },
         Ok(ArtCommand::Poll(_)) => Packet::Poll,
@@ -108,7 +153,7 @@ pub fn poll_replies(inputs: &[DmxInputConfig], local: Ipv4Addr, report_number: u
                     status_1: 0xD0,
                     esta_code: ESTA_PROTOTYPE,
                     short_name: text(&input.name),
-                    long_name: text(&format!("LightBeat DMX input '{}'", input.name)),
+                    long_name: text(&format!("{OWN_LONG_NAME} '{}'", input.name)),
                     node_report: text(&format!("#0001 [{report_number:04}] LightBeat receiving")),
                     num_ports: [0, chunk.len() as u8],
                     // 15-bit port addresses are supported.
@@ -187,19 +232,35 @@ fn announce(hub: &DmxInputHub, socket: &UdpSocket, asked_by: Option<SocketAddrV4
 }
 
 fn handle_packet(hub: &DmxInputHub, socket: &UdpSocket, bytes: &[u8], from: SocketAddrV4) {
-    match parse(bytes) {
+    match parse(bytes, *from.ip()) {
         Packet::Dmx { universe, data } => hub.apply_dmx(universe, &data, *from.ip()),
         Packet::Poll => announce(hub, socket, Some(from)),
+        Packet::PollReply(reply) => {
+            let ours = reply.long_name.starts_with(OWN_LONG_NAME) && local_interfaces().iter().any(|i| i.ip == reply.ip);
+            if !ours {
+                hub.apply_reply(reply);
+            }
+        }
         Packet::Other => {}
     }
 }
 
+/// Ask every node on every local network to identify itself.
+fn poll(socket: &UdpSocket) {
+    let Ok(bytes) = ArtCommand::Poll(Poll::default()).write_to_buffer() else { return };
+    for iface in local_interfaces() {
+        let _ = socket.send_to(&bytes, SocketAddrV4::new(iface.broadcast, ARTNET_PORT));
+    }
+}
+
 /// The worker. The socket is only open while some enabled input listens to a
-/// universe, so a project that does not use DMX input never touches the network.
+/// universe or nodes are being looked for, so a project that does not use DMX
+/// input never touches the network on its own.
 pub fn run(hub: DmxInputHub, port: u16) {
     let mut socket: Option<UdpSocket> = None;
     let mut last_try: Option<Instant> = None;
     let mut last_second = Instant::now();
+    let mut last_poll: Option<Instant> = None;
     let mut buf = [0u8; 2048];
 
     loop {
@@ -242,6 +303,15 @@ pub fn run(hub: DmxInputHub, port: u16) {
         {
             announce(&hub, s, None);
         }
+        if !hub.discovering() {
+            // The next search starts with a poll at once.
+            last_poll = None;
+        } else if let Some(s) = &socket
+            && last_poll.is_none_or(|t| t.elapsed() >= POLL_EVERY)
+        {
+            poll(s);
+            last_poll = Some(Instant::now());
+        }
     }
 }
 
@@ -249,7 +319,7 @@ pub fn run(hub: DmxInputHub, port: u16) {
 mod tests {
     use super::*;
     use crate::dmx_input::{DmxInputKind, join_address};
-    use artnet_protocol::{Output, Poll};
+    use artnet_protocol::Output;
 
     fn input(name: &str, universes: &[u16]) -> DmxInputConfig {
         let mut i = DmxInputConfig::new_art_net(1, name);
@@ -264,10 +334,11 @@ mod tests {
             data: vec![1, 2, 3, 4].into(),
             ..Output::default()
         });
-        assert_eq!(parse(&dmx.write_to_buffer().unwrap()), Packet::Dmx { universe: 5, data: vec![1, 2, 3, 4] });
-        assert_eq!(parse(&ArtCommand::Poll(Poll::default()).write_to_buffer().unwrap()), Packet::Poll);
-        assert_eq!(parse(b"not art-net at all"), Packet::Other);
-        assert_eq!(parse(&[]), Packet::Other);
+        let from = Ipv4Addr::new(2, 0, 0, 1);
+        assert_eq!(parse(&dmx.write_to_buffer().unwrap(), from), Packet::Dmx { universe: 5, data: vec![1, 2, 3, 4] });
+        assert_eq!(parse(&ArtCommand::Poll(Poll::default()).write_to_buffer().unwrap(), from), Packet::Poll);
+        assert_eq!(parse(b"not art-net at all", from), Packet::Other);
+        assert_eq!(parse(&[], from), Packet::Other);
     }
 
     #[test]
@@ -305,6 +376,74 @@ mod tests {
         let r = &poll_replies(&[long], Ipv4Addr::LOCALHOST, 1, &|_| false)[0];
         assert_eq!(r.short_name[17], 0, "17 characters and the terminator");
         assert_eq!(&r.short_name[..17], b"A very long name ");
+    }
+
+    #[test]
+    fn a_poll_reply_is_read_as_a_node_with_the_universes_it_outputs() {
+        let desk = input("Dimmer", &[join_address(1, 2, 3), join_address(1, 2, 4)]);
+        let reply = poll_replies(&[desk], Ipv4Addr::new(2, 0, 0, 9), 1, &|_| false).remove(0);
+        let mut bytes = ArtCommand::PollReply(Box::new(reply)).write_to_buffer().unwrap();
+        let from = Ipv4Addr::new(10, 0, 0, 7);
+        let Packet::PollReply(node) = parse(&bytes, from) else { panic!("not read as a poll reply") };
+        assert_eq!(node.ip, from, "the sender's address counts, not the one in the packet");
+        assert_eq!(node.name, "Dimmer");
+        assert!(node.long_name.starts_with(OWN_LONG_NAME));
+        assert_eq!(node.universes, vec![join_address(1, 2, 3), join_address(1, 2, 4)]);
+
+        // An input port (a desk's own output) is not somewhere to send DMX.
+        bytes[174] = 0x40;
+        let Packet::PollReply(node) = parse(&bytes, from) else { panic!("not read as a poll reply") };
+        assert_eq!(node.universes, vec![join_address(1, 2, 4)]);
+
+        // Older devices send a shorter packet; a stump is not a reply.
+        assert!(matches!(parse(&bytes[..207], from), Packet::PollReply(_)));
+        assert_eq!(parse(&bytes[..100], from), Packet::Other);
+    }
+
+    #[test]
+    fn replies_of_one_device_are_one_node_and_the_search_ends_by_itself() {
+        let hub = DmxInputHub::idle();
+        assert!(!hub.discovering() && !hub.wants_socket());
+        hub.discover();
+        assert!(hub.discovering() && hub.wants_socket(), "looking for nodes opens the socket");
+
+        let ip = Ipv4Addr::new(10, 0, 0, 7);
+        let reply = |name: &str, universes: &[u16]| NodeReply {
+            ip,
+            name: name.into(),
+            long_name: String::new(),
+            universes: universes.to_vec(),
+        };
+        hub.apply_reply(reply("Node", &[4, 0]));
+        hub.apply_reply(reply("Node", &[0, 9]));
+        hub.apply_reply(NodeReply { ip: Ipv4Addr::new(10, 0, 0, 2), ..reply("Other", &[]) });
+        let found = hub.found_nodes();
+        assert_eq!(found.len(), 2);
+        assert_eq!(found[0].name, "Other", "sorted by address");
+        assert_eq!((found[1].ip, found[1].universes.clone()), (ip, vec![0, 4, 9]));
+    }
+
+    #[test]
+    fn a_real_socket_polls_while_nodes_are_looked_for() {
+        let hub = DmxInputHub::start_on(0);
+        hub.discover();
+        let port = wait_for(|| hub.listening_port()).expect("the socket opened without any DMX input");
+        // A node answers, as it would after our poll.
+        let node = input("Node", &[3]);
+        let reply = poll_replies(&[node], Ipv4Addr::LOCALHOST, 1, &|_| false).remove(0);
+        let sender = UdpSocket::bind("127.0.0.1:0").unwrap();
+        let bytes = ArtCommand::PollReply(Box::new(reply)).write_to_buffer().unwrap();
+        // Our own replies carry this name; a foreign node has its own.
+        let bytes: Vec<u8> = {
+            let mut b = bytes;
+            b[44..52].copy_from_slice(b"Acme DMX");
+            b
+        };
+        sender.send_to(&bytes, SocketAddr::from(([127, 0, 0, 1], port))).unwrap();
+        let found = wait_for(|| hub.found_nodes().into_iter().next()).expect("the node is listed");
+        assert_eq!((found.name.as_str(), found.universes), ("Node", vec![3]));
+        // Nobody asks any more: the socket closes again.
+        assert!(wait_for(|| hub.listening_port().is_none().then_some(())).is_some());
     }
 
     fn wait_for<T>(mut f: impl FnMut() -> Option<T>) -> Option<T> {

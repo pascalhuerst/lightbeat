@@ -22,6 +22,11 @@ pub const ARTNET_PORT: u16 = 6454;
 /// How long after its last packet a universe still counts as live. Desks send
 /// a universe at least about once a second, even when nothing changes.
 pub const LIVE_WINDOW: Duration = Duration::from_secs(5);
+/// How long the search for nodes goes on after it was last asked for.
+const DISCOVER_LINGER: Duration = Duration::from_secs(1);
+/// A node that has not answered for this long is dropped from the list
+/// (a node has 3 s to answer a poll, and polls go out every few seconds).
+const NODE_WINDOW: Duration = Duration::from_secs(10);
 
 /// Changes kept for learning.
 const MAX_CHANGES: usize = 512;
@@ -126,6 +131,30 @@ pub struct Heard {
     pub from: Ipv4Addr,
 }
 
+/// An Art-Net node that answered a poll: something DMX can be sent to.
+#[derive(Debug, Clone, PartialEq)]
+pub struct FoundNode {
+    pub ip: Ipv4Addr,
+    pub name: String,
+    pub long_name: String,
+    /// The universes it outputs as DMX, as 15-bit port addresses, sorted.
+    pub universes: Vec<u16>,
+}
+
+/// One ArtPollReply; a node with more than four ports sends several.
+#[derive(Debug, Clone, PartialEq)]
+pub struct NodeReply {
+    pub ip: Ipv4Addr,
+    pub name: String,
+    pub long_name: String,
+    pub universes: Vec<u16>,
+}
+
+struct SeenNode {
+    node: FoundNode,
+    last: Instant,
+}
+
 /// A channel that changed value, for learning.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Change {
@@ -150,6 +179,10 @@ pub struct DmxState {
     /// Tell the network about us again.
     announce: bool,
     poll_counter: u32,
+    /// Look for nodes until then; the setup window keeps pushing it forward
+    /// while its Interfaces tab is shown.
+    discover_until: Option<Instant>,
+    nodes: Vec<SeenNode>,
 }
 
 /// What the setup window shows of one input.
@@ -242,6 +275,60 @@ impl DmxInputHub {
         out
     }
 
+    // -- finding nodes to send to --------------------------------------------
+
+    /// Ask for Art-Net nodes to be looked for, for a little while from now.
+    /// Called every frame the list is on screen, so the network is only
+    /// polled while somebody looks at the result.
+    pub fn discover(&self) {
+        self.lock().discover_until = Some(Instant::now() + DISCOVER_LINGER);
+    }
+
+    pub(crate) fn discovering(&self) -> bool {
+        self.lock().discover_until.is_some_and(|t| Instant::now() < t)
+    }
+
+    /// The nodes that answered recently, by address.
+    pub fn found_nodes(&self) -> Vec<FoundNode> {
+        let s = self.lock();
+        let mut out: Vec<FoundNode> =
+            s.nodes.iter().filter(|n| n.last.elapsed() < NODE_WINDOW).map(|n| n.node.clone()).collect();
+        out.sort_by_key(|n| n.ip);
+        out
+    }
+
+    /// Why nodes cannot be looked for, if they cannot.
+    pub fn discovery_error(&self) -> Option<String> {
+        self.lock().bind_error.clone()
+    }
+
+    pub(crate) fn apply_reply(&self, reply: NodeReply) {
+        let mut s = self.lock();
+        s.nodes.retain(|n| n.last.elapsed() < NODE_WINDOW);
+        match s.nodes.iter_mut().find(|n| n.node.ip == reply.ip) {
+            Some(seen) => {
+                seen.last = Instant::now();
+                // The first reply of a device names it; the others add ports.
+                if seen.node.name.is_empty() {
+                    seen.node.name = reply.name;
+                    seen.node.long_name = reply.long_name;
+                }
+                seen.node.universes.extend(reply.universes);
+                seen.node.universes.sort_unstable();
+                seen.node.universes.dedup();
+            }
+            None => {
+                let mut universes = reply.universes;
+                universes.sort_unstable();
+                universes.dedup();
+                s.nodes.push(SeenNode {
+                    node: FoundNode { ip: reply.ip, name: reply.name, long_name: reply.long_name, universes },
+                    last: Instant::now(),
+                });
+            }
+        }
+    }
+
     // -- what the nodes read -------------------------------------------------
 
     /// Fill `out` with the channels asked for, each `(universe, first channel
@@ -326,7 +413,7 @@ impl DmxInputHub {
     }
 
     pub(crate) fn wants_socket(&self) -> bool {
-        self.lock().inputs.iter().any(|i| i.enabled && !i.universes().is_empty())
+        self.lock().inputs.iter().any(|i| i.enabled && !i.universes().is_empty()) || self.discovering()
     }
 
     pub(crate) fn take_announce(&self) -> bool {
