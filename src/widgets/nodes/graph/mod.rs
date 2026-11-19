@@ -7,6 +7,7 @@ mod menus;
 mod interact;
 mod subgraph_ops;
 mod draw;
+mod wires;
 
 use draw::*;
 
@@ -825,13 +826,27 @@ impl NodeGraph {
         let ports = PortCache::build(level);
 
         // -- Draw connections --
-        for conn in &level.connections {
+        let hovered_wire = self.wire_under_pointer(ui, &response, &node_rects, &ports);
+        // Which wires keep their colour: the run through a hovered wire, else
+        // the wires of the selected nodes, else all of them.
+        let lit: Option<Vec<bool>> = if let Some(h) = hovered_wire {
+            Some(wires::wires_in_run(&level.connections, h))
+        } else if !self.selected_nodes.is_empty() {
+            let ids: std::collections::HashSet<NodeId> = self.selected_nodes.iter()
+                .filter_map(|&i| level.states.get(i).map(|s| s.id))
+                .collect();
+            Some(wires::wires_of_nodes(&level.connections, &ids))
+        } else {
+            None
+        };
+        for (wi, conn) in level.connections.iter().enumerate() {
             if let (Some(from_pos), Some(from_type), Some(to_pos)) = (
                 ports.port_pos(&node_rects, conn.from, z),
                 ports.port_type(conn.from),
                 ports.port_pos(&node_rects, conn.to, z),
             ) {
                 let selected = self.selected_connections.contains(conn);
+                let faded = !selected && lit.as_ref().is_some_and(|l| !l[wi]);
                 if selected {
                     // Soft white halo behind the wire, then redraw the wire
                     // on top so the type colour still reads.
@@ -839,7 +854,12 @@ impl NodeGraph {
                         theme::WIRE_HALO,
                         CONNECTION_THICKNESS + 4.0);
                 }
-                draw_bezier(&painter, from_pos, to_pos, from_type.color(),
+                let color = if faded {
+                    from_type.color().linear_multiply(theme::WIRE_DIM)
+                } else {
+                    from_type.color()
+                };
+                draw_bezier(&painter, from_pos, to_pos, color,
                     CONNECTION_THICKNESS + if selected { 1.5 } else { 0.0 });
             }
         }

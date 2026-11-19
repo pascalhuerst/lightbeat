@@ -594,19 +594,22 @@ pub(super) fn bezier_sample(from: Pos2, to: Pos2, segments: usize) -> Vec<Pos2> 
     points
 }
 
-pub(super) fn draw_bezier(painter: &Painter, from: Pos2, to: Pos2, color: Color32, thickness: f32) {
-    // A bezier stays inside the hull of its control points, so a wire whose
-    // hull is off screen cannot be seen. Most wires are off screen once the
-    // user zooms in.
+/// A bezier stays inside the hull of its control points, so a wire whose hull
+/// is off screen cannot be seen or hit.
+pub(super) fn wire_hull(from: Pos2, to: Pos2, pad: f32) -> Rect {
     let dx = (to.x - from.x).abs() * 0.5;
-    let hull = Rect::from_points(&[
+    Rect::from_points(&[
         from,
         to,
         Pos2::new(from.x + dx, from.y),
         Pos2::new(to.x - dx, to.y),
     ])
-    .expand(thickness);
-    if !painter.clip_rect().intersects(hull) {
+    .expand(pad)
+}
+
+pub(super) fn draw_bezier(painter: &Painter, from: Pos2, to: Pos2, color: Color32, thickness: f32) {
+    // Most wires are off screen once the user zooms in.
+    if !painter.clip_rect().intersects(wire_hull(from, to, thickness)) {
         return;
     }
 
