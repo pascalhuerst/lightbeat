@@ -11,7 +11,11 @@ use std::hash::{Hash, Hasher};
 use super::connections::LevelPorts;
 use super::*;
 use crate::engine::lanes::{self, LaneNode, Widths};
-use crate::engine::types::MAX_LANES;
+use crate::engine::types::{EngineCommand, MAX_LANES, ProcessNode};
+
+/// Makes a fresh engine node of a type, for the extra lanes of a laned node.
+/// The app provides it: only the app knows how to construct engine nodes.
+pub type EngineFactory = std::rc::Rc<dyn Fn(&str, NodeId) -> Option<Box<dyn ProcessNode>>>;
 
 /// The widths of one level, as of the last time its wires or ports changed.
 #[derive(Default)]
@@ -23,6 +27,8 @@ pub struct BusState {
     sig: u64,
     /// Whether `sig` looked at the ports (the open level) or only at the wires.
     deep: bool,
+    /// How many lanes the engine was last told each laned node runs at.
+    applied: HashMap<NodeId, usize>,
 }
 
 impl NodeGraph {
@@ -30,6 +36,12 @@ impl NodeGraph {
     /// unlimited. The app fills this from `ProcessNode::max_lanes`.
     pub fn set_lane_limits(&mut self, limits: HashMap<String, usize>) {
         self.lane_limits = limits;
+    }
+
+    /// How the app makes engine nodes, so that a node that gets a bus can be
+    /// run as several copies.
+    pub fn set_engine_factory(&mut self, factory: EngineFactory) {
+        self.engine_factory = Some(factory);
     }
 
     fn lane_limit(&self, type_name: &str) -> usize {
@@ -104,9 +116,37 @@ impl NodeGraph {
                     followed |= open && node.ui_outputs().len() != before;
                 }
             }
-            level.bus = BusState { widths, model, sig, deep: open };
+            let mut applied = std::mem::take(&mut level.bus.applied);
+            applied.retain(|id, _| level.states.iter().any(|s| s.id == *id));
+            let mut changes: Vec<(NodeId, &'static str, usize)> = Vec::new();
+            for (node, state) in level.nodes.iter().zip(&level.states) {
+                let width = widths.of_node(state.id);
+                if width != applied.get(&state.id).copied().unwrap_or(1) {
+                    changes.push((state.id, node.type_name(), width));
+                    applied.insert(state.id, width);
+                    // The lane the node shows must exist.
+                    let mut shared = node.shared_state().lock();
+                    shared.view_lane = shared.view_lane.min(width - 1);
+                }
+            }
+            level.bus = BusState { widths, model, sig, deep: open, applied };
+            for (node_id, type_name, width) in changes {
+                self.send_lanes(li, node_id, type_name, width);
+            }
         }
         followed
+    }
+
+    /// Tell the engine to run a node as `width` lanes, with fresh nodes for
+    /// the copies. Without a factory (a graph with no engine behind it) there
+    /// is nothing to tell.
+    fn send_lanes(&mut self, level: usize, node_id: NodeId, type_name: &str, width: usize) {
+        let Some(factory) = self.engine_factory.clone() else { return };
+        let extra: Vec<Box<dyn ProcessNode>> = (1..width).filter_map(|_| factory(type_name, node_id)).collect();
+        if extra.len() + 1 != width {
+            return;
+        }
+        self.at_level(level, |g| g.push_engine_cmd(EngineCommand::SetLanes { node_id, extra }));
     }
 
     /// Whether wire `from` -> `to` fits the widths, tried out on a copy of the
@@ -265,5 +305,34 @@ mod tests {
         assert_eq!(g.active().bus.widths.of_node(NodeId(2)), 6);
         assert_eq!(g.active().nodes[2].ui_outputs().len(), 6);
         assert_eq!(g.active().connections.len(), 2, "a chain that can follow follows");
+    }
+
+    fn lane_commands(g: &mut NodeGraph) -> Vec<(u64, usize)> {
+        g.drain_engine_commands()
+            .into_iter()
+            .filter_map(|c| match c {
+                EngineCommand::SetLanes { node_id, extra } => Some((node_id.0, extra.len() + 1)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn the_engine_is_told_when_a_node_gets_wider_and_when_it_goes_back() {
+        let mut g = graph();
+        g.set_engine_factory(std::rc::Rc::new(|name, id| {
+            (name == "Add").then(|| Box::new(crate::engine::nodes::math::math_op::MathProcessNode::new(id, MathOp::Add)) as Box<dyn ProcessNode>)
+        }));
+        g.tidy_ports();
+        g.drain_engine_commands();
+        wire(&mut g, out(1, 0), inp(2, 0));
+        assert_eq!(lane_commands(&mut g), vec![(2, 4)]);
+        g.tidy_ports();
+        assert!(lane_commands(&mut g).is_empty(), "nothing changed, nothing is sent");
+        g.node_mut(1).shared_state().lock().view_lane = 3;
+        g.remove_connection_to(inp(2, 0));
+        g.tidy_ports();
+        assert_eq!(lane_commands(&mut g), vec![(2, 1)]);
+        assert_eq!(g.active().nodes[1].shared_state().lock().view_lane, 0, "the lane that was shown is gone");
     }
 }

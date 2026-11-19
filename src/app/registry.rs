@@ -764,6 +764,15 @@ impl LightBeatApp {
             self.lane_limits = lane_limits(&ctx);
         }
         self.graph.set_lane_limits(self.lane_limits.clone());
+        // The copies of a laned node are made by the same constructors as the
+        // node. A beat subscription (only the Link Clock asks for one, and it
+        // is never laned) would go nowhere.
+        let table = Rc::new(node_table());
+        let make_ctx = ctx.clone();
+        self.graph.set_engine_factory(Rc::new(move |type_name, id| {
+            let desc = table.iter().find(|d| d.name == type_name)?;
+            Some((desc.engine)(id, &make_ctx))
+        }));
         for desc in node_table() {
             let (inputs, outputs) = desc.channels;
             let ctx = ctx.clone();

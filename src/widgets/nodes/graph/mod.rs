@@ -311,6 +311,8 @@ pub struct NodeGraph {
     /// Per node type, how many lanes it may be run at (`ProcessNode::max_lanes`);
     /// set by the app.
     lane_limits: HashMap<String, usize>,
+    /// Makes engine nodes for the extra lanes of laned nodes; set by the app.
+    engine_factory: Option<bus::EngineFactory>,
 }
 
 #[derive(Clone)]
@@ -384,6 +386,7 @@ impl NodeGraph {
             notices: Vec::new(),
             running: HashMap::new(),
             lane_limits: HashMap::new(),
+            engine_factory: None,
         }
     }
 
@@ -432,6 +435,7 @@ impl NodeGraph {
                 EngineCommand::NotifyDisconnect { node_id, input_port } => {
                     SubgraphInnerCmd::NotifyDisconnect { node_id, input_port }
                 }
+                EngineCommand::SetLanes { node_id, extra } => SubgraphInnerCmd::SetLanes { node_id, extra },
                 other => {
                     // Commands that don't have inner equivalents go directly.
                     self.pending_engine_cmds.push(other);

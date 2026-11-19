@@ -325,6 +325,12 @@ pub struct NodeSharedState {
     /// Kept up to date by the graph each frame.
     pub hidden_inputs: Vec<bool>,
     pub hidden_outputs: Vec<bool>,
+    /// Which copy of a laned node the mirror shows: its ports, settings and
+    /// display come from that lane. UI-owned; the engine clamps it.
+    pub view_lane: usize,
+    /// How many lanes the node runs at, as the engine has it (written by the
+    /// engine), so the UI can keep `view_lane` inside it.
+    pub lanes: usize,
 }
 
 impl NodeSharedState {
@@ -355,6 +361,8 @@ impl NodeSharedState {
             def_node: None,
             hidden_inputs: Vec::new(),
             hidden_outputs: Vec::new(),
+            view_lane: 0,
+            lanes: 1,
         }
     }
 }
@@ -442,6 +450,13 @@ pub enum EngineCommand {
         subgraph_path: Vec<NodeId>,
         command: Box<SubgraphInnerCmd>,
     },
+    /// Run the node as `extra.len() + 1` lanes. `extra` are freshly made nodes
+    /// of the same type (the engine does not construct nodes); the engine keeps
+    /// the copies it already has and starts new ones as copies of lane 0.
+    SetLanes {
+        node_id: NodeId,
+        extra: Vec<Box<dyn ProcessNode>>,
+    },
 }
 
 /// Commands for a subgraph's inner graph (routed via SubgraphInnerCommand).
@@ -465,6 +480,10 @@ pub enum SubgraphInnerCmd {
     NotifyDisconnect {
         node_id: NodeId,
         input_port: usize,
+    },
+    SetLanes {
+        node_id: NodeId,
+        extra: Vec<Box<dyn ProcessNode>>,
     },
 }
 

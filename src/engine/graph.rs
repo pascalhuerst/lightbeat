@@ -79,6 +79,9 @@ impl EngineGraph {
             EngineCommand::LoadData { node_id, data } => {
                 self.core.apply(SubgraphInnerCmd::LoadData { node_id, data });
             }
+            EngineCommand::SetLanes { node_id, extra } => {
+                self.core.apply(SubgraphInnerCmd::SetLanes { node_id, extra });
+            }
             EngineCommand::RemoveAllNodes => {
                 self.core.clear();
             }
@@ -125,8 +128,7 @@ impl EngineGraph {
             if let Some(t) = super::probe::target()
                 && let Some(i) = core.index_of(t.node)
             {
-                let v = if t.output { core.nodes[i].read_output(t.channel) } else { core.nodes[i].read_input(t.channel) };
-                super::probe::record(v);
+                super::probe::record(core.probe_read(i, t.output, t.channel));
             }
         });
 

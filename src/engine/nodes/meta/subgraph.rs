@@ -2,6 +2,7 @@ use crate::engine::nodes::display::led_display::LedDisplayProcessNode;
 use crate::engine::nodes::display::value_display::ValueDisplayProcessNode;
 use crate::engine::types::*;
 use crate::engine::graph::UI_SYNC_EVERY_N_TICKS;
+use crate::engine::lanes::{Lane, changed_params};
 use crate::engine::promoted::PromotedInputs;
 use crate::engine::routing::RoutePlan;
 use crate::engine::sync_hint::SaveDataGate;
@@ -158,6 +159,11 @@ pub struct InnerGraph {
     index_stale: bool,
     /// Params the user turned into input ports, parallel to `nodes`.
     promoted: Vec<PromotedInputs>,
+    /// The extra copies of nodes that run as lanes (a bus on one of their
+    /// inputs), parallel to `nodes`; empty for the usual node. Everything that
+    /// addresses a node (settings, config, connect hooks, promoted lists,
+    /// snapshot recalls, disabling) addresses its copies the same way.
+    lanes: Vec<Vec<Lane>>,
     plan: RoutePlan,
     save_data_gate: SaveDataGate,
     /// Set by anything that can change routing or a node's ports; checked
@@ -208,6 +214,7 @@ impl InnerGraph {
             node_index: HashMap::new(),
             index_stale: false,
             promoted: Vec::new(),
+            lanes: Vec::new(),
             plan: RoutePlan::default(),
             save_data_gate: SaveDataGate::default(),
             plan_dirty: true,
@@ -226,9 +233,18 @@ impl InnerGraph {
         self.index_stale = false;
     }
 
+    /// `lanes` is kept the length of `nodes`; commands and tests that add
+    /// nodes need not know about it.
+    fn size_lane_slots(&mut self) {
+        if self.lanes.len() != self.nodes.len() {
+            self.lanes.resize_with(self.nodes.len(), Vec::new);
+        }
+    }
+
     fn rebuild_plan(&mut self, input_ports: &[PortDef], output_ports: &[PortDef]) {
         self.plan = RoutePlan::build(
             &self.nodes,
+            &self.lanes,
             &self.node_index,
             &self.connections,
             &self.promoted,
@@ -243,6 +259,12 @@ impl InnerGraph {
             if self.promoted[i].len() > 0 {
                 self.promoted[i].note_wiring(self.plan.promoted_connected(i, native));
             }
+            for lane in self.lanes[i].iter_mut() {
+                lane.node.set_input_connections(self.plan.native_connected(i, native));
+                if lane.promoted.len() > 0 {
+                    lane.promoted.note_wiring(self.plan.promoted_connected(i, native));
+                }
+            }
         }
         self.plan_dirty = false;
     }
@@ -252,6 +274,7 @@ impl InnerGraph {
     /// connection scan because `load_data` can rebuild a node's ports.
     fn take_pending(&mut self) {
         self.disabled_mask.clear();
+        self.size_lane_slots();
         for (i, node) in self.nodes.iter_mut().enumerate() {
             let (disabled, pending, config_update, promoted_update, snapshots_update, recall) = {
                 let mut shared = self.shared_states[i].lock();
@@ -268,20 +291,39 @@ impl InnerGraph {
             if promoted_update.is_some() || !pending.is_empty() || config_update.is_some() {
                 self.plan_dirty = true;
             }
+            let copies = &mut self.lanes[i];
             if let Some(list) = promoted_update {
                 self.promoted[i].adopt(&list, node.as_ref());
+                for lane in copies.iter_mut() {
+                    lane.promoted.adopt(&list, lane.node.as_ref());
+                }
             }
             if let Some(set) = snapshots_update {
                 self.promoted[i].adopt_snapshots(set);
             }
             for (idx, val) in pending {
+                for lane in copies.iter_mut() {
+                    lane.node.set_param(idx, val.clone());
+                }
                 node.set_param(idx, val);
             }
             if let Some(config) = config_update {
+                for lane in copies.iter_mut() {
+                    lane.node.load_data(&config);
+                }
                 node.load_data(&config);
             }
             if let Some(index) = recall {
+                let before = (!copies.is_empty()).then(|| node.params());
                 self.promoted[i].recall_snapshot(index, node.as_mut());
+                if let Some(before) = before {
+                    let moved = changed_params(&before, &node.params());
+                    for lane in copies.iter_mut() {
+                        for (idx, val) in &moved {
+                            lane.node.set_param(*idx, val.clone());
+                        }
+                    }
+                }
             }
         }
     }
@@ -298,6 +340,9 @@ impl InnerGraph {
                 }
                 let started = std::time::Instant::now();
                 node.process();
+                for lane in self.lanes[i].iter_mut() {
+                    lane.node.process();
+                }
                 profile.record(node.type_name(), started.elapsed().as_nanos() as u64);
             }
             profile.end_tick();
@@ -308,6 +353,9 @@ impl InnerGraph {
                 }
                 let started = std::time::Instant::now();
                 node.process();
+                for lane in self.lanes[i].iter_mut() {
+                    lane.node.process();
+                }
                 crate::perf::record_inner_node(
                     node.type_name(),
                     started.elapsed().as_nanos() as u64,
@@ -317,6 +365,9 @@ impl InnerGraph {
             for (i, node) in self.nodes.iter_mut().enumerate() {
                 if !self.disabled_mask[i] {
                     node.process();
+                    for lane in self.lanes[i].iter_mut() {
+                        lane.node.process();
+                    }
                 }
             }
         }
@@ -344,7 +395,7 @@ impl InnerGraph {
         //    connected" bitmap (the "input-overrides-param" pattern) only when
         //    something that could change them did.
         if self.plan_dirty
-            || !self.plan.is_current(&self.nodes, input_ports, output_ports)
+            || !self.plan.is_current(&self.nodes, &self.lanes, input_ports, output_ports)
         {
             self.rebuild_plan(input_ports, output_ports);
         }
@@ -358,12 +409,25 @@ impl InnerGraph {
         // ports (Color=3, Position=2) expand to multiple float copies.
         self.plan.run(
             &mut self.nodes,
+            &mut self.lanes,
             &mut self.promoted,
             &self.bridge_in,
             &mut self.bridge_out,
         );
         for (i, node) in self.nodes.iter_mut().enumerate() {
+            let copies = &mut self.lanes[i];
+            // A fade moves lane 0's settings through the node; the copies are
+            // brought along from what changed.
+            let before = (!copies.is_empty() && self.promoted[i].snapshot_running()).then(|| node.params());
             self.promoted[i].step_snapshots(node.as_mut());
+            if let Some(before) = before {
+                let moved = changed_params(&before, &node.params());
+                for lane in copies.iter_mut() {
+                    for (idx, val) in &moved {
+                        lane.node.set_param(*idx, val.clone());
+                    }
+                }
+            }
         }
         clock.lap(self.laps[3]);
 
@@ -386,16 +450,20 @@ impl InnerGraph {
         match cmd {
             SubgraphInnerCmd::AddNode { node, shared } => {
                 shared.lock().default_params = node.params();
+                self.size_lane_slots();
                 self.shared_states.push(shared);
                 self.nodes.push(node);
                 self.promoted.push(PromotedInputs::default());
+                self.lanes.push(Vec::new());
                 self.index_stale = true;
             }
             SubgraphInnerCmd::RemoveNode(id) => {
                 if let Some(idx) = self.nodes.iter().position(|n| n.node_id() == id) {
+                    self.size_lane_slots();
                     self.nodes.remove(idx);
                     self.shared_states.remove(idx);
                     self.promoted.remove(idx);
+                    self.lanes.remove(idx);
                     self.index_stale = true;
                     self.connections
                         .retain(|c| c.from.node != id && c.to.node != id);
@@ -410,8 +478,12 @@ impl InnerGraph {
                 self.connections.retain(|c| c.to != to);
             }
             SubgraphInnerCmd::LoadData { node_id, data } => {
-                if let Some(node) = self.nodes.iter_mut().find(|n| n.node_id() == node_id) {
-                    node.load_data(&data);
+                self.size_lane_slots();
+                if let Some(i) = self.nodes.iter().position(|n| n.node_id() == node_id) {
+                    for lane in self.lanes[i].iter_mut() {
+                        lane.node.load_data(&data);
+                    }
+                    self.nodes[i].load_data(&data);
                 }
             }
             SubgraphInnerCmd::NotifyConnect {
@@ -419,19 +491,67 @@ impl InnerGraph {
                 input_port,
                 source_type,
             } => {
-                if let Some(node) = self.nodes.iter_mut().find(|n| n.node_id() == node_id) {
-                    node.on_connect(input_port, source_type);
+                self.size_lane_slots();
+                if let Some(i) = self.nodes.iter().position(|n| n.node_id() == node_id) {
+                    for lane in self.lanes[i].iter_mut() {
+                        lane.node.on_connect(input_port, source_type);
+                    }
+                    self.nodes[i].on_connect(input_port, source_type);
                 }
             }
             SubgraphInnerCmd::NotifyDisconnect {
                 node_id,
                 input_port,
             } => {
-                if let Some(node) = self.nodes.iter_mut().find(|n| n.node_id() == node_id) {
-                    node.on_disconnect(input_port);
+                self.size_lane_slots();
+                if let Some(i) = self.nodes.iter().position(|n| n.node_id() == node_id) {
+                    for lane in self.lanes[i].iter_mut() {
+                        lane.node.on_disconnect(input_port);
+                    }
+                    self.nodes[i].on_disconnect(input_port);
                 }
             }
+            SubgraphInnerCmd::SetLanes { node_id, extra } => self.set_lanes(node_id, extra),
         }
+    }
+
+    /// Run a node as `extra.len() + 1` lanes. The copies it already has stay
+    /// (so growing a bus does not reset the lanes that were there); new ones
+    /// start as copies of lane 0: its settings, its saved state, and the
+    /// connect hooks of the wires that end at it.
+    fn set_lanes(&mut self, node_id: NodeId, extra: Vec<Box<dyn ProcessNode>>) {
+        self.size_lane_slots();
+        let Some(i) = self.nodes.iter().position(|n| n.node_id() == node_id) else { return };
+        self.lanes[i].truncate(extra.len());
+        let have = self.lanes[i].len();
+        let params = self.nodes[i].params();
+        let saved = self.nodes[i].save_data();
+        let wired: Vec<(usize, PortType)> = self
+            .connections
+            .iter()
+            .filter(|c| c.to.node == node_id)
+            .filter_map(|c| {
+                let src = self.nodes.iter().find(|n| n.node_id() == c.from.node)?;
+                Some((c.to.index, src.outputs().get(c.from.index)?.port_type))
+            })
+            .collect();
+        for mut copy in extra.into_iter().skip(have) {
+            if let Some(data) = &saved {
+                copy.load_data(data);
+            }
+            for (idx, def) in params.iter().enumerate() {
+                copy.set_param(idx, def.as_value());
+            }
+            for &(port, source_type) in &wired {
+                if port < copy.inputs().len() {
+                    copy.on_connect(port, source_type);
+                }
+            }
+            let mut promoted = PromotedInputs::default();
+            promoted.adopt(self.promoted[i].wanted(), copy.as_ref());
+            self.lanes[i].push(Lane { node: copy, promoted });
+        }
+        self.plan_dirty = true;
     }
 
     /// Any command, however deep, makes the root re-resolve its routing.
@@ -444,6 +564,7 @@ impl InnerGraph {
         self.nodes.clear();
         self.shared_states.clear();
         self.promoted.clear();
+        self.lanes.clear();
         self.connections.clear();
         self.node_index.clear();
         self.index_stale = false;
@@ -462,9 +583,14 @@ impl InnerGraph {
         let sync_save_data = self.save_data_gate.due();
         for (i, node) in self.nodes.iter().enumerate() {
             let disabled = self.disabled_mask[i];
+            // A laned node shows one lane to the UI, the one the user is
+            // looking at; its saved state is always lane 0's.
+            let copies = &self.lanes[i];
+            let view = if copies.is_empty() { 0 } else { self.shared_states[i].lock().view_lane.min(copies.len()) };
+            let shown: &dyn ProcessNode = if view == 0 { node.as_ref() } else { copies[view - 1].node.as_ref() };
             // One `params()` per node (it allocates), shared by the promoted
             // entries' refresh and the UI copy.
-            let params = (!disabled || self.promoted[i].wants_refresh()).then(|| node.params());
+            let params = (!disabled || self.promoted[i].wants_refresh()).then(|| shown.params());
             if self.promoted[i].wants_refresh()
                 && let Some(params) = &params
             {
@@ -484,16 +610,17 @@ impl InnerGraph {
             shared.snapshot_active = active;
             shared.snapshot_fading = fading;
             shared.snapshot_progress = progress;
+            shared.lanes = copies.len() + 1;
             if disabled {
                 continue;
             }
             let total_out = total_channels(node.outputs());
             for ch in 0..total_out.min(shared.outputs.len()) {
-                shared.outputs[ch] = node.read_output(ch);
+                shared.outputs[ch] = shown.read_output(ch);
             }
             let total_in = total_channels(node.inputs());
             for ch in 0..total_in.min(shared.inputs.len()) {
-                shared.inputs[ch] = node.read_input(ch);
+                shared.inputs[ch] = shown.read_input(ch);
             }
             if let Some(params) = params {
                 shared.current_params = params;
@@ -501,8 +628,19 @@ impl InnerGraph {
             if sync_save_data {
                 shared.save_data = node.save_data();
             }
-            node.update_display(&mut shared);
+            shown.update_display(&mut shared);
         }
+    }
+
+    /// What the hover scope records for a port: the lane the UI shows.
+    pub fn probe_read(&self, i: usize, output: bool, channel: usize) -> f32 {
+        let view = if self.lanes.get(i).is_none_or(|l| l.is_empty()) {
+            0
+        } else {
+            self.shared_states[i].lock().view_lane.min(self.lanes[i].len())
+        };
+        let node: &dyn ProcessNode = if view == 0 { self.nodes[i].as_ref() } else { self.lanes[i][view - 1].node.as_ref() };
+        if output { node.read_output(channel) } else { node.read_input(channel) }
     }
 }
 
@@ -823,9 +961,9 @@ mod routing_tests {
     fn plan_notices_a_change_in_bridge_channels() {
         let (mut g, ins, outs) = passthrough();
         g.tick(&ins, &outs);
-        assert!(g.plan.is_current(&g.nodes, &ins, &outs));
+        assert!(g.plan.is_current(&g.nodes, &g.lanes, &ins, &outs));
         let wider = vec![PortDef::new("c", PortType::Color)];
-        assert!(!g.plan.is_current(&g.nodes, &wider, &outs));
+        assert!(!g.plan.is_current(&g.nodes, &g.lanes, &wider, &outs));
     }
 }
 
@@ -953,5 +1091,267 @@ mod bus_tests {
         }
         let pick = g.nodes.last().unwrap();
         assert_eq!([pick.read_output(0), pick.read_output(1), pick.read_output(2)], [3.0, 3.5, 0.25]);
+    }
+}
+
+#[cfg(test)]
+mod lane_tests {
+    use super::*;
+    use crate::engine::nodes::math::bus::BusReshapeProcessNode;
+    use crate::engine::nodes::math::logic_gate::{LogicGateProcessNode, LogicOp};
+    use crate::engine::nodes::math::multiplex::type_to_index;
+    use crate::engine::nodes::math::schmitt::SchmittTriggerProcessNode;
+    use crate::engine::promoted::{PromotedKind, PromotedParam};
+    use crate::engine::snapshots::{SnapshotSet, capture};
+
+    const WIDTH: usize = 16;
+
+    fn port(node: u64, index: usize, dir: PortDir) -> PortId {
+        PortId { node: NodeId(node), index, dir }
+    }
+
+    /// A node with one output that holds a fixed value.
+    struct Source {
+        id: NodeId,
+        outputs: Vec<PortDef>,
+        value: f32,
+    }
+
+    impl ProcessNode for Source {
+        fn node_id(&self) -> NodeId { self.id }
+        fn type_name(&self) -> &'static str { "Source" }
+        fn inputs(&self) -> &[PortDef] { &[] }
+        fn outputs(&self) -> &[PortDef] { &self.outputs }
+        fn process(&mut self) {}
+        fn read_output(&self, _: usize) -> f32 { self.value }
+    }
+
+    fn add(g: &mut InnerGraph, node: Box<dyn ProcessNode>) {
+        g.apply(SubgraphInnerCmd::AddNode { node, shared: new_shared_state(64, 64) });
+    }
+
+    fn wire(g: &mut InnerGraph, from: (u64, usize), to: (u64, usize)) {
+        g.apply(SubgraphInnerCmd::AddConnection(Connection {
+            from: port(from.0, from.1, PortDir::Output),
+            to: port(to.0, to.1, PortDir::Input),
+        }));
+    }
+
+    /// A Merge (id `merge`) of WIDTH inputs fed by sources (ids from `first`)
+    /// whose values come from `value(lane)`.
+    fn bus_of(g: &mut InnerGraph, merge: u64, first: u64, value: impl Fn(usize) -> f32) {
+        let mut m = BusReshapeProcessNode::merge(NodeId(merge));
+        m.set_param(0, ParamValue::Choice(type_to_index(PortType::Untyped)));
+        m.set_param(1, ParamValue::Int(WIDTH as i64));
+        add(g, Box::new(m));
+        for k in 0..WIDTH {
+            let id = first + k as u64;
+            add(g, Box::new(Source { id: NodeId(id), outputs: vec![PortDef::new("out", PortType::Untyped)], value: value(k) }));
+            wire(g, (id, 0), (merge, k));
+        }
+    }
+
+    fn lanes_for(g: &mut InnerGraph, id: u64, make: impl Fn() -> Box<dyn ProcessNode>) {
+        g.apply(SubgraphInnerCmd::SetLanes { node_id: NodeId(id), extra: (1..WIDTH).map(|_| make()).collect() });
+    }
+
+    fn schmitt() -> Box<dyn ProcessNode> {
+        Box::new(SchmittTriggerProcessNode::new(NodeId(2)))
+    }
+
+    fn and_gate() -> Box<dyn ProcessNode> {
+        Box::new(LogicGateProcessNode::new(NodeId(3), LogicOp::And))
+    }
+
+    fn index_of(g: &InnerGraph, id: u64) -> usize {
+        g.nodes.iter().position(|n| n.node_id() == NodeId(id)).unwrap()
+    }
+
+    fn run(g: &mut InnerGraph, ticks: usize) {
+        for _ in 0..ticks {
+            g.tick(&[], &[]);
+        }
+    }
+
+    /// Merge(WIDTH; even lanes 0.9, odd 0.1) -> Schmitt -> AND with a single
+    /// wire on its second input -> Split.
+    fn chain(second: f32) -> InnerGraph {
+        let mut g = InnerGraph::new();
+        bus_of(&mut g, 1, 100, |k| if k % 2 == 0 { 0.9 } else { 0.1 });
+        add(&mut g, schmitt());
+        add(&mut g, and_gate());
+        let mut split = BusReshapeProcessNode::split(NodeId(4));
+        split.set_param(0, ParamValue::Choice(type_to_index(PortType::Logic)));
+        split.set_param(1, ParamValue::Int(WIDTH as i64));
+        add(&mut g, Box::new(split));
+        add(&mut g, Box::new(Source { id: NodeId(50), outputs: vec![PortDef::new("out", PortType::Logic)], value: second }));
+        lanes_for(&mut g, 2, schmitt);
+        lanes_for(&mut g, 3, and_gate);
+        wire(&mut g, (1, 0), (2, 0));
+        wire(&mut g, (2, 0), (3, 0));
+        wire(&mut g, (50, 0), (3, 1));
+        wire(&mut g, (3, 0), (4, 0));
+        g
+    }
+
+    fn split_outputs(g: &InnerGraph) -> Vec<f32> {
+        let split = &g.nodes[index_of(g, 4)];
+        (0..WIDTH).map(|k| split.read_output(k)).collect()
+    }
+
+    fn even_lanes_high() -> Vec<f32> {
+        (0..WIDTH).map(|k| if k % 2 == 0 { 1.0 } else { 0.0 }).collect()
+    }
+
+    #[test]
+    fn a_bus_through_laned_nodes_with_a_broadcast_input_comes_out_lane_by_lane() {
+        let mut g = chain(1.0);
+        run(&mut g, 10);
+        assert_eq!(split_outputs(&g), even_lanes_high());
+        // The single wire is broadcast: switching it off silences every lane.
+        let source = index_of(&g, 50);
+        g.nodes[source] = Box::new(Source { id: NodeId(50), outputs: vec![PortDef::new("out", PortType::Logic)], value: 0.0 });
+        run(&mut g, 10);
+        assert_eq!(split_outputs(&g), vec![0.0; WIDTH]);
+    }
+
+    #[test]
+    fn every_copy_is_its_own_node_with_its_own_state() {
+        let mut g = chain(1.0);
+        run(&mut g, 10);
+        let i = index_of(&g, 2);
+        assert_eq!(g.lanes[i].len(), WIDTH - 1);
+        for (k, copy) in g.lanes[i].iter().enumerate() {
+            let expected = if (k + 1) % 2 == 0 { 1.0 } else { 0.0 };
+            assert_eq!(copy.node.read_output(0), expected, "lane {}", k + 1);
+        }
+    }
+
+    #[test]
+    fn a_setting_changed_by_hand_reaches_every_lane() {
+        let mut g = chain(1.0);
+        run(&mut g, 10);
+        let i = index_of(&g, 2);
+        // Threshold 0.95 with no hysteresis: 0.9 is below it, so the high lanes fall.
+        g.shared_states[i].lock().pending_params.extend([(0, ParamValue::Float(0.95)), (1, ParamValue::Float(0.0))]);
+        run(&mut g, 10);
+        assert_eq!(split_outputs(&g), vec![0.0; WIDTH]);
+        for copy in &g.lanes[i] {
+            assert!(matches!(copy.node.params()[0], ParamDef::Float { value, .. } if (value - 0.95).abs() < 1e-6));
+        }
+    }
+
+    #[test]
+    fn saved_state_and_settings_reach_every_lane_through_config() {
+        let mut g = chain(1.0);
+        let i = index_of(&g, 3);
+        g.apply(SubgraphInnerCmd::LoadData { node_id: NodeId(3), data: serde_json::json!({ "input_count": 3 }) });
+        assert_eq!(g.nodes[i].inputs().len(), 3);
+        assert!(g.lanes[i].iter().all(|l| l.node.inputs().len() == 3));
+    }
+
+    #[test]
+    fn new_lanes_start_as_copies_of_lane_zero() {
+        let mut g = InnerGraph::new();
+        let mut first = SchmittTriggerProcessNode::new(NodeId(2));
+        first.set_param(0, ParamValue::Float(0.3));
+        add(&mut g, Box::new(first));
+        lanes_for(&mut g, 2, schmitt);
+        for copy in &g.lanes[0] {
+            assert!(matches!(copy.node.params()[0], ParamDef::Float { value, .. } if (value - 0.3).abs() < 1e-6));
+        }
+    }
+
+    #[test]
+    fn a_setting_driven_by_a_bus_differs_per_lane() {
+        let mut g = InnerGraph::new();
+        bus_of(&mut g, 1, 100, |_| 0.5);
+        bus_of(&mut g, 5, 200, |k| if k % 2 == 0 { 0.0 } else { 0.9 });
+        add(&mut g, schmitt());
+        let mut split = BusReshapeProcessNode::split(NodeId(4));
+        split.set_param(1, ParamValue::Int(WIDTH as i64));
+        add(&mut g, Box::new(split));
+        let i = index_of(&g, 2);
+        g.shared_states[i].lock().pending_promoted = Some(vec![PromotedParam { name: "Threshold".into(), kind: PromotedKind::Float }]);
+        lanes_for(&mut g, 2, schmitt);
+        wire(&mut g, (1, 0), (2, 0));
+        // The first port past the node's own single input.
+        wire(&mut g, (5, 0), (2, 1));
+        wire(&mut g, (2, 0), (4, 0));
+        run(&mut g, 12);
+        // 0.5 is over threshold 0.0 + 0.1 but not over 0.9 + 0.1.
+        assert_eq!(split_outputs(&g), even_lanes_high());
+    }
+
+    #[test]
+    fn a_snapshot_recall_reaches_every_lane() {
+        let mut g = InnerGraph::new();
+        let mut node = SchmittTriggerProcessNode::new(NodeId(2));
+        let mut set = SnapshotSet::default();
+        node.set_param(0, ParamValue::Float(0.2));
+        set.add(None, capture(&node.params(), node.non_promotable_params()));
+        node.set_param(0, ParamValue::Float(0.8));
+        set.add(None, capture(&node.params(), node.non_promotable_params()));
+        add(&mut g, Box::new(node));
+        lanes_for(&mut g, 2, schmitt);
+        g.shared_states[0].lock().pending_snapshots = Some(set);
+        run(&mut g, 2);
+        g.shared_states[0].lock().pending_recall = Some(0);
+        run(&mut g, 2);
+        let thresholds: Vec<f32> = std::iter::once(&g.nodes[0])
+            .chain(g.lanes[0].iter().map(|l| &l.node))
+            .map(|n| match n.params()[0] {
+                ParamDef::Float { value, .. } => value,
+                _ => unreachable!(),
+            })
+            .collect();
+        assert_eq!(thresholds, vec![0.2; WIDTH]);
+    }
+
+    #[test]
+    fn growing_keeps_the_lanes_that_were_there_and_removing_the_source_keeps_lane_zero() {
+        let mut g = chain(1.0);
+        run(&mut g, 10);
+        let i = index_of(&g, 2);
+        // Grow by one: lane 2 (a high one) keeps its state.
+        g.apply(SubgraphInnerCmd::SetLanes { node_id: NodeId(2), extra: (1..WIDTH + 1).map(|_| schmitt()).collect() });
+        assert_eq!(g.lanes[i].len(), WIDTH);
+        assert_eq!(g.lanes[i][1].node.read_output(0), 1.0);
+        // The source goes: one instance, lane 0's state, and the plan follows.
+        g.apply(SubgraphInnerCmd::SetLanes { node_id: NodeId(2), extra: Vec::new() });
+        g.apply(SubgraphInnerCmd::RemoveConnectionTo(port(2, 0, PortDir::Input)));
+        assert!(g.lanes[i].is_empty());
+        run(&mut g, 4);
+        assert_eq!(g.nodes[i].read_output(0), 1.0, "lane 0 kept what it had");
+    }
+
+    #[test]
+    fn a_disabled_node_holds_every_lane() {
+        let mut g = chain(1.0);
+        run(&mut g, 10);
+        let i = index_of(&g, 2);
+        g.shared_states[i].lock().disabled = true;
+        run(&mut g, 3);
+        assert_eq!(g.lanes[i][1].node.read_output(0), 1.0);
+    }
+
+    #[test]
+    fn the_ui_sees_the_lane_it_looks_at() {
+        let mut g = chain(1.0);
+        let i = index_of(&g, 2);
+        g.shared_states[i].lock().view_lane = 1;
+        run(&mut g, 40);
+        let shared = g.shared_states[i].lock();
+        assert_eq!(shared.lanes, WIDTH);
+        // Lane 1 is an odd lane, which sits low; lane 0 would be high.
+        assert_eq!(shared.outputs[0], 0.0);
+        drop(shared);
+        // Past the last lane the view stops at the last one, lane 15, which is odd and so low;
+        // make a high one the last by growing to 17 lanes.
+        g.apply(SubgraphInnerCmd::SetLanes { node_id: NodeId(2), extra: (1..WIDTH + 1).map(|_| schmitt()).collect() });
+        g.shared_states[i].lock().view_lane = 99;
+        run(&mut g, 40);
+        assert_eq!(g.shared_states[i].lock().lanes, WIDTH + 1);
+        assert_eq!(g.probe_read(i, true, 0), g.lanes[i][WIDTH - 1].node.read_output(0));
     }
 }

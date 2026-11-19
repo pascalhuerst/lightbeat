@@ -15,7 +15,37 @@
 
 use std::collections::HashMap;
 
-use super::types::{Connection, MAX_LANES, NodeId, PortId};
+use super::promoted::PromotedInputs;
+use super::types::{Connection, MAX_LANES, NodeId, ParamDef, ParamValue, PortId, ProcessNode};
+
+/// One extra copy of a laned node: lane 0 is the node itself, lanes 1.. are
+/// these. A copy has its own promoted-param state, so a wide wire on a setting
+/// moves each copy's setting on its own.
+pub struct Lane {
+    pub node: Box<dyn ProcessNode>,
+    pub promoted: PromotedInputs,
+}
+
+/// The settings that differ between two `params()` listings of one node, as
+/// `set_param` calls. A snapshot recall or fade changes lane 0's settings
+/// through the node's own `set_param`; this carries the change to the copies.
+pub fn changed_params(before: &[ParamDef], after: &[ParamDef]) -> Vec<(usize, ParamValue)> {
+    fn same(a: &ParamValue, b: &ParamValue) -> bool {
+        match (a, b) {
+            (ParamValue::Float(a), ParamValue::Float(b)) => a == b,
+            (ParamValue::Int(a), ParamValue::Int(b)) => a == b,
+            (ParamValue::Bool(a), ParamValue::Bool(b)) => a == b,
+            (ParamValue::Choice(a), ParamValue::Choice(b)) => a == b,
+            _ => false,
+        }
+    }
+    after
+        .iter()
+        .enumerate()
+        .filter(|(i, p)| before.get(*i).is_none_or(|old| !same(&old.as_value(), &p.as_value())))
+        .map(|(i, p)| (i, p.as_value()))
+        .collect()
+}
 
 /// What the inference needs to know about one node.
 #[derive(Debug, Clone)]

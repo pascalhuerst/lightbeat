@@ -122,6 +122,11 @@ impl PromotedInputs {
         self.entries.len()
     }
 
+    /// The list the UI last handed over, for a copy of the node to adopt.
+    pub fn wanted(&self) -> &[PromotedParam] {
+        &self.wanted
+    }
+
     /// Adopt the UI's list, looking each name up in the node's current params.
     pub fn adopt(&mut self, wanted: &[PromotedParam], node: &dyn ProcessNode) {
         let params = node.params();
@@ -199,6 +204,11 @@ impl PromotedInputs {
 
     pub fn recall_snapshot(&mut self, index: usize, node: &mut dyn ProcessNode) {
         self.player.recall(index, node);
+    }
+
+    /// A recall is fading: the player is writing settings every tick.
+    pub fn snapshot_running(&self) -> bool {
+        self.player.fading()
     }
 
     /// Once per tick, after the wires have been delivered.
