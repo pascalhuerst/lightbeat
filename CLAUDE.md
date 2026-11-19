@@ -664,7 +664,12 @@ declarations named below.
   `SavedNode.panel`: whole node and/or single params) is drawn, live, on the
   Subgraph node's body by `panel::draw_cell`. The graph mediates: it takes the
   inner level's widgets out with `mem::take` while drawing and puts them back.
-  Panels nest. A panel replaces the automatic list of inner displays.
+  Panels nest. A panel replaces the automatic list of inner displays. Only a
+  node whose body is a control or a display is offered as a whole
+  (`NodeWidget::shows_on_surfaces`, default false; a registry test lists the
+  true ones; a Subgraph is one while it has a panel). A whole-node flag on
+  another node (an old project) is ignored when drawing and laying out, and
+  stays in the data. Single settings can be pinned for any node.
 - **Linked subgraphs** (`src/linked.rs` for the rules on saved forms,
   `graph/instances.rs`, `app/linked.rs`): Subgraph nodes with the same
   `definition` id are instances. Each keeps its full inner graph, its own UI
@@ -719,6 +724,8 @@ declarations named below.
   front-panel cells without wires on pages (`ProjectFile.desk`, root only),
   moved and resized on a grid; Lock, full screen (`F11`), snapshot rows.
   Placement is never copied (duplicate, paste, macros) and is per instance.
+  The whole node is offered only when `shows_on_surfaces()` (see Front
+  panels); the snapshot row is offered for every node.
   Everything the graph does each frame besides drawing and interaction is in
   `NodeGraph::maintain()`, which both views run: put per-frame upkeep there,
   not in `show`.

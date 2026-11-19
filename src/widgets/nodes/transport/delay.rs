@@ -29,6 +29,7 @@ fn delay_label(exp: i32) -> String {
 }
 
 impl NodeWidget for TriggerDelayWidget {
+    fn shows_on_surfaces(&self) -> bool { true }
     node_identity!("Trigger Delay");
     fn description(&self) -> &'static str { "Delays incoming triggers by a power-of-two fraction or multiple of a beat (Exponent), counted on the phase input, before passing them through." }
 

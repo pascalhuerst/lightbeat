@@ -47,6 +47,7 @@ impl EnvelopeWidget {
 }
 
 impl NodeWidget for EnvelopeWidget {
+    fn shows_on_surfaces(&self) -> bool { true }
     fn restore_from_save(&mut self, _data: Option<&serde_json::Value>, params: &[(usize, ParamValue)]) {
         self.kind = param_usize(params, 4).map(EnvelopeKind::from_index).unwrap_or(EnvelopeKind::Adsr);
     }

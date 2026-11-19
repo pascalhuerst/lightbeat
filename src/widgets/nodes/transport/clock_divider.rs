@@ -33,6 +33,7 @@ impl ClockDividerWidget {
 }
 
 impl NodeWidget for ClockDividerWidget {
+    fn shows_on_surfaces(&self) -> bool { true }
     /// Takes the extra outputs from the saved form, before wires are
     /// attached, so wires to them still have ports to land on.
     fn restore_from_save(&mut self, data: Option<&serde_json::Value>, _params: &[(usize, crate::engine::types::ParamValue)]) {

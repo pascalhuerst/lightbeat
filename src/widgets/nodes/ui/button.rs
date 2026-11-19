@@ -66,6 +66,7 @@ impl ButtonWidget {
 }
 
 impl NodeWidget for ButtonWidget {
+    fn shows_on_surfaces(&self) -> bool { true }
     /// Restore the port-affecting state (specifically `inputs_enabled`,
     /// which gates whether `ui_inputs()` exposes a port) directly from
     /// saved data. Called by the project loader *before*

@@ -73,16 +73,6 @@ impl NodeGraph {
             self.desk.ensure_page();
             entries = collect_desk(&self.levels, &reachable, &self.desk);
         }
-        // A Subgraph with a front panel draws its inner nodes; the panel's
-        // cells are only known after this, and only for the levels the canvas
-        // has open otherwise.
-        let mut levels: Vec<usize> = entries.iter().map(|e| e.level).collect();
-        levels.sort_unstable();
-        levels.dedup();
-        for li in levels {
-            self.refresh_panels(li);
-        }
-
         let locked = self.desk.locked;
         self.show_desk_bar(ui, locked);
         ui.add_space(2.0);

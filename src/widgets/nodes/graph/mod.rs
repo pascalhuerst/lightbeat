@@ -705,6 +705,9 @@ impl NodeGraph {
         self.tidy_ports();
         self.apply_panel_requests();
         self.handle_subgraph_requests();
+        // Whether a Subgraph has a panel decides whether it can be on the
+        // Desk at all, on whatever level it sits.
+        self.refresh_panels(0);
         self.place_new_desk_items();
     }
 

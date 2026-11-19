@@ -175,6 +175,7 @@ fn mix(a: egui::Color32, b: egui::Color32, t: f32) -> egui::Color32 {
 }
 
 impl NodeWidget for MeterWidget {
+    fn shows_on_surfaces(&self) -> bool { true }
     node_identity!(by |w| w.kind.type_name());
     fn follow_params(&mut self) {
         if let Some(i) = current_choice(&self.shared, 3) {

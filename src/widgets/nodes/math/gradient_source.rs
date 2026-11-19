@@ -147,6 +147,7 @@ impl GradientSourceWidget {
 }
 
 impl NodeWidget for GradientSourceWidget {
+    fn shows_on_surfaces(&self) -> bool { true }
     fn restore_from_save(&mut self, data: Option<&serde_json::Value>, _params: &[(usize, crate::engine::types::ParamValue)]) {
         let Some(data) = data else { return };
         let Some(stops) = GradientConfig::from_value(data).stops else { return };

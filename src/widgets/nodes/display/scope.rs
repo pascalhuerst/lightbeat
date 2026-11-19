@@ -23,6 +23,7 @@ impl ScopeWidget {
 }
 
 impl NodeWidget for ScopeWidget {
+    fn shows_on_surfaces(&self) -> bool { true }
     node_identity!("Scope");
     fn description(&self) -> &'static str { "Visualizes up to eight input signals as waveforms over time." }
 

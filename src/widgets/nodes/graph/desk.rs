@@ -55,6 +55,11 @@ pub(super) fn collect_desk(levels: &[GraphLevel], reachable: &[usize], doc: &Des
             let shared = node.shared_state().lock();
             for kind in [DeskKind::Node, DeskKind::Snapshots] {
                 let Some(r) = shared.desk.as_ref().and_then(|d| kind.slot(d)) else { continue };
+                // A flag left on a node that is no longer a control or a
+                // display (an old project) draws nothing and takes no room.
+                if kind == DeskKind::Node && !node.shows_on_surfaces() {
+                    continue;
+                }
                 if r.is_unplaced() {
                     continue;
                 }
@@ -87,11 +92,18 @@ impl NodeGraph {
         self.desk_entries().iter().filter(|e| e.page == page).count()
     }
 
-    /// Every selected node (on the open level) is on the Desk.
+    /// Some selected node (on the open level) can be shown as a whole on the
+    /// Desk or a front panel: it is a control or a display.
+    pub(super) fn selection_can_show_on_surfaces(&self) -> bool {
+        let level = self.active();
+        self.selected_nodes.iter().filter_map(|&i| level.nodes.get(i)).any(|n| surface_node(n.as_ref()))
+    }
+
+    /// Every selected node that can be on the Desk (on the open level) is.
     pub(super) fn selection_all_on_desk(&self) -> bool {
         let level = self.active();
         let mut any = false;
-        for n in self.selected_nodes.iter().filter_map(|&i| level.nodes.get(i)) {
+        for n in self.selected_nodes.iter().filter_map(|&i| level.nodes.get(i)).filter(|n| surface_node(n.as_ref())) {
             any = true;
             if !n.shared_state().lock().desk.as_ref().is_some_and(|d| d.node.is_some()) {
                 return false;
@@ -105,7 +117,7 @@ impl NodeGraph {
         let level = self.active();
         for &i in &self.selected_nodes {
             let Some(node) = level.nodes.get(i) else { continue };
-            if [BRIDGE_IN_NODE_ID, BRIDGE_OUT_NODE_ID].contains(&node.node_id()) {
+            if !surface_node(node.as_ref()) {
                 continue;
             }
             set_node_on_desk(node.as_ref(), on);
@@ -132,6 +144,9 @@ impl NodeGraph {
             for (i, n) in self.levels[li].nodes.iter().enumerate() {
                 let shared = n.shared_state().lock();
                 for kind in [DeskKind::Node, DeskKind::Snapshots] {
+                    if kind == DeskKind::Node && !n.shows_on_surfaces() {
+                        continue;
+                    }
                     if shared.desk.as_ref().and_then(|d| kind.slot(d)).is_some_and(DeskRect::is_unplaced) {
                         waiting.push((li, i, kind));
                     }
@@ -163,6 +178,11 @@ impl NodeGraph {
             DeskItem::edit(&mut node.shared_state().lock().desk, |d| *kind.slot_mut(d) = Some(geometry::desk_rect(page, rect)));
         }
     }
+}
+
+/// A node that is offered as a whole on the Desk and on front panels.
+pub(super) fn surface_node(node: &dyn NodeWidget) -> bool {
+    ![BRIDGE_IN_NODE_ID, BRIDGE_OUT_NODE_ID].contains(&node.node_id()) && node.shows_on_surfaces()
 }
 
 fn set_node_on_desk(node: &dyn NodeWidget, on: bool) {
@@ -372,6 +392,24 @@ mod tests {
         assert_eq!(first, 7);
         node.shared_state().lock().desk.as_mut().unwrap().node.as_mut().unwrap().page = 8;
         assert_eq!(entries(&g), vec![(1, 8), (3, 8)]);
+    }
+
+    #[test]
+    fn a_subgraph_is_on_the_desk_only_while_it_has_a_panel_and_the_flag_is_left_alone() {
+        let mut g = loaded();
+        let placed = Some(DeskItem { node: Some(DeskRect { page: 7, pos: [0.0, 0.0], size: [90.0, 60.0] }), snapshots: None });
+        g.levels[0].nodes[1].shared_state().lock().desk = placed.clone();
+        g.maintain();
+        assert_eq!(entries(&g), vec![(1, 7), (3, 8)], "no panel, nothing to show");
+        assert!(!super::surface_node(g.levels[0].nodes[1].as_ref()));
+        assert_eq!(desk_of(&g, 0, 2), placed, "the flag is kept, only ignored");
+
+        let inner = inner_level(&g);
+        let at = g.levels[inner].nodes.iter().position(|n| n.node_id() == NodeId(3)).unwrap();
+        g.set_panel_whole_at(inner, at, true);
+        g.maintain();
+        assert_eq!(entries(&g), vec![(1, 7), (2, 7), (3, 8)]);
+        assert!(super::surface_node(g.levels[0].nodes[1].as_ref()));
     }
 
     fn fresh() -> NodeGraph {

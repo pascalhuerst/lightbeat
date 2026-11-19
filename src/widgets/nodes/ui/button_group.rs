@@ -91,6 +91,7 @@ impl ButtonGroupWidget {
 }
 
 impl NodeWidget for ButtonGroupWidget {
+    fn shows_on_surfaces(&self) -> bool { true }
     /// The grid size and the input switch decide the ports; the rest of the
     /// settings come back with the engine's display.
     fn restore_from_save(&mut self, data: Option<&serde_json::Value>, _params: &[(usize, ParamValue)]) {

@@ -254,6 +254,7 @@ impl EffectStackWidget {
 }
 
 impl NodeWidget for EffectStackWidget {
+    fn shows_on_surfaces(&self) -> bool { true }
     fn restore_from_save(&mut self, data: Option<&serde_json::Value>, _params: &[(usize, crate::engine::types::ParamValue)]) {
         if let Some(data) = data
             && let Ok(config) = serde_json::from_value::<StackConfig>(data.clone())

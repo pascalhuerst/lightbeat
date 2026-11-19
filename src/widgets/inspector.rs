@@ -408,7 +408,10 @@ pub fn show_inspector(ui: &mut Ui, node: &mut dyn NodeWidget, in_subgraph: bool)
     lane_stepper(ui, node);
 
     let is_bridge = [BRIDGE_IN_NODE_ID, BRIDGE_OUT_NODE_ID].contains(&node.node_id());
-    if !is_bridge {
+    // Only a control or a display is a thing to put on the Desk or a panel as
+    // a whole; its single settings can be pinned in any case.
+    let surface = !is_bridge && node.shows_on_surfaces();
+    if surface {
         let mut shared = node.shared_state().lock();
         let mut on = shared.desk.as_ref().is_some_and(|d| d.node.is_some());
         if ui.checkbox(&mut on, "Show on Desk")
@@ -420,7 +423,7 @@ pub fn show_inspector(ui: &mut Ui, node: &mut dyn NodeWidget, in_subgraph: bool)
             });
         }
     }
-    if in_subgraph && !is_bridge {
+    if in_subgraph && surface {
         let mut shared = node.shared_state().lock();
         let mut on = shared.panel.as_ref().is_some_and(|p| p.whole);
         if ui.checkbox(&mut on, "Show on parent")
@@ -430,6 +433,8 @@ pub fn show_inspector(ui: &mut Ui, node: &mut dyn NodeWidget, in_subgraph: bool)
             crate::engine::types::PanelItem::set_whole(&mut shared.panel, on);
         }
         drop(shared);
+    }
+    if surface {
         ui.separator();
     }
 

@@ -37,6 +37,7 @@ impl ConstantWidget {
 }
 
 impl NodeWidget for ConstantWidget {
+    fn shows_on_surfaces(&self) -> bool { true }
     fn node_id(&self) -> NodeId { self.id }
     fn follow_params(&mut self) {
         let Some(kind) = current_choice(&self.shared, 1).and_then(|i| ConstantProcessNode::KINDS.get(i)) else { return };

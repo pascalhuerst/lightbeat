@@ -52,6 +52,10 @@ Jumps
 
 - [ ] Inside a subgraph, right-click a Fader: "Show on parent". It appears on
       the Subgraph node and works from there.
+- [ ] "Show on parent" is offered only for controls and displays (Fader,
+      Button, Const, Gain, Step Sequencer, Envelope, Value Display, Scope, ...),
+      not for an Add, a Bus Split or a Portal Receive; the pin next to `in` is
+      offered for every node. A Subgraph is offered only once it has a panel.
 - [ ] Dragging a Fader, Button, XY Pad or Color Mixer on the panel does not
       drag the Subgraph node or start a lasso.
 - [ ] Double-click on a panel control does not open the subgraph.
@@ -138,6 +142,10 @@ Through subgraphs and portals
       not work at all in `v0.3.0-beta.1`.)
 - [ ] "Show on Desk" from a node's right-click menu and from its inspector,
       also for a node deep inside subgraphs. It lands on the current page.
+- [ ] "Show on Desk" is offered only for controls and displays, in the menu
+      and in the inspector; a project from before this (an Add on the Desk)
+      shows nothing for it, with no gap. The snapshot list is offered for every
+      node.
 - [ ] Controls on the Desk work (fader, button, XY pad, colour mixer).
 - [ ] Move by the title strip, resize by the corner; both snap. Cursor and
       hover outline feel right.
