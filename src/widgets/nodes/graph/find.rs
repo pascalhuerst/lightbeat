@@ -73,7 +73,12 @@ pub(super) fn pan_to_centre(canvas: Vec2, zoom: f32, centre: Pos2) -> Vec2 {
 
 impl NodeGraph {
     pub fn open_find(&mut self) {
-        self.find = Some(FindState { query: String::new(), selected: 0, focused: false });
+        // Asking again while it is open only takes the focus back: the
+        // query the user typed is theirs.
+        match self.find.as_mut() {
+            Some(state) => state.focused = false,
+            None => self.find = Some(FindState { query: String::new(), selected: 0, focused: false }),
+        }
     }
 
     /// Subgraph node ids from the root down to `level`, if every one of them
@@ -303,6 +308,18 @@ mod tests {
         assert_eq!(paths, ["LaunchPad / Sequence / Master", "Master Dimmer"]);
         assert_eq!(hits[0].level, 2);
         assert_eq!(hits[0].target, FindTarget::Node(NodeId(3)));
+    }
+
+    #[test]
+    fn opening_find_again_keeps_the_query() {
+        let mut g = project();
+        g.open_find();
+        g.find.as_mut().unwrap().query = "master".into();
+        g.find.as_mut().unwrap().focused = true;
+        g.open_find();
+        let state = g.find.as_ref().unwrap();
+        assert_eq!(state.query, "master");
+        assert!(!state.focused, "the box asks for the focus again");
     }
 
     #[test]

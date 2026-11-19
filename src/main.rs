@@ -508,6 +508,13 @@ impl eframe::App for LightBeatApp {
             .record_frame(&self.perf, started.elapsed().as_micros() as u64);
     }
 
+    fn raw_input_hook(&mut self, ctx: &egui::Context, raw_input: &mut egui::RawInput) {
+        // Focus is still last frame's here: nothing has been drawn yet.
+        if app::view::take_view_switch(&mut raw_input.events, ctx.wants_keyboard_input()) {
+            self.toggle_view();
+        }
+    }
+
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
         // Setup (fixtures/interfaces/palettes/etc.) always persists on exit
         // — it's shared hardware config, not the user-authored project.
