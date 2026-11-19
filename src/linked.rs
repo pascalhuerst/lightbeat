@@ -639,6 +639,7 @@ fn canonical_node(n: &SavedNode) -> serde_json::Value {
         "promoted": n.promoted,
         "hide": n.hide_unused_ports,
         "panel": n.panel,
+        "snapshots": n.snapshots,
     })
 }
 
@@ -1340,6 +1341,19 @@ mod tests {
         let mut other_type = plain(2, 70, 0.5);
         other_type.inner_graph.as_mut().unwrap().nodes[1].type_name = "Lfo".into();
         assert_ne!(canon(&plain(1, 10, 0.5)), canon(&other_type));
+    }
+
+    #[test]
+    fn subgraphs_whose_nodes_have_different_snapshots_are_not_identical() {
+        let known = Known::new();
+        let canon = |s: &SavedNode| canonical_level(s.inner_graph.as_ref().unwrap(), &known).to_string();
+        let mut with = plain(2, 70, 0.5);
+        with.inner_graph.as_mut().unwrap().nodes[0].snapshots.add(None, Vec::new());
+        assert_ne!(canon(&plain(1, 10, 0.5)), canon(&with), "a sync would overwrite the list");
+        // Which one is current is state and does not count.
+        let mut other = with.clone();
+        other.inner_graph.as_mut().unwrap().nodes[0].snapshots.active = Some(1);
+        assert_eq!(canon(&with), canon(&other));
     }
 
     #[test]
