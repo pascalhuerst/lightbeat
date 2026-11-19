@@ -679,7 +679,10 @@ declarations named below.
   nor listed as setup, so decide when you add one. `Ctrl+D` makes an instance,
   `Ctrl+Shift+D` a unique copy; "Make unique"; Edit, "Link identical
   subgraphs". A placed macro is an instance too (`macro_hash`), with "Update
-  from library".
+  from library". Known limit: a wiring or node-count edit inside one instance
+  rebuilds the engine nodes of the other instances (values are carried only
+  for the keys in `running_state_keys()`), so their other runtime state
+  (an LFO phase, a delay buffer) restarts.
 - **Buses** (`engine/lanes.rs`, `engine/routing.rs`, `graph/bus.rs`): a wire
   can carry up to `MAX_LANES` (64) lanes. Not a port type. Two ways a port is
   wide: a *native bus port* (`PortDef.lanes`; the node handles lanes x channels
