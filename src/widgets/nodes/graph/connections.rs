@@ -282,6 +282,11 @@ impl NodeGraph {
             .collect();
         for (node, dir, index, kind) in removed {
             self.shift_wires_after_removal(node, dir, index);
+            if matches!(kind, Kind::Subgraph)
+                && self.active().states.iter().position(|s| s.id == node).is_some_and(|i| self.definition_at(self.active_level, i).is_some())
+            {
+                self.port_removals.push((node, dir, index));
+            }
             match kind {
                 Kind::Plain => {}
                 Kind::Subgraph => {
@@ -340,7 +345,7 @@ impl NodeGraph {
 
     /// Port `index` of `node` is gone from the active level: drop its wires and
     /// move the ones on the ports after it down by one.
-    fn shift_wires_after_removal(&mut self, node: NodeId, dir: PortDir, index: usize) {
+    pub(super) fn shift_wires_after_removal(&mut self, node: NodeId, dir: PortDir, index: usize) {
         let on_node = |p: &PortId| p.node == node && p.dir == dir;
         let wires: Vec<(PortId, PortId)> = self
             .active()

@@ -311,6 +311,9 @@ pub struct NodeGraph {
     pub collapse_wires: bool,
     /// Messages for the user that came up inside the graph; the app shows them.
     notices: Vec<String>,
+    /// Ports removed from a linked Subgraph since the last sync, in order, so
+    /// the other instances shift their outer wires the same way.
+    port_removals: Vec<(NodeId, PortDir, usize)>,
     /// Per node type, the saved-data keys that are running state (linked
     /// subgraphs keep them per instance); set by the app.
     running: HashMap<String, &'static [&'static str]>,
@@ -394,6 +397,7 @@ impl NodeGraph {
             show_minimap: true,
             collapse_wires: true,
             notices: Vec::new(),
+            port_removals: Vec::new(),
             running: HashMap::new(),
             lane_limits: HashMap::new(),
             engine_factory: None,

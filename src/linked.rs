@@ -421,6 +421,10 @@ pub struct SyncStep {
     pub result: SavedNode,
     /// The level has to be built again; otherwise values are pushed in place.
     pub rebuild: bool,
+    /// Ports the source lost from its list since the last sync, in order: the
+    /// target shifts its outer wires the way the source's were. A diff of the
+    /// two port lists cannot tell a removal from a rename.
+    pub port_removals: Vec<(crate::engine::types::PortDir, usize)>,
 }
 
 impl std::fmt::Debug for SavedNode {
@@ -508,7 +512,7 @@ pub fn plan_sync(
                 (Some(o), Some(n)) => ports_of(target.node) != ports_of(&result) || !in_place_ok(o, n),
                 _ => true,
             };
-            steps.push(SyncStep { path: target.path.clone(), source: source.path.clone(), result, rebuild });
+            steps.push(SyncStep { path: target.path.clone(), source: source.path.clone(), result, rebuild, port_removals: Vec::new() });
         }
     }
     // A rebuilt level takes its nested instances with it; they are planned
@@ -538,7 +542,7 @@ pub fn plan_update(
             (Some(o), Some(n)) => ports_of(target.node) != ports_of(&result) || !in_place_ok(o, n),
             _ => true,
         };
-        steps.push(SyncStep { path: target.path.clone(), source: Vec::new(), result, rebuild });
+        steps.push(SyncStep { path: target.path.clone(), source: Vec::new(), result, rebuild, port_removals: Vec::new() });
     }
     let rebuilt: Vec<Vec<u64>> = steps.iter().filter(|s| s.rebuild).map(|s| s.path.clone()).collect();
     steps.retain(|s| !rebuilt.iter().any(|r| s.path.len() > r.len() && s.path.starts_with(r)));

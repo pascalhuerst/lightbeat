@@ -477,3 +477,59 @@ fn an_instance_inside_a_subgraph_inside_another_instance_follows_its_own_definit
     }
     assert_eq!(g.instance_counts()[&def(&g)], 2);
 }
+
+fn input_ports(n: usize) -> Vec<serde_json::Value> {
+    (0..n).map(|i| serde_json::json!({"name": format!("in {i}"), "port_type_idx": 2})).collect()
+}
+
+/// What the app does after an edit, with the port removals carried along.
+fn sync_with_removals(g: &mut NodeGraph) {
+    g.assign_def_nodes();
+    let mut current = project::save_graph(g);
+    let names = g.known();
+    for _ in 0..8 {
+        let mut steps = crate::linked::plan_sync(&current, &crate::linked::first_instances(&current), &names, &mut || g.alloc_id().0);
+        if steps.is_empty() {
+            break;
+        }
+        g.attach_port_removals(&mut steps);
+        for s in &steps {
+            g.apply_sync_step(s);
+        }
+        crate::linked::apply_steps(&mut current, &steps);
+    }
+}
+
+#[test]
+fn removing_a_port_shifts_the_outer_wires_of_every_instance() {
+    let mut g = with_two_instances();
+    let definition = def(&g);
+    let (a, b) = (g.root_level().nodes[0].node_id(), g.root_level().nodes[1].node_id());
+    for w in g.levels[0].nodes.iter_mut().filter_map(|n| n.as_any_mut().downcast_mut::<SubgraphWidget>()) {
+        w.restore_from_save(Some(&serde_json::json!({"name": "Strobe", "inputs": input_ports(3), "outputs": [], "definition": definition})), &[]);
+    }
+    let consts: Vec<NodeId> = (0..6)
+        .map(|_| {
+            let id = g.alloc_id();
+            let node = g.create_from_registry("Const Value", id).unwrap();
+            g.add_node(node, Pos2::ZERO);
+            id
+        })
+        .collect();
+    for (k, (&to_a, &to_b)) in consts[..3].iter().zip(&consts[3..]).enumerate() {
+        g.add_connection(PortId { node: to_a, index: 0, dir: PortDir::Output }, PortId { node: a, index: k, dir: PortDir::Input });
+        g.add_connection(PortId { node: to_b, index: 0, dir: PortDir::Output }, PortId { node: b, index: k, dir: PortDir::Input });
+    }
+    g.assign_def_nodes();
+    // The user removes port 0 of the first instance.
+    g.levels[0].nodes[0].as_any_mut().downcast_mut::<SubgraphWidget>().unwrap().remove_input(0);
+    g.remap_removed_ports();
+    sync_with_removals(&mut g);
+    let wires_to = |g: &NodeGraph, sub: NodeId| -> Vec<(u64, usize)> {
+        let mut w: Vec<(u64, usize)> = g.root_level().connections.iter().filter(|c| c.to.node == sub).map(|c| (c.from.node.0, c.to.index)).collect();
+        w.sort_unstable();
+        w
+    };
+    assert_eq!(wires_to(&g, a), vec![(consts[1].0, 0), (consts[2].0, 1)]);
+    assert_eq!(wires_to(&g, b), vec![(consts[4].0, 0), (consts[5].0, 1)], "the sibling's wires moved the same way");
+}
