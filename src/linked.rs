@@ -237,7 +237,7 @@ fn merge_node(s: &SavedNode, d: &SavedNode, known: &Known, alloc: &mut dyn FnMut
     // Where a node sits on the Desk is the instance's: two instances of a
     // voice put their faders on different pages.
     n.desk = d.desk.clone();
-    let placed = |x: &SavedNode| x.desk.as_ref().is_some_and(|i| !i.is_empty());
+    let placed = |x: &SavedNode| x.desk.as_ref().is_some_and(|i| i.node.is_some() || i.snapshots.is_some());
     if placed(s) || placed(d) {
         // A node on the Desk is played from there, not from inside the
         // definition: like a whole panel node, its values are the instance's.
@@ -252,22 +252,19 @@ fn merge_node(s: &SavedNode, d: &SavedNode, known: &Known, alloc: &mut dyn FnMut
             if n.type_name != "Subgraph" {
                 n.data = d.data.clone();
             }
-        } else if let Some(wanted) = known.params.get(&d.id) {
-            for name in &panel.params {
-                let Some(index) = wanted.iter().position(|p| p == name) else { continue };
-                let theirs = d.params.iter().find(|p| p.index == index);
-                n.params.retain(|p| p.index != index);
-                if let Some(p) = theirs {
-                    n.params.push(SavedParam { index, value: p.value.clone() });
-                }
-            }
-            n.params.sort_by_key(|p| p.index);
-        } else if !panel.params.is_empty() {
-            // The setting cannot be told apart yet, so none of them is touched
-            // rather than overwriting what the instance has pinned.
-            n.params = d.params.clone();
+        } else {
+            keep_pinned(&mut n, d, &panel.params, known);
         }
     }
+    // A setting pinned to the Desk is played from there, so its value is the
+    // instance's, whichever instance pinned it.
+    let mut desk_names: Vec<String> = Vec::new();
+    for x in [s, d] {
+        if let Some(desk) = &x.desk {
+            desk_names.extend(desk.params.iter().map(|(name, _)| name.clone()));
+        }
+    }
+    keep_pinned(&mut n, d, &desk_names, known);
     // Which snapshot is current is state, not definition.
     n.snapshots.active = d.snapshots.active;
     let keys = known.running_keys(&n.type_name);
@@ -433,15 +430,55 @@ impl std::fmt::Debug for SavedNode {
     }
 }
 
+/// The values of the settings `names` of `n` taken from the target's node `d`.
+fn keep_pinned(n: &mut SavedNode, d: &SavedNode, names: &[String], known: &Known) {
+    if names.is_empty() {
+        return;
+    }
+    let Some(wanted) = known.params.get(&d.id) else {
+        // The setting cannot be told apart yet, so none of them is touched
+        // rather than overwriting what the instance has pinned.
+        n.params = d.params.clone();
+        return;
+    };
+    for name in names {
+        let Some(index) = wanted.iter().position(|p| p == name) else { continue };
+        let theirs = d.params.iter().find(|p| p.index == index);
+        n.params.retain(|p| p.index != index);
+        if let Some(p) = theirs {
+            n.params.push(SavedParam { index, value: p.value.clone() });
+        }
+    }
+    n.params.sort_by_key(|p| p.index);
+}
+
+/// `n` with the settings `names` blanked.
+fn blank_pinned(n: &mut SavedNode, names: &[String], known: &Known) {
+    if names.is_empty() {
+        return;
+    }
+    if let Some(wanted) = known.params.get(&n.id) {
+        let blank: Vec<usize> = names.iter().filter_map(|name| wanted.iter().position(|p| p == name)).collect();
+        n.params.retain(|p| !blank.contains(&p.index));
+    } else {
+        n.params.clear();
+    }
+}
+
 /// `n` with what belongs to an instance blanked: running state, the values of
 /// what is on a front panel, which snapshot is current. What is left is what
 /// two instances must agree on.
 fn mask_node(n: &mut SavedNode, known: &Known) {
     n.snapshots.active = None;
-    if n.desk.take().is_some_and(|i| !i.is_empty()) {
-        n.params.clear();
-        if n.type_name != "Subgraph" {
-            n.data = None;
+    if let Some(desk) = n.desk.take() {
+        if desk.node.is_some() || desk.snapshots.is_some() {
+            n.params.clear();
+            if n.type_name != "Subgraph" {
+                n.data = None;
+            }
+        } else {
+            let names: Vec<String> = desk.params.into_iter().map(|(name, _)| name).collect();
+            blank_pinned(n, &names, known);
         }
     }
     if n.type_name == "Subgraph" {
@@ -461,11 +498,9 @@ fn mask_node(n: &mut SavedNode, known: &Known) {
             if n.type_name != "Subgraph" {
                 n.data = None;
             }
-        } else if let Some(wanted) = known.params.get(&n.id) {
-            let blank: Vec<usize> = panel.params.iter().filter_map(|name| wanted.iter().position(|p| p == name)).collect();
-            n.params.retain(|p| !blank.contains(&p.index));
-        } else if !panel.params.is_empty() {
-            n.params.clear();
+        } else {
+            let names = panel.params.clone();
+            blank_pinned(n, &names, known);
         }
     }
 }
@@ -1016,7 +1051,7 @@ mod tests {
 
     fn on_desk() -> Option<crate::engine::types::DeskItem> {
         use crate::engine::types::{DeskItem, DeskRect};
-        Some(DeskItem { node: Some(DeskRect { page: 0, pos: [0.0, 0.0], size: [1.0, 1.0] }), snapshots: None })
+        Some(DeskItem { node: Some(DeskRect { page: 0, pos: [0.0, 0.0], size: [1.0, 1.0] }), snapshots: None, params: vec![] })
     }
 
     #[test]
@@ -1036,6 +1071,41 @@ mod tests {
         let r = steps[0].result.inner_graph.as_ref().unwrap();
         assert_eq!(param(&r.nodes[1], 0), 0.99, "the Desk node keeps its own value");
         assert_eq!(param(&r.nodes[0], 0), 0.8, "the rest follows the definition");
+    }
+
+    #[test]
+    fn a_setting_pinned_to_the_desk_keeps_its_value_per_instance() {
+        use crate::engine::types::{DeskItem, DeskRect};
+        let pinned = |name: &str| {
+            Some(DeskItem {
+                node: None,
+                snapshots: None,
+                params: vec![(name.to_string(), DeskRect { page: 0, pos: [0.0, 0.0], size: [1.0, 1.0] })],
+            })
+        };
+        let mut base = pair();
+        for (i, node) in base.nodes.iter_mut().enumerate().take(2) {
+            let g = node.inner_graph.as_mut().unwrap();
+            set_param(&mut g.nodes[0], 0, 0.25 + i as f64);
+            set_param(&mut g.nodes[0], 1, 0.0);
+        }
+        base.nodes[1].inner_graph.as_mut().unwrap().nodes[0].desk = pinned("Level");
+        let mut known = Known::new();
+        known.params.insert(10, vec!["Level".into(), "Other".into()]);
+        known.params.insert(20, vec!["Level".into(), "Other".into()]);
+        // Played on the Desk: the pinned value moves, which is no edit of the definition.
+        let mut cur = base.clone();
+        set_param(&mut cur.nodes[1].inner_graph.as_mut().unwrap().nodes[0], 0, 0.99);
+        assert!(plan_sync(&cur, &sources(Some(&base), &cur), &known, &mut counter(1000)).is_empty());
+        // An edit of both settings in instance 1 changes the other one's unpinned setting only.
+        set_param(&mut cur.nodes[0].inner_graph.as_mut().unwrap().nodes[0], 0, 0.1);
+        set_param(&mut cur.nodes[0].inner_graph.as_mut().unwrap().nodes[0], 1, 7.0);
+        let steps = plan_sync(&cur, &[vec![1]], &known, &mut counter(1000));
+        assert_eq!(steps.len(), 1);
+        let r = steps[0].result.inner_graph.as_ref().unwrap();
+        assert_eq!(param(&r.nodes[0], 0), 0.99, "the pinned setting keeps the instance's value");
+        assert_eq!(param(&r.nodes[0], 1), 7.0, "the rest follows the definition");
+        assert!(r.nodes[0].desk.is_some(), "and the placement stays the instance's");
     }
 
     #[test]

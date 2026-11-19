@@ -53,7 +53,7 @@ fn put_on_desk(g: &NodeGraph, sub: u64, id: u64, page: u64) {
     let level = g.find_level_for_subgraph(NodeId(sub)).unwrap();
     let node = level.nodes.iter().find(|n| n.node_id() == NodeId(id)).unwrap();
     let rect = DeskRect { page, pos: [20.0, 40.0], size: [100.0, 60.0] };
-    node.shared_state().lock().desk = Some(DeskItem { node: Some(rect), snapshots: None });
+    node.shared_state().lock().desk = Some(DeskItem { node: Some(rect), snapshots: None, params: vec![] });
 }
 
 fn desk_page(node: &project::SavedNode) -> Option<u64> {

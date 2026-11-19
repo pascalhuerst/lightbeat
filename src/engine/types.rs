@@ -410,19 +410,34 @@ impl DeskRect {
     }
 }
 
-/// What a node puts on the Desk: itself, its snapshot list, or both. Lives on
-/// the node, so it follows the node between levels.
+/// What a node puts on the Desk: itself, its snapshot list, single settings
+/// of it, or any of these. Lives on the node, so it follows the node between
+/// levels.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct DeskItem {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub node: Option<DeskRect>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub snapshots: Option<DeskRect>,
+    /// Single settings of the node, by param name, each its own item.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub params: Vec<(String, DeskRect)>,
 }
 
 impl DeskItem {
     pub fn is_empty(&self) -> bool {
-        self.node.is_none() && self.snapshots.is_none()
+        self.node.is_none() && self.snapshots.is_none() && self.params.is_empty()
+    }
+
+    /// Put one setting on the Desk (unplaced, the graph gives it a place), or
+    /// take it off.
+    pub fn set_param(slot: &mut Option<DeskItem>, name: &str, on: bool) {
+        Self::edit(slot, |d| {
+            d.params.retain(|(p, _)| p != name);
+            if on {
+                d.params.push((name.to_string(), DeskRect::UNPLACED));
+            }
+        });
     }
 
     /// `slot` with `f` applied, and an item that holds nothing dropped.

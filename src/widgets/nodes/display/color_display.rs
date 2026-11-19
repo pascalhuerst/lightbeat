@@ -28,6 +28,7 @@ impl ColorDisplayWidget {
 }
 
 impl NodeWidget for ColorDisplayWidget {
+    fn shows_on_surfaces(&self) -> bool { true }
     node_identity!("Color Display");
     fn description(&self) -> &'static str {
         "Shows a color swatch, palette (4-color set), or gradient preview. Type auto-detected from the first connected wire."

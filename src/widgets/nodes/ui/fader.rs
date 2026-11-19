@@ -101,6 +101,7 @@ impl FaderWidget {
 }
 
 impl NodeWidget for FaderWidget {
+    fn shows_on_surfaces(&self) -> bool { true }
     /// Restore port-affecting state directly from save_data. See
     /// `FaderGroupWidget::restore_from_save` for rationale.
     fn restore_from_save(&mut self, data: Option<&serde_json::Value>, params: &[(usize, crate::engine::types::ParamValue)]) {

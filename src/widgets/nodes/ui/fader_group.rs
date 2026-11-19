@@ -108,6 +108,7 @@ impl FaderGroupWidget {
 }
 
 impl NodeWidget for FaderGroupWidget {
+    fn shows_on_surfaces(&self) -> bool { true }
     /// Restore port-affecting state directly from save_data. Called by
     /// project.rs *before* connections are loaded, so that `ui_inputs` /
     /// `ui_outputs` already reflect the saved port layout when

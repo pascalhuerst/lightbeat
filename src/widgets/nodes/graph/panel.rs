@@ -96,7 +96,15 @@ impl NodeGraph {
     /// take it off.
     pub fn set_panel_whole(&mut self, index: usize, on: bool) {
         let Some(node) = self.active().nodes.get(index) else { return };
+        if on && !super::desk::surface_node(node.as_ref()) {
+            return;
+        }
         PanelItem::set_whole(&mut node.shared_state().lock().panel, on);
+    }
+
+    #[cfg(test)]
+    pub(super) fn set_panel_whole_at(&mut self, level: usize, index: usize, on: bool) {
+        PanelItem::set_whole(&mut self.levels[level].nodes[index].shared_state().lock().panel, on);
     }
 
     /// Carry out what the Front panel lists of the Subgraph nodes on the
@@ -147,6 +155,13 @@ impl NodeGraph {
     }
 }
 
+/// What of `item` the panel shows: a whole-node flag on a node that is no
+/// longer a control or a display (an old project) counts for nothing, so it
+/// takes no cell and no room.
+fn effective_item(node: &dyn NodeWidget, item: &PanelItem) -> PanelItem {
+    PanelItem { whole: item.whole && node.shows_on_surfaces(), ..item.clone() }
+}
+
 fn panel_members_of(nodes: &[Box<dyn NodeWidget>]) -> Vec<usize> {
     let mut members: Vec<(u32, usize)> = nodes
         .iter()
@@ -154,7 +169,7 @@ fn panel_members_of(nodes: &[Box<dyn NodeWidget>]) -> Vec<usize> {
         .filter(|(_, n)| ![BRIDGE_IN_NODE_ID, BRIDGE_OUT_NODE_ID].contains(&n.node_id()))
         .filter_map(|(i, n)| {
             let shared = n.shared_state().lock();
-            shared.panel.as_ref().filter(|p| !p.is_empty()).map(|p| (p.order, i))
+            shared.panel.as_ref().filter(|p| !effective_item(n.as_ref(), p).is_empty()).map(|p| (p.order, i))
         })
         .collect();
     members.sort_unstable();
@@ -166,7 +181,7 @@ fn panel_members_of(nodes: &[Box<dyn NodeWidget>]) -> Vec<usize> {
 fn panel_cell_list(nodes: &[Box<dyn NodeWidget>]) -> Vec<(usize, Option<String>)> {
     let mut cells = Vec::new();
     for i in panel_members_of(nodes) {
-        let item = nodes[i].shared_state().lock().panel.clone().unwrap_or_default();
+        let item = effective_item(nodes[i].as_ref(), &nodes[i].shared_state().lock().panel.clone().unwrap_or_default());
         if item.whole {
             cells.push((i, None));
         }
@@ -324,13 +339,21 @@ mod tests {
         id: NodeId,
         shared: crate::engine::types::SharedState,
         height: f32,
+        surface: bool,
     }
 
     impl Probe {
         fn boxed(id: u64, height: f32, panel: Option<PanelItem>) -> Box<dyn NodeWidget> {
             let shared = new_shared_state(0, 0);
             shared.lock().panel = panel;
-            Box::new(Probe { id: NodeId(id), shared, height })
+            Box::new(Probe { id: NodeId(id), shared, height, surface: true })
+        }
+
+        /// A node whose body is no control and no display.
+        fn echo(id: u64, panel: Option<PanelItem>) -> Box<dyn NodeWidget> {
+            let shared = new_shared_state(0, 0);
+            shared.lock().panel = panel;
+            Box::new(Probe { id: NodeId(id), shared, height: 10.0, surface: false })
         }
     }
 
@@ -344,6 +367,7 @@ mod tests {
         fn show_content(&mut self, _ui: &mut Ui, _zoom: f32) {}
         fn min_content_height(&self) -> f32 { self.height }
         fn resizable(&self) -> bool { true }
+        fn shows_on_surfaces(&self) -> bool { self.surface }
     }
 
     /// Draw a Subgraph's content in a 300 x 100 window and click where its
@@ -396,6 +420,35 @@ mod tests {
 
     fn inner_ids(g: &NodeGraph) -> Vec<u64> {
         g.panel_members(1).into_iter().map(|i| g.levels[1].nodes[i].node_id().0).collect()
+    }
+
+    #[test]
+    fn a_whole_node_flag_on_a_node_that_is_not_a_control_or_display_takes_no_room() {
+        let mut g = graph_with_inner(vec![
+            Probe::boxed(1, 10.0, whole(0)),
+            Probe::echo(2, whole(1)),
+            Probe::echo(3, Some(PanelItem { order: 2, whole: true, params: vec!["Rate".into()] })),
+        ]);
+        // The third still has a pinned setting; the second has nothing left.
+        assert_eq!(inner_ids(&g), vec![1, 3]);
+        let cells: Vec<(u64, bool)> =
+            panel_cell_list(&g.levels[1].nodes).into_iter().map(|(i, p)| (g.levels[1].nodes[i].node_id().0, p.is_some())).collect();
+        assert_eq!(cells, vec![(1, false), (3, true)]);
+        g.refresh_panels(0);
+        let sub = g.levels[0].nodes[0].as_any_mut().downcast_mut::<SubgraphWidget>().unwrap();
+        assert!(sub.has_panel());
+        assert!(sub.shows_on_surfaces());
+    }
+
+    #[test]
+    fn a_subgraph_without_a_panel_is_not_offered_and_asking_to_show_a_non_surface_node_does_nothing() {
+        let mut g = graph_with_inner(vec![Probe::echo(1, None)]);
+        g.refresh_panels(0);
+        let sub = g.levels[0].nodes[0].as_any_mut().downcast_mut::<SubgraphWidget>().unwrap();
+        assert!(!sub.shows_on_surfaces());
+        g.navigate_into_by_index(0);
+        g.set_panel_whole(0, true);
+        assert!(g.levels[1].nodes[0].shared_state().lock().panel.is_none());
     }
 
     #[test]

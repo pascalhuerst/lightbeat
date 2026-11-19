@@ -278,6 +278,7 @@ impl SubgraphWidget {
 }
 
 impl NodeWidget for SubgraphWidget {
+    fn shows_on_surfaces(&self) -> bool { self.has_panel() }
     /// Restore the port-affecting widget state (name, input/output port
     /// definitions, lock/macro metadata) directly from save_data. Called
     /// by the project loader and by paste, BEFORE cleanup_stale_connections

@@ -243,20 +243,43 @@ pub fn param_control(ui: &mut Ui, node: &dyn NodeWidget, name: &str) {
     param_row(ui, &[node], param, &label, None, None, locked);
 }
 
-/// Which settings of a node sit on its subgraph's front panel.
-struct PanelCtx {
-    params: Vec<String>,
+/// Where the settings of a node are pinned: on its subgraph's front panel
+/// (only inside a subgraph) and on the Desk.
+struct PinCtx {
+    panel: Option<Vec<String>>,
+    desk: Vec<String>,
 }
 
-/// The pin that puts a setting on the front panel and takes it off again.
-fn panel_toggle(ui: &mut Ui, node: &dyn NodeWidget, panel: &PanelCtx, name: &str) {
-    let on = panel.params.iter().any(|p| p == name);
+impl PinCtx {
+    fn read(node: &dyn NodeWidget, in_subgraph: bool) -> Self {
+        let shared = node.shared_state().lock();
+        PinCtx {
+            panel: in_subgraph.then(|| shared.panel.as_ref().map(|p| p.params.clone()).unwrap_or_default()),
+            desk: shared.desk.as_ref().map(|d| d.params.iter().map(|(n, _)| n.clone()).collect()).unwrap_or_default(),
+        }
+    }
+}
+
+/// The pins that put a setting on the front panel and on the Desk, and take
+/// it off again.
+fn pin_toggles(ui: &mut Ui, node: &dyn NodeWidget, pins: &PinCtx, name: &str) {
+    if let Some(panel) = &pins.panel {
+        let on = panel.iter().any(|p| p == name);
+        if ui
+            .selectable_label(on, egui_phosphor::regular::PUSH_PIN)
+            .on_hover_text("Show this setting on the subgraph's front panel")
+            .clicked()
+        {
+            crate::engine::types::PanelItem::set_param(&mut node.shared_state().lock().panel, name, !on);
+        }
+    }
+    let on = pins.desk.iter().any(|p| p == name);
     if ui
-        .selectable_label(on, egui_phosphor::regular::PUSH_PIN)
-        .on_hover_text("Show this setting on the subgraph's front panel")
+        .selectable_label(on, egui_phosphor::regular::SQUARES_FOUR)
+        .on_hover_text("Show this setting on the Desk")
         .clicked()
     {
-        crate::engine::types::PanelItem::set_param(&mut node.shared_state().lock().panel, name, !on);
+        crate::engine::types::DeskItem::set_param(&mut node.shared_state().lock().desk, name, !on);
     }
 }
 
@@ -269,7 +292,7 @@ fn param_row(
     param: &ParamDef,
     label: &str,
     promo: Option<&PromoteCtx>,
-    panel: Option<&PanelCtx>,
+    pins: Option<&PinCtx>,
     locked: bool,
 ) {
     let name = param.name();
@@ -345,8 +368,8 @@ fn param_row(
         if let Some(promo) = promo {
             promote_checkbox(ui, nodes[0], promo, param);
         }
-        if let Some(panel) = panel {
-            panel_toggle(ui, nodes[0], panel, name);
+        if let Some(pins) = pins {
+            pin_toggles(ui, nodes[0], pins, name);
         }
     });
 }
@@ -408,7 +431,10 @@ pub fn show_inspector(ui: &mut Ui, node: &mut dyn NodeWidget, in_subgraph: bool)
     lane_stepper(ui, node);
 
     let is_bridge = [BRIDGE_IN_NODE_ID, BRIDGE_OUT_NODE_ID].contains(&node.node_id());
-    if !is_bridge {
+    // Only a control or a display is a thing to put on the Desk or a panel as
+    // a whole; its single settings can be pinned in any case.
+    let surface = !is_bridge && node.shows_on_surfaces();
+    if surface {
         let mut shared = node.shared_state().lock();
         let mut on = shared.desk.as_ref().is_some_and(|d| d.node.is_some());
         if ui.checkbox(&mut on, "Show on Desk")
@@ -420,7 +446,7 @@ pub fn show_inspector(ui: &mut Ui, node: &mut dyn NodeWidget, in_subgraph: bool)
             });
         }
     }
-    if in_subgraph && !is_bridge {
+    if in_subgraph && surface {
         let mut shared = node.shared_state().lock();
         let mut on = shared.panel.as_ref().is_some_and(|p| p.whole);
         if ui.checkbox(&mut on, "Show on parent")
@@ -430,6 +456,8 @@ pub fn show_inspector(ui: &mut Ui, node: &mut dyn NodeWidget, in_subgraph: bool)
             crate::engine::types::PanelItem::set_whole(&mut shared.panel, on);
         }
         drop(shared);
+    }
+    if surface {
         ui.separator();
     }
 
@@ -479,9 +507,7 @@ pub fn show_inspector(ui: &mut Ui, node: &mut dyn NodeWidget, in_subgraph: bool)
         ui.add_space(4.0);
 
         let promo = PromoteCtx::read(node);
-        let panel = (in_subgraph && !is_bridge).then(|| PanelCtx {
-            params: node.shared_state().lock().panel.as_ref().map(|p| p.params.clone()).unwrap_or_default(),
-        });
+        let pins = (!is_bridge).then(|| PinCtx::read(node, in_subgraph));
         let mut last_group: Option<String> = None;
         for (i, param) in params.iter().enumerate() {
             if hidden.contains(&i) { continue; }
@@ -496,7 +522,7 @@ pub fn show_inspector(ui: &mut Ui, node: &mut dyn NodeWidget, in_subgraph: bool)
             // A wired promoted param is driven by its signal; editing it by
             // hand would only be overwritten on the next tick.
             let locked = promo.driven(param.name());
-            param_row(ui, &[&*node], param, &label, Some(&promo), panel.as_ref(), locked);
+            param_row(ui, &[&*node], param, &label, Some(&promo), pins.as_ref(), locked);
         }
     }
 

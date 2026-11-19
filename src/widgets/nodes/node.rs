@@ -275,6 +275,13 @@ pub trait NodeWidget: Any {
     /// uses `NodeLayout::compact()` instead.
     fn layout(&self) -> NodeLayout { NodeLayout::STANDARD }
 
+    /// True when the body is a control the user sets by hand or a display
+    /// made to be looked at: only such a node is offered as a whole on the
+    /// Desk or on a subgraph's front panel (an empty box there is no use).
+    /// A body that only echoes a value as a convenience says false. The
+    /// single settings of any node can still be pinned.
+    fn shows_on_surfaces(&self) -> bool { false }
+
     /// Short human-readable description of what this node does.
     /// Shown in the inspector and as a tooltip in the context menu.
     fn description(&self) -> &'static str { "" }

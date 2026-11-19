@@ -29,6 +29,7 @@ impl GainWidget {
 }
 
 impl NodeWidget for GainWidget {
+    fn shows_on_surfaces(&self) -> bool { true }
     node_identity!("Gain");
     fn description(&self) -> &'static str {
         "Multiplies the input by a 0..1 scalar. Drag the knob to adjust; \

@@ -66,6 +66,7 @@ impl PaletteToGradientWidget {
 }
 
 impl NodeWidget for PaletteToGradientWidget {
+    fn shows_on_surfaces(&self) -> bool { true }
     node_identity!("Palette to Gradient");
     fn description(&self) -> &'static str {
         "Builds a 4-stop gradient from a palette and one position per palette colour. \

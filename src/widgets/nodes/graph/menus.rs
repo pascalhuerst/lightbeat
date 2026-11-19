@@ -201,12 +201,14 @@ impl NodeGraph {
         let mut toggle_hide = false;
         // Controls of a subgraph can be put on its front panel; at the root
         // there is no panel to put them on.
-        let panel_label = (self.active_level > 0).then(|| {
+        let can_show = self.selection_can_show_on_surfaces();
+        let panel_label = (self.active_level > 0 && can_show).then(|| {
             let level = self.active();
             let all_on = self
                 .selected_nodes
                 .iter()
                 .filter_map(|&i| level.nodes.get(i))
+                .filter(|n| super::desk::surface_node(n.as_ref()))
                 .all(|n| n.shared_state().lock().panel.as_ref().is_some_and(|p| p.whole));
             if all_on { "Remove from parent panel" } else { "Show on parent" }
         });
@@ -259,7 +261,9 @@ impl NodeGraph {
                     {
                         toggle_panel = true;
                     }
-                    if ui.button(desk_label).on_hover_text("Put this on the Desk, the view for playing, on the current page").clicked() {
+                    if can_show
+                        && ui.button(desk_label).on_hover_text("Put this on the Desk, the view for playing, on the current page").clicked()
+                    {
                         toggle_desk = true;
                     }
                     if ui.button(if all_disabled { "Enable" } else { "Disable" })

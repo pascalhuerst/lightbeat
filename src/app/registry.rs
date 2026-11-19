@@ -1163,6 +1163,29 @@ mod tests {
     }
 
     #[test]
+    fn the_nodes_that_can_be_put_on_the_desk_or_a_panel_are_the_ones_listed_here() {
+        let ctx = context();
+        let mut shown: Vec<&str> = node_table()
+            .iter()
+            .filter(|d| (d.widget)(NodeId(1), new_shared_state(d.channels.0, d.channels.1), &ctx).shows_on_surfaces())
+            .map(|d| d.name)
+            .collect();
+        shown.sort_unstable();
+        let mut expected = vec![
+            // Controls played or set by hand in the node's body.
+            "Button", "Button Group", "Fader", "Fader Group", "XY Pad", "Color Mixer", "Gain",
+            "Const Value", "Const Logic", "Const Phase", "Step Sequencer", "Envelope",
+            "Gradient Source", "Palette to Gradient", "Phase Scaler", "Trigger Delay", "Clock Divider",
+            // Displays that exist to be looked at.
+            "Value Display", "LED Display", "Color Display", "Scope", "Level Meter", "Gauge",
+            "Peak Level Meter", "Effect Stack",
+            // "Subgraph" is not here: it is one only while it has a front panel.
+        ];
+        expected.sort_unstable();
+        assert_eq!(shown, expected);
+    }
+
+    #[test]
     fn a_node_with_a_bus_port_of_its_own_is_never_run_as_lanes() {
         let ctx = context();
         for desc in node_table() {

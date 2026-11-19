@@ -28,6 +28,7 @@ impl ValueDisplayWidget {
 }
 
 impl NodeWidget for ValueDisplayWidget {
+    fn shows_on_surfaces(&self) -> bool { true }
     fn restore_from_save(&mut self, data: Option<&serde_json::Value>, _params: &[(usize, crate::engine::types::ParamValue)]) {
         let Some(data) = data else { return };
         if let Some(n) = data.get("name").and_then(|v| v.as_str()) {

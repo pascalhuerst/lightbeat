@@ -25,6 +25,7 @@ impl StepSequencerWidget {
 }
 
 impl NodeWidget for StepSequencerWidget {
+    fn shows_on_surfaces(&self) -> bool { true }
     node_identity!("Step Sequencer");
     fn description(&self) -> &'static str { "N-step pattern of values. In Phase mode a phase wire picks the step; in Trigger mode each trigger advances it and a rising edge on reset goes back to step 0. Outputs the current step value, its index and a per-step trigger." }
 

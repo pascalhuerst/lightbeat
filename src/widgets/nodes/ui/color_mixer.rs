@@ -41,6 +41,7 @@ impl ColorMixerWidget {
 }
 
 impl NodeWidget for ColorMixerWidget {
+    fn shows_on_surfaces(&self) -> bool { true }
     node_identity!("Color Mixer");
     fn title(&self) -> &str { &self.name }
     fn description(&self) -> &'static str {
