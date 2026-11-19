@@ -5,6 +5,8 @@ use serde::{Deserialize, Serialize};
 use crate::audio::manager::AudioInputConfig;
 use crate::dmx_input::DmxInputConfig;
 use crate::input_controller::InputController;
+use crate::migrate::setup::SCHEMA;
+use crate::migrate::Migration;
 use crate::objects::color_palette::{ColorPalette, ColorPaletteGroup};
 use crate::objects::fixture::Fixture;
 use crate::objects::gradient_preset::GradientPreset;
@@ -18,8 +20,22 @@ const SETUP_FILENAME: &str = "setup.json";
 // Setup file format
 // ---------------------------------------------------------------------------
 
+/// The format version of a setup file; its history is in `migrate::setup`.
+/// A setup made by this build is always the current one.
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq)]
+#[serde(transparent)]
+pub struct SetupVersion(u32);
+
+impl Default for SetupVersion {
+    fn default() -> Self {
+        Self(SCHEMA.current())
+    }
+}
+
 #[derive(Serialize, Deserialize, Default, Clone, PartialEq)]
 pub struct SetupFile {
+    #[serde(default)]
+    pub version: SetupVersion,
     /// Fixture templates (channel definitions).
     pub fixtures: Vec<Fixture>,
     /// Object instances (fixture type + address + interface).
@@ -96,13 +112,14 @@ fn set_aside(path: &std::path::Path) -> Result<PathBuf, String> {
     Ok(bad)
 }
 
-pub fn load_setup() -> Result<SetupFile, String> {
+/// The setup of this computer. One in an older format is converted on disk
+/// too, with the original kept next to it; the `Migration` says where.
+pub fn load_setup() -> Result<(SetupFile, Option<Migration>), String> {
     let path = setup_path();
     if !path.exists() {
-        return Ok(SetupFile::default());
+        return Ok((SetupFile::default(), None));
     }
-    let json = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
-    serde_json::from_str(&json).map_err(|e| e.to_string())
+    SCHEMA.load_file(&path)
 }
 
 // ---------------------------------------------------------------------------
@@ -116,8 +133,10 @@ pub fn export_to(setup: &SetupFile, path: &std::path::Path) -> Result<(), String
 }
 
 pub fn import_from(path: &std::path::Path) -> Result<SetupFile, String> {
+    // The file is someone else's: it is converted in memory and left alone.
     let json = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
-    serde_json::from_str(&json).map_err(|e| format!("not a LightBeat setup: {e}"))
+    let (setup, _) = SCHEMA.parse(&json).map_err(|e| format!("not a LightBeat setup: {e}"))?;
+    Ok(setup)
 }
 
 /// What this computer has that a setup refers to by name.

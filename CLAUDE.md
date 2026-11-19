@@ -166,8 +166,10 @@ src/
 ├── project.rs                    # Save/load NodeGraph (root level + recursive
 │                                 # inner_graph for subgraphs). After the engine's
 │                                 # load_data, `load_graph` calls each widget's
-│                                 # `restore_from_save`. PROJECT_VERSION
-│                                 # and connections_for_current_layout live here.
+│                                 # `restore_from_save`. Current format only.
+├── migrate/                      # Schema versions and the upgrade steps for
+│                                 # older files (project.rs, setup.rs); backup
+│                                 # + rewrite on load. See Hardware / IO.
 ├── setup.rs                      # SetupFile (fixtures, objects, interfaces,
 │                                 # groups, palettes, gradient presets, input
 │                                 # controllers, audio inputs, DMX inputs) —
@@ -423,13 +425,28 @@ import; the project only when saved.
   `io::status::bind_controller`, and the widgets of Launchpad, Push 1 and X1
   share `widgets/nodes/io/controller_binding.rs`. The Link Clock has none (it
   has `bpm` and `peers`).
-- `ProjectFile.version` records port-layout changes that would repoint saved
-  wires. When you insert or reorder ports on an existing node type, bump
-  `PROJECT_VERSION` (now 4) and extend `connections_for_current_layout` in
-  `project.rs` (it runs per level, including inner subgraphs and macros).
-  Renamed node types go into `RENAMED_NODES`, renamed settings that can be
-  promoted or sit in snapshots into `RENAMED_SETTINGS` (same file). All three
-  are temporary: entries go once the test projects have been saved again.
+- **Format changes go through `src/migrate/`.** Every kind of file has a
+  `Schema` (`migrate/project.rs`, `migrate/setup.rs`): a version number and
+  an ordered list of steps, each rewriting the JSON of one version into the
+  next. Files are upgraded as plain JSON when they are read, before they are
+  parsed, so `load_graph`, the nodes and the widgets only know the current
+  format: never add loading code for an older one anywhere else. A project
+  level needs a step when an existing node type changes its port order (wires
+  are saved by index), its param order, its type name, or the name of a
+  setting (promoted inputs and snapshots go by name), or when a node type is
+  replaced by another. Append a `Step` (the version is the step count, so
+  `PROJECT_VERSION` follows by itself), write it against the JSON as it was,
+  with literal names and lists and no calls into today's node code, and add a
+  test next to it. Steps stay for good. Each level of a project (inner
+  subgraphs, a macro's graph) carries its own version and is upgraded on its
+  own. Only upwards: a file from a newer build is refused with a message.
+- An older project or `setup.json` is converted on disk when it is opened:
+  the original is first copied to `<name>.v<old version>.json` next to it
+  (never overwriting a different backup), then the file is rewritten, and a
+  "Files" notice says so (`Schema::load_file`, `report_migration`). Without
+  the backup the file is left alone. Macros, imported setups and the autosave
+  are upgraded in memory only (`Schema::parse`). `settings.json` has no
+  schema; its fields default.
 - Missing hardware is looked for on setup load, on edits and on the
   status-bar **Rescan** button, never on a timer (USB/ALSA enumeration is
   slow and prints to stderr every time). Missing controllers/inputs show as
@@ -704,8 +721,8 @@ import; the project only when saved.
   everywhere (drawing, hit-testing, wires, resizing).
 - **Comments** describe *why*, not what. Don't narrate steps. Don't add
   comments that just restate the next line.
-- **No backward-compat aliases** unless asked — the user is in active
-  development and prefers clean code over compat shims.
+- **No backward-compat aliases** and no tolerance for old formats in loading
+  code. A format change gets an upgrade step in `src/migrate/` instead.
 - **Don't introduce new port types lightly** — the user prefers reusing
   `Any` and inferring modes from connections over adding type variants.
 - **`color::*` is the canonical color toolkit** — always reuse `Rgb`, `Hsv`,

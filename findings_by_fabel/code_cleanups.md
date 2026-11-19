@@ -61,7 +61,8 @@ Updated as items are implemented. Items not listed here are open.
 | M5 | done | f21a67f |
 | M6 | done | 856f49b |
 | M7 | done | fd018f1 |
-| M1, M2, M8 | kept | three test projects have no version, one has an "ADSR"; delete after they are re-saved or retired |
+| M1, M2 | done | moved out of the loader into `src/migrate/project.rs` as upgrade steps 1-5 (with the rename tables, the Sin/Cos conversion and the override-port step); old files are converted on open with a backup |
+| M8 | kept | not a migration: untagged JSON cannot tell an Int from a Choice, so the value is read by the param's declared kind |
 | D3 | done | 679d718 |
 | D4 | done | 679d718 (rest) |
 | D12 | done | 679d718 (rest) |
@@ -71,7 +72,7 @@ Updated as items are implemented. Items not listed here are open.
 | U3 | done | 4495924: `bind_controller` in `engine/nodes/io/status.rs` |
 | T5 | done | 3804689: fixed UI colours come from `theme.rs`; the 48 literals left are computed from data |
 | E11 | no action | the audit itself says "fine as it is" |
-| T3 | left to the user | `overview.md` and `things.txt` are personal notes |
+| T3 | no action | `overview.md` and `things.txt` are personal notes |
 | S7 | done | merge "feature/ports-once" (360a805 .. ab38a5d): 56 node types take their ports from one engine function (`ports()` / `ports_for(..)`), widgets convert with `UiPortDef::from_defs`. Not at runtime as sketched here: a widget must have its ports before the engine ticks. A test compares both halves of every node type. Found on the way: the Input Controller widget started without `connected` |
 | U4 | done | 71555bc .. 7049324: `node_identity!` (70 widgets) and `with_display` (22 uses); no base struct |
 | U7 | done | ee14615: `parking_lot::Mutex` (and `Condvar` in the MIDI hub) for all shared state; no `lock().unwrap()` left. A panic in a tick no longer poisons the UI's locks |

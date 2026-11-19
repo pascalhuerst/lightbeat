@@ -61,7 +61,14 @@ impl Macro {
 
     pub fn load_from_file(path: &Path) -> Result<Self, String> {
         let s = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
-        serde_json::from_str(&s).map_err(|e| e.to_string())
+        let mut doc: serde_json::Value = serde_json::from_str(&s).map_err(|e| e.to_string())?;
+        // The graph is a project level and has that format's history. The
+        // library file is left as it is: it is read-only to us until the
+        // macro is saved again.
+        if let Some(graph) = doc.get_mut("graph") {
+            crate::migrate::project::SCHEMA.upgrade(graph)?;
+        }
+        serde_json::from_value(doc).map_err(|e| e.to_string())
     }
 }
 

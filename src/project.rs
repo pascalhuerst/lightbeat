@@ -3,63 +3,23 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 
 use crate::engine::nodes::meta::subgraph::{BRIDGE_IN_NODE_ID, BRIDGE_OUT_NODE_ID};
-use crate::engine::types::{NodeId, ParamDef, ParamValue, PortDir, PortId, PromotedKind, PromotedParam, SnapshotSet};
+use crate::engine::types::{NodeId, ParamDef, ParamValue, PortDir, PortId, PromotedParam, SnapshotSet};
+use crate::migrate::project::SCHEMA;
+use crate::migrate::Migration;
 use crate::widgets::nodes::{GraphLevel, NodeGraph};
 
 // ---------------------------------------------------------------------------
 // Save format
 // ---------------------------------------------------------------------------
 
-/// Bumped when a node's port layout changes in a way that would repoint
-/// saved connections. Files without the field load as version 0.
-///
-/// 1: hardware nodes gained a leading "connected" output.
-/// 2: Change Detect has its value first.
-/// 3: Envelope and Transition have their signal first and the trigger after.
-/// 4: the hand-built "a wire overrides this setting" ports are gone; those
-///    settings are promoted params (`LEGACY_OVERRIDE_PORT_TYPES`).
-///
-/// TEMPORARY: the migration exists only so the developers' test projects
-/// survive one load. Once they are re-saved, delete `STATUS_PORT_NODE_TYPES`,
-/// `connections_for_current_layout`, its tests and the `version` field.
-pub const PROJECT_VERSION: u32 = 4;
-
-/// Node types whose outputs shifted by one when the "connected" port was
-/// inserted at index 0 (version 1).
-const STATUS_PORT_NODE_TYPES: [&str; 5] =
-    ["Input Controller", "Audio Input", "Launchpad S", "Push 1", "X1"];
-
-/// Node types that had input ports of their own for settings (version 4):
-/// Range to Unit, Scale Offset, Bipolar, Counter, Phase Scaler, Palette to
-/// Gradient, Trigger Hold. Those ports sat in the place where the promoted
-/// ports of the node's default list now are, in the same order, so an old node
-/// gets that list and its saved wires land on the same ports. A promoted entry
-/// an old file had already comes after them, as its port did.
-const LEGACY_OVERRIDE_PORT_TYPES: [&str; 7] = [
-    "Range to Unit", "Scale Offset", "Bipolar", "Counter", "Phase Scaler", "Palette to Gradient", "Trigger Hold",
-];
-
-fn with_legacy_override_ports(
-    type_name: &str,
-    version: u32,
-    defaults: &[(&'static str, PromotedKind)],
-    mut promoted: Vec<PromotedParam>,
-) -> Vec<PromotedParam> {
-    if version >= 4 || !LEGACY_OVERRIDE_PORT_TYPES.contains(&type_name) {
-        return promoted;
-    }
-    promoted.retain(|p| !defaults.iter().any(|(name, _)| *name == p.name));
-    let mut list: Vec<PromotedParam> =
-        defaults.iter().map(|(name, kind)| PromotedParam { name: name.to_string(), kind: *kind }).collect();
-    list.extend(promoted);
-    list
-}
+/// The format this build writes; its history is in `migrate::project`.
+pub const PROJECT_VERSION: u32 = crate::migrate::project::SCHEMA.current();
 
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct ProjectFile {
     /// Written on every level, including inner subgraphs and macros, since
-    /// each is migrated on its own.
-    #[serde(default)]
+    /// each is upgraded on its own (`migrate::project`).
+    #[serde(default = "current_version")]
     pub version: u32,
     pub nodes: Vec<SavedNode>,
     pub connections: Vec<SavedConnection>,
@@ -81,6 +41,10 @@ pub struct ProjectFile {
     /// Canvas position of the Graph Output bridge pseudo-node.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bridge_out_pos: Option<[f32; 2]>,
+}
+
+fn current_version() -> u32 {
+    PROJECT_VERSION
 }
 
 /// Persisted view-toggle state for the app's side panels and windows.
@@ -319,130 +283,15 @@ pub fn save_graph(graph: &NodeGraph) -> ProjectFile {
 // Load
 // ---------------------------------------------------------------------------
 
-/// The project's connections rewritten for the port layout this build
-/// expects, so wires saved before a layout change keep their endpoints.
-fn connections_for_current_layout(project: &ProjectFile) -> Vec<SavedConnection> {
-    let mut connections = project.connections.clone();
-    if project.version < 1 {
-        for c in &mut connections {
-            let from_type = project
-                .nodes
-                .iter()
-                .find(|n| n.id == c.from_node)
-                .map(|n| n.type_name.as_str());
-            if from_type.is_some_and(|t| STATUS_PORT_NODE_TYPES.contains(&t)) {
-                c.from_port += 1;
-            }
-        }
-    }
-    if project.version < 2 {
-        // Change Detect had its trigger first; the value is now port 0.
-        for c in &mut connections {
-            let to_type = project.nodes.iter().find(|n| n.id == c.to_node).map(|n| n.type_name.as_str());
-            if to_type == Some("Change Detect") && c.to_port < 2 {
-                c.to_port = 1 - c.to_port;
-            }
-        }
-    }
-    if project.version < 3 {
-        for c in &mut connections {
-            let Some(node) = project.nodes.iter().find(|n| n.id == c.to_node) else { continue };
-            // A file this old may still call the Envelope "ADSR".
-            match current_type_name(&node.type_name) {
-                // Was (gate, in).
-                "Envelope" if c.to_port < 2 => c.to_port = 1 - c.to_port,
-                // Was (trigger, phase, in); Phase out has no `in` and kept (trigger, phase).
-                "Transition" => {
-                    let phase_out = node.params.iter().find(|p| p.index == 0)
-                        .is_some_and(|p| p.value.as_f64() == 4.0);
-                    if !phase_out {
-                        c.to_port = match c.to_port {
-                            0 => 1,
-                            1 => 2,
-                            2 => 0,
-                            other => other,
-                        };
-                    }
-                }
-                _ => {}
-            }
-        }
-    }
-    connections
-}
-
-/// Names nodes were saved under before they were renamed, with the name they
-/// have now. Every path that makes nodes from saved data (project load, macros,
-/// paste of an inner graph) goes through `load_graph`, so this is the one place.
-/// Temporary: drop an entry once the test projects have been saved again.
-pub(crate) const RENAMED_NODES: [(&str, &str); 8] = [
-    // Renamed when the node gained several envelope kinds.
-    ("ADSR", "Envelope"),
-    ("Position Merge", "Pan Tilt to Position"),
-    ("Position Split", "Position to Pan Tilt"),
-    ("Latch", "Tick Delay"),
-    ("Flip-Flop", "SR Flip-Flop"),
-    ("Clock", "Link Clock"),
-    ("Scaler", "Range to Unit"),
-    ("Bar Loop", "Bar"),
-];
-
-/// Settings that were renamed: (node, old name, new name). Promoted inputs and
-/// snapshots refer to a setting by name, so they are carried over on load.
-/// Temporary, like `RENAMED_NODES`.
-const RENAMED_SETTINGS: [(&str, &str, &str); 7] = [
-    ("Lookup Table", "Input", "Select by"),
-    ("Fill", "Intensity", "amount"),
-    ("Bar", "Intensity", "amount"),
-    ("Wave Loop", "Intensity", "amount"),
-    ("Ripple Burst", "Intensity", "amount"),
-    ("Spark Burst", "Intensity", "amount"),
-    ("Ripple Burst", "Decay", "Lifetime"),
-];
-
-fn current_setting_name<'a>(node: &str, saved: &'a str) -> &'a str {
-    RENAMED_SETTINGS
-        .iter()
-        .find(|(n, old, _)| *n == node && *old == saved)
-        .map_or(saved, |(_, _, new)| new)
-}
-
-fn current_type_name(saved: &str) -> &str {
-    RENAMED_NODES.iter().find(|(old, _)| *old == saved).map_or(saved, |(_, new)| new)
-}
-
-/// Sin and Cos were removed in favour of the LFO driven by a phase wire. Their
-/// ports line up with the LFO's (phase, then the promoted Amplitude), so the
-/// saved wires need no change. Temporary, like `RENAMED_NODES`.
-fn with_oscillators_as_lfos(project: &ProjectFile) -> Option<ProjectFile> {
-    let is_oscillator = |n: &SavedNode| n.type_name == "Sin" || n.type_name == "Cos";
-    if !project.nodes.iter().any(is_oscillator) {
-        return None;
-    }
-    let mut project = project.clone();
-    for node in project.nodes.iter_mut().filter(|n| is_oscillator(n)) {
-        let cosine = node.type_name == "Cos";
-        node.type_name = "LFO".to_string();
-        node.params = vec![
-            SavedParam { index: 1, value: SavedParamValue::Choice(if cosine { 6 } else { 0 }) },
-            SavedParam { index: 3, value: SavedParamValue::Bool(true) },
-        ];
-        node.promoted = vec![PromotedParam { name: "Amplitude".to_string(), kind: crate::engine::promoted::PromotedKind::Float }];
-    }
-    Some(project)
-}
-
+/// Build the nodes and wires of `project` in the graph's active level. The
+/// project is in the current format: files are upgraded when they are read
+/// (`load_from_file`, `Macro::load_from_file`), everything else was made by
+/// this build.
 pub fn load_graph(graph: &mut NodeGraph, project: &ProjectFile) -> Vec<usize> {
     let mut indices = Vec::new();
-    let converted = with_oscillators_as_lfos(project);
-    let project = converted.as_ref().unwrap_or(project);
-
-    let project_connections = connections_for_current_layout(project);
-
     for saved in &project.nodes {
         let id = NodeId(saved.id);
-        let type_name = current_type_name(&saved.type_name);
-        if let Some(node) = graph.create_from_registry(type_name, id) {
+        if let Some(node) = graph.create_from_registry(&saved.type_name, id) {
             let idx = graph.add_node(node, egui::Pos2::new(saved.pos[0], saved.pos[1]));
 
             if let Some([w, h]) = saved.size {
@@ -453,7 +302,6 @@ pub fn load_graph(graph: &mut NodeGraph, project: &ProjectFile) -> Vec<usize> {
             let mut restore_params: Vec<(usize, ParamValue)> = Vec::new();
             {
                 let n = graph.node_mut(idx);
-                let default_promoted = n.default_promoted();
                 let declared = {
                     let shared = n.shared_state().lock();
                     shared.current_params.clone()
@@ -483,23 +331,14 @@ pub fn load_graph(graph: &mut NodeGraph, project: &ProjectFile) -> Vec<usize> {
                 shared.disabled = saved.disabled;
                 shared.hide_unused_ports = saved.hide_unused_ports;
                 // Set before connections are restored so the extra ports exist.
-                let mut promoted = saved.promoted.clone();
-                for p in &mut promoted {
-                    p.name = current_setting_name(type_name, &p.name).to_string();
-                }
-                let promoted = with_legacy_override_ports(type_name, project.version, default_promoted, promoted);
+                let promoted = saved.promoted.clone();
                 shared.promoted = promoted.clone();
                 shared.promoted_applied = promoted.clone();
                 if !promoted.is_empty() {
                     shared.pending_promoted = Some(promoted);
                 }
                 if !saved.snapshots.is_empty() {
-                    let mut snapshots = saved.snapshots.clone();
-                    for snap in &mut snapshots.snapshots {
-                        for (name, _) in &mut snap.values {
-                            *name = current_setting_name(type_name, name).to_string();
-                        }
-                    }
+                    let snapshots = saved.snapshots.clone();
                     shared.snapshots = snapshots.clone();
                     shared.pending_snapshots = Some(snapshots);
                 }
@@ -555,7 +394,7 @@ pub fn load_graph(graph: &mut NodeGraph, project: &ProjectFile) -> Vec<usize> {
     };
 
     // Restore connections (only between nodes that were actually loaded).
-    for sc in &project_connections {
+    for sc in &project.connections {
         if !loaded_ids.contains(&sc.from_node) || !loaded_ids.contains(&sc.to_node) {
             continue;
         }
@@ -641,9 +480,16 @@ pub fn save_to_file(
     crate::paths::write_atomic(path, json).map_err(|e| e.to_string())
 }
 
-pub fn load_from_file(path: &std::path::Path) -> Result<ProjectFile, String> {
+/// Open a project. One in an older format is converted on disk too, with the
+/// original kept next to it; the `Migration` says where.
+pub fn load_from_file(path: &std::path::Path) -> Result<(ProjectFile, Option<Migration>), String> {
+    SCHEMA.load_file(path)
+}
+
+/// Read a project without touching the file (the crash-recovery autosave).
+pub fn read_file(path: &std::path::Path) -> Result<ProjectFile, String> {
     let json = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
-    serde_json::from_str(&json).map_err(|e| e.to_string())
+    Ok(SCHEMA.parse(&json)?.0)
 }
 
 #[cfg(test)]
@@ -655,114 +501,6 @@ mod tests {
         let json = r#"{"version":1,"nodes":[],"connections":[],"view":{"show_library":false}}"#;
         let p: ProjectFile = serde_json::from_str(json).expect("old project loads");
         assert!(p.view.is_some());
-    }
-
-    fn node(id: u64, type_name: &str) -> SavedNode {
-        SavedNode {
-            type_name: type_name.to_string(),
-            id,
-            pos: [0.0, 0.0],
-            size: None,
-            params: Vec::new(),
-            data: None,
-            inner_graph: None,
-            disabled: false,
-            promoted: Vec::new(),
-            snapshots: Default::default(),
-            hide_unused_ports: false,
-        }
-    }
-
-    fn conn(from_node: u64, from_port: usize, to_node: u64) -> SavedConnection {
-        SavedConnection { from_node, from_port, to_node, to_port: 0 }
-    }
-
-    fn project(version: u32) -> ProjectFile {
-        ProjectFile {
-            version,
-            nodes: vec![node(1, "X1"), node(2, "LFO")],
-            connections: vec![conn(1, 3, 2), conn(2, 0, 1)],
-            frames: Vec::new(),
-            view: None,
-            bridge_in_pos: None,
-            bridge_out_pos: None,
-        }
-    }
-
-    #[test]
-    fn old_hardware_outputs_shift_past_the_status_port() {
-        let out = connections_for_current_layout(&project(0));
-        assert_eq!(out[0].from_port, 4);
-        // Only outputs of hardware nodes move; this one comes from an LFO.
-        assert_eq!(out[1].from_port, 0);
-    }
-
-    #[test]
-    fn change_detect_wires_follow_its_swapped_inputs() {
-        let mut p = project(1);
-        p.nodes.push(node(3, "Change Detect"));
-        p.connections = vec![conn(2, 0, 3), conn(2, 1, 3)];
-        // Wired into (trigger, value) before; now (value, sample on).
-        p.connections[0].to_port = 0;
-        p.connections[1].to_port = 1;
-        let out = connections_for_current_layout(&p);
-        assert_eq!((out[0].to_port, out[1].to_port), (1, 0));
-        p.version = PROJECT_VERSION;
-        let out = connections_for_current_layout(&p);
-        assert_eq!((out[0].to_port, out[1].to_port), (0, 1));
-    }
-
-    fn with_wires_to(type_name: &str, version: u32, ports: &[usize], mode: Option<usize>) -> ProjectFile {
-        let mut p = project(version);
-        let mut n = node(3, type_name);
-        if let Some(m) = mode {
-            n.params.push(SavedParam { index: 0, value: SavedParamValue::Choice(m) });
-        }
-        p.nodes.push(n);
-        p.connections = ports
-            .iter()
-            .map(|&to_port| SavedConnection { from_node: 2, from_port: 0, to_node: 3, to_port })
-            .collect();
-        p
-    }
-
-    fn to_ports(p: &ProjectFile) -> Vec<usize> {
-        connections_for_current_layout(p).iter().map(|c| c.to_port).collect()
-    }
-
-    #[test]
-    fn envelope_wires_follow_its_swapped_inputs() {
-        // Saved (gate, in); now (in, gate).
-        assert_eq!(to_ports(&with_wires_to("Envelope", 2, &[0, 1], Some(0))), vec![1, 0]);
-        assert_eq!(to_ports(&with_wires_to("Envelope", 2, &[0, 1], Some(3))), vec![1, 0]);
-        // No version at all is the oldest, and is remapped once.
-        assert_eq!(to_ports(&with_wires_to("Envelope", 0, &[0], None)), vec![1]);
-        assert_eq!(to_ports(&with_wires_to("ADSR", 0, &[0], None)), vec![1]);
-        assert_eq!(to_ports(&with_wires_to("Envelope", PROJECT_VERSION, &[0, 1], Some(0))), vec![0, 1]);
-    }
-
-    #[test]
-    fn transition_wires_follow_its_new_order_in_every_mode() {
-        // Saved (trigger, phase, in); now (in, trigger, phase).
-        for mode in [0, 1, 2, 3, 5, 6] {
-            assert_eq!(to_ports(&with_wires_to("Transition", 2, &[0, 1, 2], Some(mode))), vec![1, 2, 0], "mode {mode}");
-        }
-        // A saved node without the setting is in its default (Auto) mode.
-        assert_eq!(to_ports(&with_wires_to("Transition", 2, &[0, 1, 2], None)), vec![1, 2, 0]);
-        // Phase out has no value input and keeps (trigger, phase).
-        assert_eq!(to_ports(&with_wires_to("Transition", 2, &[0, 1], Some(4))), vec![0, 1]);
-        assert_eq!(to_ports(&with_wires_to("Transition", PROJECT_VERSION, &[0, 1, 2], Some(1))), vec![0, 1, 2]);
-        // Without a version the node is remapped once, not twice.
-        let mut p = with_wires_to("Transition", 0, &[0, 1, 2], Some(1));
-        assert_eq!(to_ports(&p), vec![1, 2, 0]);
-        p.version = PROJECT_VERSION;
-        assert_eq!(to_ports(&p), vec![0, 1, 2]);
-    }
-
-    #[test]
-    fn current_projects_are_left_alone() {
-        let out = connections_for_current_layout(&project(PROJECT_VERSION));
-        assert_eq!(out[0].from_port, 3);
     }
 
     #[test]
@@ -839,7 +577,7 @@ mod tests {
             Box::new(EffectWidget::new(id, crate::engine::types::new_shared_state(48, 0), BAR_LOOP, names.clone()))
         });
         // Exactly what the Group Output conversion writes.
-        let project: ProjectFile = serde_json::from_str(r#"{
+        let project = from_file(r#"{
             "nodes": [{
                 "type_name": "Bar Loop", "id": 704, "pos": [10.0, 20.0],
                 "params": [{"index": 2, "value": 0}],
@@ -847,7 +585,7 @@ mod tests {
                 "promoted": [{"name": "Position", "kind": "Float"}, {"name": "Width", "kind": "Float"}]
             }],
             "connections": []
-        }"#).unwrap();
+        }"#);
         load_graph(&mut g, &project);
 
         let ports: Vec<String> = g.node_and_state(0).0.ui_inputs_full().into_iter().map(|p| p.def.name).collect();
@@ -901,6 +639,11 @@ mod tests {
         g
     }
 
+    /// A project as it comes out of a file: upgraded to the current format.
+    fn from_file(json: &str) -> ProjectFile {
+        SCHEMA.parse(json).unwrap().0
+    }
+
     fn promoted_names(g: &mut crate::widgets::nodes::NodeGraph, node: usize) -> Vec<String> {
         g.node_mut(node).shared_state().lock().promoted.iter().map(|p| p.name.clone()).collect()
     }
@@ -918,7 +661,7 @@ mod tests {
             }}"#)
         };
         // Before version 4 the node had in, scale, offset as ports.
-        let old: ProjectFile = serde_json::from_str(&json("", "[]")).unwrap();
+        let old = from_file(&json("", "[]"));
         let mut g = scale_offset_graph();
         load_graph(&mut g, &old);
         g.cleanup_stale_connections();
@@ -928,13 +671,13 @@ mod tests {
         assert!(g.node_mut(0).shared_state().lock().pending_promoted.is_some(), "the engine hears of the list");
 
         // What the old node saved itself carries over after the defaults.
-        let old_with_entry: ProjectFile = serde_json::from_str(&json("", r#"[{"name": "Offset", "kind": "Float"}]"#)).unwrap();
+        let old_with_entry = from_file(&json("", r#"[{"name": "Offset", "kind": "Float"}]"#));
         let mut g = scale_offset_graph();
         load_graph(&mut g, &old_with_entry);
         assert_eq!(promoted_names(&mut g, 0), ["Scale", "Offset"]);
 
         // A current file's list rules, also when the user switched everything off.
-        let current: ProjectFile = serde_json::from_str(&json(&format!(r#""version": {PROJECT_VERSION},"#), "[]")).unwrap();
+        let current = from_file(&json(&format!(r#""version": {PROJECT_VERSION},"#), "[]"));
         let mut g = scale_offset_graph();
         load_graph(&mut g, &current);
         assert!(promoted_names(&mut g, 0).is_empty());
@@ -948,14 +691,14 @@ mod tests {
         g.register_node("Color", "Palette to Gradient", |id| {
             Box::new(PaletteToGradientWidget::new(id, crate::engine::types::new_shared_state(16, 40)))
         });
-        let old: ProjectFile = serde_json::from_str(r#"{
+        let old = from_file(r#"{
             "version": 3,
             "nodes": [
                 {"type_name": "Palette to Gradient", "id": 1, "pos": [0.0, 0.0], "params": []},
                 {"type_name": "Gradient Stops", "id": 2, "pos": [0.0, 0.0], "params": []}
             ],
             "connections": [{"from_node": 2, "from_port": 1, "to_node": 1, "to_port": 2}]
-        }"#).unwrap();
+        }"#);
         load_graph(&mut g, &old);
         g.cleanup_stale_connections();
         assert_eq!(g.root_level().nodes.len(), 1);
@@ -1121,26 +864,6 @@ mod tests {
     }
 
     #[test]
-    fn old_sin_and_cos_nodes_load_as_phase_driven_lfos_with_amplitude_promoted() {
-        let project: ProjectFile = serde_json::from_str(r#"{
-            "version": 4,
-            "nodes": [
-                {"type_name": "Sin", "id": 1, "pos": [0.0, 0.0], "params": []},
-                {"type_name": "Cos", "id": 2, "pos": [0.0, 0.0], "params": []},
-                {"type_name": "Add", "id": 3, "pos": [0.0, 0.0], "params": []}
-            ],
-            "connections": []
-        }"#).unwrap();
-        let converted = with_oscillators_as_lfos(&project).unwrap();
-        let types: Vec<&str> = converted.nodes.iter().map(|n| n.type_name.as_str()).collect();
-        assert_eq!(types, ["LFO", "LFO", "Add"]);
-        assert!(converted.nodes[0].params.contains(&SavedParam { index: 1, value: SavedParamValue::Choice(0) }));
-        assert!(converted.nodes[1].params.contains(&SavedParam { index: 1, value: SavedParamValue::Choice(6) }));
-        assert_eq!(converted.nodes[0].promoted[0].name, "Amplitude");
-        assert!(converted.nodes[2].promoted.is_empty());
-    }
-
-    #[test]
     fn switching_the_operation_keeps_position_and_wires_and_saves_the_siblings_name() {
         let mut g = operation_graph();
         let project: ProjectFile = serde_json::from_str(&format!(r#"{{
@@ -1212,28 +935,6 @@ mod tests {
         assert_eq!(saved.nodes[0].type_name, "Const Value");
         assert!(!g.root_level().connections.iter().any(|c| c.to.node == NodeId(3)), "a number no longer feeds the gate");
         assert!(g.root_level().connections.iter().any(|c| c.to.node == NodeId(2)), "the number wire that was not touched stays");
-    }
-
-    #[test]
-    fn a_renamed_setting_keeps_its_promotion_and_snapshots_by_name() {
-        assert_eq!(current_setting_name("Lookup Table", "Input"), "Select by");
-        assert_eq!(current_setting_name("Lookup Table", "Edge"), "Edge");
-        assert_eq!(current_setting_name("Smoothing", "Input"), "Input");
-    }
-
-    #[test]
-    fn the_ripples_decay_is_now_lifetime() {
-        assert_eq!(current_setting_name("Ripple Burst", "Decay"), "Lifetime");
-        assert_eq!(current_setting_name("Envelope", "Decay"), "Decay");
-    }
-
-    #[test]
-    fn the_effects_intensity_is_now_amount() {
-        for effect in ["Fill", "Bar", "Wave Loop", "Ripple Burst", "Spark Burst"] {
-            assert_eq!(current_setting_name(effect, "Intensity"), "amount");
-        }
-        assert_eq!(current_setting_name("Fill", "Width"), "Width");
-        assert_eq!(current_setting_name("Smoothing", "Intensity"), "Intensity");
     }
 
     #[test]

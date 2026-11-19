@@ -37,7 +37,10 @@ pub(crate) enum FileDialogResult {
 impl LightBeatApp {
     pub(crate) fn load_setup(&mut self) {
         match setup::load_setup() {
-            Ok(s) => {
+            Ok((s, migration)) => {
+                if let Some(migration) = migration {
+                    self.report_migration(&migration);
+                }
                 // Direct assignment here; engine/context syncs happen in `new`
                 // after this is called (avoids syncing before engine is ready).
                 self.fixture_manager = widgets::fixture_list::FixtureManager::from_fixtures(s.fixtures);
@@ -83,6 +86,18 @@ impl LightBeatApp {
     }
 
     /// Write settings.json; a failure is remembered for `report_settings_failure`.
+    /// Tell the user a file was converted from an older format, and where
+    /// the original is.
+    pub(crate) fn report_migration(&mut self, migration: &crate::migrate::Migration) {
+        let message = migration.message();
+        eprintln!("{message}");
+        if migration.backup.is_err() {
+            self.notices.push(message);
+        } else {
+            self.file_notes.push(message);
+        }
+    }
+
     pub(crate) fn save_settings(&mut self) {
         if let Err(e) = self.config.save() {
             self.settings_save_error = Some(e);
@@ -419,8 +434,12 @@ impl LightBeatApp {
     }
 
     pub(crate) fn load_project_from(&mut self, path: &std::path::Path) {
+        // Asked before loading: converting an old project rewrites the file,
+        // which would make it look newer than its autosave.
+        let autosave = project::autosave_path_for(Some(path));
+        let recoverable = autosave.exists() && is_newer(&autosave, path);
         match project::load_from_file(path) {
-            Ok(proj) => {
+            Ok((proj, migration)) => {
                 self.apply_project(&proj);
                 self.graph.fit_to_content();
                 self.project_path = Some(path.to_path_buf());
@@ -429,11 +448,12 @@ impl LightBeatApp {
                 self.mark_project_saved();
                 self.config.push_recent_project(path);
                 self.save_settings();
-                // If a crash-recovery autosave exists for this project and
-                // is newer than the project file on disk, surface a prompt
-                // so the user can choose to recover.
-                let autosave = project::autosave_path_for(Some(path));
-                if autosave.exists() && is_newer(&autosave, path) {
+                if let Some(migration) = migration {
+                    self.report_migration(&migration);
+                }
+                // A crash-recovery autosave newer than the project: let the
+                // user choose to recover.
+                if recoverable {
                     self.recover_prompt = Some(autosave);
                 }
             }
@@ -470,6 +490,7 @@ impl LightBeatApp {
     /// Build current SetupFile snapshot (used for both saving and feeding the undoer).
     pub(crate) fn current_setup(&self) -> setup::SetupFile {
         setup::SetupFile {
+            version: Default::default(),
             fixtures: self.fixture_manager.fixtures.clone(),
             objects: self.object_manager.objects.clone(),
             interfaces: self.interface_manager.to_saved(),
