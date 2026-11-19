@@ -142,14 +142,15 @@ impl NodeGraph {
             if !dirty.contains(&true) {
                 break;
             }
-            for li in 0..n {
-                if !std::mem::take(&mut dirty[li]) {
+            let levels = dirty.iter_mut().zip(models.iter_mut()).zip(&given).zip(widths.iter_mut()).zip(&self.levels);
+            for ((((flag, (nodes, _)), given_here), width), level) in levels {
+                if !std::mem::take(flag) {
                     continue;
                 }
-                for (&k, out) in &given[li] {
-                    models[li].0[k].outputs.clone_from(out);
+                for (&k, out) in given_here {
+                    nodes[k].outputs.clone_from(out);
                 }
-                widths[li] = lanes::infer(&models[li].0, &self.levels[li].connections);
+                *width = lanes::infer(nodes, &level.connections);
             }
 
             // What each adapting node took, by input port.
