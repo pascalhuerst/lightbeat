@@ -288,7 +288,13 @@ pub(super) fn draw_cell(
             // A Subgraph in a panel shows its own panel in its cell.
             let nested = if depth < MAX_PANEL_DEPTH { panel_level(levels, nodes[i].as_mut()) } else { None };
             let mut taken = nested.map(|k| std::mem::take(&mut levels[k].nodes));
+            if let Some(w) = nodes[i].as_any_mut().downcast_mut::<SubgraphWidget>() {
+                w.set_in_cell(true);
+            }
             nodes[i].show_content(&mut child, z);
+            if let Some(w) = nodes[i].as_any_mut().downcast_mut::<SubgraphWidget>() {
+                w.set_in_cell(false);
+            }
             if let (Some(k), Some(inner_nodes)) = (nested, taken.as_mut()) {
                 let sub_region = panel_region(content, z);
                 if let Some(w) = nodes[i].as_any_mut().downcast_mut::<SubgraphWidget>() {
@@ -338,6 +344,36 @@ mod tests {
         fn show_content(&mut self, _ui: &mut Ui, _zoom: f32) {}
         fn min_content_height(&self) -> f32 { self.height }
         fn resizable(&self) -> bool { true }
+    }
+
+    /// Draw a Subgraph's content in a 300 x 100 window and click where its
+    /// open arrow sits; whether that asked to open it.
+    fn clicking_the_open_arrow_asks_to_open(in_cell: bool) -> bool {
+        let ctx = egui::Context::default();
+        let mut w = SubgraphWidget::new(NodeId(1), new_shared_state(12, 12));
+        w.set_in_cell(in_cell);
+        let screen = Rect::from_min_size(Pos2::ZERO, Vec2::new(300.0, 100.0));
+        let at = Pos2::new(282.0, 16.0);
+        let steps = [
+            vec![egui::Event::PointerMoved(at)],
+            vec![egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed: true, modifiers: Default::default() }],
+            vec![egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed: false, modifiers: Default::default() }],
+        ];
+        let _ = ctx.run(egui::RawInput { screen_rect: Some(screen), ..Default::default() }, |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| w.show_content(ui, 1.0));
+        });
+        for events in steps {
+            let _ = ctx.run(egui::RawInput { screen_rect: Some(screen), events, ..Default::default() }, |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| w.show_content(ui, 1.0));
+            });
+        }
+        w.wants_open
+    }
+
+    #[test]
+    fn a_subgraph_drawn_as_a_cell_has_no_open_arrow() {
+        assert!(clicking_the_open_arrow_asks_to_open(false), "the click lands on the arrow when it is drawn");
+        assert!(!clicking_the_open_arrow_asks_to_open(true), "in a cell nothing is left set for a later frame");
     }
 
     fn whole(order: u32) -> Option<PanelItem> {

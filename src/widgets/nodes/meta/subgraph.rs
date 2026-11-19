@@ -25,6 +25,9 @@ pub struct SubgraphWidget {
     output_lanes: Vec<usize>,
     /// Set to true to signal the app to open this subgraph for editing.
     pub wants_open: bool,
+    /// Drawn as a cell of a front panel or the Desk: the cell's level is not
+    /// the open one, so nothing would ever take an open request made there.
+    in_cell: bool,
     /// When true, the subgraph is treated as an opaque "macro instance":
     /// users can't navigate into it, the Open button is hidden, and the
     /// title bar shows a lock glyph. Set when instantiating from the macro
@@ -97,6 +100,7 @@ impl SubgraphWidget {
             input_lanes: Vec::new(),
             output_lanes: Vec::new(),
             wants_open: false,
+            in_cell: false,
             locked: false,
             macro_description: String::new(),
             macro_path: String::new(),
@@ -131,6 +135,10 @@ impl SubgraphWidget {
 
     pub fn has_panel(&self) -> bool {
         !self.panel_cells.is_empty()
+    }
+
+    pub fn set_in_cell(&mut self, on: bool) {
+        self.in_cell = on;
     }
 
     pub fn set_panel_screen(&mut self, rect: Option<Rect>) {
@@ -419,6 +427,7 @@ impl NodeWidget for SubgraphWidget {
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 // Open button is hidden when locked — match navigation gating.
                 if !self.locked
+                    && !self.in_cell
                     && ui
                         .small_button(egui_phosphor::regular::ARROW_SQUARE_OUT)
                         .on_hover_text("Open subgraph")
