@@ -206,6 +206,9 @@ impl ProcessNode for CounterProcessNode {
         }
     }
 
+    /// The count so far is what the node is doing, not how it is set up.
+    fn running_state_keys(&self) -> &'static [&'static str] { &["count"] }
+
     fn save_data(&self) -> Option<serde_json::Value> {
         Some(serde_json::json!({ "count": self.count }))
     }

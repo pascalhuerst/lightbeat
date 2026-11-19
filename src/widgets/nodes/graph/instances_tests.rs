@@ -66,12 +66,12 @@ fn with_two_instances() -> NodeGraph {
 }
 
 /// What the app does after an edit: identities, then plan and apply until it settles.
-fn sync(g: &mut NodeGraph, baseline: &ProjectFile) -> ProjectFile {
+fn sync(g: &mut NodeGraph, _baseline: &ProjectFile) -> ProjectFile {
     g.assign_def_nodes();
     let mut current = project::save_graph(g);
-    let names = g.param_names();
+    let names = g.known();
     for _ in 0..8 {
-        let steps = crate::linked::plan_sync(Some(baseline), &current, &names, &mut || g.alloc_id().0);
+        let steps = crate::linked::plan_sync(&current, &crate::linked::first_instances(&current), &names, &mut || g.alloc_id().0);
         if steps.is_empty() {
             break;
         }
@@ -248,7 +248,7 @@ fn a_node_added_in_one_instance_is_built_in_the_other_and_one_undo_state_holds_b
     assert!(project::save_graph(&g) == settled);
     // Nothing is left to do: the next change check finds nothing, and
     // restoring that state (an undo) does not start another sync.
-    let again = crate::linked::plan_sync(Some(&baseline), &settled, &g.param_names(), &mut || 9999);
+    let again = crate::linked::plan_sync(&settled, &crate::linked::first_instances(&settled), &g.known(), &mut || 9999);
     assert!(again.is_empty());
     assert_eq!(keys(&g, 1), keys(&g, copy), "the new node has the same identity in both");
 }
@@ -384,6 +384,34 @@ fn embedding_a_macro_instance_unlocks_the_definition_and_forgets_the_file() {
     assert_eq!(data(1)["macro_path"], "");
     assert!(data(1).get("macro_hash").is_none());
     assert_eq!(data(1)["definition"], 77, "they stay linked");
+}
+
+#[test]
+fn only_the_open_instance_or_the_one_enclosing_it_can_be_the_source() {
+    let mut g = with_two_instances();
+    assert_eq!(g.editing_path(), None, "the root is inside nothing");
+    g.navigate_into_by_index(0);
+    assert_eq!(g.editing_path(), Some(vec![1]));
+    // A plain subgraph inside the instance: still the instance.
+    let outer = g.level_of_subgraph(NodeId(1)).unwrap();
+    let plain = g.alloc_id();
+    let node = g.create_from_registry("Subgraph", plain).unwrap();
+    let at = g.add_node(node, Pos2::ZERO);
+    g.navigate_into_by_index(at);
+    assert_eq!(g.editing_path(), Some(vec![1]));
+    g.navigate_to_level(0);
+    // A plain subgraph at the root encloses no instance.
+    let lone = g.alloc_id();
+    let node = g.create_from_registry("Subgraph", lone).unwrap();
+    let at = g.add_node(node, Pos2::ZERO);
+    g.navigate_into_by_index(at);
+    assert_eq!(g.editing_path(), None);
+    g.navigate_to_level(0);
+    g.selected_nodes = vec![1];
+    assert_eq!(g.selected_instance_path(), Some(vec![root_ids(&g)[1]]));
+    g.selected_nodes = vec![at];
+    assert_eq!(g.selected_instance_path(), None, "a plain subgraph has no instances");
+    let _ = outer;
 }
 
 #[test]

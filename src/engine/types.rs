@@ -484,6 +484,14 @@ pub trait ProcessNode: Send {
     /// native input port.
     fn non_promotable_params(&self) -> &'static [&'static str] { &[] }
 
+    /// Top-level keys of `save_data` that hold what the node is doing right
+    /// now (a count, a latched state, a held value) rather than how it is set
+    /// up. In a linked subgraph these belong to each instance; every other key
+    /// follows the definition. A control's value (a fader's position, a
+    /// button's latch) is the user's setting, not running state: it follows the
+    /// definition unless the control is on the front panel.
+    fn running_state_keys(&self) -> &'static [&'static str] { &[] }
+
     /// Float params, by name, whose input port passes any value through
     /// instead of clamping it to the slider's range: the slider is for the
     /// hand, a wire may carry a BPM or a DMX value. The node must cope with

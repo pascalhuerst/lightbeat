@@ -18,6 +18,8 @@ use draw::*;
 
 use egui::{self, Color32, CursorIcon, Painter, Pos2, Rect, Sense, Stroke, StrokeKind, Ui, Vec2};
 
+use std::collections::HashMap;
+
 use super::node::*;
 use super::types::*;
 use crate::engine::nodes::meta::subgraph::{SubgraphPortDef, port_type_to_idx, BRIDGE_IN_NODE_ID, BRIDGE_OUT_NODE_ID};
@@ -300,6 +302,9 @@ pub struct NodeGraph {
     pub collapse_wires: bool,
     /// Messages for the user that came up inside the graph; the app shows them.
     notices: Vec<String>,
+    /// Per node type, the saved-data keys that are running state (linked
+    /// subgraphs keep them per instance); set by the app.
+    running: HashMap<String, &'static [&'static str]>,
 }
 
 #[derive(Clone)]
@@ -370,6 +375,7 @@ impl NodeGraph {
             show_minimap: true,
             collapse_wires: true,
             notices: Vec::new(),
+            running: HashMap::new(),
         }
     }
 

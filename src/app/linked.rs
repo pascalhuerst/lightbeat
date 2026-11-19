@@ -8,9 +8,9 @@ use crate::engine::types::NodeId;
 use crate::linked::{self, SyncStep};
 use crate::project::{self, ProjectFile};
 
-/// After a project is applied, saved forms trail the running graph by a few
-/// ticks (the engine has not mirrored the new nodes yet), which must not be
-/// read as an edit.
+/// After a project is applied (undo, redo, load) every node is new and the
+/// level the user is in is half-mirrored for a few ticks; as the source of a
+/// sync it would copy params it does not have yet into the other instances.
 const QUIET_AFTER_APPLY: Duration = Duration::from_millis(400);
 
 /// How long after a load the instances are compared: the nodes need to have
@@ -34,25 +34,44 @@ impl LightBeatApp {
     }
 
     /// Called with the project as just saved from the graph, when it differs
-    /// from the baseline. Edits to an instance are copied to the others and
-    /// the returned project shows the result, so that the undo history sees
-    /// the edit and its sync as one step.
-    pub(crate) fn sync_links(&mut self, baseline: Option<&ProjectFile>, mut current: ProjectFile) -> ProjectFile {
-        if self.links_are_quiet() || linked::instances(&current).len() < 2 {
+    /// from the baseline. The source is never guessed from what changed: it is
+    /// the instance the user can be editing (`editing`, see
+    /// `NodeGraph::editing_path`), or the selected instance when its own name or
+    /// ports were edited from the level it sits on. The others follow it, and
+    /// the returned project shows the result, so that the undo history sees the
+    /// edit and its sync as one step.
+    pub(crate) fn sync_links(
+        &mut self,
+        baseline: &ProjectFile,
+        mut current: ProjectFile,
+        editing: Option<Vec<u64>>,
+    ) -> ProjectFile {
+        if self.links_are_quiet() {
+            return current;
+        }
+        let mut sources: Vec<Vec<u64>> = editing.into_iter().collect();
+        if let Some(path) = self.graph.selected_instance_path() {
+            let before = linked::node_at(baseline, &path).map(|n| &n.data);
+            let now = linked::node_at(&current, &path).map(|n| &n.data);
+            if before.is_some() && before != now {
+                sources.push(path);
+            }
+        }
+        if sources.is_empty() {
             return current;
         }
         if self.graph.assign_def_nodes() {
             current = project::save_graph(&self.graph);
         }
-        self.run_sync(baseline, current, false)
+        self.run_sync(current, &sources, false)
     }
 
-    fn run_sync(&mut self, baseline: Option<&ProjectFile>, mut current: ProjectFile, report_load: bool) -> ProjectFile {
-        let names = self.graph.param_names();
+    fn run_sync(&mut self, mut current: ProjectFile, sources: &[Vec<u64>], report_load: bool) -> ProjectFile {
+        let known = self.graph.known();
         let mut reported = false;
         for _ in 0..MAX_ROUNDS {
             let graph = &mut self.graph;
-            let steps = linked::plan_sync(baseline, &current, &names, &mut || graph.alloc_id().0);
+            let steps = linked::plan_sync(&current, sources, &known, &mut || graph.alloc_id().0);
             if steps.is_empty() {
                 break;
             }
@@ -75,10 +94,11 @@ impl LightBeatApp {
         self.link_check_at = None;
         self.graph.assign_def_nodes();
         let current = project::save_graph(&self.graph);
-        if linked::instances(&current).len() < 2 {
+        let sources = linked::first_instances(&current);
+        if sources.is_empty() {
             return;
         }
-        let synced = self.run_sync(None, current.clone(), true);
+        let synced = self.run_sync(current.clone(), &sources, true);
         if synced != current {
             self.project_baseline = Some(synced);
         }

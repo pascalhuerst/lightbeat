@@ -191,6 +191,11 @@ impl LightBeatApp {
         let level_now = self.graph.active_level_index();
         let navigated = level_now != self.link_last_level;
         self.link_last_level = level_now;
+        // Which instance the user can be editing: the one just left when a
+        // level was left, otherwise the one the open level is inside of.
+        let editing_now = self.graph.editing_path();
+        let editing = if navigated { self.link_prev_editing.clone() } else { editing_now.clone() };
+        self.link_prev_editing = editing_now;
         let due = navigated || now - self.last_snapshot_time >= SNAPSHOT_MIN_INTERVAL;
         if in_window && due {
             self.last_snapshot_time = now;
@@ -200,7 +205,9 @@ impl LightBeatApp {
             // before the undoer sees the state, so edit and sync are one step.
             if self.project_baseline.as_ref().is_some_and(|b| *b != current_project) {
                 let baseline = self.project_baseline.take();
-                current_project = self.sync_links(baseline.as_ref(), current_project);
+                if let Some(base) = &baseline {
+                    current_project = self.sync_links(base, current_project, editing);
+                }
                 self.project_baseline = baseline;
             }
             let current_setup = self.current_setup();

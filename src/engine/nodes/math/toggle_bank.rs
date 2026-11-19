@@ -114,6 +114,9 @@ impl ProcessNode for ToggleBankProcessNode {
         }
     }
 
+    /// Which toggles are on is what the node is doing, not how it is set up.
+    fn running_state_keys(&self) -> &'static [&'static str] { &["states"] }
+
     fn save_data(&self) -> Option<serde_json::Value> {
         Some(serde_json::json!({
             "n": self.n,

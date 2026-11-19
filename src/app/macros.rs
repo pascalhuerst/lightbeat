@@ -81,7 +81,7 @@ impl LightBeatApp {
         source.inner_graph = Some(inner);
 
         self.graph.assign_def_nodes();
-        let names = self.graph.param_names();
+        let names = self.graph.known();
         let graph = &mut self.graph;
         let steps = linked::plan_update(&project_now, definition, &source, &names, &mut || graph.alloc_id().0);
         self.apply_link_steps(&steps);

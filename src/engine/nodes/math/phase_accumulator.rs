@@ -132,6 +132,9 @@ impl ProcessNode for PhaseAccumulatorProcessNode {
         self.state = self.state.clamp(self.min, self.max);
     }
 
+    /// The accumulated phase is what the node is doing, not how it is set up.
+    fn running_state_keys(&self) -> &'static [&'static str] { &["state"] }
+
     fn save_data(&self) -> Option<serde_json::Value> {
         Some(serde_json::json!({ "state": self.state }))
     }

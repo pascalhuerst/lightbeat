@@ -5,7 +5,7 @@
 use std::collections::{HashMap, HashSet};
 
 use super::*;
-use crate::linked::{self, ParamNames, SyncStep};
+use crate::linked::{self, Known, SyncStep};
 use crate::project::{self, ProjectFile, SavedNode};
 use crate::widgets::nodes::meta::subgraph::{LibraryState, SubgraphRequest};
 
@@ -194,19 +194,53 @@ impl NodeGraph {
         Some((self.levels[parent].nodes[i].display_title().to_string(), count))
     }
 
-    /// Param names of every node, by id: a panel item names a setting and a
-    /// saved node only has its index.
-    pub fn param_names(&self) -> ParamNames {
-        let mut out = ParamNames::new();
+    /// What the live graph knows that a saved form does not: param names of
+    /// every node, by id (a panel item names a setting, a saved node only has
+    /// its index), and the running-state keys of each node type.
+    pub fn known(&self) -> Known {
+        let mut out = Known::new();
+        out.running = self.running.clone();
         for level in &self.levels {
             for n in &level.nodes {
                 let shared = n.shared_state().lock();
                 if !shared.current_params.is_empty() {
-                    out.insert(n.node_id().0, shared.current_params.iter().map(|p| p.name().to_string()).collect());
+                    out.params.insert(n.node_id().0, shared.current_params.iter().map(|p| p.name().to_string()).collect());
                 }
             }
         }
         out
+    }
+
+    /// The running-state keys per node type (`ProcessNode::running_state_keys`).
+    pub fn set_running_state(&mut self, running: HashMap<String, &'static [&'static str]>) {
+        self.running = running;
+    }
+
+    /// The nearest linked subgraph enclosing the open level, through plain
+    /// subgraphs only, as the ids from the root: the instance the user can be
+    /// editing. None when the open level is not inside a linked instance.
+    pub fn editing_path(&self) -> Option<Vec<u64>> {
+        let path = self.current_subgraph_path();
+        let mut level = 0;
+        let mut linked_at: Option<usize> = None;
+        for (k, sid) in path.iter().enumerate() {
+            let i = self.levels[level].nodes.iter().position(|n| n.node_id() == *sid)?;
+            if self.definition_at(level, i).is_some() {
+                linked_at = Some(k);
+            }
+            level = self.level_of_subgraph(*sid)?;
+        }
+        linked_at.map(|k| path[..=k].iter().map(|id| id.0).collect())
+    }
+
+    /// The one selected linked Subgraph, as ids from the root: the instance
+    /// whose own name or ports may have been edited from the level it sits on.
+    pub fn selected_instance_path(&self) -> Option<Vec<u64>> {
+        let [i] = self.selected_nodes[..] else { return None };
+        self.definition_at(self.active_level, i)?;
+        let mut path: Vec<u64> = self.current_subgraph_path().iter().map(|id| id.0).collect();
+        path.push(self.levels[self.active_level].nodes[i].node_id().0);
+        Some(path)
     }
 
     // -----------------------------------------------------------------------
@@ -330,7 +364,7 @@ impl NodeGraph {
     /// "Link identical subgraphs": returns how many groups and instances.
     pub fn link_identical(&mut self) -> linked::LinkReport {
         self.assign_def_nodes();
-        let names = self.param_names();
+        let names = self.known();
         let mut project = project::save_graph(self);
         let report = linked::link_identical(&mut project, &names);
         if report.groups > 0 {
@@ -465,7 +499,7 @@ impl NodeGraph {
             wanted.as_mut().and_then(|d| d.as_object_mut()),
             current.as_ref().and_then(|c| c.as_object()),
         ) {
-            for key in crate::linked::state_keys(&sn.type_name) {
+            for key in self.running.get(sn.type_name.as_str()).copied().unwrap_or(&[]) {
                 match live.get(*key) {
                     Some(v) => {
                         map.insert((*key).to_string(), v.clone());

@@ -14,9 +14,27 @@ use std::collections::{HashMap, HashSet};
 use crate::engine::nodes::meta::subgraph::{BRIDGE_IN_NODE_ID, BRIDGE_OUT_NODE_ID};
 use crate::project::{ProjectFile, SavedConnection, SavedNode, SavedParam, remap_ids_inplace};
 
-/// Param names of every live node by node id. A saved node only knows its
-/// params by index, a panel item names them.
-pub type ParamNames = HashMap<u64, Vec<String>>;
+/// What the live graph knows that a saved form does not.
+#[derive(Clone, Default)]
+pub struct Known {
+    /// Param names of every live node by node id. A saved node only knows its
+    /// params by index, a panel item names them.
+    pub params: HashMap<u64, Vec<String>>,
+    /// Per node type, the keys of its saved `data` that hold what the node is
+    /// doing right now (`ProcessNode::running_state_keys`): per instance, like
+    /// the values on a front panel.
+    pub running: HashMap<String, &'static [&'static str]>,
+}
+
+impl Known {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn running_keys(&self, type_name: &str) -> &'static [&'static str] {
+        self.running.get(type_name).copied().unwrap_or(&[])
+    }
+}
 
 /// The identity of a node inside its definition. A node that has none yet
 /// stands for itself.
@@ -209,7 +227,7 @@ fn fresh_copy(s: &SavedNode, mut alloc: &mut dyn FnMut() -> u64) -> SavedNode {
 /// `s` (the source's node) as it stands in the target, whose own counterpart
 /// is `d`: everything from the source except the values of what is on the
 /// front panel, which stay the target's.
-fn merge_node(s: &SavedNode, d: &SavedNode, names: &ParamNames, alloc: &mut dyn FnMut() -> u64) -> SavedNode {
+fn merge_node(s: &SavedNode, d: &SavedNode, known: &Known, alloc: &mut dyn FnMut() -> u64) -> SavedNode {
     let mut n = s.clone();
     n.id = d.id;
     n.def_node = d.def_node;
@@ -219,7 +237,7 @@ fn merge_node(s: &SavedNode, d: &SavedNode, names: &ParamNames, alloc: &mut dyn 
             if n.type_name != "Subgraph" {
                 n.data = d.data.clone();
             }
-        } else if let Some(wanted) = names.get(&d.id) {
+        } else if let Some(wanted) = known.params.get(&d.id) {
             for name in &panel.params {
                 let Some(index) = wanted.iter().position(|p| p == name) else { continue };
                 let theirs = d.params.iter().find(|p| p.index == index);
@@ -237,7 +255,7 @@ fn merge_node(s: &SavedNode, d: &SavedNode, names: &ParamNames, alloc: &mut dyn 
     }
     // Which snapshot is current is state, not definition.
     n.snapshots.active = d.snapshots.active;
-    let keys = state_keys(&n.type_name);
+    let keys = known.running_keys(&n.type_name);
     if !keys.is_empty()
         && let (Some(mine), Some(theirs)) = (n.data.as_mut().and_then(|v| v.as_object_mut()), d.data.as_ref().and_then(|v| v.as_object()))
     {
@@ -258,8 +276,8 @@ fn merge_node(s: &SavedNode, d: &SavedNode, names: &ParamNames, alloc: &mut dyn 
         n.inner_graph = match &d.inner_graph {
             // A nested linked subgraph is kept up to date by its own definition.
             Some(d_inner) if same_definition => Some(d_inner.clone()),
-            Some(d_inner) => Some(sync_level(s_inner, d_inner, names, alloc)),
-            None => Some(sync_level(s_inner, &empty_level(s_inner), names, alloc)),
+            Some(d_inner) => Some(sync_level(s_inner, d_inner, known, alloc)),
+            None => Some(sync_level(s_inner, &empty_level(s_inner), known, alloc)),
         };
     }
     n
@@ -285,7 +303,7 @@ fn connection_set(cs: &[SavedConnection]) -> HashSet<(u64, usize, u64, usize)> {
 /// definition identity: ones of the source that the target lacks are made
 /// with fresh ids, ones the target has and the source does not are dropped,
 /// the rest keep the target's ids and order.
-pub fn sync_level(src: &ProjectFile, dst: &ProjectFile, names: &ParamNames, alloc: &mut dyn FnMut() -> u64) -> ProjectFile {
+pub fn sync_level(src: &ProjectFile, dst: &ProjectFile, known: &Known, alloc: &mut dyn FnMut() -> u64) -> ProjectFile {
     let theirs: HashMap<u64, &SavedNode> = dst.nodes.iter().map(|n| (def_key(n), n)).collect();
     let mut id_map: HashMap<u64, u64> = HashMap::new();
     let mut kept: HashMap<u64, SavedNode> = HashMap::new();
@@ -294,7 +312,7 @@ pub fn sync_level(src: &ProjectFile, dst: &ProjectFile, names: &ParamNames, allo
         match theirs.get(&def_key(s)) {
             Some(d) if d.type_name == s.type_name => {
                 id_map.insert(s.id, d.id);
-                kept.insert(d.id, merge_node(s, d, names, alloc));
+                kept.insert(d.id, merge_node(s, d, known, alloc));
             }
             _ => {
                 let n = fresh_copy(s, alloc);
@@ -339,13 +357,13 @@ pub fn sync_level(src: &ProjectFile, dst: &ProjectFile, names: &ParamNames, allo
 /// The instance `dst` after it follows `src`: its name, ports and inner graph.
 /// Its own place, size, wires, promoted and snapshot state are not part of a
 /// definition and stay.
-pub fn sync_instance(src: &SavedNode, dst: &SavedNode, names: &ParamNames, alloc: &mut dyn FnMut() -> u64) -> SavedNode {
+pub fn sync_instance(src: &SavedNode, dst: &SavedNode, known: &Known, alloc: &mut dyn FnMut() -> u64) -> SavedNode {
     let mut out = dst.clone();
     out.data = src.data.clone();
     if let Some(s_inner) = &src.inner_graph {
         let empty = empty_level(s_inner);
         let d_inner = dst.inner_graph.as_ref().unwrap_or(&empty);
-        out.inner_graph = Some(sync_level(s_inner, d_inner, names, alloc));
+        out.inner_graph = Some(sync_level(s_inner, d_inner, known, alloc));
     }
     out
 }
@@ -394,42 +412,19 @@ impl std::fmt::Debug for SavedNode {
     }
 }
 
-/// Keys of a node's saved `data` that hold what the node is doing right now
-/// rather than how it is set up: a counter's count, a flip-flop's state. They
-/// belong to the instance like the values on a front panel; if they followed
-/// the definition, every tick of a counter would count as an edit and copy its
-/// state into the other instances.
-pub fn state_keys(type_name: &str) -> &'static [&'static str] {
-    match type_name {
-        "Counter" => &["count"],
-        "SR Flip-Flop" | "JK Flip-Flop" => &["state"],
-        "Sample & Hold" => &["held"],
-        "Random" => &["value"],
-        "Phase Accumulator" => &["state"],
-        "Toggle Bank" => &["states"],
-        _ => &[],
-    }
-}
-
 /// `n` with what belongs to an instance blanked: running state, the values of
-/// what is on a front panel, which snapshot is current. With `blank_linked` a
-/// nested linked subgraph also loses its inside, which its own definition
-/// looks after. What is left is what two instances must agree on.
-fn mask_node(n: &mut SavedNode, names: &ParamNames, blank_linked: bool) {
+/// what is on a front panel, which snapshot is current. What is left is what
+/// two instances must agree on.
+fn mask_node(n: &mut SavedNode, known: &Known) {
     n.snapshots.active = None;
-    let linked = definition_of(n).is_some();
     if n.type_name == "Subgraph" {
         if let Some(inner) = n.inner_graph.as_mut() {
-            if blank_linked && linked {
-                *inner = empty_level(inner);
-            } else {
-                for c in &mut inner.nodes {
-                    mask_node(c, names, blank_linked);
-                }
+            for c in &mut inner.nodes {
+                mask_node(c, known);
             }
         }
     } else if let Some(map) = n.data.as_mut().and_then(|d| d.as_object_mut()) {
-        for key in state_keys(&n.type_name) {
+        for key in known.running_keys(&n.type_name) {
             map.remove(*key);
         }
     }
@@ -439,7 +434,7 @@ fn mask_node(n: &mut SavedNode, names: &ParamNames, blank_linked: bool) {
             if n.type_name != "Subgraph" {
                 n.data = None;
             }
-        } else if let Some(wanted) = names.get(&n.id) {
+        } else if let Some(wanted) = known.params.get(&n.id) {
             let blank: Vec<usize> = panel.params.iter().filter_map(|name| wanted.iter().position(|p| p == name)).collect();
             n.params.retain(|p| !blank.contains(&p.index));
         } else if !panel.params.is_empty() {
@@ -448,50 +443,41 @@ fn mask_node(n: &mut SavedNode, names: &ParamNames, blank_linked: bool) {
     }
 }
 
-fn mask_level(level: &ProjectFile, names: &ParamNames, blank_linked: bool) -> ProjectFile {
+fn mask_level(level: &ProjectFile, known: &Known) -> ProjectFile {
     let mut out = level.clone();
     for n in &mut out.nodes {
-        mask_node(n, names, blank_linked);
+        mask_node(n, known);
     }
     out
 }
 
-/// What the definition looks like in one instance.
-fn definition_view(n: &SavedNode, names: &ParamNames) -> (Option<serde_json::Value>, Option<ProjectFile>) {
-    (n.data.clone(), n.inner_graph.as_ref().map(|g| mask_level(g, names, true)))
+/// The first instance of every definition in load order: what wins when a
+/// project is loaded with instances that differ.
+pub fn first_instances(current: &ProjectFile) -> Vec<Vec<u64>> {
+    let mut seen = HashSet::new();
+    instances(current).into_iter().filter(|i| seen.insert(i.definition)).map(|i| i.path).collect()
 }
 
-/// The steps that bring every definition's instances to one content. The
-/// source is the first instance that differs from `baseline` (the project as
-/// it was when it last settled), or, with none or when nothing was edited
-/// (a project just loaded), the first in load order.
+/// The steps that bring the other instances of each source's definition to the
+/// source's content. Sources are chosen by the caller (the instance being
+/// edited, or the first one on load); this never guesses from what changed,
+/// since running state and half-mirrored levels look like changes.
 pub fn plan_sync(
-    baseline: Option<&ProjectFile>,
     current: &ProjectFile,
-    names: &ParamNames,
+    sources: &[Vec<u64>],
+    known: &Known,
     alloc: &mut dyn FnMut() -> u64,
 ) -> Vec<SyncStep> {
     let all = instances(current);
-    let mut order: Vec<u64> = Vec::new();
-    for i in &all {
-        if !order.contains(&i.definition) {
-            order.push(i.definition);
-        }
-    }
+    let mut done: HashSet<u64> = HashSet::new();
     let mut steps = Vec::new();
-    for def in order {
-        let group: Vec<&Instance> = all.iter().filter(|i| i.definition == def).collect();
-        if group.len() < 2 {
+    for source_path in sources {
+        let Some(source) = all.iter().find(|i| &i.path == source_path) else { continue };
+        if !done.insert(source.definition) {
             continue;
         }
-        let changed = |i: &Instance| {
-            baseline
-                .and_then(|b| node_at(b, &i.path))
-                .is_some_and(|before| definition_view(before, names) != definition_view(i.node, names))
-        };
-        let source = group.iter().find(|i| changed(i)).unwrap_or(&group[0]);
-        for target in group.iter().filter(|i| i.path != source.path) {
-            let result = sync_instance(source.node, target.node, names, alloc);
+        for target in all.iter().filter(|i| i.definition == source.definition && i.path != source.path) {
+            let result = sync_instance(source.node, target.node, known, alloc);
             if result.data == target.node.data && result.inner_graph == target.node.inner_graph {
                 continue;
             }
@@ -516,12 +502,12 @@ pub fn plan_update(
     project: &ProjectFile,
     definition: u64,
     source: &SavedNode,
-    names: &ParamNames,
+    known: &Known,
     alloc: &mut dyn FnMut() -> u64,
 ) -> Vec<SyncStep> {
     let mut steps = Vec::new();
     for target in instances(project).into_iter().filter(|i| i.definition == definition) {
-        let result = sync_instance(source, target.node, names, alloc);
+        let result = sync_instance(source, target.node, known, alloc);
         if result.data == target.node.data && result.inner_graph == target.node.inner_graph {
             continue;
         }
@@ -579,8 +565,8 @@ pub fn make_unique(project: &mut ProjectFile, path: &[u64]) -> Option<u64> {
 
 /// A level with ids replaced by positions and per-instance values blanked, as
 /// text, so that two subgraphs can be compared for being the same.
-fn canonical_level(level: &ProjectFile, names: &ParamNames) -> serde_json::Value {
-    canonical_masked(&mask_level(level, names, false))
+fn canonical_level(level: &ProjectFile, known: &Known) -> serde_json::Value {
+    canonical_masked(&mask_level(level, known))
 }
 
 fn canonical_masked(level: &ProjectFile) -> serde_json::Value {
@@ -651,24 +637,24 @@ fn align_def_nodes(reference: &mut ProjectFile, other: &mut ProjectFile) {
 /// apart from node ids and front-panel values, plain or linked already.
 /// Subgraphs that sit inside a member of their own group (cannot happen for
 /// equal graphs) or would make a definition contain itself are left alone.
-pub fn link_identical(project: &mut ProjectFile, names: &ParamNames) -> LinkReport {
-    fn collect(level: &ProjectFile, prefix: &mut Vec<u64>, names: &ParamNames, groups: &mut Vec<(String, Vec<Vec<u64>>)>) {
+pub fn link_identical(project: &mut ProjectFile, known: &Known) -> LinkReport {
+    fn collect(level: &ProjectFile, prefix: &mut Vec<u64>, known: &Known, groups: &mut Vec<(String, Vec<Vec<u64>>)>) {
         for n in &level.nodes {
             let Some(inner) = &n.inner_graph else { continue };
             prefix.push(n.id);
-            let mut key = canonical_level(inner, names);
+            let mut key = canonical_level(inner, known);
             key["data"] = data_without_definition(n).unwrap_or(serde_json::Value::Null);
             let key = key.to_string();
             match groups.iter_mut().find(|(k, _)| *k == key) {
                 Some((_, members)) => members.push(prefix.clone()),
                 None => groups.push((key, vec![prefix.clone()])),
             }
-            collect(inner, prefix, names, groups);
+            collect(inner, prefix, known, groups);
             prefix.pop();
         }
     }
     let mut groups = Vec::new();
-    collect(project, &mut Vec::new(), names, &mut groups);
+    collect(project, &mut Vec::new(), known, &mut groups);
 
     let mut report = LinkReport::default();
     for (_, members) in groups {
@@ -814,8 +800,27 @@ mod tests {
         p.nodes[i].inner_graph.as_ref().unwrap()
     }
 
+    /// The instance the user edited, as the app would name it: the first one
+    /// that differs from the baseline, or the first in load order.
+    fn sources(base: Option<&ProjectFile>, cur: &ProjectFile) -> Vec<Vec<u64>> {
+        let all = instances(cur);
+        let mut out: Vec<Vec<u64>> = Vec::new();
+        let mut seen = HashSet::new();
+        for i in &all {
+            if !seen.insert(i.definition) {
+                continue;
+            }
+            let edited = all.iter().filter(|j| j.definition == i.definition).find(|j| {
+                base.and_then(|b| node_at(b, &j.path))
+                    .is_some_and(|before| before.data != j.node.data || before.inner_graph != j.node.inner_graph)
+            });
+            out.push(edited.unwrap_or(i).path.clone());
+        }
+        out
+    }
+
     fn plan(base: Option<&ProjectFile>, cur: &ProjectFile) -> Vec<SyncStep> {
-        plan_sync(base, cur, &ParamNames::new(), &mut counter(1000))
+        plan_sync(cur, &sources(base, cur), &Known::new(), &mut counter(1000))
     }
 
     #[test]
@@ -951,14 +956,14 @@ mod tests {
             set_param(&mut g.nodes[1], 0, 0.25 + i as f64);
             set_param(&mut g.nodes[1], 1, 0.0);
         }
-        let mut names = ParamNames::new();
-        names.insert(21, vec!["Level".into(), "Other".into()]);
-        names.insert(11, vec!["Level".into(), "Other".into()]);
+        let mut known = Known::new();
+        known.params.insert(21, vec!["Level".into(), "Other".into()]);
+        known.params.insert(11, vec!["Level".into(), "Other".into()]);
         let mut cur = base.clone();
         // An edit of the definition in instance 1: a value off the panel and a position.
         set_param(&mut cur.nodes[0].inner_graph.as_mut().unwrap().nodes[1], 1, 7.0);
         cur.nodes[0].inner_graph.as_mut().unwrap().nodes[0].pos = [9.0, 9.0];
-        let steps = plan_sync(Some(&base), &cur, &names, &mut counter(1000));
+        let steps = plan_sync(&cur, &sources(Some(&base), &cur), &known, &mut counter(1000));
         assert_eq!(steps.len(), 1);
         let r = steps[0].result.inner_graph.as_ref().unwrap();
         assert_eq!(param(&r.nodes[0], 0), 1.0, "whole node on the panel keeps its params");
@@ -999,39 +1004,66 @@ mod tests {
         p
     }
 
-    #[test]
-    fn running_state_stays_with_the_instance_and_is_not_an_edit() {
-        let base = with_counters();
-        // The counter of instance 1 ticks: nothing to sync.
-        let mut cur = base.clone();
-        cur.nodes[0].inner_graph.as_mut().unwrap().nodes[1].data = Some(serde_json::json!({"count": 4}));
-        assert!(plan(Some(&base), &cur).is_empty());
-        // A real edit in instance 2 while instance 1 keeps counting: instance 2 is the source,
-        // and instance 1 keeps its count.
-        set_param(&mut cur.nodes[1].inner_graph.as_mut().unwrap().nodes[0], 0, 0.9);
-        let steps = plan(Some(&base), &cur);
-        assert_eq!(steps.len(), 1);
-        assert_eq!(steps[0].source, vec![2]);
-        let r = steps[0].result.inner_graph.as_ref().unwrap();
-        assert_eq!(r.nodes[1].data, Some(serde_json::json!({"count": 4})));
-        assert_eq!(param(&r.nodes[0], 0), 0.9);
+    fn counter_known() -> Known {
+        let mut k = Known::new();
+        k.running.insert("Counter".into(), &["count"]);
+        k
     }
 
     #[test]
-    fn a_turned_front_panel_value_does_not_make_its_instance_the_source() {
+    fn running_state_stays_with_the_instance() {
+        let base = with_counters();
+        // The counter of instance 1 ticks while the user edits a value in instance 2 (the source).
+        let mut cur = base.clone();
+        cur.nodes[0].inner_graph.as_mut().unwrap().nodes[1].data = Some(serde_json::json!({"count": 4}));
+        set_param(&mut cur.nodes[1].inner_graph.as_mut().unwrap().nodes[0], 0, 0.9);
+        let steps = plan_sync(&cur, &[vec![2]], &counter_known(), &mut counter(1000));
+        assert_eq!(steps.len(), 1);
+        assert_eq!(steps[0].path, vec![1]);
+        let r = steps[0].result.inner_graph.as_ref().unwrap();
+        assert_eq!(r.nodes[1].data, Some(serde_json::json!({"count": 4})), "its own count");
+        assert_eq!(param(&r.nodes[0], 0), 0.9);
+        // The counter of the instance being edited ticking is no difference at all.
+        let mut ticking = base.clone();
+        ticking.nodes[0].inner_graph.as_mut().unwrap().nodes[1].data = Some(serde_json::json!({"count": 5}));
+        assert!(plan_sync(&ticking, &[vec![1]], &counter_known(), &mut counter(1000)).is_empty());
+        // A type that does not declare it would be copied: that is what the declaration is for.
+        assert!(!plan_sync(&ticking, &[vec![1]], &Known::new(), &mut counter(1000)).is_empty());
+    }
+
+    #[test]
+    fn a_turned_front_panel_value_is_not_copied() {
         use crate::engine::types::PanelItem;
         let mut base = pair();
         for i in 0..2 {
             base.nodes[i].inner_graph.as_mut().unwrap().nodes[1].panel = Some(PanelItem { order: 0, whole: true, params: vec![] });
         }
         let mut cur = base.clone();
-        // Instance 1's panel is played while the definition is edited in instance 2.
         set_param(&mut cur.nodes[0].inner_graph.as_mut().unwrap().nodes[1], 0, 0.99);
         set_param(&mut cur.nodes[1].inner_graph.as_mut().unwrap().nodes[0], 0, 0.7);
-        let steps = plan(Some(&base), &cur);
+        let steps = plan_sync(&cur, &[vec![2]], &Known::new(), &mut counter(1000));
         assert_eq!(steps.len(), 1);
         assert_eq!((steps[0].source.clone(), steps[0].path.clone()), (vec![2], vec![1]));
         assert_eq!(param(&steps[0].result.inner_graph.as_ref().unwrap().nodes[1], 0), 0.99);
+    }
+
+    #[test]
+    fn on_load_the_first_instance_of_each_definition_is_the_source() {
+        let leaf = sub(7, None, level(vec![node("Gain", 70)], &[]));
+        let nested = sub(6, Some(200), level(vec![leaf], &[]));
+        let plain = sub(5, None, level(vec![nested], &[]));
+        let outer = sub(1, Some(100), level(vec![plain], &[]));
+        let p = level(vec![outer, sub(2, None, level(vec![], &[]))], &[]);
+        assert_eq!(first_instances(&p), vec![vec![1], vec![1, 5, 6]]);
+    }
+
+    #[test]
+    fn without_a_source_nothing_is_planned() {
+        let base = pair();
+        let mut cur = base.clone();
+        set_param(&mut cur.nodes[0].inner_graph.as_mut().unwrap().nodes[0], 0, 0.1);
+        assert!(plan_sync(&cur, &[], &Known::new(), &mut counter(1000)).is_empty());
+        assert!(plan_sync(&cur, &[vec![99]], &Known::new(), &mut counter(1000)).is_empty());
     }
 
     #[test]
@@ -1145,14 +1177,14 @@ mod tests {
         cur.nodes[0].inner_graph.as_mut().unwrap().nodes.push(node("Lfo", 88));
         set_param(&mut cur.nodes[2].inner_graph.as_mut().unwrap().nodes[0], 0, 0.3);
         let mut alloc = counter(1000);
-        let names = ParamNames::new();
-        let steps = plan_sync(Some(&base), &cur, &names, &mut alloc);
+        let known = Known::new();
+        let steps = plan_sync(&cur, &sources(Some(&base), &cur), &known, &mut alloc);
         // Outer: instance 2 gets the Lfo (rebuild); inner: instances 11 and 12 follow the one at the root.
         assert!(steps.iter().any(|s| s.path == vec![2] && s.rebuild));
         apply_steps(&mut cur, &steps);
-        let again = plan_sync(Some(&base), &cur, &names, &mut alloc);
+        let again = plan_sync(&cur, &sources(Some(&base), &cur), &known, &mut alloc);
         apply_steps(&mut cur, &again);
-        assert!(plan_sync(Some(&base), &cur, &names, &mut alloc).is_empty());
+        assert!(plan_sync(&cur, &sources(Some(&base), &cur), &known, &mut alloc).is_empty());
         let outer2 = cur.nodes[1].inner_graph.as_ref().unwrap();
         assert_eq!(outer2.nodes.len(), 2);
         assert_eq!(param(&outer2.nodes[0].inner_graph.as_ref().unwrap().nodes[0], 0), 0.3);
@@ -1213,7 +1245,7 @@ mod tests {
     #[test]
     fn identical_subgraphs_are_linked_by_correspondence() {
         let mut p = level(vec![plain(1, 10, 0.5), plain(2, 20, 0.5), plain(3, 30, 0.9)], &[]);
-        let r = link_identical(&mut p, &ParamNames::new());
+        let r = link_identical(&mut p, &Known::new());
         assert_eq!(r, LinkReport { groups: 1, instances: 2 });
         let d = definition_of(&p.nodes[0]);
         assert!(d.is_some());
@@ -1229,8 +1261,8 @@ mod tests {
 
     #[test]
     fn the_comparison_ignores_ids_but_not_values_wires_or_positions() {
-        let names = ParamNames::new();
-        let canon = |s: &SavedNode| canonical_level(s.inner_graph.as_ref().unwrap(), &names).to_string();
+        let known = Known::new();
+        let canon = |s: &SavedNode| canonical_level(s.inner_graph.as_ref().unwrap(), &known).to_string();
         assert_eq!(canon(&plain(1, 10, 0.5)), canon(&plain(2, 70, 0.5)));
         assert_ne!(canon(&plain(1, 10, 0.5)), canon(&plain(2, 70, 0.6)));
         let mut moved = plain(2, 70, 0.5);
@@ -1249,9 +1281,9 @@ mod tests {
 
     #[test]
     fn the_comparison_looks_through_nesting_and_ignores_panel_values() {
-        let names = ParamNames::new();
+        let known = Known::new();
         let wrap = |id: u64, inner_id: u64, v: f64| sub(id, None, level(vec![plain(inner_id, inner_id * 10, v)], &[]));
-        let canon = |s: &SavedNode| canonical_level(s.inner_graph.as_ref().unwrap(), &names).to_string();
+        let canon = |s: &SavedNode| canonical_level(s.inner_graph.as_ref().unwrap(), &known).to_string();
         assert_eq!(canon(&wrap(1, 2, 0.5)), canon(&wrap(7, 8, 0.5)));
         assert_ne!(canon(&wrap(1, 2, 0.5)), canon(&wrap(7, 8, 0.6)));
 
@@ -1268,10 +1300,10 @@ mod tests {
         let mut p = level(vec![plain(1, 10, 0.5), plain(2, 20, 0.5), plain(3, 30, 0.5)], &[]);
         set_definition(&mut p.nodes[0], Some(9));
         set_definition(&mut p.nodes[1], Some(9));
-        let r = link_identical(&mut p, &ParamNames::new());
+        let r = link_identical(&mut p, &Known::new());
         assert_eq!(r.groups, 1);
         assert!(p.nodes.iter().all(|n| definition_of(n) == Some(9)));
-        assert_eq!(link_identical(&mut p, &ParamNames::new()), LinkReport::default());
+        assert_eq!(link_identical(&mut p, &Known::new()), LinkReport::default());
     }
 
     #[test]
@@ -1280,7 +1312,7 @@ mod tests {
             vec![sub(1, None, level(vec![plain(11, 110, 0.5), plain(12, 120, 0.5)], &[])), plain(2, 20, 0.5)],
             &[],
         );
-        let r = link_identical(&mut p, &ParamNames::new());
+        let r = link_identical(&mut p, &Known::new());
         assert_eq!(r.instances, 3);
         assert!(!has_self_nesting(&p));
     }
@@ -1303,7 +1335,7 @@ mod tests {
             set_param(&mut g.nodes[1], 0, 0.3);
             g.nodes.push(node("Lfo", 12));
         }
-        let steps = plan_update(&p, 100, &lib, &ParamNames::new(), &mut counter(1000));
+        let steps = plan_update(&p, 100, &lib, &Known::new(), &mut counter(1000));
         assert_eq!(steps.len(), 2);
         apply_steps(&mut p, &steps);
         for i in 0..2 {
@@ -1312,7 +1344,7 @@ mod tests {
             assert_eq!(param(&g.nodes[0], 0), 0.1 + i as f64, "the panel value stays with the instance");
             assert_eq!(param(&g.nodes[1], 0), 0.3, "the rest follows the library");
         }
-        assert!(plan_sync(None, &p, &ParamNames::new(), &mut counter(3000)).is_empty());
+        assert!(plan_sync(&p, &sources(None, &p), &Known::new(), &mut counter(3000)).is_empty());
     }
 
     #[test]

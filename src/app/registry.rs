@@ -208,6 +208,17 @@ pub(crate) const CATEGORIES: [&str; 14] = [
 ];
 
 /// Every node type, grouped in the order of `CATEGORIES`.
+/// What each node type declares as running state, collected once.
+pub(crate) fn running_state_keys(ctx: &NodeContext) -> std::collections::HashMap<String, &'static [&'static str]> {
+    node_table()
+        .iter()
+        .filter_map(|d| {
+            let keys = (d.engine)(NodeId(0), ctx).running_state_keys();
+            (!keys.is_empty()).then(|| (d.name.to_string(), keys))
+        })
+        .collect()
+}
+
 pub(crate) fn node_table() -> Vec<NodeDescriptor> {
     let mut table = Vec::new();
     table.push(node(
@@ -715,6 +726,10 @@ impl LightBeatApp {
         // reads names through this link, so it has to be remade each time.
         self.graph.set_stack_names(self.stack_names.clone());
         let ctx = self.node_context();
+        if self.running_state.is_empty() {
+            self.running_state = running_state_keys(&ctx);
+        }
+        self.graph.set_running_state(self.running_state.clone());
         for desc in node_table() {
             let (inputs, outputs) = desc.channels;
             let ctx = ctx.clone();
@@ -807,6 +822,97 @@ mod tests {
             object_store: crate::dmx_io::new_shared_object_store(),
             wanted_beats: Rc::new(RefCell::new(Vec::new())),
         }
+    }
+
+    /// Every top-level key a node type saves in `data` and that is NOT running
+    /// state: setup, which follows the definition in a linked subgraph. A
+    /// control's value (Fader, Button, the groups, Color Mixer) is the user's
+    /// setting and counts as setup unless the control is on the front panel.
+    /// Running state is declared by the node (`running_state_keys`); a type that
+    /// saves a key found in neither list fails `every_saved_key_is_classified`.
+    const SETUP_KEYS: &[(&str, &[&str])] = &[
+        ("Input Controller", &["controller_id"]),
+        ("DMX Input", &["input", "outputs"]),
+        ("MIDI Input", &["entries", "port"]),
+        ("MIDI Output", &["entries", "port"]),
+        ("Push 1", &["controller_id"]),
+        ("X1", &["controller_id"]),
+        ("Launchpad S", &["controller_id"]),
+        ("Audio Input", &["input_id", "params"]),
+        ("Button", &["label", "override_state", "state"]),
+        ("Fader", &["mouse_value", "name", "override_value"]),
+        ("Button Group", &["cols", "inputs_enabled", "mode", "name", "override_enabled", "override_states", "reset_mode", "rows", "states"]),
+        ("Fader Group", &["bipolar", "cols", "inputs_enabled", "mouse_override", "mouse_values", "name", "outputs_enabled", "override_values", "rows"]),
+        ("XY Pad", &["name"]),
+        ("Color Mixer", &["mode", "name", "values"]),
+        ("Phase Scaler", &["extra"]),
+        ("Clock Divider", &["extra"]),
+        ("Step Sequencer", &["mode", "values"]),
+        ("Toggle Bank", &["n"]),
+        ("Trigger Bank", &["n"]),
+        ("Formula", &["formula"]),
+        ("Add", &["input_count"]),
+        ("Sub", &["input_count"]),
+        ("Mul", &["input_count"]),
+        ("Div", &["input_count"]),
+        ("AND", &["input_count"]),
+        ("OR", &["input_count"]),
+        ("XOR", &["input_count"]),
+        ("NOT", &["input_count"]),
+        ("Palette Select", &["group_ids", "groups"]),
+        ("Gradient Source", &["stops"]),
+        ("Lookup Table", &["columns", "data", "row_count"]),
+        ("Subgraph", &["inputs", "locked", "macro_description", "macro_path", "name", "outputs"]),
+        ("Portal Send", &["name", "ports"]),
+        ("Portal Receive", &["bound_name", "ports"]),
+        ("Peak Level Meter", &["name", "orientation"]),
+        ("Value Display", &["name"]),
+        ("Level Meter", &["name", "unit"]),
+        ("Gauge", &["name", "unit"]),
+        ("LED Display", &["name"]),
+        ("Effect Stack", &["blend", "folded", "group_ids", "group_names", "layers", "mode", "name", "parent", "targets"]),
+        ("Fill", &["stack"]),
+        ("Bar", &["stack"]),
+        ("Wave Loop", &["stack"]),
+        ("Ripple Burst", &["stack"]),
+        ("Spark Burst", &["stack"]),
+    ];
+
+    #[test]
+    fn every_saved_key_is_classified_as_setup_or_declared_running_state() {
+        let ctx = context();
+        let setup: std::collections::HashMap<&str, &[&str]> = SETUP_KEYS.iter().copied().collect();
+        assert_eq!(setup.len(), SETUP_KEYS.len(), "a type is listed twice");
+        for desc in &node_table() {
+            let engine = (desc.engine)(NodeId(1), &ctx);
+            let running = engine.running_state_keys();
+            let saved: Vec<String> = engine
+                .save_data()
+                .and_then(|d| d.as_object().map(|o| o.keys().cloned().collect()))
+                .unwrap_or_default();
+            let listed = setup.get(desc.name).copied().unwrap_or(&[]);
+            for key in &saved {
+                let r = running.contains(&key.as_str());
+                let s = listed.contains(&key.as_str());
+                assert!(r || s, "{} saves \"{key}\": declare it in running_state_keys or list it as setup in SETUP_KEYS", desc.name);
+                assert!(!(r && s), "{}: \"{key}\" is both running state and setup", desc.name);
+            }
+            for key in running.iter().chain(listed.iter()) {
+                assert!(saved.iter().any(|k| k == key), "{} lists \"{key}\" but does not save it", desc.name);
+            }
+        }
+        let names: std::collections::HashSet<&str> = node_table().iter().map(|d| d.name).collect();
+        for (name, _) in SETUP_KEYS {
+            assert!(names.contains(name), "SETUP_KEYS lists {name}, which is not a node type");
+        }
+    }
+
+    #[test]
+    fn the_collected_running_state_has_the_nodes_that_declare_it() {
+        let map = running_state_keys(&context());
+        assert_eq!(map.get("Counter").copied(), Some(&["count"][..]));
+        assert_eq!(map.get("Toggle Bank").copied(), Some(&["states"][..]));
+        assert!(!map.contains_key("Fader"), "a fader's value is a setting");
     }
 
     #[test]

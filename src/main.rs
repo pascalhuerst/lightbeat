@@ -87,6 +87,10 @@ struct LightBeatApp {
     /// The level that was open at the last undo snapshot; leaving a level
     /// syncs without waiting for the next tick of the snapshot rhythm.
     link_last_level: usize,
+    /// The instance the open level was inside of at the last frame.
+    link_prev_editing: Option<Vec<u64>>,
+    /// Per node type, the saved-data keys that are running state.
+    running_state: std::collections::HashMap<String, &'static [&'static str]>,
     beat_clock: BeatClock,
     _subs: Vec<SubscriptionHandle>,
     config: AppConfig,
@@ -229,6 +233,8 @@ impl LightBeatApp {
             link_quiet_until: None,
             link_check_at: None,
             link_last_level: 0,
+            link_prev_editing: None,
+            running_state: std::collections::HashMap::new(),
             beat_clock,
             _subs: Vec::new(),
             config,

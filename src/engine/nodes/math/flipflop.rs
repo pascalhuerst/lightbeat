@@ -76,6 +76,9 @@ impl ProcessNode for FlipFlopProcessNode {
         }
     }
 
+    /// The latched state is what the node is doing, not how it is set up.
+    fn running_state_keys(&self) -> &'static [&'static str] { &["state"] }
+
     fn save_data(&self) -> Option<serde_json::Value> {
         Some(serde_json::json!({ "state": self.state }))
     }
@@ -169,6 +172,9 @@ impl ProcessNode for JkFlipFlopProcessNode {
             _ => 0.0,
         }
     }
+
+    /// The latched state is what the node is doing, not how it is set up.
+    fn running_state_keys(&self) -> &'static [&'static str] { &["state"] }
 
     fn save_data(&self) -> Option<serde_json::Value> {
         Some(serde_json::json!({ "state": self.state }))
