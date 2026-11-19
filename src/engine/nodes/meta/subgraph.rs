@@ -436,6 +436,19 @@ impl InnerGraph {
 
         // 3. Propagate connections (including bridge connections). Multi-channel
         // ports (Color=3, Position=2) expand to multiple float copies.
+        // A select wire recalls a snapshot inside `run`, on lane 0 only (the
+        // copies have no snapshots of their own): note the settings before so
+        // the change can be carried to them.
+        let watched: Vec<(usize, Vec<ParamDef>)> = if self.any_lanes {
+            self.nodes
+                .iter()
+                .enumerate()
+                .filter(|(i, _)| !self.lanes[*i].is_empty() && self.promoted[*i].has_snapshot_select())
+                .map(|(i, node)| (i, node.params()))
+                .collect()
+        } else {
+            Vec::new()
+        };
         self.plan.run(
             &mut self.nodes,
             &mut self.lanes,
@@ -443,6 +456,14 @@ impl InnerGraph {
             &self.bridge_in,
             &mut self.bridge_out,
         );
+        for (i, before) in watched {
+            let moved = changed_params(&before, &self.nodes[i].params());
+            for lane in self.lanes[i].iter_mut() {
+                for (idx, val) in &moved {
+                    lane.node.set_param(*idx, val.clone());
+                }
+            }
+        }
         for (i, node) in self.nodes.iter_mut().enumerate() {
             // A fade moves lane 0's settings through the node; the copies are
             // brought along from what changed.
@@ -669,6 +690,13 @@ impl InnerGraph {
         let sync_save_data = self.save_data_gate.due();
         for (i, node) in self.nodes.iter().enumerate() {
             let disabled = self.disabled_mask[i];
+            // The copies resolve their promoted params against their own
+            // settings: a mode change moves ranges and indices there too.
+            for lane in self.lanes[i].iter_mut() {
+                if lane.promoted.wants_refresh() {
+                    lane.promoted.refresh(&lane.node.params());
+                }
+            }
             // A laned node shows one lane to the UI, the one the user is
             // looking at; its saved state is always lane 0's.
             let copies = &self.lanes[i];
@@ -1418,6 +1446,84 @@ mod lane_tests {
             })
             .collect();
         assert_eq!(thresholds, vec![0.2; WIDTH]);
+    }
+
+    #[test]
+    fn a_snapshot_recalled_by_a_select_wire_reaches_every_lane() {
+        use crate::engine::snapshots::SELECT_NAME;
+        let mut g = InnerGraph::new();
+        let mut node = SchmittTriggerProcessNode::new(NodeId(2));
+        let mut set = SnapshotSet::default();
+        node.set_param(0, ParamValue::Float(0.2));
+        set.add(None, capture(&node.params(), node.non_promotable_params()));
+        node.set_param(0, ParamValue::Float(0.8));
+        set.add(None, capture(&node.params(), node.non_promotable_params()));
+        add(&mut g, Box::new(node));
+        add(&mut g, Box::new(Source { id: NodeId(50), outputs: vec![PortDef::new("out", PortType::Untyped)], value: 0.0 }));
+        {
+            let mut shared = g.shared_states[0].lock();
+            shared.pending_promoted = Some(vec![PromotedParam { name: SELECT_NAME.into(), kind: PromotedKind::SnapshotSelect }]);
+            shared.pending_snapshots = Some(set);
+        }
+        lanes_for(&mut g, 2, schmitt);
+        // The first port past the node's single own input is the select port.
+        wire(&mut g, (50, 0), (2, 1));
+        run(&mut g, 4);
+        let thresholds: Vec<f32> = std::iter::once(&g.nodes[0])
+            .chain(g.lanes[0].iter().map(|l| &l.node))
+            .map(|n| match n.params()[0] {
+                ParamDef::Float { value, .. } => value,
+                _ => unreachable!(),
+            })
+            .collect();
+        assert_eq!(thresholds, vec![0.2; WIDTH]);
+    }
+
+    /// A node whose "Amount" range depends on its "Mode".
+    struct Ranged {
+        id: NodeId,
+        outputs: Vec<PortDef>,
+        wide: bool,
+        amount: f32,
+    }
+
+    impl ProcessNode for Ranged {
+        fn node_id(&self) -> NodeId { self.id }
+        fn type_name(&self) -> &'static str { "Ranged" }
+        fn inputs(&self) -> &[PortDef] { &[] }
+        fn outputs(&self) -> &[PortDef] { &self.outputs }
+        fn process(&mut self) {}
+        fn read_output(&self, _: usize) -> f32 { self.amount }
+        fn params(&self) -> Vec<ParamDef> {
+            vec![
+                ParamDef::Choice { name: "Mode".into(), value: self.wide as usize, options: vec!["Narrow".into(), "Wide".into()] },
+                ParamDef::Float { name: "Amount".into(), value: self.amount, min: 0.0, max: if self.wide { 10.0 } else { 1.0 }, step: 0.1, unit: "" },
+            ]
+        }
+        fn set_param(&mut self, index: usize, value: ParamValue) {
+            match (index, value) {
+                (0, ParamValue::Choice(c)) => self.wide = c == 1,
+                (1, ParamValue::Float(v)) => self.amount = v,
+                _ => {}
+            }
+        }
+    }
+
+    #[test]
+    fn a_mode_change_moves_the_ranges_of_the_copies_promoted_params_too() {
+        let ranged = || -> Box<dyn ProcessNode> { Box::new(Ranged { id: NodeId(2), outputs: vec![PortDef::new("out", PortType::Untyped)], wide: false, amount: 0.0 }) };
+        let mut g = InnerGraph::new();
+        add(&mut g, ranged());
+        add(&mut g, Box::new(Source { id: NodeId(50), outputs: vec![PortDef::new("out", PortType::Untyped)], value: 5.0 }));
+        g.shared_states[0].lock().pending_promoted = Some(vec![PromotedParam { name: "Amount".into(), kind: PromotedKind::Float }]);
+        g.apply(SubgraphInnerCmd::SetLanes { node_id: NodeId(2), extra: vec![ranged()] });
+        wire(&mut g, (50, 0), (2, 0));
+        run(&mut g, 2);
+        assert_eq!(g.lanes[0][0].node.read_output(0), 1.0, "narrow: clamped to 1");
+        g.shared_states[0].lock().pending_params.push((0, ParamValue::Choice(1)));
+        run(&mut g, 40);
+        assert_eq!(g.nodes[0].read_output(0), 5.0);
+        assert_eq!(g.lanes[0][0].node.read_output(0), 5.0, "the copy follows the new range");
     }
 
     #[test]

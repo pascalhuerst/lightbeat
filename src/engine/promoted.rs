@@ -206,6 +206,12 @@ impl PromotedInputs {
         self.player.recall(index, node);
     }
 
+    /// A select wire can recall a snapshot in the middle of a tick, writing
+    /// the node's settings from inside `apply`.
+    pub fn has_snapshot_select(&self) -> bool {
+        self.entries.iter().flatten().any(|e| e.role == Role::SnapshotSelect)
+    }
+
     /// A recall is fading: the player is writing settings every tick.
     pub fn snapshot_running(&self) -> bool {
         self.player.fading()
