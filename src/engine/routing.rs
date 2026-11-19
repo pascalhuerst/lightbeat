@@ -7,7 +7,7 @@
 //!
 //! `EngineGraph` and `InnerGraph` both run on this. A plan is rebuilt when
 //! the owner marks it dirty (structural commands, `set_param`, `load_data`,
-//! connect hooks) or when a node's port count or lane count no longer matches,
+//! connect hooks, lane counts) or when a node's port count no longer matches,
 //! which also catches nodes that rebuild their ports inside `process()`.
 //!
 //! Buses are resolved here too, once per rebuild: a wire between a bus port or
@@ -54,10 +54,10 @@ struct Side {
 struct Route {
     src: End,
     /// Which copy of the source node is read (0 is the node itself).
-    src_lane: usize,
+    src_lane: u32,
     src_base: usize,
     dst: End,
-    dst_lane: usize,
+    dst_lane: u32,
     /// Channel offset on a node or bridge, or the promoted slot when `promoted`.
     dst_base: usize,
     channels: usize,
@@ -75,14 +75,12 @@ pub struct RoutePlan {
     pub connected: Vec<Vec<bool>>,
     /// Input and output port counts each node had when the plan was built.
     port_counts: Vec<(usize, usize)>,
-    /// How many copies each node ran as when the plan was built.
-    lane_counts: Vec<usize>,
     /// Bridge channel totals, for subgraph levels.
     bridge_channels: (usize, usize),
-    /// (node, lane, channel, value)
-    writes: Vec<(usize, usize, usize, f32)>,
+    /// (node, lane, channel, value); kept small, this is the hot list.
+    writes: Vec<(u32, u32, u32, f32)>,
     /// (node, lane, promoted slot, value)
-    promoted_writes: Vec<(usize, usize, usize, f32)>,
+    promoted_writes: Vec<(u32, u32, u32, f32)>,
     bridge_writes: Vec<(usize, f32)>,
     built: bool,
 }
@@ -101,11 +99,11 @@ fn solid_gradient_channel(color: [f32; 3], ch: usize) -> f32 {
     }
 }
 
-fn read_lane(nodes: &[Box<dyn ProcessNode>], lanes: &[Vec<Lane>], i: usize, lane: usize, ch: usize) -> f32 {
+fn read_lane(nodes: &[Box<dyn ProcessNode>], lanes: &[Vec<Lane>], i: usize, lane: u32, ch: usize) -> f32 {
     if lane == 0 {
         nodes[i].read_output(ch)
     } else {
-        lanes[i].get(lane - 1).map_or(0.0, |l| l.node.read_output(ch))
+        lanes[i].get(lane as usize - 1).map_or(0.0, |l| l.node.read_output(ch))
     }
 }
 
@@ -118,7 +116,6 @@ impl RoutePlan {
     pub fn is_current(
         &self,
         nodes: &[Box<dyn ProcessNode>],
-        lanes: &[Vec<Lane>],
         bridge_in: &[PortDef],
         bridge_out: &[PortDef],
     ) -> bool {
@@ -129,7 +126,6 @@ impl RoutePlan {
                 .iter()
                 .zip(&self.port_counts)
                 .all(|(n, &(i, o))| n.inputs().len() == i && n.outputs().len() == o)
-            && self.lane_counts.iter().enumerate().all(|(i, &n)| lane_count(lanes, i) == n)
     }
 
     pub fn build(
@@ -150,7 +146,6 @@ impl RoutePlan {
                 .map(|(n, p)| vec![false; n.inputs().len() + p.len()])
                 .collect(),
             port_counts: nodes.iter().map(|n| (n.inputs().len(), n.outputs().len())).collect(),
-            lane_counts: (0..nodes.len()).map(|i| lane_count(lanes, i)).collect(),
             bridge_channels: (total_channels(bridge_in), total_channels(bridge_out)),
             built: true,
             ..Default::default()
@@ -236,8 +231,8 @@ impl RoutePlan {
     /// once) copy what they have in common; the UI refuses such wires, this
     /// only keeps a stale one from reading out of range.
     fn push_lanes(&mut self, src: Side, dst: Side, per_lane: usize, promoted: bool, solid_gradient: bool) {
-        let route = |src_lane, src_base, dst_lane, dst_base, channels| Route {
-            src: src.end, src_lane, src_base, dst: dst.end, dst_lane, dst_base, channels, promoted, solid_gradient,
+        let route = |src_lane: usize, src_base, dst_lane: usize, dst_base, channels| Route {
+            src: src.end, src_lane: src_lane as u32, src_base, dst: dst.end, dst_lane: dst_lane as u32, dst_base, channels, promoted, solid_gradient,
         };
         let lanes_of = |s: Spread| match s {
             Spread::Copies(n) | Spread::Bus(n) => n,
@@ -295,17 +290,18 @@ impl RoutePlan {
             for ch in 0..r.channels {
                 let val = if r.solid_gradient { solid_gradient_channel(color, ch) } else { read(ch) };
                 match (r.dst, r.promoted) {
-                    (End::Node(i), true) => self.promoted_writes.push((i, r.dst_lane, r.dst_base, val)),
-                    (End::Node(i), false) => self.writes.push((i, r.dst_lane, r.dst_base + ch, val)),
+                    (End::Node(i), true) => self.promoted_writes.push((i as u32, r.dst_lane, r.dst_base as u32, val)),
+                    (End::Node(i), false) => self.writes.push((i as u32, r.dst_lane, (r.dst_base + ch) as u32, val)),
                     (End::Bridge, _) => self.bridge_writes.push((r.dst_base + ch, val)),
                 }
             }
         }
 
         for &(i, lane, ch, val) in &self.writes {
+            let (i, ch) = (i as usize, ch as usize);
             if lane == 0 {
                 nodes[i].write_input(ch, val);
-            } else if let Some(l) = lanes[i].get_mut(lane - 1) {
+            } else if let Some(l) = lanes[i].get_mut(lane as usize - 1) {
                 l.node.write_input(ch, val);
             }
         }
@@ -315,9 +311,10 @@ impl RoutePlan {
             }
         }
         for &(i, lane, slot, val) in &self.promoted_writes {
+            let (i, slot) = (i as usize, slot as usize);
             if lane == 0 {
                 promoted[i].apply(nodes[i].as_mut(), slot, val);
-            } else if let Some(l) = lanes[i].get_mut(lane - 1) {
+            } else if let Some(l) = lanes[i].get_mut(lane as usize - 1) {
                 l.promoted.apply(l.node.as_mut(), slot, val);
             }
         }

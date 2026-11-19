@@ -164,6 +164,9 @@ pub struct InnerGraph {
     /// addresses a node (settings, config, connect hooks, promoted lists,
     /// snapshot recalls, disabling) addresses its copies the same way.
     lanes: Vec<Vec<Lane>>,
+    /// Whether any node has copies, so the plain graph pays one flag a tick
+    /// for lanes and nothing per node.
+    any_lanes: bool,
     plan: RoutePlan,
     save_data_gate: SaveDataGate,
     /// Set by anything that can change routing or a node's ports; checked
@@ -215,6 +218,7 @@ impl InnerGraph {
             index_stale: false,
             promoted: Vec::new(),
             lanes: Vec::new(),
+            any_lanes: false,
             plan: RoutePlan::default(),
             save_data_gate: SaveDataGate::default(),
             plan_dirty: true,
@@ -239,6 +243,10 @@ impl InnerGraph {
         if self.lanes.len() != self.nodes.len() {
             self.lanes.resize_with(self.nodes.len(), Vec::new);
         }
+    }
+
+    fn note_lanes(&mut self) {
+        self.any_lanes = self.lanes.iter().any(|l| !l.is_empty());
     }
 
     fn rebuild_plan(&mut self, input_ports: &[PortDef], output_ports: &[PortDef]) {
@@ -340,8 +348,10 @@ impl InnerGraph {
                 }
                 let started = std::time::Instant::now();
                 node.process();
-                for lane in self.lanes[i].iter_mut() {
-                    lane.node.process();
+                if self.any_lanes {
+                    for lane in self.lanes[i].iter_mut() {
+                        lane.node.process();
+                    }
                 }
                 profile.record(node.type_name(), started.elapsed().as_nanos() as u64);
             }
@@ -353,8 +363,10 @@ impl InnerGraph {
                 }
                 let started = std::time::Instant::now();
                 node.process();
-                for lane in self.lanes[i].iter_mut() {
-                    lane.node.process();
+                if self.any_lanes {
+                    for lane in self.lanes[i].iter_mut() {
+                        lane.node.process();
+                    }
                 }
                 crate::perf::record_inner_node(
                     node.type_name(),
@@ -365,8 +377,10 @@ impl InnerGraph {
             for (i, node) in self.nodes.iter_mut().enumerate() {
                 if !self.disabled_mask[i] {
                     node.process();
-                    for lane in self.lanes[i].iter_mut() {
-                        lane.node.process();
+                    if self.any_lanes {
+                        for lane in self.lanes[i].iter_mut() {
+                            lane.node.process();
+                        }
                     }
                 }
             }
@@ -395,7 +409,7 @@ impl InnerGraph {
         //    connected" bitmap (the "input-overrides-param" pattern) only when
         //    something that could change them did.
         if self.plan_dirty
-            || !self.plan.is_current(&self.nodes, &self.lanes, input_ports, output_ports)
+            || !self.plan.is_current(&self.nodes, input_ports, output_ports)
         {
             self.rebuild_plan(input_ports, output_ports);
         }
@@ -415,14 +429,13 @@ impl InnerGraph {
             &mut self.bridge_out,
         );
         for (i, node) in self.nodes.iter_mut().enumerate() {
-            let copies = &mut self.lanes[i];
             // A fade moves lane 0's settings through the node; the copies are
             // brought along from what changed.
-            let before = (!copies.is_empty() && self.promoted[i].snapshot_running()).then(|| node.params());
+            let before = (self.any_lanes && !self.lanes[i].is_empty() && self.promoted[i].snapshot_running()).then(|| node.params());
             self.promoted[i].step_snapshots(node.as_mut());
             if let Some(before) = before {
                 let moved = changed_params(&before, &node.params());
-                for lane in copies.iter_mut() {
+                for lane in self.lanes[i].iter_mut() {
                     for (idx, val) in &moved {
                         lane.node.set_param(*idx, val.clone());
                     }
@@ -464,6 +477,7 @@ impl InnerGraph {
                     self.shared_states.remove(idx);
                     self.promoted.remove(idx);
                     self.lanes.remove(idx);
+                    self.note_lanes();
                     self.index_stale = true;
                     self.connections
                         .retain(|c| c.from.node != id && c.to.node != id);
@@ -551,6 +565,7 @@ impl InnerGraph {
             promoted.adopt(self.promoted[i].wanted(), copy.as_ref());
             self.lanes[i].push(Lane { node: copy, promoted });
         }
+        self.note_lanes();
         self.plan_dirty = true;
     }
 
@@ -565,6 +580,7 @@ impl InnerGraph {
         self.shared_states.clear();
         self.promoted.clear();
         self.lanes.clear();
+        self.any_lanes = false;
         self.connections.clear();
         self.node_index.clear();
         self.index_stale = false;
@@ -961,9 +977,9 @@ mod routing_tests {
     fn plan_notices_a_change_in_bridge_channels() {
         let (mut g, ins, outs) = passthrough();
         g.tick(&ins, &outs);
-        assert!(g.plan.is_current(&g.nodes, &g.lanes, &ins, &outs));
+        assert!(g.plan.is_current(&g.nodes, &ins, &outs));
         let wider = vec![PortDef::new("c", PortType::Color)];
-        assert!(!g.plan.is_current(&g.nodes, &g.lanes, &wider, &outs));
+        assert!(!g.plan.is_current(&g.nodes, &wider, &outs));
     }
 }
 
