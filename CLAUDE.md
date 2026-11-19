@@ -642,6 +642,73 @@ import; the project only when saved.
 
 ---
 
+## 3e. Big graphs: navigation, front panels, instances, buses, the Desk
+
+Built from `findings_by_fabel/ui_ux_lookout_and_ideas.md` (all five steps of
+its section 7). None of it changed how a node is written, except the two
+declarations named below.
+
+- **Wires** (`widgets/nodes/graph/wires.rs`): wires of selected nodes stay
+  bright and the rest dims; hovering a wire lights its run up- and downstream.
+  Two or more wires between the same two nodes are drawn as one cable with a
+  count and open up under the pointer or when either node is selected (View,
+  "Collapse parallel wires", `AppConfig::collapse_parallel_wires`). Hit-testing
+  never depends on how a wire is drawn.
+- **Find and jumps** (`graph/find.rs`, `graph/links.rs`): `Ctrl+F` searches
+  nodes and frames on every level; `go_to` / `go_to_node` navigate to a node
+  on any level and are the one way to do that. Double-click a Portal Receive
+  for its Send; inspectors of portals, effects and stacks list their
+  counterparts (`NodeWidget::set_link_peers` / `take_jump`, `LinkJump`).
+- **Front panels** (`graph/panel.rs`, `widgets/nodes/panel.rs`): a node inside
+  a subgraph flagged "Show on parent" (`NodeSharedState::panel`, saved as
+  `SavedNode.panel`: whole node and/or single params) is drawn, live, on the
+  Subgraph node's body by `panel::draw_cell`. The graph mediates: it takes the
+  inner level's widgets out with `mem::take` while drawing and puts them back.
+  Panels nest. A panel replaces the automatic list of inner displays.
+- **Linked subgraphs** (`src/linked.rs` for the rules on saved forms,
+  `graph/instances.rs`, `app/linked.rs`): Subgraph nodes with the same
+  `definition` id are instances. Each keeps its full inner graph, its own UI
+  level and its own engine `InnerGraph`; nodes correspond through a
+  definition-local id (`SavedNode.def_node`). Only the instance the user is
+  editing can be the source of a sync, which runs in the undo snapshot step so
+  an edit and its sync are one undo step. Per instance: the Subgraph node's
+  own place and wires, the values of what is on its front panel, its Desk
+  placements, and **running state**: a node whose `save_data` holds what it is
+  doing right now declares those keys in `ProcessNode::running_state_keys()`.
+  A registry test fails for a saved `data` key that is neither declared there
+  nor listed as setup, so decide when you add one. `Ctrl+D` makes an instance,
+  `Ctrl+Shift+D` a unique copy; "Make unique"; Edit, "Link identical
+  subgraphs". A placed macro is an instance too (`macro_hash`), with "Update
+  from library".
+- **Buses** (`engine/lanes.rs`, `engine/routing.rs`, `graph/bus.rs`): a wire
+  can carry up to `MAX_LANES` (64) lanes. Not a port type. Two ways a port is
+  wide: a *native bus port* (`PortDef.lanes`; the node handles lanes x channels
+  floats: Bus Merge / Split / Pick, the `pads` bus of the Launchpad S, the bus
+  output of Fader Group, Button Group, Trigger Bank, Toggle Bank), and a
+  *laned node*: the engine holds N copies of the `ProcessNode` and routes lane
+  k to copy k, with settings, config and hooks fanned out to all. Widths are
+  inferred from the wires by one pure function (`lanes::infer`), never saved;
+  the UI tells the engine with `SetLanes`. A single wire into a laned node
+  broadcasts; two wide inputs must match. A node that must not be run as
+  lanes says so with `ProcessNode::max_lanes()` (hardware, controls, banks,
+  Subgraph, portals, effects and stacks, the bus tools; a registry test lists
+  them). The UI mirror shows one lane (`view_lane`, the inspector's Lane
+  stepper). Not built: a bus through a subgraph port or a portal (refused; use
+  Bus Split), laned Subgraphs, displays of all lanes.
+- **Desk** (`widgets/nodes/desk.rs`, `graph/desk_view.rs`, `app/view.rs`):
+  `Tab` switches between Patch (the canvas) and Desk: nodes from any level
+  flagged "Show on Desk" (`NodeSharedState::desk`, `SavedNode.desk`), drawn as
+  front-panel cells without wires on pages (`ProjectFile.desk`, root only),
+  moved and resized on a grid; Lock, full screen (`F11`), snapshot rows.
+  Placement is never copied (duplicate, paste, macros) and is per instance.
+  Everything the graph does each frame besides drawing and interaction is in
+  `NodeGraph::maintain()`, which both views run: put per-frame upkeep there,
+  not in `show`.
+- All of this was built without anyone running the GUI; when something in
+  these areas misbehaves, suspect the code before the report.
+
+---
+
 ## 4. Adding a new node — checklist
 
 1. **Engine file**: `src/engine/nodes/<dir>/<snake_name>.rs` — define struct +
@@ -687,7 +754,7 @@ import; the project only when saved.
   `setup.json` and the default `project.json` are the ones in the working
   directory (`paths::data_file`). With `autoload_on_open` the most recent
   project (`recent_projects` in `settings.json`) is opened, not `project.json`.
-- About 430 unit tests across the crate (graph behaviour, project save/load,
+- About 640 unit tests across the crate (graph behaviour, project save/load,
   effects, analyzers, the tracker, objects, color); `cargo test` runs them. CI
   runs the tests and `cargo clippy -- -D warnings` (lints that are a matter of
   taste here are switched off once, in `Cargo.toml` `[lints.clippy]`). The crate uses edition 2024, so it needs a
@@ -839,4 +906,5 @@ easy-to-understand way** — the user's stated guiding principle.
 ideas, and an outlook on big graphs (buses, front panels, linked subgraphs, a
 Desk view). The first two are implemented; the status table at the top of each
 says what was done, what was dropped and why. The file:line references in them
-are stale. The feature ideas and the outlook are proposals, not started.
+are stale. The outlook's five steps are implemented (section 3e); the feature
+ideas are proposals, not started.

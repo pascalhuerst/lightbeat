@@ -2231,7 +2231,7 @@ dependencies = [
 
 [[package]]
 name = "lightbeat"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "ableton-link",
  "artnet_protocol",
