@@ -479,6 +479,22 @@ fn an_instance_inside_a_subgraph_inside_another_instance_follows_its_own_definit
 }
 
 #[test]
+fn a_pasted_instance_starts_from_the_definition_as_it_is_now() {
+    let mut g = with_two_instances();
+    g.selected_nodes = vec![1];
+    g.copy_selected();
+    // The definition grows after the copy.
+    let base = project::save_graph(&g);
+    add_const_inside(&mut g, 1);
+    sync(&mut g, &base);
+    g.paste(Pos2::ZERO);
+    let pasted = *root_ids(&g).last().unwrap();
+    assert_eq!(root_ids(&g).len(), 3);
+    assert_eq!(inner_ids(&g, pasted).len(), 3, "the added node is in the pasted instance");
+    assert_eq!(g.instance_counts()[&def(&g)], 3);
+}
+
+#[test]
 fn rebuilding_a_sibling_keeps_the_selection_and_the_drag_of_the_level_the_user_is_on() {
     let mut g = with_two_instances();
     // The definition contains a nested subgraph, which the rebuild has to navigate into.
