@@ -40,7 +40,7 @@ impl NodeGraph {
         // Find hit port (try input first, then output).
         let hit = {
             let level = self.active();
-            let mut found: Option<(PortId, String, PortType, usize)> = None;
+            let mut found: Option<(PortId, String, PortType, usize, usize)> = None;
             'outer: for i in 0..level.nodes.len() {
                 if i >= node_rects.len() { break; }
                 let rect = node_rects[i];
@@ -60,6 +60,7 @@ impl NodeGraph {
                             up.def.name.clone(),
                             up.def.port_type,
                             base,
+                            up.def.lanes,
                         ));
                         break 'outer;
                     }
@@ -79,6 +80,7 @@ impl NodeGraph {
                             up.def.name.clone(),
                             up.def.port_type,
                             base,
+                            up.def.lanes,
                         ));
                         break 'outer;
                     }
@@ -88,7 +90,7 @@ impl NodeGraph {
             found
         };
 
-        let Some((port_id, port_name, port_type, channel_base)) = hit else {
+        let Some((port_id, port_name, port_type, channel_base, native_lanes)) = hit else {
             self.hover_port = None;
             self.hover_samples.clear();
             return;
@@ -109,6 +111,25 @@ impl NodeGraph {
             self.hover_port = Some(port_id);
             self.hover_samples.clear();
         }
+
+        // A bus port has its lanes side by side; a laned node shows the lane
+        // its inspector says. Either way the scope and the numbers are that one.
+        let widths = &self.active().bus.widths;
+        let lanes = if native_lanes > 1 {
+            native_lanes
+        } else if port_id.dir == PortDir::Output {
+            widths.of_node(port_id.node)
+        } else {
+            widths.of_wire(port_id)
+        };
+        let view_lane = if lanes > 1 {
+            let level = self.active();
+            level.states.iter().position(|s| s.id == port_id.node)
+                .map_or(0, |i| level.nodes[i].shared_state().lock().view_lane.min(lanes - 1))
+        } else {
+            0
+        };
+        let channel_base = if native_lanes > 1 { channel_base + view_lane * port_type.channel_count() } else { channel_base };
 
         // Read all channels of this port's current value from shared state.
         let values: Vec<f32> = {
@@ -175,6 +196,10 @@ impl NodeGraph {
                         },
                     );
                 });
+                if lanes > 1 {
+                    ui.colored_label(theme::LANE_BADGE, format!("{lanes} lanes"));
+                    ui.colored_label(theme::TEXT_DIM, format!("showing lane {}", view_lane + 1));
+                }
                 match port_type {
                     PortType::Color => {
                         ui.label(format!("RGB {:.2} {:.2} {:.2}",

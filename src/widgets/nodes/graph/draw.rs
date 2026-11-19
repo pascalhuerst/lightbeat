@@ -106,6 +106,8 @@ pub(super) fn draw_node_chrome(
     // `time` is seconds since an arbitrary epoch (callers pass
     // `ctx.input(|i| i.time)`). Used to animate the portal-peer halo.
     time: f64,
+    // How many lanes the node runs at; above 1 the header says so.
+    lanes: usize,
     zoom: f32,
 ) {
     // Shadow
@@ -179,6 +181,15 @@ pub(super) fn draw_node_chrome(
     }
     let title_pos = Pos2::new(cursor_x, center_y - title_galley.size().y * 0.5);
     painter.galley(title_pos, title_galley, title_color);
+    if lanes > 1 && layout.show_title {
+        let badge = painter.layout_no_wrap(
+            count_badge(lanes),
+            egui::FontId::proportional(10.0 * zoom),
+            if disabled { theme::TEXT_DIM } else { theme::LANE_BADGE },
+        );
+        let at = Pos2::new(title_rect.min.x + 6.0 * zoom, center_y - badge.size().y * 0.5);
+        painter.galley(at, badge, theme::LANE_BADGE);
+    }
 
     // Enable / disable toggle at the right of the title bar.
     if layout.toggle {

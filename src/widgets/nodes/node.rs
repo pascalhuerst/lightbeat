@@ -8,6 +8,12 @@ use super::types::UiPortDef;
 
 /// The saved value of a param as an index, for widgets whose ports follow a
 /// choice or a count.
+/// How a count of copies reads on a node: "x16". The Subgraph widget (instances
+/// of a linked definition) and the node header (lanes of a bus) both use it.
+pub fn count_badge(n: usize) -> String {
+    format!("x{n}")
+}
+
 pub fn param_usize(params: &[(usize, ParamValue)], index: usize) -> Option<usize> {
     params.iter().find(|(i, _)| *i == index).map(|(_, v)| v.as_usize())
 }
@@ -742,5 +748,10 @@ mod layout_tests {
     fn the_title_bar_height_follows_the_layout() {
         assert_eq!(title_bar_rect(rect(), &NodeLayout::STANDARD, 1.0).height(), 24.0);
         assert_eq!(title_bar_rect(rect(), &NodeLayout::compact(), 2.0).height(), 28.0);
+    }
+
+    #[test]
+    fn a_count_of_copies_reads_x_and_the_number() {
+        assert_eq!(count_badge(16), "x16");
     }
 }

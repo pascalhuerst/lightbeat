@@ -396,7 +396,7 @@ impl NodeWidget for SubgraphWidget {
             }
             ui.colored_label(theme::TEXT_DIM, format!("{} nodes", inner_count));
             if self.definition.is_some() && self.instances > 1 {
-                ui.colored_label(theme::LINK_BADGE, format!("x{}", self.instances))
+                ui.colored_label(theme::LINK_BADGE, crate::widgets::nodes::node::count_badge(self.instances))
                     .on_hover_text(format!("Instance of {}, used {} times. Changes inside apply to all.", self.display_title(), self.instances));
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {

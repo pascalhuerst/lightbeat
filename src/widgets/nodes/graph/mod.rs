@@ -1025,8 +1025,20 @@ impl NodeGraph {
             // The margin covers what is drawn outside the rect: port dots, the
             // selection outline and the pulse of a linked node.
             if !canvas_rect.intersects(node_rect.expand(12.0 + 12.0 * z)) { continue; }
-            let inputs = level.nodes[i].ui_inputs_full();
-            let outputs = level.nodes[i].ui_outputs();
+            let mut inputs = level.nodes[i].ui_inputs_full();
+            let mut outputs = level.nodes[i].ui_outputs();
+            // The ports of a laned node and the ones a bus ends at are drawn as
+            // wide ones; only this frame's copy of the port list says so.
+            let node_id = level.states[i].id;
+            let lanes = level.bus.widths.of_node(node_id);
+            if lanes > 1 {
+                outputs.iter_mut().for_each(|p| p.def.lanes = lanes);
+            }
+            if !level.bus.widths.wire.is_empty() {
+                for (pi, p) in inputs.iter_mut().enumerate() {
+                    p.def.lanes = p.def.lanes.max(level.bus.widths.of_wire(make_port_id(node_id, PortDir::Input, pi)));
+                }
+            }
             let out_highlights: Vec<f32> = (0..outputs.len())
                 .map(|pi| level.nodes[i].output_highlight(pi, now))
                 .collect();
@@ -1053,6 +1065,7 @@ impl NodeGraph {
                 portal_peer,
                 level.nodes[i].show_port_labels(),
                 now,
+                lanes,
                 z,
             );
         }

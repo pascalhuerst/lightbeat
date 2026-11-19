@@ -352,6 +352,37 @@ fn param_row(
 }
 
 /// Draw the inspector panel for a single selected node.
+/// For a node that runs once per lane of a bus, or has a bus port: which lane
+/// its body, its port values and the hover scope show.
+fn lane_stepper(ui: &mut Ui, node: &mut dyn NodeWidget) {
+    let widest_port = node.ui_inputs().iter().chain(node.ui_outputs().iter()).map(|p| p.def.lanes).max().unwrap_or(1);
+    let (lanes, mut view) = {
+        let shared = node.shared_state().lock();
+        (widest_port.max(shared.lanes), shared.view_lane)
+    };
+    if lanes <= 1 {
+        return;
+    }
+    view = view.min(lanes - 1);
+    let before = view;
+    ui.horizontal(|ui| {
+        ui.colored_label(theme::LANE_BADGE, crate::widgets::nodes::node::count_badge(lanes));
+        ui.label("Lane")
+            .on_hover_text("This node works on every lane of its bus at once; the lane shown on the node and in the port values is this one.");
+        if ui.add_enabled(view > 0, egui::Button::new(egui_phosphor::regular::CARET_LEFT)).clicked() {
+            view -= 1;
+        }
+        ui.label(format!("{} / {}", view + 1, lanes));
+        if ui.add_enabled(view + 1 < lanes, egui::Button::new(egui_phosphor::regular::CARET_RIGHT)).clicked() {
+            view += 1;
+        }
+    });
+    if view != before {
+        node.shared_state().lock().view_lane = view;
+    }
+    ui.separator();
+}
+
 pub fn show_inspector(ui: &mut Ui, node: &mut dyn NodeWidget, in_subgraph: bool) {
     let title = node.title();
     let type_name = node.type_name();
@@ -373,6 +404,8 @@ pub fn show_inspector(ui: &mut Ui, node: &mut dyn NodeWidget, in_subgraph: bool)
         ui.colored_label(theme::TEXT_DIM, desc);
     }
     ui.separator();
+
+    lane_stepper(ui, node);
 
     let is_bridge = [BRIDGE_IN_NODE_ID, BRIDGE_OUT_NODE_ID].contains(&node.node_id());
     if in_subgraph && !is_bridge {

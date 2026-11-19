@@ -163,6 +163,8 @@ pub const ACCENT_SUBGRAPH: Color32 = Color32::from_rgb(190, 90, 150);
 pub const ACCENT_MACRO: Color32 = Color32::from_rgb(140, 110, 220);
 /// The "xN" badge of a linked subgraph and the banner inside its definition.
 pub const LINK_BADGE: Color32 = Color32::from_rgb(120, 200, 220);
+/// The "x16" on a node that runs once per lane of a bus.
+pub const LANE_BADGE: Color32 = Color32::from_rgb(240, 190, 80);
 pub const LINK_BANNER_FILL: Color32 = Color32::from_rgba_premultiplied(20, 44, 52, 220);
 
 /// Linear blend from `a` toward `b` by `t` (0..=1). Used to tint accent
