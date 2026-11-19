@@ -936,7 +936,7 @@ impl NodeGraph {
         let mut in_cable = vec![false; level.connections.len()];
         if self.collapse_wires {
             let selected_ids = self.selected_node_ids(level);
-            for cable in wires::cable_groups(&level.connections) {
+            for cable in wires::cable_groups(&level.connections, |c| level.bus.widths.of_wire(c.to) > 1) {
                 if cable.wires.iter().any(|&w| ends[w].is_none()) { continue; }
                 if selected_ids.contains(&cable.from) || selected_ids.contains(&cable.to)
                     || cable.wires.iter().any(|&w| self.selected_connections.contains(&level.connections[w]))
