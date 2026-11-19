@@ -862,3 +862,94 @@ mod config_tests {
     }
 }
 
+
+#[cfg(test)]
+mod bus_tests {
+    use super::*;
+    use crate::engine::nodes::math::bus::{BusPickProcessNode, BusReshapeProcessNode, PICK_PARAM_INDEX};
+    use crate::engine::nodes::math::constant::ConstantProcessNode;
+
+    fn port(node: u64, index: usize, dir: PortDir) -> PortId {
+        PortId { node: NodeId(node), index, dir }
+    }
+
+    /// A node with one output that holds fixed values.
+    struct Source {
+        id: NodeId,
+        outputs: Vec<PortDef>,
+        values: Vec<f32>,
+    }
+
+    impl Source {
+        fn new(id: u64, port_type: PortType, values: &[f32]) -> Self {
+            Self { id: NodeId(id), outputs: vec![PortDef::new("out", port_type)], values: values.to_vec() }
+        }
+    }
+
+    impl ProcessNode for Source {
+        fn node_id(&self) -> NodeId { self.id }
+        fn type_name(&self) -> &'static str { "Source" }
+        fn inputs(&self) -> &[PortDef] { &[] }
+        fn outputs(&self) -> &[PortDef] { &self.outputs }
+        fn process(&mut self) {}
+        fn read_output(&self, ch: usize) -> f32 { self.values.get(ch).copied().unwrap_or(0.0) }
+    }
+
+    fn add(g: &mut InnerGraph, node: Box<dyn ProcessNode>) {
+        g.nodes.push(node);
+        g.shared_states.push(new_shared_state(64, 64));
+        g.promoted.push(PromotedInputs::default());
+        g.index_stale = true;
+    }
+
+    fn wire(g: &mut InnerGraph, from: (u64, usize), to: (u64, usize)) {
+        g.connections.push(Connection { from: port(from.0, from.1, PortDir::Output), to: port(to.0, to.1, PortDir::Input) });
+    }
+
+    /// Four constants (ids 10..14, values 1..4) into a Merge (id 1).
+    fn merged() -> InnerGraph {
+        let mut g = InnerGraph::new();
+        add(&mut g, Box::new(BusReshapeProcessNode::merge(NodeId(1))));
+        for k in 0..4u64 {
+            add(&mut g, Box::new(ConstantProcessNode::new(NodeId(10 + k), PortType::Untyped, k as f32 + 1.0)));
+            wire(&mut g, (10 + k, 0), (1, k as usize));
+        }
+        g.nodes[0].set_param(0, ParamValue::Choice(crate::engine::nodes::math::multiplex::type_to_index(PortType::Untyped)));
+        g
+    }
+
+    #[test]
+    fn a_bus_made_by_merge_comes_apart_in_split_with_every_lane_where_it_was() {
+        let mut g = merged();
+        add(&mut g, Box::new(BusReshapeProcessNode::split(NodeId(2))));
+        g.nodes.last_mut().unwrap().set_param(0, ParamValue::Choice(3));
+        wire(&mut g, (1, 0), (2, 0));
+        for _ in 0..4 {
+            g.tick(&[], &[]);
+        }
+        let split = g.nodes.last().unwrap();
+        let out: Vec<f32> = (0..4).map(|k| split.read_output(k)).collect();
+        assert_eq!(out, vec![1.0, 2.0, 3.0, 4.0]);
+    }
+
+    #[test]
+    fn a_bus_of_colors_keeps_the_channels_of_each_lane_together() {
+        let mut g = InnerGraph::new();
+        add(&mut g, Box::new(BusReshapeProcessNode::merge(NodeId(1))));
+        let color = crate::engine::nodes::math::multiplex::type_to_index(PortType::Color);
+        g.nodes[0].set_param(0, ParamValue::Choice(color));
+        for k in 0..4u64 {
+            add(&mut g, Box::new(Source::new(10 + k, PortType::Color, &[k as f32, k as f32 + 0.5, 0.25])));
+            wire(&mut g, (10 + k, 0), (1, k as usize));
+        }
+        add(&mut g, Box::new(BusPickProcessNode::new(NodeId(2))));
+        g.nodes.last_mut().unwrap().set_param(0, ParamValue::Choice(color));
+        g.nodes.last_mut().unwrap().set_param(PICK_PARAM_INDEX, ParamValue::Int(3));
+        wire(&mut g, (1, 0), (2, 0));
+        for _ in 0..4 {
+            g.tick(&[], &[]);
+        }
+        let pick = g.nodes.last().unwrap();
+        assert_eq!([pick.read_output(0), pick.read_output(1), pick.read_output(2)], [3.0, 3.5, 0.25]);
+    }
+}

@@ -50,7 +50,7 @@ impl NodeGraph {
                 let mut base = 0usize;
                 for (pi, up) in inputs.iter().enumerate() {
                     if level.nodes[i].is_port_hidden(PortDir::Input, pi) {
-                        base += up.def.port_type.channel_count();
+                        base += up.def.channels();
                         continue;
                     }
                     let pos = level.nodes[i].port_pos(rect, PortDir::Input, pi, z);
@@ -63,13 +63,13 @@ impl NodeGraph {
                         ));
                         break 'outer;
                     }
-                    base += up.def.port_type.channel_count();
+                    base += up.def.channels();
                 }
                 let outputs = level.nodes[i].ui_outputs();
                 let mut base = 0usize;
                 for (pi, up) in outputs.iter().enumerate() {
                     if level.nodes[i].is_port_hidden(PortDir::Output, pi) {
-                        base += up.def.port_type.channel_count();
+                        base += up.def.channels();
                         continue;
                     }
                     let pos = level.nodes[i].port_pos(rect, PortDir::Output, pi, z);
@@ -82,7 +82,7 @@ impl NodeGraph {
                         ));
                         break 'outer;
                     }
-                    base += up.def.port_type.channel_count();
+                    base += up.def.channels();
                 }
             }
             found

@@ -97,11 +97,19 @@ impl PortType {
     }
 }
 
+/// The most lanes a bus can have: the width of any wire and of any laned node.
+pub const MAX_LANES: usize = 64;
+
 /// Port definition — engine side (no color info).
 #[derive(Debug, Clone)]
 pub struct PortDef {
     pub name: String,
     pub port_type: PortType,
+    /// How many values of `port_type` the port carries side by side. 1 for
+    /// nearly every port; more only on a node's own bus ports (Bus Merge's
+    /// output, the bus outputs of a controller). A laned node's ports stay at 1:
+    /// the graph runs several copies of the node instead (`engine::lanes`).
+    pub lanes: usize,
 }
 
 impl PortDef {
@@ -109,26 +117,38 @@ impl PortDef {
         Self {
             name: name.into(),
             port_type,
+            lanes: 1,
         }
+    }
+
+    pub fn with_lanes(mut self, lanes: usize) -> Self {
+        self.lanes = lanes.clamp(1, MAX_LANES);
+        self
+    }
+
+    /// Floats the port occupies in a node's flat channel buffer: lane `k`
+    /// starts at `k * port_type.channel_count()`.
+    pub fn channels(&self) -> usize {
+        self.lanes * self.port_type.channel_count()
     }
 }
 
 /// Compute the internal channel base index for a given logical port index.
-/// Accounts for multi-channel ports (Color=3, Position=2).
+/// Accounts for multi-channel ports (Color=3, Position=2) and bus ports.
 pub fn port_base_index(ports: &[PortDef], logical_index: usize) -> usize {
     let mut base = 0;
     for (i, p) in ports.iter().enumerate() {
         if i == logical_index {
             return base;
         }
-        base += p.port_type.channel_count();
+        base += p.channels();
     }
     base
 }
 
 /// Total number of internal float channels for a list of ports.
 pub fn total_channels(ports: &[PortDef]) -> usize {
-    ports.iter().map(|p| p.port_type.channel_count()).sum()
+    ports.iter().map(PortDef::channels).sum()
 }
 
 // ---------------------------------------------------------------------------

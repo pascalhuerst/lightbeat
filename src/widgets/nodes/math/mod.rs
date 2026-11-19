@@ -1,4 +1,5 @@
 pub mod bipolar;
+pub mod bus;
 pub mod change_detect;
 pub mod color_modifier;
 pub mod color_components;

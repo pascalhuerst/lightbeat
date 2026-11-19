@@ -157,11 +157,11 @@ impl RoutePlan {
 
             let src_channels = src_ports
                 .get(conn.from.index)
-                .map(|p| p.port_type.channel_count())
+                .map(PortDef::channels)
                 .unwrap_or(1);
             let dst_channels = dst_ports
                 .get(conn.to.index)
-                .map(|p| p.port_type.channel_count())
+                .map(PortDef::channels)
                 .unwrap_or(1);
             let src_type = src_ports.get(conn.from.index).map(|p| p.port_type);
             let dst_type = dst_ports.get(conn.to.index).map(|p| p.port_type);

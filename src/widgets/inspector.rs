@@ -400,7 +400,7 @@ pub fn show_inspector(ui: &mut Ui, node: &mut dyn NodeWidget, in_subgraph: bool)
             drop(shared);
             let mut ch_base = 0;
             for port in &inputs {
-                let cpe = port.def.port_type.channel_count();
+                let cpe = port.def.channels();
                 show_port_value(ui, &port.def, &values, ch_base);
                 ch_base += cpe;
             }
@@ -415,7 +415,7 @@ pub fn show_inspector(ui: &mut Ui, node: &mut dyn NodeWidget, in_subgraph: bool)
             drop(shared);
             let mut ch_base = 0;
             for port in &outputs {
-                let cpe = port.def.port_type.channel_count();
+                let cpe = port.def.channels();
                 show_port_value(ui, &port.def, &values, ch_base);
                 ch_base += cpe;
             }

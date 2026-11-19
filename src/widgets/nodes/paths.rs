@@ -75,6 +75,9 @@ fn explicit(label: &str) -> Option<&'static str> {
         "Portal Send" => "portal/send",
         "Portal Receive" => "portal/receive",
         "Effect Stack" => "effect/stack",
+        "Bus Merge" => "route/merge",
+        "Bus Split" => "route/split",
+        "Bus Pick" => "route/pick",
         _ => return None,
     })
 }
