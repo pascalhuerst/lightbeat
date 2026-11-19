@@ -11,6 +11,7 @@
 //! 4: the ports some nodes built themselves for "a wire overrides this
 //!    setting" became promoted params.
 //! 5: node types and settings carry their current names; Sin and Cos are LFOs.
+//! 6: the Launchpad S, the groups and the banks gained a bus output.
 
 use std::collections::HashMap;
 
@@ -27,6 +28,7 @@ pub const SCHEMA: Schema = Schema {
         Step { to: 3, apply: signal_before_trigger },
         Step { to: 4, apply: override_ports_to_promoted },
         Step { to: 5, apply: current_names },
+        Step { to: 6, apply: bus_outputs_first },
     ],
     nested: inner_graphs,
 };
@@ -216,6 +218,42 @@ fn current_names(level: &mut Value) {
     }
 }
 
+// --- 6 ----------------------------------------------------------------------
+
+/// The nodes that gained a bus output, and the output index it sits at: every
+/// output from there on moved one place. By the node's name since version 5.
+const BUS_OUTPUT_AT: [(&str, u64); 5] = [
+    // After "connected".
+    ("Launchpad S", 1),
+    ("Button Group", 0),
+    ("Fader Group", 0),
+    ("Trigger Bank", 0),
+    ("Toggle Bank", 0),
+];
+
+fn bus_outputs_first(level: &mut Value) {
+    let types: HashMap<u64, String> = level
+        .get("nodes")
+        .and_then(Value::as_array)
+        .map(Vec::as_slice)
+        .unwrap_or_default()
+        .iter()
+        .filter_map(|n| Some((n.get("id")?.as_u64()?, n.get("type_name")?.as_str()?.to_string())))
+        .collect();
+    for c in connections_mut(level) {
+        let (Some(node), Some(port)) = (c.get("from_node").and_then(Value::as_u64), c.get("from_port").and_then(Value::as_u64))
+        else {
+            continue;
+        };
+        let at = types.get(&node).and_then(|t| BUS_OUTPUT_AT.iter().find(|(name, _)| name == t));
+        if let Some((_, at)) = at
+            && port >= *at
+        {
+            c["from_port"] = Value::from(port + 1);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -358,6 +396,22 @@ mod tests {
         assert_eq!(out["nodes"][1]["type_name"], "Bar");
         assert_eq!(out["nodes"][1]["promoted"][0]["name"], "amount");
         assert_eq!(out["nodes"][2]["promoted"][0]["name"], "Decay");
+    }
+
+    #[test]
+    fn the_bus_output_pushes_the_outputs_after_it_one_place_on() {
+        let level = |version: u32| {
+            upgraded(json!({
+                "version": version,
+                "nodes": [node("Launchpad S", 1), node("Fader Group", 2), node("Toggle Bank", 3), node("Add", 4), node("Value Display", 5)],
+                // connected, a pad, a Fader Group cell, a Toggle Bank cell, and an Add's output.
+                "connections": [wire((1, 0), (5, 0)), wire((1, 3), (5, 0)), wire((2, 0), (5, 0)), wire((3, 1), (5, 0)), wire((4, 0), (5, 0))],
+            }))
+        };
+        // "connected" stays, everything else on the hardware moves; Add does not.
+        assert_eq!(ports(&level(5)), [(0, 0), (4, 0), (1, 0), (2, 0), (0, 0)]);
+        // A file that is current is left alone.
+        assert_eq!(ports(&level(6)), [(0, 0), (3, 0), (0, 0), (1, 0), (0, 0)]);
     }
 
     #[test]

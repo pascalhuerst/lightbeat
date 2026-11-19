@@ -32,11 +32,12 @@ pub struct TriggerBankProcessNode {
 }
 
 /// The ports, stated once: the widget builds its own from this, so the two
-/// halves cannot disagree.
+/// halves cannot disagree. The first output is all the triggers as one bus.
 pub fn ports_for(n: usize) -> (Vec<PortDef>, Vec<PortDef>) {
+    let triggers = (0..n).map(|i| PortDef::new(format!("trigger {}", i + 1), PortType::Logic));
     (
         (0..n).map(|i| PortDef::new(format!("in {}", i + 1), PortType::Untyped)).collect(),
-        (0..n).map(|i| PortDef::new(format!("trigger {}", i + 1), PortType::Logic)).collect(),
+        std::iter::once(PortDef::new("bus", PortType::Logic).with_lanes(n)).chain(triggers).collect(),
     )
 }
 
@@ -89,8 +90,10 @@ impl ProcessNode for TriggerBankProcessNode {
         }
     }
 
-    fn read_output(&self, pi: usize) -> f32 {
-        if let Some(&p) = self.out_pulses.get(pi) {
+    fn read_output(&self, ch: usize) -> f32 {
+        // The bus lanes come first, then the single outputs, all of one kind.
+        let pulse = if ch < self.n { ch } else { ch - self.n };
+        if let Some(&p) = self.out_pulses.get(pulse) {
             if p { 1.0 } else { 0.0 }
         } else {
             0.0
@@ -139,5 +142,23 @@ impl ProcessNode for TriggerBankProcessNode {
             n: self.n,
             pulses: self.out_pulses.clone(),
         }));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_bus_carries_the_same_pulses_as_the_single_outputs() {
+        let mut n = TriggerBankProcessNode::new(NodeId(1));
+        n.write_input(2, 1.0);
+        n.process();
+        let out = n.outputs();
+        assert_eq!((out[0].name.as_str(), out[0].lanes), ("bus", 4));
+        let lanes: Vec<f32> = (0..4).map(|k| n.read_output(k)).collect();
+        let own: Vec<f32> = (1..=4).map(|p| n.read_output(port_base_index(out, p))).collect();
+        assert_eq!(lanes, vec![0.0, 0.0, 1.0, 0.0]);
+        assert_eq!(own, lanes);
     }
 }

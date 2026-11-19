@@ -54,7 +54,15 @@ pub fn ports_for(rows: usize, cols: usize, inputs_enabled: bool) -> (Vec<PortDef
             .flat_map(move |r| (0..cols).map(move |c| PortDef::new(format!("{},{}", r + 1, c + 1), PortType::Logic)))
             .collect::<Vec<_>>()
     };
-    (if inputs_enabled { cells() } else { Vec::new() }, cells())
+    let outputs = std::iter::once(PortDef::new("bus", PortType::Logic).with_lanes(bus_lanes(rows * cols))).chain(cells());
+    (if inputs_enabled { cells() } else { Vec::new() }, outputs.collect())
+}
+
+/// How many cells the bus output carries: all of them, up to the most lanes a
+/// bus can have. Where a source's width comes from is this one function, so a
+/// width that follows something else later changes here.
+pub fn bus_lanes(cells: usize) -> usize {
+    cells.clamp(1, MAX_LANES)
 }
 
 impl ButtonGroupProcessNode {
@@ -157,8 +165,10 @@ impl ProcessNode for ButtonGroupProcessNode {
         }
     }
 
-    fn read_output(&self, pi: usize) -> f32 {
-        self.output_values.get(pi).copied().unwrap_or(0.0)
+    fn read_output(&self, ch: usize) -> f32 {
+        // The bus lanes come first, then one output per cell.
+        let bus = bus_lanes(self.cell_count());
+        self.output_values.get(if ch < bus { ch } else { ch - bus }).copied().unwrap_or(0.0)
     }
 
     fn save_data(&self) -> Option<serde_json::Value> {
@@ -284,5 +294,22 @@ impl ProcessNode for ButtonGroupProcessNode {
             override_enabled: self.override_enabled,
             reset_mode: self.reset_mode,
         }));
+    }
+}
+
+#[cfg(test)]
+mod bus_tests {
+    use super::*;
+
+    #[test]
+    fn the_bus_carries_every_cell_and_a_big_grid_is_cut_at_the_most_lanes() {
+        let mut n = ButtonGroupProcessNode::new(NodeId(1));
+        n.handle_click(3);
+        n.process();
+        let out = n.outputs();
+        assert_eq!((out[0].name.as_str(), out[0].lanes), ("bus", 4));
+        assert_eq!((0..4).map(|k| n.read_output(k)).collect::<Vec<_>>(), vec![0.0, 0.0, 0.0, 1.0]);
+        assert_eq!(n.read_output(port_base_index(out, 4)), 1.0, "cell 4 on its own port");
+        assert_eq!(bus_lanes(256), MAX_LANES);
     }
 }

@@ -289,11 +289,12 @@ pub(crate) fn node_table() -> Vec<NodeDescriptor> {
         |id, s, ctx| Box::new(X1Widget::new(id, s, ctx.input_controllers.clone())),
         |id, ctx| Box::new(X1ProcessNode::new(id, ctx.input_controllers.clone())),
     ));
-    // 82 outputs = 64 pads + 8 side + 8 top + "any change" + "connected".
+    // 146 output channels = "connected" + the 64 lane pad bus + 64 pads + 8 side
+    // + 8 top + "any change".
     // 80 LED feedback inputs, each `Color` (3 channels) = 240
     // channels. 256 gives a bit of headroom.
     table.push(node(
-        "Input", "Launchpad S", (256, 82),
+        "Input", "Launchpad S", (256, 146),
         |id, s, ctx| Box::new(LaunchpadWidget::new(id, s, ctx.input_controllers.clone())),
         |id, ctx| Box::new(LaunchpadProcessNode::new(id, ctx.input_controllers.clone())),
     ));
@@ -315,12 +316,12 @@ pub(crate) fn node_table() -> Vec<NodeDescriptor> {
         |id, _| Box::new(FaderProcessNode::new(id)),
     ));
     table.push(node(
-        "Input", "Button Group", (256, 256),
+        "Input", "Button Group", (256, 320),
         |id, s, _| Box::new(ButtonGroupWidget::new(id, s)),
         |id, _| Box::new(ButtonGroupProcessNode::new(id)),
     ));
     table.push(node(
-        "Input", "Fader Group", (256, 256),
+        "Input", "Fader Group", (256, 320),
         |id, s, _| Box::new(FaderGroupWidget::new(id, s)),
         |id, _| Box::new(FaderGroupProcessNode::new(id)),
     ));
@@ -493,13 +494,13 @@ pub(crate) fn node_table() -> Vec<NodeDescriptor> {
     ));
     // Up to 16 channels, each Logic in and out.
     table.push(node(
-        "Trigger", "Toggle Bank", (16, 16),
+        "Trigger", "Toggle Bank", (16, 32),
         |id, s, _| Box::new(ToggleBankWidget::new(id, s)),
         |id, _| Box::new(ToggleBankProcessNode::new(id)),
     ));
     // Up to 16 channels, each Untyped in and Logic out.
     table.push(node(
-        "Trigger", "Trigger Bank", (16, 16),
+        "Trigger", "Trigger Bank", (16, 32),
         |id, s, _| Box::new(TriggerBankWidget::new(id, s)),
         |id, _| Box::new(TriggerBankProcessNode::new(id)),
     ));
