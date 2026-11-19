@@ -696,7 +696,6 @@ declarations named below.
   lanes says so with `ProcessNode::max_lanes()` (hardware, controls, banks,
   Subgraph, portals, effects and stacks, the bus tools; a registry test lists
   them). The UI mirror shows one lane (`view_lane`, the inspector's Lane
-  them). The UI mirror shows one lane (`view_lane`, the inspector's Lane
   stepper). A bus also crosses a **Subgraph port or a Portal** unchanged: the
   ports of a Subgraph, its Graph Input / Graph Output bridges and the Portal
   Send / Receive take their width from a wire on their driving side (the wire
