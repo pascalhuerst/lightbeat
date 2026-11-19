@@ -148,8 +148,37 @@ impl NodeGraph {
     /// Open `level` the way a double-click on each subgraph on the way would
     /// (so the breadcrumb and the bridge ports are right), select the node or
     /// frame and put it in the middle of the canvas.
+    ///
+    /// A locked macro is not opened by a double-click (it is embedded first),
+    /// and a jump may not get in either: it stops at the outermost locked
+    /// Subgraph on the way and selects that node.
     pub fn go_to(&mut self, level: usize, target: &FindTarget) {
-        let Some(chain) = self.level_chain(level) else { return };
+        let Some(mut chain) = self.level_chain(level) else { return };
+        let mut redirected = None;
+        let mut cur = 0;
+        for (k, sid) in chain.iter().enumerate() {
+            let locked = self.levels[cur]
+                .nodes
+                .iter_mut()
+                .find(|n| n.node_id() == *sid)
+                .and_then(|n| n.as_any_mut().downcast_mut::<SubgraphWidget>())
+                .is_some_and(|w| w.locked);
+            if locked {
+                redirected = Some((k, *sid));
+                break;
+            }
+            let Some(next) = self.levels.iter().position(|l| l.subgraph_id == Some(*sid)) else { return };
+            cur = next;
+        }
+        let redirect_target;
+        let target = match redirected {
+            Some((k, sid)) => {
+                chain.truncate(k);
+                redirect_target = FindTarget::Node(sid);
+                &redirect_target
+            }
+            None => target,
+        };
         self.active_level = 0;
         for sid in chain {
             let Some(idx) = self.active().nodes.iter().position(|n| n.node_id() == sid) else { return };
@@ -308,6 +337,28 @@ mod tests {
         assert_eq!(paths, ["LaunchPad / Sequence / Master", "Master Dimmer"]);
         assert_eq!(hits[0].level, 2);
         assert_eq!(hits[0].target, FindTarget::Node(NodeId(3)));
+    }
+
+    #[test]
+    fn a_jump_into_a_locked_macro_stops_at_the_macro() {
+        let mut g = project();
+        g.levels[0].nodes[0]
+            .as_any_mut()
+            .downcast_mut::<SubgraphWidget>()
+            .unwrap()
+            .restore_from_save(Some(&serde_json::json!({"locked": true})), &[]);
+        let hit = g.find("master").into_iter().find(|h| h.level == 2).unwrap();
+        g.go_to(hit.level, &hit.target);
+        assert_eq!(g.active_level, 0, "the locked level is not opened");
+        assert_eq!(g.selected_nodes, vec![0], "the macro node is selected instead");
+        // An unlocked chain still opens.
+        g.levels[0].nodes[0]
+            .as_any_mut()
+            .downcast_mut::<SubgraphWidget>()
+            .unwrap()
+            .restore_from_save(Some(&serde_json::json!({"locked": false})), &[]);
+        g.go_to(hit.level, &hit.target);
+        assert_eq!(g.active_level, 2);
     }
 
     #[test]
