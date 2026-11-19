@@ -276,3 +276,59 @@ fn nothing_about_widths_is_saved_and_a_loaded_project_derives_them_again() {
     assert_eq!(again.width(again.level(sub), inner), 8);
     assert_eq!(lane_values(&again, split, 8), PATTERN.to_vec());
 }
+
+/// Merge(8) -> Schmitt Trigger (run as lanes) -> Split, all at the root.
+fn chain(r: &mut Rig) -> (NodeId, NodeId, NodeId) {
+    let merge = source(r, 8);
+    let schmitt = r.add("Schmitt Trigger", &[]);
+    let split = r.add("Bus Split", &[]);
+    r.wire((merge, 0), (schmitt, 0));
+    r.wire((schmitt, 0), (split, 0));
+    r.pump();
+    r.tick(40);
+    (merge, schmitt, split)
+}
+
+fn index_of(r: &Rig, node: NodeId) -> usize {
+    r.g.active().states.iter().position(|s| s.id == node).unwrap()
+}
+
+#[test]
+fn moving_a_laned_node_into_a_subgraph_keeps_the_wide_wires_it_cuts() {
+    let mut r = Rig::new();
+    let (merge, schmitt, split) = chain(&mut r);
+    assert_eq!(lane_values(&r, split, 8), PATTERN.to_vec());
+
+    r.g.selected_nodes = vec![index_of(&r, schmitt)];
+    r.g.move_selection_to_subgraph();
+    r.pump();
+    r.tick(80);
+
+    let sub = r.g.levels[0].nodes.iter().find(|n| n.type_name() == "Subgraph").unwrap().node_id();
+    assert_eq!(r.g.levels[0].connections.len(), 8 + 2, "the wide wire in and the wide wire out are still there");
+    assert!(r.g.levels[0].connections.iter().any(|c| c.from.node == merge && c.to.node == sub));
+    assert_eq!(r.outputs_of(0, sub), vec![8]);
+    assert_eq!(r.width(r.level(sub), schmitt), 8);
+    assert_eq!(lane_values(&r, split, 8), PATTERN.to_vec());
+}
+
+#[test]
+fn unpacking_a_subgraph_keeps_the_wide_wires_through_it() {
+    let mut r = Rig::new();
+    let (_, schmitt, split) = chain(&mut r);
+    r.g.selected_nodes = vec![index_of(&r, schmitt)];
+    r.g.move_selection_to_subgraph();
+    r.pump();
+    r.tick(40);
+    let sub = r.g.levels[0].nodes.iter().find(|n| n.type_name() == "Subgraph").unwrap().node_id();
+
+    let at = index_of(&r, sub);
+    r.g.unpack_subgraph(at);
+    r.pump();
+    r.tick(80);
+
+    assert!(r.g.levels[0].nodes.iter().all(|n| n.type_name() != "Subgraph"));
+    assert_eq!(r.g.levels[0].connections.len(), 8 + 2);
+    assert_eq!(r.width(0, schmitt), 8);
+    assert_eq!(lane_values(&r, split, 8), PATTERN.to_vec());
+}
