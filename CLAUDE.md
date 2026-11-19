@@ -418,6 +418,15 @@ import; the project only when saved.
   lowest channel that moved on the desk. Values hold when the desk goes quiet;
   `connected` is high while a universe has had a packet in the last 5 s.
   sACN input would be another `DmxInputKind` feeding the same hub.
+- **Finding Art-Net nodes**: the setup's Interfaces tab lists the nodes on
+  the network under "Found on the network", each with "Add interface" (an
+  Art-Net interface sending straight to that address). The hub's socket does
+  it, since ArtPollReply goes to port 6454 of the asker: while the tab is on
+  screen it calls `DmxInputHub::discover()` every frame, the worker then
+  broadcasts an ArtPoll every 2.5 s and keeps the replies for 10 s
+  (`found_nodes`). Replies are read by offset (`parse_poll_reply`) because
+  devices send them in several lengths. Nothing is polled when the tab is not
+  shown.
 - Every hardware node (Input Controller, Audio Input, MIDI Input, MIDI Output,
   DMX Input, Launchpad S, Push 1, X1) has a leading **`connected`** Logic
   output (port 0): high while the device has a live session. Build layouts

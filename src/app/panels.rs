@@ -230,7 +230,11 @@ impl LightBeatApp {
             match self.setup_active_tab {
                 SetupTab::Interfaces => {
                     let refs: Vec<u32> = self.object_manager.objects.iter().map(|o| o.interface_id).collect();
-                    self.interface_manager.show(ui, &refs);
+                    // Only while this tab is on screen is the network asked.
+                    self.dmx_inputs.discover();
+                    let found = self.dmx_inputs.found_nodes();
+                    let error = self.dmx_inputs.discovery_error();
+                    self.interface_manager.show(ui, &refs, &found, error.as_deref());
                 }
                 SetupTab::FixtureTemplates => {
                     let refs: Vec<u32> = self.object_manager.objects.iter().map(|o| o.fixture_id).collect();
