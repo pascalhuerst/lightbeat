@@ -233,6 +233,33 @@ const INPUT_SWITCH_PARAM: &str = "Input enabled";
 /// Div; the compares; the gates; the constants).
 const OPERATION_PARAM: &str = "Operation";
 
+/// The setting `name` of `node` as a row, for a subgraph's front panel: the
+/// same control the inspector draws, with nothing but the setting's own name.
+pub fn param_control(ui: &mut Ui, node: &dyn NodeWidget, name: &str) {
+    let params = read_params(node);
+    let Some(param) = params.iter().find(|p| p.name() == name) else { return };
+    let (_, label) = node.param_display(name);
+    let locked = PromoteCtx::read(node).driven(name);
+    param_row(ui, &[node], param, &label, None, None, locked);
+}
+
+/// Which settings of a node sit on its subgraph's front panel.
+struct PanelCtx {
+    params: Vec<String>,
+}
+
+/// The pin that puts a setting on the front panel and takes it off again.
+fn panel_toggle(ui: &mut Ui, node: &dyn NodeWidget, panel: &PanelCtx, name: &str) {
+    let on = panel.params.iter().any(|p| p == name);
+    if ui
+        .selectable_label(on, egui_phosphor::regular::PUSH_PIN)
+        .on_hover_text("Show this setting on the subgraph's front panel")
+        .clicked()
+    {
+        crate::engine::types::PanelItem::set_param(&mut node.shared_state().lock().panel, name, !on);
+    }
+}
+
 /// One setting as a row. Every selected node gets the change, so the single
 /// and the multi-selection inspector draw their settings the same way; only
 /// the single one passes `promo` and offers to expose the setting as an input.
@@ -242,6 +269,7 @@ fn param_row(
     param: &ParamDef,
     label: &str,
     promo: Option<&PromoteCtx>,
+    panel: Option<&PanelCtx>,
     locked: bool,
 ) {
     let name = param.name();
@@ -316,6 +344,9 @@ fn param_row(
         });
         if let Some(promo) = promo {
             promote_checkbox(ui, nodes[0], promo, param);
+        }
+        if let Some(panel) = panel {
+            panel_toggle(ui, nodes[0], panel, name);
         }
     });
 }
@@ -403,6 +434,9 @@ pub fn show_inspector(ui: &mut Ui, node: &mut dyn NodeWidget, in_subgraph: bool)
         ui.add_space(4.0);
 
         let promo = PromoteCtx::read(node);
+        let panel = (in_subgraph && !is_bridge).then(|| PanelCtx {
+            params: node.shared_state().lock().panel.as_ref().map(|p| p.params.clone()).unwrap_or_default(),
+        });
         let mut last_group: Option<String> = None;
         for (i, param) in params.iter().enumerate() {
             if hidden.contains(&i) { continue; }
@@ -417,7 +451,7 @@ pub fn show_inspector(ui: &mut Ui, node: &mut dyn NodeWidget, in_subgraph: bool)
             // A wired promoted param is driven by its signal; editing it by
             // hand would only be overwritten on the next tick.
             let locked = promo.driven(param.name());
-            param_row(ui, &[&*node], param, &label, Some(&promo), locked);
+            param_row(ui, &[&*node], param, &label, Some(&promo), panel.as_ref(), locked);
         }
     }
 
@@ -473,7 +507,7 @@ pub fn show_multi_inspector(ui: &mut Ui, nodes: Vec<&mut Box<dyn NodeWidget>>) {
 
     for param in &common {
         let (_, label) = refs[0].param_display(param.name());
-        param_row(ui, &refs, param, &label, None, false);
+        param_row(ui, &refs, param, &label, None, None, false);
     }
 }
 

@@ -360,6 +360,16 @@ impl PanelItem {
         *slot = (!item.is_empty()).then_some(item);
     }
 
+    /// Put one setting on the panel, or take it off.
+    pub fn set_param(slot: &mut Option<PanelItem>, name: &str, on: bool) {
+        let mut item = slot.take().unwrap_or(PanelItem { order: PANEL_LAST, whole: false, params: Vec::new() });
+        item.params.retain(|p| p != name);
+        if on {
+            item.params.push(name.to_string());
+        }
+        *slot = (!item.is_empty()).then_some(item);
+    }
+
     pub fn is_empty(&self) -> bool {
         !self.whole && self.params.is_empty()
     }

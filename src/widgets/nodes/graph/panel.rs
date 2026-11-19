@@ -79,13 +79,15 @@ impl NodeGraph {
         let lvl = &self.levels[level];
         let mut cells = Vec::new();
         let mut rows = Vec::new();
-        for i in self.panel_members(level) {
+        for (i, param) in panel_cell_list(&lvl.nodes) {
             let node = &lvl.nodes[i];
-            if !node.shared_state().lock().panel.as_ref().is_some_and(|p| p.whole) {
-                continue;
-            }
-            cells.push(geometry::cell_size(&node.layout(), node_size(node.as_ref(), lvl.states[i].size_override)));
-            rows.push(PanelRow { node_id: node.node_id(), label: node.display_title().to_string() });
+            let title = node.display_title();
+            let label = match &param {
+                Some(name) => format!("{title}: {}", node.param_display(name).1),
+                None => title.to_string(),
+            };
+            cells.push(cell_size_of(node.as_ref(), lvl.states[i].size_override, param.is_some()));
+            rows.push(PanelRow { node_id: node.node_id(), param, label });
         }
         (cells, rows)
     }
@@ -113,20 +115,18 @@ impl NodeGraph {
         for (sub, req) in requests {
             let Some(inner) = self.inner_level_of(sub) else { continue };
             match req {
-                PanelRequest::Remove(id) => self.clear_panel_whole(inner, id),
+                PanelRequest::Remove(id, param) => self.clear_panel_item(inner, id, param),
                 PanelRequest::Move(id, mv) => self.move_panel_item(inner, id, mv),
             }
         }
     }
 
-    fn clear_panel_whole(&mut self, level: usize, id: NodeId) {
+    fn clear_panel_item(&mut self, level: usize, id: NodeId, param: Option<String>) {
         let Some(node) = self.levels[level].nodes.iter().find(|n| n.node_id() == id) else { return };
         let mut shared = node.shared_state().lock();
-        if let Some(item) = shared.panel.as_mut() {
-            item.whole = false;
-        }
-        if shared.panel.as_ref().is_some_and(|p| p.is_empty()) {
-            shared.panel = None;
+        match param {
+            Some(name) => PanelItem::set_param(&mut shared.panel, &name, false),
+            None => PanelItem::set_whole(&mut shared.panel, false),
         }
     }
 
@@ -159,6 +159,28 @@ fn panel_members_of(nodes: &[Box<dyn NodeWidget>]) -> Vec<usize> {
         .collect();
     members.sort_unstable();
     members.into_iter().map(|(_, i)| i).collect()
+}
+
+/// The cells of a panel in order: a node's whole self first, then its single
+/// settings, as (node index, setting).
+fn panel_cell_list(nodes: &[Box<dyn NodeWidget>]) -> Vec<(usize, Option<String>)> {
+    let mut cells = Vec::new();
+    for i in panel_members_of(nodes) {
+        let item = nodes[i].shared_state().lock().panel.clone().unwrap_or_default();
+        if item.whole {
+            cells.push((i, None));
+        }
+        cells.extend(item.params.into_iter().map(|p| (i, Some(p))));
+    }
+    cells
+}
+
+fn cell_size_of(node: &dyn NodeWidget, size_override: Option<Vec2>, single_setting: bool) -> Vec2 {
+    if single_setting {
+        geometry::PARAM_CELL
+    } else {
+        geometry::cell_size(&node.layout(), node_size(node, size_override))
+    }
 }
 
 /// What drawing needs besides the panel's own rectangle.
@@ -201,21 +223,19 @@ pub(super) fn draw_panel(
     depth: usize,
 ) {
     let z = paint.zoom;
-    let members: Vec<usize> = panel_members_of(nodes)
-        .into_iter()
-        .filter(|&i| nodes[i].shared_state().lock().panel.as_ref().is_some_and(|p| p.whole))
-        .collect();
-    let sizes: Vec<Vec2> = members
+    let list = panel_cell_list(nodes);
+    let sizes: Vec<Vec2> = list
         .iter()
-        .map(|&i| geometry::cell_size(&nodes[i].layout(), node_size(nodes[i].as_ref(), levels[inner].states[i].size_override)))
+        .map(|(i, param)| cell_size_of(nodes[*i].as_ref(), levels[inner].states[*i].size_override, param.is_some()))
         .collect();
     let flow = geometry::flow(&sizes, region.width() / z);
-    for (n, &i) in members.iter().enumerate() {
+    for (n, (i, param)) in list.iter().enumerate() {
+        let i = *i;
         let cell = Rect::from_min_size(region.min + flow.origins[n].to_vec2() * z, sizes[n] * z);
         if !cell.intersects(paint.clip) {
             continue;
         }
-        let layout = nodes[i].layout();
+        let layout = if param.is_some() { geometry::param_layout() } else { nodes[i].layout() };
         let disabled = nodes[i].shared_state().lock().disabled;
         let painter = paint.ui.painter().with_clip_rect(paint.clip);
         painter.rect_filled(cell, NODE_CORNER_RADIUS, theme::BG);
@@ -236,7 +256,7 @@ pub(super) fn draw_panel(
             let node_id = nodes[i].node_id();
             let mut child = paint.ui.new_child(
                 egui::UiBuilder::new()
-                    .id_salt(("front_panel", node_id.0))
+                    .id_salt(("front_panel", node_id.0, param.clone()))
                     .max_rect(content)
                     .layout(egui::Layout::top_down(egui::Align::LEFT)),
             );
@@ -244,19 +264,23 @@ pub(super) fn draw_panel(
             if let Some(style) = paint.style {
                 child.set_style(style.clone());
             }
-            // A Subgraph in a panel shows its own panel in its cell.
-            let nested = if depth < MAX_PANEL_DEPTH { panel_level(levels, nodes[i].as_mut()) } else { None };
-            let mut taken = nested.map(|k| std::mem::take(&mut levels[k].nodes));
-            nodes[i].show_content(&mut child, z);
-            if let (Some(k), Some(inner_nodes)) = (nested, taken.as_mut()) {
-                let sub_region = panel_region(content, z);
-                if let Some(w) = nodes[i].as_any_mut().downcast_mut::<SubgraphWidget>() {
-                    w.set_panel_screen(Some(sub_region.intersect(clip)));
+            if let Some(name) = param {
+                crate::widgets::inspector::param_control(&mut child, nodes[i].as_ref(), name);
+            } else {
+                // A Subgraph in a panel shows its own panel in its cell.
+                let nested = if depth < MAX_PANEL_DEPTH { panel_level(levels, nodes[i].as_mut()) } else { None };
+                let mut taken = nested.map(|k| std::mem::take(&mut levels[k].nodes));
+                nodes[i].show_content(&mut child, z);
+                if let (Some(k), Some(inner_nodes)) = (nested, taken.as_mut()) {
+                    let sub_region = panel_region(content, z);
+                    if let Some(w) = nodes[i].as_any_mut().downcast_mut::<SubgraphWidget>() {
+                        w.set_panel_screen(Some(sub_region.intersect(clip)));
+                    }
+                    draw_panel(levels, k, inner_nodes, sub_region, paint, depth + 1);
                 }
-                draw_panel(levels, k, inner_nodes, sub_region, paint, depth + 1);
-            }
-            if let (Some(k), Some(restored)) = (nested, taken) {
-                levels[k].nodes = restored;
+                if let (Some(k), Some(restored)) = (nested, taken) {
+                    levels[k].nodes = restored;
+                }
             }
         }
         if disabled {
@@ -414,7 +438,7 @@ mod tests {
         g.refresh_panels(0);
         {
             let sub = g.levels[0].nodes[0].as_any_mut().downcast_mut::<SubgraphWidget>().unwrap();
-            sub.request_panel(PanelRequest::Remove(NodeId(1)));
+            sub.request_panel(PanelRequest::Remove(NodeId(1), None));
         }
         g.apply_panel_requests();
         assert_eq!(inner_ids(&g), vec![2]);
@@ -487,6 +511,58 @@ mod tests {
         assert_eq!(order, vec![3, 2]);
         // A node that is not on the panel writes nothing.
         assert_eq!(json.matches("\"panel\"").count(), 2);
+    }
+
+    #[test]
+    fn single_settings_get_their_own_cells_after_the_whole_node_and_round_trip() {
+        let mut g = registry();
+        let project = PROJECT.replace(
+            r#""panel": {"order": 0, "whole": true}"#,
+            r#""panel": {"order": 0, "whole": true, "params": ["Value", "Rate"]}"#,
+        );
+        crate::project::load_graph(&mut g, &serde_json::from_str(&project).unwrap());
+        let level = g.levels.iter().position(|l| l.subgraph_id == Some(NodeId(1))).unwrap();
+        let list: Vec<(u64, Option<String>)> = panel_cell_list(&g.levels[level].nodes)
+            .into_iter()
+            .map(|(i, p)| (g.levels[level].nodes[i].node_id().0, p))
+            .collect();
+        assert_eq!(list, vec![
+            (3, None),
+            (3, Some("Value".to_string())),
+            (3, Some("Rate".to_string())),
+            (2, None),
+        ]);
+
+        let (cells, rows) = g.panel_cells(level);
+        assert_eq!(cells[1], geometry::PARAM_CELL);
+        assert_eq!(rows[1].param.as_deref(), Some("Value"));
+        assert!(rows[1].label.ends_with(": Value"), "{}", rows[1].label);
+
+        let json = serde_json::to_string(&crate::project::save_graph(&g)).unwrap();
+        assert!(json.contains(r#""params":["Value","Rate"]"#));
+    }
+
+    #[test]
+    fn a_setting_is_taken_off_alone_and_the_item_goes_with_its_last_part() {
+        let mut slot = None;
+        PanelItem::set_param(&mut slot, "Rate", true);
+        PanelItem::set_param(&mut slot, "Rate", true);
+        PanelItem::set_whole(&mut slot, true);
+        assert_eq!(slot.as_ref().unwrap().params, vec!["Rate".to_string()]);
+        PanelItem::set_param(&mut slot, "Rate", false);
+        assert!(slot.as_ref().unwrap().whole);
+        PanelItem::set_whole(&mut slot, false);
+        assert!(slot.is_none());
+    }
+
+    #[test]
+    fn a_setting_row_is_removed_without_touching_the_node_on_the_panel() {
+        let both = Some(PanelItem { order: 0, whole: true, params: vec!["Rate".into()] });
+        let mut g = graph_with_inner(vec![Probe::boxed(1, 10.0, both)]);
+        g.clear_panel_item(1, NodeId(1), Some("Rate".into()));
+        let item = g.levels[1].nodes.iter().find(|n| n.node_id() == NodeId(1)).unwrap()
+            .shared_state().lock().panel.clone().unwrap();
+        assert!(item.whole && item.params.is_empty());
     }
 
     #[test]

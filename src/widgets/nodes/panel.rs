@@ -15,14 +15,25 @@ pub const PANEL_GAP: f32 = 4.0;
 #[derive(Clone, Debug, PartialEq)]
 pub struct PanelRow {
     pub node_id: NodeId,
+    /// The setting, for a row that is one setting of the node.
+    pub param: Option<String>,
     pub label: String,
 }
 
 /// What the user asked of the list; the graph carries it out on the inner level.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum PanelRequest {
+    /// Moves every item of that node: they stay together.
     Move(NodeId, Move),
-    Remove(NodeId),
+    Remove(NodeId, Option<String>),
+}
+
+/// A single setting takes this much room: the node's title over the control.
+pub const PARAM_CELL: Vec2 = Vec2::new(200.0, 40.0);
+
+/// How a cell of a single setting is laid out.
+pub fn param_layout() -> NodeLayout {
+    NodeLayout::compact().with_side_inset(4.0)
 }
 
 /// Size of the cell a node takes on a panel: the node's own size, less the

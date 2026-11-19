@@ -124,15 +124,22 @@ impl SubgraphWidget {
             return;
         }
         let rows = self.panel_rows.clone();
-        let len = rows.len();
-        for (i, row) in rows.iter().enumerate() {
+        // The items of one node move together, so the arrows count nodes.
+        let nodes = rows.iter().map(|r| r.node_id).fold(Vec::new(), |mut v: Vec<NodeId>, id| {
+            if !v.contains(&id) {
+                v.push(id);
+            }
+            v
+        });
+        for row in &rows {
             ui.horizontal(|ui| {
                 if !self.locked {
-                    if let Some(mv) = setup_ui::move_buttons(ui, i, len) {
+                    let at = nodes.iter().position(|&n| n == row.node_id).unwrap_or(0);
+                    if let Some(mv) = setup_ui::move_buttons(ui, at, nodes.len()) {
                         self.request_panel(PanelRequest::Move(row.node_id, mv));
                     }
                     if setup_ui::delete_button(ui, "Take it off the panel") {
-                        self.request_panel(PanelRequest::Remove(row.node_id));
+                        self.request_panel(PanelRequest::Remove(row.node_id, row.param.clone()));
                     }
                     if ui.small_button(egui_phosphor::regular::ARROW_SQUARE_OUT).on_hover_text("Go to this node").clicked() {
                         self.jump = Some(row.node_id);
