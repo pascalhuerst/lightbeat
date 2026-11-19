@@ -303,6 +303,82 @@ fn nothing_about_widths_is_saved_and_a_loaded_project_derives_them_again() {
     assert_eq!(lane_values(&again, split, 8), PATTERN.to_vec());
 }
 
+#[test]
+fn instances_of_one_definition_run_at_the_width_their_own_wires_have() {
+    let mut r = Rig::new();
+    let first = r.subgraph(1, 1);
+    r.enter(first);
+    let inner_first = schmitt_inside(&mut r);
+    r.up();
+    r.pump();
+    r.g.selected_nodes = vec![index_of(&r, first)];
+    r.g.duplicate_selected();
+    r.pump();
+    let second = r.g.levels[0].nodes.iter().map(|n| n.node_id()).find(|id| *id != first && r.g.level_of_subgraph(*id).is_some()).unwrap();
+    let inner_second = r.g.levels[r.level(second)].nodes.iter().map(|n| n.node_id()).find(|id| id.0 < BRIDGE_IN_NODE_ID.0).unwrap();
+    assert_eq!(r.g.definition_at(0, index_of(&r, first)), r.g.definition_at(0, index_of(&r, second)), "they are instances");
+
+    // One gets a bus of 8, the other a single wire.
+    let merge = source(&mut r, 8);
+    let single = r.add("Const Value", &[(0, ParamValue::Float(1.0))]);
+    let split = r.add("Bus Split", &[]);
+    r.wire((merge, 0), (first, 0));
+    r.wire((first, 0), (split, 0));
+    r.wire((single, 0), (second, 0));
+    r.pump();
+    r.tick(80);
+
+    assert_eq!(r.width(r.level(first), inner_first), 8);
+    assert_eq!(r.width(r.level(second), inner_second), 1, "an instance keeps its own widths");
+    assert_eq!(r.outputs_of(0, first), vec![8]);
+    assert_eq!(r.outputs_of(0, second), vec![1]);
+    assert_eq!(lane_values(&r, split, 8), PATTERN.to_vec());
+    assert_eq!(r.read(second, 0), 1.0);
+
+    // The sync neither sees the widths as a difference nor carries them over.
+    r.g.assign_def_nodes();
+    let current = crate::project::save_graph(&r.g);
+    let names = r.g.known();
+    let mut next = r.g.next_id;
+    let steps = crate::linked::plan_sync(&current, &crate::linked::first_instances(&current), &names, &mut || {
+        next += 1;
+        next
+    });
+    assert!(steps.is_empty(), "the instances differ only in widths, which are not saved");
+
+    // An edit inside the first instance reaches the second, and each node
+    // runs at what its own instance's wires give it.
+    r.enter(first);
+    let added = r.add("Schmitt Trigger", &[]);
+    r.wire((inner_first, 0), (added, 0));
+    r.up();
+    r.g.assign_def_nodes();
+    let mut current = crate::project::save_graph(&r.g);
+    for _ in 0..8 {
+        let names = r.g.known();
+        let mut next = r.g.next_id;
+        let steps = crate::linked::plan_sync(&current, &crate::linked::first_instances(&current), &names, &mut || {
+            next += 1;
+            next
+        });
+        if steps.is_empty() {
+            break;
+        }
+        for s in &steps {
+            r.g.apply_sync_step(s);
+        }
+        crate::linked::apply_steps(&mut current, &steps);
+    }
+    r.pump();
+    r.tick(80);
+    let schmitts = |level: usize| -> Vec<usize> {
+        let l = &r.g.levels[level];
+        l.nodes.iter().zip(&l.states).filter(|(n, _)| n.type_name() == "Schmitt Trigger").map(|(_, s)| r.width(level, s.id)).collect()
+    };
+    assert_eq!(schmitts(r.level(first)), vec![8, 8]);
+    assert_eq!(schmitts(r.level(second)), vec![1, 1], "the copy of the edit is as wide as its own wires");
+}
+
 /// A Receive of "bus" and a Split behind it in the open level.
 fn receive_into_split(r: &mut Rig) -> (NodeId, NodeId) {
     let rx = r.portal(false, "bus");

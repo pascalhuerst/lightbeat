@@ -693,8 +693,24 @@ declarations named below.
   lanes says so with `ProcessNode::max_lanes()` (hardware, controls, banks,
   Subgraph, portals, effects and stacks, the bus tools; a registry test lists
   them). The UI mirror shows one lane (`view_lane`, the inspector's Lane
-  stepper). Not built: a bus through a subgraph port or a portal (refused; use
-  Bus Split), laned Subgraphs, displays of all lanes.
+  them). The UI mirror shows one lane (`view_lane`, the inspector's Lane
+  stepper). A bus also crosses a **Subgraph port or a Portal** unchanged: the
+  ports of a Subgraph, its Graph Input / Graph Output bridges and the Portal
+  Send / Receive take their width from a wire on their driving side (the wire
+  into a Subgraph input, the wire into the Graph Output inside, the wire into
+  the Send; `NodeWidget::bus_end`, `BusEnd`) and hand it to the other end.
+  That makes the widths a graph-wide derivation, not a per-level one:
+  `derive_buses` (`graph/bus.rs`) runs `lanes::infer` on every level again and
+  again, each time with what the others handed over, from 1 everywhere, until
+  nothing moves (a loop through a portal with no real source stays 1). It runs
+  whenever any level's wires or ports change, also for levels nobody has open.
+  Engine halves get the widths as unsaved config (`input_lanes`/`output_lanes`
+  on the Subgraph, `lanes` on a Send; a Receive follows its Send through the
+  registry and `ProcessNode::reshapes_itself` makes the routing plan watch it),
+  so the bridge totals and portal buffers are lanes x channels. Instances of a
+  linked subgraph each have their own widths. Tests that tick a real engine
+  behind a real graph: `graph/bus_through_tests.rs`. Not built: laned
+  Subgraphs, displays of all lanes.
 - **Desk** (`widgets/nodes/desk.rs`, `graph/desk_view.rs`, `app/view.rs`):
   `Tab` switches between Patch (the canvas) and Desk: nodes from any level
   flagged "Show on Desk" (`NodeSharedState::desk`, `SavedNode.desk`), drawn as

@@ -1086,6 +1086,24 @@ mod config_tests {
     }
 
     #[test]
+    fn widths_size_the_bridge_and_are_never_saved() {
+        let mut n = SubgraphProcessNode::new(NodeId(1));
+        n.load_data(&serde_json::json!({
+            "inputs": [{"name": "in", "port_type_idx": 3}],
+            "outputs": [{"name": "out", "port_type_idx": 2}],
+            "input_lanes": [4], "output_lanes": [8],
+        }));
+        assert_eq!((n.ext_inputs[0].lanes, n.ext_outputs[0].lanes), (4, 8));
+        assert_eq!((n.inner.bridge_in.len(), n.inner.bridge_out.len()), (12, 8), "lanes x channels of the type");
+        let saved = n.save_data().unwrap();
+        assert!(saved.get("input_lanes").is_none() && saved.get("output_lanes").is_none());
+
+        // Ports named again without widths are one lane wide.
+        n.load_data(&serde_json::json!({"inputs": [{"name": "in", "port_type_idx": 3}]}));
+        assert_eq!(n.ext_inputs[0].lanes, 1);
+    }
+
+    #[test]
     fn a_partial_update_only_touches_what_it_names() {
         let mut n = SubgraphProcessNode::new(NodeId(1));
         n.load_data(&serde_json::json!({"name": "A", "locked": true}));
