@@ -8,6 +8,7 @@ mod interact;
 mod subgraph_ops;
 mod draw;
 mod wires;
+mod find;
 
 use draw::*;
 
@@ -247,6 +248,8 @@ pub struct NodeGraph {
     port_menu: Option<PortMenu>,
     /// Type-to-add search opened by right-clicking empty canvas.
     quick_add: Option<QuickAdd>,
+    /// The Ctrl+F search box.
+    find: Option<find::FindState>,
     /// A portal waiting for its name before it is put on the canvas.
     portal_prompt: Option<PortalPrompt>,
     /// Pending macro action emitted by the right-click menu, consumed by the
@@ -337,6 +340,7 @@ impl NodeGraph {
             context_menu_pos: None,
             port_menu: None,
             quick_add: None,
+            find: None,
             portal_prompt: None,
             pending_macro_request: None,
             selected_nodes: Vec::new(),
@@ -1147,7 +1151,7 @@ impl NodeGraph {
         // Works even without pointer over canvas — handy when nodes end up
         // off-screen and you don't know where to pan to reach them.
         if !text_has_focus
-            && ui.input(|i| i.key_pressed(egui::Key::F) || i.key_pressed(egui::Key::Home))
+            && ui.input(|i| (!ctrl && i.key_pressed(egui::Key::F)) || i.key_pressed(egui::Key::Home))
         {
             self.fit_pending = true;
         }
@@ -1232,6 +1236,7 @@ impl NodeGraph {
         self.show_port_menu(ui, just_opened);
         self.show_quick_add(ui, just_opened);
         self.show_portal_prompt(ui.ctx());
+        self.show_find(ui);
     }
 
     /// Close the open context menu when the user clicks outside its rect.

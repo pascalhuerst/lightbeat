@@ -344,6 +344,10 @@ impl LightBeatApp {
                         self.pending_undo_action = redo_action;
                     }
                     ui.separator();
+                    if ui.add(egui::Button::new("Find...").shortcut_text(ctx.format_shortcut(&shortcuts::FIND))).clicked() {
+                        ui.close_menu();
+                        self.graph.open_find();
+                    }
                     if ui.button("Preferences...").clicked() {
                         ui.close_menu();
                         self.show_preferences = true;
@@ -836,6 +840,9 @@ impl LightBeatApp {
         let typing = ctx.wants_keyboard_input();
         if ctx.input(|i| i.modifiers.command && i.key_pressed(egui::Key::S)) {
             self.save_command(ctx, None);
+        }
+        if ctx.input(|i| i.modifiers.command && !i.modifiers.shift && i.key_pressed(egui::Key::F)) {
+            self.graph.open_find();
         }
         if !typing && ctx.input(|i| i.modifiers.command && i.key_pressed(egui::Key::O)) {
             self.request_action(ctx, PendingAction::Open);

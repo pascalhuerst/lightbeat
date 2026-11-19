@@ -6,6 +6,7 @@ pub(crate) const SAVE: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMA
 pub(crate) const OPEN: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::O);
 pub(crate) const QUIT: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::Q);
 pub(crate) const UNDO: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::Z);
+pub(crate) const FIND: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::F);
 pub(crate) const REDO: KeyboardShortcut =
     KeyboardShortcut::new(Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::Z);
 
@@ -32,6 +33,7 @@ fn sections() -> Vec<(&'static str, Vec<(Keys, &'static str)>)> {
                 (Shortcut(UNDO), "Undo (project or setup, whichever changed last)"),
                 (Shortcut(REDO), "Redo"),
                 (Shortcut(REDO_Y), "Redo"),
+                (Shortcut(FIND), "Find a node, frame, portal or stack on any level and jump to it"),
             ],
         ),
         (
