@@ -541,6 +541,7 @@ impl LightBeatApp {
             InspectorMode::Hide => false,
             InspectorMode::Auto => has_selection,
         };
+        let in_subgraph = self.graph.active_level_index() != 0;
         if show_inspector {
             egui::SidePanel::right("inspector")
                 .default_width(250.0)
@@ -584,7 +585,7 @@ impl LightBeatApp {
                                 ui.label("Select a node or frame to inspect.");
                             } else if selected.len() == 1 {
                                 let node = &mut *selected.into_iter().next().unwrap();
-                                widgets::inspector::show_inspector(ui, node.as_mut());
+                                widgets::inspector::show_inspector(ui, node.as_mut(), in_subgraph);
                             } else {
                                 ui.heading(format!("{} nodes selected", selected.len()));
                                 ui.separator();

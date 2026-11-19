@@ -204,6 +204,7 @@ impl LightBeatApp {
             disabled: false,
             promoted: Vec::new(),
             hide_unused_ports: false,
+            panel: None,
             snapshots: Default::default(),
         };
 

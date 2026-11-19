@@ -780,7 +780,8 @@ impl NodeGraph {
                     if double_clicked
                         && self.active().nodes[i].type_name() == "Subgraph"
                             && let Some(sub) = self.active_mut().nodes[i].as_any_mut().downcast_mut::<SubgraphWidget>()
-                                && !sub.locked {
+                                && !sub.locked
+                                && !sub.panel_contains(pointer_pos) {
                                     sub.wants_open = true;
                                 }
                     // Double-click on a Portal Receive goes to its Send, the

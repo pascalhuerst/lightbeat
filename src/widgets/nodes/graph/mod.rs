@@ -9,6 +9,7 @@ mod subgraph_ops;
 mod draw;
 mod wires;
 mod find;
+mod panel;
 
 use draw::*;
 
@@ -17,7 +18,7 @@ use egui::{self, Color32, CursorIcon, Painter, Pos2, Rect, Sense, Stroke, Stroke
 use super::node::*;
 use super::types::*;
 use crate::engine::nodes::meta::subgraph::{SubgraphPortDef, port_type_to_idx, BRIDGE_IN_NODE_ID, BRIDGE_OUT_NODE_ID};
-use crate::engine::types::{Connection, NodeId, ParamDef, ParamValue, PortDir, PortId, PortType, SubgraphInnerCmd};
+use crate::engine::types::{Connection, NodeId, PanelItem, ParamDef, ParamValue, PortDir, PortId, PortType, SubgraphInnerCmd};
 use crate::widgets::nodes::meta::portal::{
     PortalReceiveWidget, PortalSendWidget,
 };
@@ -209,6 +210,7 @@ struct ClipboardNode {
     promoted: Vec<PromotedParam>,
     snapshots: crate::engine::types::SnapshotSet,
     hide_unused_ports: bool,
+    panel: Option<PanelItem>,
     data: Option<serde_json::Value>,
     /// Offset from the first copied node's position.
     offset: Vec2,
@@ -683,6 +685,8 @@ impl NodeGraph {
         }
         // Hidden ports, then stale connections (ports removed by dynamic nodes).
         self.tidy_ports();
+        self.apply_panel_requests();
+        self.refresh_panels(self.active_level);
 
         let (response, painter) =
             ui.allocate_painter(ui.available_size(), Sense::click_and_drag());
@@ -1052,9 +1056,9 @@ impl NodeGraph {
             style.spacing.text_edit_width *= z;
             std::sync::Arc::new(style)
         });
-        let level = self.active_mut();
+        let active = self.active_level;
         for (i, &rect) in node_rects.iter().enumerate() {
-            let content_rect = content_rect(rect, &level.nodes[i].layout(), z);
+            let content_rect = content_rect(rect, &self.levels[active].nodes[i].layout(), z);
             // Intersect with the canvas so node UI doesn't paint over panels
             // (inspector, status bar) when a node is partially off-canvas.
             let clip_rect = content_rect.intersect(canvas_clip);
@@ -1071,7 +1075,25 @@ impl NodeGraph {
                     content_ui.set_style(style.clone());
                 }
 
-                level.nodes[i].show_content(&mut content_ui, z);
+                // A Subgraph with a front panel draws the controls of its inner
+                // nodes under its header. Their widgets are taken out of the
+                // inner level for the time, so `levels` stays free for the
+                // panels nested in them.
+                let inner = panel::panel_owner(self.levels[active].nodes[i].as_mut())
+                    .and_then(|id| self.levels.iter().position(|l| l.subgraph_id == Some(id)));
+                let mut taken = inner.map(|k| std::mem::take(&mut self.levels[k].nodes));
+                self.levels[active].nodes[i].show_content(&mut content_ui, z);
+                if let (Some(k), Some(inner_nodes)) = (inner, taken.as_mut()) {
+                    let region = panel::panel_region(content_rect, z);
+                    if let Some(w) = self.levels[active].nodes[i].as_any_mut().downcast_mut::<SubgraphWidget>() {
+                        w.set_panel_screen(Some(region.intersect(clip_rect)));
+                    }
+                    let mut paint = panel::PanelPaint { ui: &mut *ui, clip: clip_rect, style: &zoomed_style, zoom: z };
+                    panel::draw_panel(&mut self.levels, k, inner_nodes, region, &mut paint, 0);
+                }
+                if let (Some(k), Some(nodes)) = (inner, taken) {
+                    self.levels[k].nodes = nodes;
+                }
             }
         }
 

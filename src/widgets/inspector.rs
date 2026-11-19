@@ -3,6 +3,7 @@ use egui::{self, Ui};
 use super::nodes::node::NodeWidget;
 use super::nodes::types::PortTypeUi;
 use crate::engine::types::{ParamDef, ParamValue, PortDef, PortType, PromotedKind, PromotedParam};
+use crate::engine::nodes::meta::subgraph::{BRIDGE_IN_NODE_ID, BRIDGE_OUT_NODE_ID};
 use crate::theme;
 use super::setup_ui;
 
@@ -320,7 +321,7 @@ fn param_row(
 }
 
 /// Draw the inspector panel for a single selected node.
-pub fn show_inspector(ui: &mut Ui, node: &mut dyn NodeWidget) {
+pub fn show_inspector(ui: &mut Ui, node: &mut dyn NodeWidget, in_subgraph: bool) {
     let title = node.title();
     let type_name = node.type_name();
     // User-set custom title takes the big heading slot; an empty title means
@@ -341,6 +342,20 @@ pub fn show_inspector(ui: &mut Ui, node: &mut dyn NodeWidget) {
         ui.colored_label(theme::TEXT_DIM, desc);
     }
     ui.separator();
+
+    let is_bridge = [BRIDGE_IN_NODE_ID, BRIDGE_OUT_NODE_ID].contains(&node.node_id());
+    if in_subgraph && !is_bridge {
+        let mut shared = node.shared_state().lock();
+        let mut on = shared.panel.as_ref().is_some_and(|p| p.whole);
+        if ui.checkbox(&mut on, "Show on parent")
+            .on_hover_text("Draw this node on the subgraph's front panel")
+            .changed()
+        {
+            crate::engine::types::PanelItem::set_whole(&mut shared.panel, on);
+        }
+        drop(shared);
+        ui.separator();
+    }
 
     let hide_default_ports = node.inspector_hides_default_ports();
 

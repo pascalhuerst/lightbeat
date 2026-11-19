@@ -102,6 +102,7 @@ impl NodeGraph {
             let mut snapshots = shared.snapshots.clone();
             snapshots.active = shared.snapshot_active.or(snapshots.active);
             let hide_unused_ports = shared.hide_unused_ports;
+            let panel = shared.panel.clone();
             drop(shared);
 
             // For Subgraph nodes, snapshot the inner level so duplicate
@@ -121,6 +122,7 @@ impl NodeGraph {
                 promoted,
                 snapshots,
                 hide_unused_ports,
+                panel,
                 data,
                 offset: state.pos - origin,
                 original_id: state.id,
@@ -201,6 +203,7 @@ impl NodeGraph {
                         state.pending_snapshots = Some(cn.snapshots.clone());
                     }
                     state.hide_unused_ports = cn.hide_unused_ports;
+                    state.panel = cn.panel.clone();
                 }
 
                 if let Some(size) = cn.size {

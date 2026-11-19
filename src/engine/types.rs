@@ -1,3 +1,4 @@
+use serde::{Deserialize, Serialize};
 pub use super::promoted::{PromotedKind, PromotedParam};
 pub use super::snapshots::SnapshotSet;
 use std::borrow::Cow;
@@ -293,6 +294,9 @@ pub struct NodeSharedState {
     /// Show only the ports that have a wire (plus the variadic "+" ports).
     /// UI-owned and saved with the project; the engine never reads it.
     pub hide_unused_ports: bool,
+    /// Shown on the front panel of the subgraph this node sits in. UI-owned
+    /// and saved with the project; the engine never reads it.
+    pub panel: Option<PanelItem>,
     /// Which ports are hidden right now, by port index; empty when none are.
     /// Kept up to date by the graph each frame.
     pub hidden_inputs: Vec<bool>,
@@ -323,9 +327,41 @@ impl NodeSharedState {
             snapshot_progress: 1.0,
             non_promotable: &[],
             hide_unused_ports: false,
+            panel: None,
             hidden_inputs: Vec::new(),
             hidden_outputs: Vec::new(),
         }
+    }
+}
+
+/// What a node inside a subgraph puts on the subgraph's front panel (see
+/// `widgets/nodes/panel.rs`). Lives on the node, not in the Subgraph, so it
+/// survives the id remapping of duplicate and macro instantiation.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct PanelItem {
+    /// Position among the panel's items. `PANEL_LAST` means "just added":
+    /// the graph numbers the items 0.. in order each frame.
+    pub order: u32,
+    /// The whole node is drawn on the panel.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub whole: bool,
+    /// Single settings of the node, by param name, drawn on the panel.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub params: Vec<String>,
+}
+
+pub const PANEL_LAST: u32 = u32::MAX;
+
+impl PanelItem {
+    /// Put the whole node on the panel, or take it off (single settings stay).
+    pub fn set_whole(slot: &mut Option<PanelItem>, on: bool) {
+        let mut item = slot.take().unwrap_or(PanelItem { order: PANEL_LAST, whole: false, params: Vec::new() });
+        item.whole = on;
+        *slot = (!item.is_empty()).then_some(item);
+    }
+
+    pub fn is_empty(&self) -> bool {
+        !self.whole && self.params.is_empty()
     }
 }
 

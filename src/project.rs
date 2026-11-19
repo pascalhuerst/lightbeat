@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 
 use crate::engine::nodes::meta::subgraph::{BRIDGE_IN_NODE_ID, BRIDGE_OUT_NODE_ID};
-use crate::engine::types::{NodeId, ParamDef, ParamValue, PortDir, PortId, PromotedParam, SnapshotSet};
+use crate::engine::types::{NodeId, PanelItem, ParamDef, ParamValue, PortDir, PortId, PromotedParam, SnapshotSet};
 use crate::migrate::project::SCHEMA;
 use crate::migrate::Migration;
 use crate::widgets::nodes::{GraphLevel, NodeGraph};
@@ -91,6 +91,9 @@ pub struct SavedNode {
     /// Show only the wired ports.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub hide_unused_ports: bool,
+    /// What the node puts on its subgraph's front panel.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub panel: Option<PanelItem>,
     /// Named sets of the node's settings (see `engine::snapshots`).
     #[serde(default, skip_serializing_if = "SnapshotSet::is_empty")]
     pub snapshots: SnapshotSet,
@@ -197,6 +200,7 @@ pub fn save_level(level: &GraphLevel, graph: &NodeGraph) -> ProjectFile {
         let disabled = shared.disabled;
         let promoted = shared.promoted.clone();
         let hide_unused_ports = shared.hide_unused_ports;
+        let panel = shared.panel.clone();
         let mut snapshots = shared.snapshots.clone();
         snapshots.active = shared.snapshot_active.or(snapshots.active);
         drop(shared);
@@ -221,6 +225,7 @@ pub fn save_level(level: &GraphLevel, graph: &NodeGraph) -> ProjectFile {
             disabled,
             promoted,
             hide_unused_ports,
+            panel,
             snapshots,
         });
     }
@@ -330,6 +335,7 @@ pub fn load_graph(graph: &mut NodeGraph, project: &ProjectFile) -> Vec<usize> {
                 }
                 shared.disabled = saved.disabled;
                 shared.hide_unused_ports = saved.hide_unused_ports;
+                shared.panel = saved.panel.clone();
                 // Set before connections are restored so the extra ports exist.
                 let promoted = saved.promoted.clone();
                 shared.promoted = promoted.clone();

@@ -199,6 +199,18 @@ impl NodeGraph {
             if all_hidden { "Show all ports" } else { "Hide unused ports" }
         };
         let mut toggle_hide = false;
+        // Controls of a subgraph can be put on its front panel; at the root
+        // there is no panel to put them on.
+        let panel_label = (self.active_level > 0).then(|| {
+            let level = self.active();
+            let all_on = self
+                .selected_nodes
+                .iter()
+                .filter_map(|&i| level.nodes.get(i))
+                .all(|n| n.shared_state().lock().panel.as_ref().is_some_and(|p| p.whole));
+            if all_on { "Remove from parent panel" } else { "Show on parent" }
+        });
+        let mut toggle_panel = false;
         // Compact nodes have no enable switch in their header, so the menu is
         // the one place every node can be frozen from.
         let all_disabled = {
@@ -238,6 +250,11 @@ impl NodeGraph {
                     }
                     if ui.button(hide_label).on_hover_text("Show only the ports that have a wire (H)").clicked() {
                         toggle_hide = true;
+                    }
+                    if let Some(label) = panel_label
+                        && ui.button(label).on_hover_text("Draw this on the subgraph's node, so it can be used without opening it").clicked()
+                    {
+                        toggle_panel = true;
                     }
                     if ui.button(if all_disabled { "Enable" } else { "Disable" })
                         .on_hover_text("A disabled node keeps its last output")
@@ -296,6 +313,14 @@ impl NodeGraph {
             let level = self.active();
             for n in self.selected_nodes.iter().filter_map(|&i| level.nodes.get(i)) {
                 n.shared_state().lock().disabled = !all_disabled;
+            }
+            self.context_menu_pos = None;
+            return;
+        }
+        if toggle_panel {
+            let on = panel_label == Some("Show on parent");
+            for i in self.selected_nodes.clone() {
+                self.set_panel_whole(i, on);
             }
             self.context_menu_pos = None;
             return;

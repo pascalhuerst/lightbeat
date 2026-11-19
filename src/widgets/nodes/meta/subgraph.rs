@@ -1,4 +1,4 @@
-use egui::{self, Color32, Ui};
+use egui::{self, Color32, Rect, Ui, Vec2};
 use std::any::Any;
 
 use crate::engine::nodes::meta::subgraph::{
@@ -9,6 +9,7 @@ use crate::engine::types::*;
 use crate::widgets::setup_ui;
 use crate::theme;
 use crate::widgets::nodes::node::NodeWidget;
+use crate::widgets::nodes::panel::{self, PanelRequest, PanelRow};
 use crate::widgets::nodes::types::UiPortDef;
 
 pub struct SubgraphWidget {
@@ -35,7 +36,21 @@ pub struct SubgraphWidget {
     /// Set when a port is removed from the middle of a list, for the graph to
     /// move the outer wires after it.
     removed: Option<(PortDir, usize)>,
+    /// The front panel: a cell size for each control the inner nodes put on
+    /// it, in order, the width the node is drawn at (the cells wrap to it) and
+    /// the list the inspector shows. All set by the graph each frame.
+    panel_cells: Vec<Vec2>,
+    panel_width: f32,
+    panel_rows: Vec<PanelRow>,
+    panel_request: Option<PanelRequest>,
+    /// Where the panel was drawn last, so a double-click on a control does not
+    /// open the subgraph.
+    panel_screen: Option<Rect>,
+    jump: Option<NodeId>,
 }
+
+/// Height of the header row (node count, open button) above the panel.
+pub const PANEL_TOP: f32 = 24.0;
 
 impl SubgraphWidget {
     pub fn new(id: NodeId, shared: SharedState) -> Self {
@@ -51,6 +66,80 @@ impl SubgraphWidget {
             macro_path: String::new(),
             inner_display_count: 0,
             removed: None,
+            panel_cells: Vec::new(),
+            panel_width: 0.0,
+            panel_rows: Vec::new(),
+            panel_request: None,
+            panel_screen: None,
+            jump: None,
+        }
+    }
+
+    pub fn set_panel(&mut self, cells: Vec<Vec2>, rows: Vec<PanelRow>) {
+        if cells.is_empty() {
+            self.panel_screen = None;
+        }
+        self.panel_cells = cells;
+        self.panel_rows = rows;
+    }
+
+    pub fn set_panel_width(&mut self, width: f32) {
+        self.panel_width = width;
+    }
+
+    pub fn has_panel(&self) -> bool {
+        !self.panel_cells.is_empty()
+    }
+
+    pub fn set_panel_screen(&mut self, rect: Option<Rect>) {
+        self.panel_screen = rect;
+    }
+
+    pub fn panel_contains(&self, pos: egui::Pos2) -> bool {
+        self.panel_screen.is_some_and(|r| r.contains(pos))
+    }
+
+    pub fn request_panel(&mut self, request: PanelRequest) {
+        self.panel_request = Some(request);
+    }
+
+    pub fn take_panel_request(&mut self) -> Option<PanelRequest> {
+        self.panel_request.take()
+    }
+
+    /// Width the cells may use, inside the node's side margins.
+    fn panel_content_width(&self) -> f32 {
+        let l = self.layout();
+        self.panel_width - 2.0 * (l.side_inset + l.gutter_left.max(l.gutter_right))
+    }
+
+    fn show_panel_list(&mut self, ui: &mut Ui) {
+        ui.separator();
+        setup_ui::section(ui, "Front panel");
+        if self.panel_rows.is_empty() {
+            ui.colored_label(
+                theme::TEXT_DIM,
+                "Nothing yet. Open the subgraph and choose Show on parent for a control.",
+            );
+            return;
+        }
+        let rows = self.panel_rows.clone();
+        let len = rows.len();
+        for (i, row) in rows.iter().enumerate() {
+            ui.horizontal(|ui| {
+                if !self.locked {
+                    if let Some(mv) = setup_ui::move_buttons(ui, i, len) {
+                        self.request_panel(PanelRequest::Move(row.node_id, mv));
+                    }
+                    if setup_ui::delete_button(ui, "Take it off the panel") {
+                        self.request_panel(PanelRequest::Remove(row.node_id));
+                    }
+                    if ui.small_button(egui_phosphor::regular::ARROW_SQUARE_OUT).on_hover_text("Go to this node").clicked() {
+                        self.jump = Some(row.node_id);
+                    }
+                }
+                ui.label(&row.label);
+            });
         }
     }
 
@@ -140,9 +229,17 @@ impl NodeWidget for SubgraphWidget {
     }
 
     fn min_width(&self) -> f32 {
-        120.0
+        let l = self.layout();
+        let widest = self.panel_cells.iter().map(|c| c.x).fold(0.0_f32, f32::max);
+        120.0_f32.max(widest + 2.0 * (l.side_inset + l.gutter_left.max(l.gutter_right)))
+    }
+    fn take_jump(&mut self) -> Option<NodeId> {
+        self.jump.take()
     }
     fn min_content_height(&self) -> f32 {
+        if self.has_panel() {
+            return PANEL_TOP + panel::flow(&self.panel_cells, self.panel_content_width()).size.y;
+        }
         // Header row + one row per inner value/LED display. This is a
         // *minimum* — `resizable` stays true, so the user can still grow
         // the node further. Since `size_override` is clamped to this min,
@@ -174,6 +271,8 @@ impl NodeWidget for SubgraphWidget {
             }
         };
         self.locked = locked;
+        // A panel replaces the read-only list of displays.
+        let inner_displays = if self.has_panel() { Vec::new() } else { inner_displays };
         self.inner_display_count = inner_displays.len();
 
         ui.horizontal(|ui| {
@@ -226,6 +325,7 @@ impl NodeWidget for SubgraphWidget {
             } else {
                 ui.colored_label(theme::TEXT, &self.macro_path);
             }
+            self.show_panel_list(ui);
             return;
         }
 
@@ -322,6 +422,8 @@ impl NodeWidget for SubgraphWidget {
         if input_changed || output_changed {
             self.push_config();
         }
+
+        self.show_panel_list(ui);
     }
 
     fn as_any_mut(&mut self) -> &mut dyn Any {
