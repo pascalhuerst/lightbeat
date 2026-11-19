@@ -458,8 +458,26 @@ impl NodeGraph {
             }
         }
         let current = self.levels[level].nodes[i].live_data().or_else(|| self.levels[level].nodes[i].shared_state().lock().save_data.clone());
-        if sn.data != current
-            && let Some(data) = &sn.data
+        // What the node is doing right now is the instance's own; the saved
+        // form is a moment old, so the live values go back in before comparing.
+        let mut wanted = sn.data.clone();
+        if let (Some(map), Some(live)) = (
+            wanted.as_mut().and_then(|d| d.as_object_mut()),
+            current.as_ref().and_then(|c| c.as_object()),
+        ) {
+            for key in crate::linked::state_keys(&sn.type_name) {
+                match live.get(*key) {
+                    Some(v) => {
+                        map.insert((*key).to_string(), v.clone());
+                    }
+                    None => {
+                        map.remove(*key);
+                    }
+                }
+            }
+        }
+        if wanted != current
+            && let Some(data) = &wanted
         {
             self.levels[level].nodes[i].restore_from_save(Some(data), &changed_params);
             self.levels[level].nodes[i].shared_state().lock().save_data = Some(data.clone());

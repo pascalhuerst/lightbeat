@@ -237,6 +237,21 @@ fn merge_node(s: &SavedNode, d: &SavedNode, names: &ParamNames, alloc: &mut dyn 
     }
     // Which snapshot is current is state, not definition.
     n.snapshots.active = d.snapshots.active;
+    let keys = state_keys(&n.type_name);
+    if !keys.is_empty()
+        && let (Some(mine), Some(theirs)) = (n.data.as_mut().and_then(|v| v.as_object_mut()), d.data.as_ref().and_then(|v| v.as_object()))
+    {
+        for key in keys {
+            match theirs.get(*key) {
+                Some(v) => {
+                    mine.insert((*key).to_string(), v.clone());
+                }
+                None => {
+                    mine.remove(*key);
+                }
+            }
+        }
+    }
 
     if let Some(s_inner) = &s.inner_graph {
         let same_definition = definition_of(s).is_some() && definition_of(s) == definition_of(d);
@@ -379,9 +394,71 @@ impl std::fmt::Debug for SavedNode {
     }
 }
 
+/// Keys of a node's saved `data` that hold what the node is doing right now
+/// rather than how it is set up: a counter's count, a flip-flop's state. They
+/// belong to the instance like the values on a front panel; if they followed
+/// the definition, every tick of a counter would count as an edit and copy its
+/// state into the other instances.
+pub fn state_keys(type_name: &str) -> &'static [&'static str] {
+    match type_name {
+        "Counter" => &["count"],
+        "SR Flip-Flop" | "JK Flip-Flop" => &["state"],
+        "Sample & Hold" => &["held"],
+        "Random" => &["value"],
+        "Phase Accumulator" => &["state"],
+        "Toggle Bank" => &["states"],
+        _ => &[],
+    }
+}
+
+/// `n` with what belongs to an instance blanked: running state, the values of
+/// what is on a front panel, which snapshot is current. With `blank_linked` a
+/// nested linked subgraph also loses its inside, which its own definition
+/// looks after. What is left is what two instances must agree on.
+fn mask_node(n: &mut SavedNode, names: &ParamNames, blank_linked: bool) {
+    n.snapshots.active = None;
+    let linked = definition_of(n).is_some();
+    if n.type_name == "Subgraph" {
+        if let Some(inner) = n.inner_graph.as_mut() {
+            if blank_linked && linked {
+                *inner = empty_level(inner);
+            } else {
+                for c in &mut inner.nodes {
+                    mask_node(c, names, blank_linked);
+                }
+            }
+        }
+    } else if let Some(map) = n.data.as_mut().and_then(|d| d.as_object_mut()) {
+        for key in state_keys(&n.type_name) {
+            map.remove(*key);
+        }
+    }
+    if let Some(panel) = &n.panel {
+        if panel.whole {
+            n.params.clear();
+            if n.type_name != "Subgraph" {
+                n.data = None;
+            }
+        } else if let Some(wanted) = names.get(&n.id) {
+            let blank: Vec<usize> = panel.params.iter().filter_map(|name| wanted.iter().position(|p| p == name)).collect();
+            n.params.retain(|p| !blank.contains(&p.index));
+        } else if !panel.params.is_empty() {
+            n.params.clear();
+        }
+    }
+}
+
+fn mask_level(level: &ProjectFile, names: &ParamNames, blank_linked: bool) -> ProjectFile {
+    let mut out = level.clone();
+    for n in &mut out.nodes {
+        mask_node(n, names, blank_linked);
+    }
+    out
+}
+
 /// What the definition looks like in one instance.
-fn definition_view(n: &SavedNode) -> (Option<&serde_json::Value>, Option<&ProjectFile>) {
-    (n.data.as_ref(), n.inner_graph.as_ref())
+fn definition_view(n: &SavedNode, names: &ParamNames) -> (Option<serde_json::Value>, Option<ProjectFile>) {
+    (n.data.clone(), n.inner_graph.as_ref().map(|g| mask_level(g, names, true)))
 }
 
 /// The steps that bring every definition's instances to one content. The
@@ -410,7 +487,7 @@ pub fn plan_sync(
         let changed = |i: &Instance| {
             baseline
                 .and_then(|b| node_at(b, &i.path))
-                .is_some_and(|before| definition_view(before) != definition_view(i.node))
+                .is_some_and(|before| definition_view(before, names) != definition_view(i.node, names))
         };
         let source = group.iter().find(|i| changed(i)).unwrap_or(&group[0]);
         for target in group.iter().filter(|i| i.path != source.path) {
@@ -503,6 +580,10 @@ pub fn make_unique(project: &mut ProjectFile, path: &[u64]) -> Option<u64> {
 /// A level with ids replaced by positions and per-instance values blanked, as
 /// text, so that two subgraphs can be compared for being the same.
 fn canonical_level(level: &ProjectFile, names: &ParamNames) -> serde_json::Value {
+    canonical_masked(&mask_level(level, names, false))
+}
+
+fn canonical_masked(level: &ProjectFile) -> serde_json::Value {
     let index: HashMap<u64, i64> = level.nodes.iter().enumerate().map(|(i, n)| (n.id, i as i64)).collect();
     let at = |id: u64| {
         if id == BRIDGE_IN_NODE_ID.0 {
@@ -513,7 +594,7 @@ fn canonical_level(level: &ProjectFile, names: &ParamNames) -> serde_json::Value
             index.get(&id).copied().unwrap_or(-3)
         }
     };
-    let nodes: Vec<serde_json::Value> = level.nodes.iter().map(|n| canonical_node(n, names)).collect();
+    let nodes: Vec<serde_json::Value> = level.nodes.iter().map(canonical_node).collect();
     let mut conns: Vec<(i64, usize, i64, usize)> =
         level.connections.iter().map(|c| (at(c.from_node), c.from_port, at(c.to_node), c.to_port)).collect();
     conns.sort_unstable();
@@ -530,20 +611,9 @@ fn canonical_level(level: &ProjectFile, names: &ParamNames) -> serde_json::Value
     })
 }
 
-fn canonical_node(n: &SavedNode, names: &ParamNames) -> serde_json::Value {
+fn canonical_node(n: &SavedNode) -> serde_json::Value {
+    let data = if n.type_name == "Subgraph" { data_without_definition(n) } else { n.data.clone() };
     let mut params: Vec<(usize, &crate::project::SavedParamValue)> = n.params.iter().map(|p| (p.index, &p.value)).collect();
-    let mut data = if n.type_name == "Subgraph" { data_without_definition(n) } else { n.data.clone() };
-    if let Some(panel) = &n.panel {
-        if panel.whole {
-            params.clear();
-            if n.type_name != "Subgraph" {
-                data = None;
-            }
-        } else if let Some(wanted) = names.get(&n.id) {
-            let blank: Vec<usize> = panel.params.iter().filter_map(|name| wanted.iter().position(|p| p == name)).collect();
-            params.retain(|(i, _)| !blank.contains(i));
-        }
-    }
     params.sort_by_key(|(i, _)| *i);
     serde_json::json!({
         "type": n.type_name,
@@ -551,7 +621,7 @@ fn canonical_node(n: &SavedNode, names: &ParamNames) -> serde_json::Value {
         "size": n.size,
         "params": params.iter().map(|(i, v)| serde_json::json!([i, v])).collect::<Vec<_>>(),
         "data": data,
-        "inner": n.inner_graph.as_ref().map(|g| canonical_level(g, names)),
+        "inner": n.inner_graph.as_ref().map(canonical_masked),
         "disabled": n.disabled,
         "promoted": n.promoted,
         "hide": n.hide_unused_ports,
@@ -917,6 +987,51 @@ mod tests {
         let steps = plan(Some(&base), &cur);
         assert!(steps[0].result.inner_graph.as_ref().unwrap().nodes[0].panel.is_some());
         assert!(!steps[0].rebuild);
+    }
+
+    fn with_counters() -> ProjectFile {
+        let mut p = pair();
+        for (i, count) in [(0usize, 3), (1, 8)] {
+            let g = p.nodes[i].inner_graph.as_mut().unwrap();
+            g.nodes[1].type_name = "Counter".into();
+            g.nodes[1].data = Some(serde_json::json!({"count": count}));
+        }
+        p
+    }
+
+    #[test]
+    fn running_state_stays_with_the_instance_and_is_not_an_edit() {
+        let base = with_counters();
+        // The counter of instance 1 ticks: nothing to sync.
+        let mut cur = base.clone();
+        cur.nodes[0].inner_graph.as_mut().unwrap().nodes[1].data = Some(serde_json::json!({"count": 4}));
+        assert!(plan(Some(&base), &cur).is_empty());
+        // A real edit in instance 2 while instance 1 keeps counting: instance 2 is the source,
+        // and instance 1 keeps its count.
+        set_param(&mut cur.nodes[1].inner_graph.as_mut().unwrap().nodes[0], 0, 0.9);
+        let steps = plan(Some(&base), &cur);
+        assert_eq!(steps.len(), 1);
+        assert_eq!(steps[0].source, vec![2]);
+        let r = steps[0].result.inner_graph.as_ref().unwrap();
+        assert_eq!(r.nodes[1].data, Some(serde_json::json!({"count": 4})));
+        assert_eq!(param(&r.nodes[0], 0), 0.9);
+    }
+
+    #[test]
+    fn a_turned_front_panel_value_does_not_make_its_instance_the_source() {
+        use crate::engine::types::PanelItem;
+        let mut base = pair();
+        for i in 0..2 {
+            base.nodes[i].inner_graph.as_mut().unwrap().nodes[1].panel = Some(PanelItem { order: 0, whole: true, params: vec![] });
+        }
+        let mut cur = base.clone();
+        // Instance 1's panel is played while the definition is edited in instance 2.
+        set_param(&mut cur.nodes[0].inner_graph.as_mut().unwrap().nodes[1], 0, 0.99);
+        set_param(&mut cur.nodes[1].inner_graph.as_mut().unwrap().nodes[0], 0, 0.7);
+        let steps = plan(Some(&base), &cur);
+        assert_eq!(steps.len(), 1);
+        assert_eq!((steps[0].source.clone(), steps[0].path.clone()), (vec![2], vec![1]));
+        assert_eq!(param(&steps[0].result.inner_graph.as_ref().unwrap().nodes[1], 0), 0.99);
     }
 
     #[test]
