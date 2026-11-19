@@ -18,6 +18,8 @@ mod instances;
 mod instances_tests;
 #[cfg(test)]
 mod instances_desk_tests;
+#[cfg(test)]
+mod bus_through_tests;
 
 use draw::*;
 
@@ -309,6 +311,9 @@ pub struct NodeGraph {
     pub collapse_wires: bool,
     /// Messages for the user that came up inside the graph; the app shows them.
     notices: Vec<String>,
+    /// Ports removed from a linked Subgraph since the last sync, in order, so
+    /// the other instances shift their outer wires the same way.
+    port_removals: Vec<(NodeId, PortDir, usize)>,
     /// Per node type, the saved-data keys that are running state (linked
     /// subgraphs keep them per instance); set by the app.
     running: HashMap<String, &'static [&'static str]>,
@@ -392,6 +397,7 @@ impl NodeGraph {
             show_minimap: true,
             collapse_wires: true,
             notices: Vec::new(),
+            port_removals: Vec::new(),
             running: HashMap::new(),
             lane_limits: HashMap::new(),
             engine_factory: None,
@@ -930,7 +936,7 @@ impl NodeGraph {
         let mut in_cable = vec![false; level.connections.len()];
         if self.collapse_wires {
             let selected_ids = self.selected_node_ids(level);
-            for cable in wires::cable_groups(&level.connections) {
+            for cable in wires::cable_groups(&level.connections, |c| level.bus.widths.of_wire(c.to) > 1) {
                 if cable.wires.iter().any(|&w| ends[w].is_none()) { continue; }
                 if selected_ids.contains(&cable.from) || selected_ids.contains(&cable.to)
                     || cable.wires.iter().any(|&w| self.selected_connections.contains(&level.connections[w]))

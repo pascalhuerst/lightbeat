@@ -56,6 +56,25 @@ macro_rules! node_identity {
 }
 pub(crate) use node_identity;
 
+/// The nodes whose ports are as wide as a bus that arrives somewhere else: a
+/// port that takes a bus (`Takes`) is as wide as the wire into it, a port
+/// that hands one on (`Gives`) as wide as the port it is the other end of.
+/// The graph derives both across levels (`graph/bus.rs`); nothing is saved.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BusEnd {
+    None,
+    /// Inputs take the wire's width, outputs give what the inner level hands out.
+    Subgraph,
+    /// Gives the widths of the Subgraph's inputs, inside.
+    GraphInput,
+    /// Takes the widths of the wires inside; the Subgraph's outputs are these.
+    GraphOutput,
+    /// Inputs take the wire's width.
+    PortalSend,
+    /// Outputs give the width of the Send's inputs of the same name.
+    PortalReceive,
+}
+
 /// An effect as its stack lists it.
 #[derive(Clone, Debug, PartialEq)]
 pub struct StackMember {
@@ -312,6 +331,14 @@ pub trait NodeWidget: Any {
     /// (Bus Split, Bus Pick). The graph tells it the width with `follow_bus`.
     fn follows_bus(&self) -> bool { false }
     fn follow_bus(&mut self, _width: usize) {}
+
+    /// Where a node's port widths come from when they are a wire's on another
+    /// level or at another node (see `BusEnd`).
+    fn bus_end(&self) -> BusEnd { BusEnd::None }
+    /// The graph hands such a node the widths it derived, one per input and
+    /// per output port; the node uses the side it is driven on and tells its
+    /// engine half when they changed.
+    fn set_bus_lanes(&mut self, _inputs: &[usize], _outputs: &[usize]) {}
 
     /// How the inspector and a promoted port show a param: an optional group
     /// heading it is listed under, and its label. Params are keyed by name,

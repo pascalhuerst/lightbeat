@@ -578,6 +578,12 @@ pub trait ProcessNode: Send {
     /// answer, through the registry, so the two cannot disagree.
     fn max_lanes(&self) -> usize { MAX_LANES }
 
+    /// True for a node that changes its own ports inside `process()` (a
+    /// Portal Receive follows its Send, lanes included). The routing plan
+    /// then watches the node's channel totals each tick, which it otherwise
+    /// only compares as port counts.
+    fn reshapes_itself(&self) -> bool { false }
+
     /// Top-level keys of `save_data` that hold what the node is doing right
     /// now (a count, a latched state, a held value) rather than how it is set
     /// up. In a linked subgraph these belong to each instance; every other key

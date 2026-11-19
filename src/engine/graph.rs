@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 use ringbuf::traits::Consumer;
 
 use super::CommandConsumer;
-use super::nodes::meta::subgraph::{InnerGraph, SubgraphProcessNode};
+use super::nodes::meta::subgraph::InnerGraph;
 use super::effects::{EffectHub, RenderGate};
 use super::types::*;
 use crate::dmx_io::{DmxOutputManager, SharedDmxState, SharedObjectStore};
@@ -50,75 +50,11 @@ impl EngineGraph {
     }
 
     fn apply_command(&mut self, cmd: EngineCommand) {
-        match cmd {
-            EngineCommand::AddNode { node, shared } => {
-                self.core.apply(SubgraphInnerCmd::AddNode { node, shared });
-            }
-            EngineCommand::RemoveNode(id) => {
-                self.core.apply(SubgraphInnerCmd::RemoveNode(id));
-            }
-            EngineCommand::AddConnection(conn) => {
-                self.core.apply(SubgraphInnerCmd::AddConnection(conn));
-            }
-            EngineCommand::RemoveConnectionTo(to) => {
-                self.core.apply(SubgraphInnerCmd::RemoveConnectionTo(to));
-            }
-            EngineCommand::NotifyConnect {
-                node_id,
-                input_port,
-                source_type,
-            } => {
-                self.core.apply(SubgraphInnerCmd::NotifyConnect { node_id, input_port, source_type });
-            }
-            EngineCommand::NotifyDisconnect {
-                node_id,
-                input_port,
-            } => {
-                self.core.apply(SubgraphInnerCmd::NotifyDisconnect { node_id, input_port });
-            }
-            EngineCommand::LoadData { node_id, data } => {
-                self.core.apply(SubgraphInnerCmd::LoadData { node_id, data });
-            }
-            EngineCommand::SetLanes { node_id, extra } => {
-                self.core.apply(SubgraphInnerCmd::SetLanes { node_id, extra });
-            }
-            EngineCommand::RemoveAllNodes => {
-                self.core.clear();
-            }
-            EngineCommand::SetInterfaces(interfaces) => {
-                if let Some(dmx) = &mut self.dmx {
-                    dmx.set_interfaces(interfaces);
-                }
-            }
-            EngineCommand::SubgraphInnerCommand { subgraph_path, command } => {
-                self.core.mark_plan_dirty();
-                self.apply_subgraph_inner_cmd(&subgraph_path, *command);
-            }
+        if let Some(EngineCommand::SetInterfaces(interfaces)) = self.core.apply_command(cmd)
+            && let Some(dmx) = &mut self.dmx
+        {
+            dmx.set_interfaces(interfaces);
         }
-    }
-
-    /// Defensive recursion guard — prevents accidental runaway descent if the
-    /// path is malformed. The user is unlikely to nest this deep manually.
-    const MAX_SUBGRAPH_NEST_DEPTH: usize = 32;
-
-    fn apply_subgraph_inner_cmd(&mut self, path: &[NodeId], cmd: SubgraphInnerCmd) {
-        if path.is_empty() { return; }
-        if path.len() > Self::MAX_SUBGRAPH_NEST_DEPTH {
-            eprintln!(
-                "Subgraph nesting depth {} exceeds limit {}; dropping command",
-                path.len(), Self::MAX_SUBGRAPH_NEST_DEPTH,
-            );
-            return;
-        }
-
-        // Find the outermost target subgraph.
-        let Some(node) = self.core.nodes.iter_mut().find(|n| n.node_id() == path[0]) else {
-            return;
-        };
-        let Some(sg) = node.as_any_mut().and_then(|a| a.downcast_mut::<SubgraphProcessNode>()) else {
-            return;
-        };
-        sg.apply_inner_cmd_at_path(&path[1..], cmd);
     }
 
     /// One tick of the engine: the shared graph core (take pending, plan,

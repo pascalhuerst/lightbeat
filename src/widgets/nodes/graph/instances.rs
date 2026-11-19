@@ -377,6 +377,21 @@ impl NodeGraph {
     // Applying a sync step
     // -----------------------------------------------------------------------
 
+    /// Hand the port removals recorded since the last sync to the steps that
+    /// follow the instance they happened on.
+    pub fn attach_port_removals(&mut self, steps: &mut [SyncStep]) {
+        let removals = std::mem::take(&mut self.port_removals);
+        for step in steps {
+            let Some(&source) = step.source.last() else { continue };
+            step.port_removals = removals.iter().filter(|(id, _, _)| id.0 == source).map(|&(_, dir, i)| (dir, i)).collect();
+        }
+    }
+
+    /// Drop the recorded port removals (a sync that had no source).
+    pub fn forget_port_removals(&mut self) {
+        self.port_removals.clear();
+    }
+
     /// Bring the instance `step.path` to `step.result`. Returns true when its
     /// level was built again, in which case the app has to create the engine
     /// nodes and send their data (`LightBeatApp::apply_link_steps`).
@@ -386,6 +401,10 @@ impl NodeGraph {
         let Some(level) = self.levels.iter().position(|l| l.states.iter().any(|s| s.id == id)) else { return false };
         let Some(index) = self.levels[level].states.iter().position(|s| s.id == id) else { return false };
         self.levels[level].nodes[index].restore_from_save(step.result.data.as_ref(), &[]);
+        // After the restore, so the wires land on the ports of the new list.
+        for &(dir, port) in &step.port_removals {
+            self.at_level(level, |g| g.shift_wires_after_removal(id, dir, port));
+        }
         let title = self.levels[level].nodes[index].display_title().to_string();
         let Some(inner_level) = self.level_of_subgraph(id) else { return false };
         self.levels[inner_level].label = title;
@@ -425,7 +444,15 @@ impl NodeGraph {
         if let Some([x, y]) = new.bridge_out_pos {
             self.set_node_pos(BRIDGE_OUT_NODE_ID, Pos2::new(x, y));
         }
+        // Loading nested subgraphs navigates, which clears what the user has
+        // selected and any drag; on a level the user is not on, those are
+        // theirs to keep.
+        let user_state = (level != before).then(|| (std::mem::take(&mut self.selected_nodes), std::mem::take(&mut self.drag)));
         let loaded = project::load_graph(self, new);
+        if let Some((selected, drag)) = user_state {
+            self.selected_nodes = selected;
+            self.drag = drag;
+        }
         // What the engine will say once it has caught up; saved forms read
         // before that would otherwise lack the data.
         for (saved, idx) in new.nodes.iter().zip(loaded.iter()) {

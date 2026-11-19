@@ -176,7 +176,7 @@ impl NodeGraph {
         }
 
         self.selected_nodes.clear();
-        let clip = std::mem::take(&mut self.clipboard);
+        let mut clip = std::mem::take(&mut self.clipboard);
         let conns = std::mem::take(&mut self.clipboard_connections);
 
         // A definition must not end up inside one of its own instances.
@@ -199,6 +199,21 @@ impl NodeGraph {
             }
         }
         let known: std::collections::HashSet<u64> = definition_uses.keys().copied().filter(|&d| self.definition_exists(d)).collect();
+        // The clipboard holds the instance as it was when copied; a new
+        // instance starts from what the definition is now, or it would stay
+        // different from its siblings until someone edits one of them.
+        if !known.is_empty() {
+            self.assign_def_nodes();
+            let live = crate::project::save_graph(self);
+            let instances = crate::linked::instances(&live);
+            for cn in clip.iter_mut().filter(|c| c.type_name == "Subgraph") {
+                let Some(d) = cn.data.as_ref().and_then(|d| d.get("definition")).and_then(|v| v.as_u64()) else { continue };
+                if let Some(current) = instances.iter().find(|i| i.definition == d) {
+                    cn.data = current.node.data.clone();
+                    cn.inner_graph = current.node.inner_graph.clone();
+                }
+            }
+        }
 
         // original_id → new_id. Populated as we create each duplicate so
         // we can rewrite the captured connections.

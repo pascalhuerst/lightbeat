@@ -90,6 +90,21 @@ pub struct SubgraphConfig {
     /// (`linked.rs`); absent means a plain subgraph.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub definition: Option<u64>,
+    /// How many lanes each port carries. Never saved: the UI derives the
+    /// widths from the wires and pushes them, and the node's own `save_data`
+    /// leaves them out. Absent leaves the widths as they are; a config that
+    /// names the ports without them makes every port one lane wide.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub input_lanes: Option<Vec<usize>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub output_lanes: Option<Vec<usize>>,
+}
+
+/// Give each port the width `lanes` names for it (1 when it names none).
+pub fn apply_lanes(ports: &mut [PortDef], lanes: &[usize]) {
+    for (i, port) in ports.iter_mut().enumerate() {
+        port.lanes = lanes.get(i).copied().unwrap_or(1).clamp(1, MAX_LANES);
+    }
 }
 
 impl SubgraphConfig {
@@ -421,6 +436,19 @@ impl InnerGraph {
 
         // 3. Propagate connections (including bridge connections). Multi-channel
         // ports (Color=3, Position=2) expand to multiple float copies.
+        // A select wire recalls a snapshot inside `run`, on lane 0 only (the
+        // copies have no snapshots of their own): note the settings before so
+        // the change can be carried to them.
+        let watched: Vec<(usize, Vec<ParamDef>)> = if self.any_lanes {
+            self.nodes
+                .iter()
+                .enumerate()
+                .filter(|(i, _)| !self.lanes[*i].is_empty() && self.promoted[*i].has_snapshot_select())
+                .map(|(i, node)| (i, node.params()))
+                .collect()
+        } else {
+            Vec::new()
+        };
         self.plan.run(
             &mut self.nodes,
             &mut self.lanes,
@@ -428,6 +456,14 @@ impl InnerGraph {
             &self.bridge_in,
             &mut self.bridge_out,
         );
+        for (i, before) in watched {
+            let moved = changed_params(&before, &self.nodes[i].params());
+            for lane in self.lanes[i].iter_mut() {
+                for (idx, val) in &moved {
+                    lane.node.set_param(*idx, val.clone());
+                }
+            }
+        }
         for (i, node) in self.nodes.iter_mut().enumerate() {
             // A fade moves lane 0's settings through the node; the copies are
             // brought along from what changed.
@@ -455,6 +491,61 @@ impl InnerGraph {
             self.sync_shared_state();
         }
         clock.lap(self.laps[4]);
+    }
+
+    /// Defensive guard against a malformed path; the user is unlikely to nest
+    /// this deep by hand.
+    const MAX_SUBGRAPH_NEST_DEPTH: usize = 32;
+
+    /// A command from the UI, applied to this graph as the root. What is not
+    /// about the graph (the DMX interfaces) is handed back.
+    pub fn apply_command(&mut self, cmd: EngineCommand) -> Option<EngineCommand> {
+        let inner = match cmd {
+            EngineCommand::AddNode { node, shared } => SubgraphInnerCmd::AddNode { node, shared },
+            EngineCommand::RemoveNode(id) => SubgraphInnerCmd::RemoveNode(id),
+            EngineCommand::AddConnection(conn) => SubgraphInnerCmd::AddConnection(conn),
+            EngineCommand::RemoveConnectionTo(to) => SubgraphInnerCmd::RemoveConnectionTo(to),
+            EngineCommand::NotifyConnect { node_id, input_port, source_type } => {
+                SubgraphInnerCmd::NotifyConnect { node_id, input_port, source_type }
+            }
+            EngineCommand::NotifyDisconnect { node_id, input_port } => {
+                SubgraphInnerCmd::NotifyDisconnect { node_id, input_port }
+            }
+            EngineCommand::LoadData { node_id, data } => SubgraphInnerCmd::LoadData { node_id, data },
+            EngineCommand::SetLanes { node_id, extra } => SubgraphInnerCmd::SetLanes { node_id, extra },
+            EngineCommand::RemoveAllNodes => {
+                self.clear();
+                return None;
+            }
+            EngineCommand::SubgraphInnerCommand { subgraph_path, command } => {
+                self.mark_plan_dirty();
+                self.apply_at_path(&subgraph_path, *command);
+                return None;
+            }
+            other @ EngineCommand::SetInterfaces(_) => return Some(other),
+        };
+        self.apply(inner);
+        None
+    }
+
+    fn apply_at_path(&mut self, path: &[NodeId], cmd: SubgraphInnerCmd) {
+        if path.is_empty() {
+            return;
+        }
+        if path.len() > Self::MAX_SUBGRAPH_NEST_DEPTH {
+            eprintln!(
+                "Subgraph nesting depth {} exceeds limit {}; dropping command",
+                path.len(), Self::MAX_SUBGRAPH_NEST_DEPTH,
+            );
+            return;
+        }
+        let Some(node) = self.nodes.iter_mut().find(|n| n.node_id() == path[0]) else {
+            return;
+        };
+        let Some(sg) = node.as_any_mut().and_then(|a| a.downcast_mut::<SubgraphProcessNode>()) else {
+            return;
+        };
+        sg.apply_inner_cmd_at_path(&path[1..], cmd);
     }
 
     /// The structural edits, for the root graph and for every subgraph.
@@ -599,6 +690,13 @@ impl InnerGraph {
         let sync_save_data = self.save_data_gate.due();
         for (i, node) in self.nodes.iter().enumerate() {
             let disabled = self.disabled_mask[i];
+            // The copies resolve their promoted params against their own
+            // settings: a mode change moves ranges and indices there too.
+            for lane in self.lanes[i].iter_mut() {
+                if lane.promoted.wants_refresh() {
+                    lane.promoted.refresh(&lane.node.params());
+                }
+            }
             // A laned node shows one lane to the UI, the one the user is
             // looking at; its saved state is always lane 0's.
             let copies = &self.lanes[i];
@@ -758,6 +856,12 @@ impl ProcessNode for SubgraphProcessNode {
         if let Some(outputs) = cfg.outputs {
             self.ext_outputs = outputs.iter().map(SubgraphPortDef::to_port_def).collect();
         }
+        if let Some(lanes) = &cfg.input_lanes {
+            apply_lanes(&mut self.ext_inputs, lanes);
+        }
+        if let Some(lanes) = &cfg.output_lanes {
+            apply_lanes(&mut self.ext_outputs, lanes);
+        }
         if let Some(b) = cfg.locked {
             self.locked = b;
         }
@@ -798,6 +902,8 @@ impl ProcessNode for SubgraphProcessNode {
             macro_path: Some(self.macro_path.clone()),
             macro_hash: self.macro_hash.clone(),
             definition: self.definition,
+            input_lanes: None,
+            output_lanes: None,
         }.to_value())
     }
 
@@ -1005,6 +1111,24 @@ mod config_tests {
         assert!(n.locked);
         assert_eq!(n.macro_path, "fx/chase");
         assert_eq!(n.save_data(), Some(saved));
+    }
+
+    #[test]
+    fn widths_size_the_bridge_and_are_never_saved() {
+        let mut n = SubgraphProcessNode::new(NodeId(1));
+        n.load_data(&serde_json::json!({
+            "inputs": [{"name": "in", "port_type_idx": 3}],
+            "outputs": [{"name": "out", "port_type_idx": 2}],
+            "input_lanes": [4], "output_lanes": [8],
+        }));
+        assert_eq!((n.ext_inputs[0].lanes, n.ext_outputs[0].lanes), (4, 8));
+        assert_eq!((n.inner.bridge_in.len(), n.inner.bridge_out.len()), (12, 8), "lanes x channels of the type");
+        let saved = n.save_data().unwrap();
+        assert!(saved.get("input_lanes").is_none() && saved.get("output_lanes").is_none());
+
+        // Ports named again without widths are one lane wide.
+        n.load_data(&serde_json::json!({"inputs": [{"name": "in", "port_type_idx": 3}]}));
+        assert_eq!(n.ext_inputs[0].lanes, 1);
     }
 
     #[test]
@@ -1322,6 +1446,84 @@ mod lane_tests {
             })
             .collect();
         assert_eq!(thresholds, vec![0.2; WIDTH]);
+    }
+
+    #[test]
+    fn a_snapshot_recalled_by_a_select_wire_reaches_every_lane() {
+        use crate::engine::snapshots::SELECT_NAME;
+        let mut g = InnerGraph::new();
+        let mut node = SchmittTriggerProcessNode::new(NodeId(2));
+        let mut set = SnapshotSet::default();
+        node.set_param(0, ParamValue::Float(0.2));
+        set.add(None, capture(&node.params(), node.non_promotable_params()));
+        node.set_param(0, ParamValue::Float(0.8));
+        set.add(None, capture(&node.params(), node.non_promotable_params()));
+        add(&mut g, Box::new(node));
+        add(&mut g, Box::new(Source { id: NodeId(50), outputs: vec![PortDef::new("out", PortType::Untyped)], value: 0.0 }));
+        {
+            let mut shared = g.shared_states[0].lock();
+            shared.pending_promoted = Some(vec![PromotedParam { name: SELECT_NAME.into(), kind: PromotedKind::SnapshotSelect }]);
+            shared.pending_snapshots = Some(set);
+        }
+        lanes_for(&mut g, 2, schmitt);
+        // The first port past the node's single own input is the select port.
+        wire(&mut g, (50, 0), (2, 1));
+        run(&mut g, 4);
+        let thresholds: Vec<f32> = std::iter::once(&g.nodes[0])
+            .chain(g.lanes[0].iter().map(|l| &l.node))
+            .map(|n| match n.params()[0] {
+                ParamDef::Float { value, .. } => value,
+                _ => unreachable!(),
+            })
+            .collect();
+        assert_eq!(thresholds, vec![0.2; WIDTH]);
+    }
+
+    /// A node whose "Amount" range depends on its "Mode".
+    struct Ranged {
+        id: NodeId,
+        outputs: Vec<PortDef>,
+        wide: bool,
+        amount: f32,
+    }
+
+    impl ProcessNode for Ranged {
+        fn node_id(&self) -> NodeId { self.id }
+        fn type_name(&self) -> &'static str { "Ranged" }
+        fn inputs(&self) -> &[PortDef] { &[] }
+        fn outputs(&self) -> &[PortDef] { &self.outputs }
+        fn process(&mut self) {}
+        fn read_output(&self, _: usize) -> f32 { self.amount }
+        fn params(&self) -> Vec<ParamDef> {
+            vec![
+                ParamDef::Choice { name: "Mode".into(), value: self.wide as usize, options: vec!["Narrow".into(), "Wide".into()] },
+                ParamDef::Float { name: "Amount".into(), value: self.amount, min: 0.0, max: if self.wide { 10.0 } else { 1.0 }, step: 0.1, unit: "" },
+            ]
+        }
+        fn set_param(&mut self, index: usize, value: ParamValue) {
+            match (index, value) {
+                (0, ParamValue::Choice(c)) => self.wide = c == 1,
+                (1, ParamValue::Float(v)) => self.amount = v,
+                _ => {}
+            }
+        }
+    }
+
+    #[test]
+    fn a_mode_change_moves_the_ranges_of_the_copies_promoted_params_too() {
+        let ranged = || -> Box<dyn ProcessNode> { Box::new(Ranged { id: NodeId(2), outputs: vec![PortDef::new("out", PortType::Untyped)], wide: false, amount: 0.0 }) };
+        let mut g = InnerGraph::new();
+        add(&mut g, ranged());
+        add(&mut g, Box::new(Source { id: NodeId(50), outputs: vec![PortDef::new("out", PortType::Untyped)], value: 5.0 }));
+        g.shared_states[0].lock().pending_promoted = Some(vec![PromotedParam { name: "Amount".into(), kind: PromotedKind::Float }]);
+        g.apply(SubgraphInnerCmd::SetLanes { node_id: NodeId(2), extra: vec![ranged()] });
+        wire(&mut g, (50, 0), (2, 0));
+        run(&mut g, 2);
+        assert_eq!(g.lanes[0][0].node.read_output(0), 1.0, "narrow: clamped to 1");
+        g.shared_states[0].lock().pending_params.push((0, ParamValue::Choice(1)));
+        run(&mut g, 40);
+        assert_eq!(g.nodes[0].read_output(0), 5.0);
+        assert_eq!(g.lanes[0][0].node.read_output(0), 5.0, "the copy follows the new range");
     }
 
     #[test]

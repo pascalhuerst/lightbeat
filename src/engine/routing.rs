@@ -77,6 +77,9 @@ pub struct RoutePlan {
     port_counts: Vec<(usize, usize)>,
     /// Bridge channel totals, for subgraph levels.
     bridge_channels: (usize, usize),
+    /// Nodes that reshape their own ports while processing (`reshapes_itself`)
+    /// with their (input, output) channel totals; usually none.
+    watched: Vec<(usize, usize, usize)>,
     /// (node, lane, channel, value); kept small, this is the hot list.
     writes: Vec<(u32, u32, u32, f32)>,
     /// (node, lane, promoted slot, value)
@@ -126,6 +129,10 @@ impl RoutePlan {
                 .iter()
                 .zip(&self.port_counts)
                 .all(|(n, &(i, o))| n.inputs().len() == i && n.outputs().len() == o)
+            && self
+                .watched
+                .iter()
+                .all(|&(n, i, o)| total_channels(nodes[n].inputs()) == i && total_channels(nodes[n].outputs()) == o)
     }
 
     pub fn build(
@@ -147,6 +154,12 @@ impl RoutePlan {
                 .collect(),
             port_counts: nodes.iter().map(|n| (n.inputs().len(), n.outputs().len())).collect(),
             bridge_channels: (total_channels(bridge_in), total_channels(bridge_out)),
+            watched: nodes
+                .iter()
+                .enumerate()
+                .filter(|(_, n)| n.reshapes_itself())
+                .map(|(i, n)| (i, total_channels(n.inputs()), total_channels(n.outputs())))
+                .collect(),
             built: true,
             ..Default::default()
         };

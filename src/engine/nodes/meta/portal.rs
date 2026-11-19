@@ -45,6 +45,11 @@ pub struct PortalConfig {
     pub bound_name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none", deserialize_with = "crate::engine::config_json::lenient_vec")]
     pub ports: Option<Vec<PortalPortDef>>,
+    /// How many lanes each port of a Send carries; never saved (the UI derives
+    /// it from the wires and pushes it). A Receive takes the widths of its
+    /// Send from the registry instead.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lanes: Option<Vec<usize>>,
 }
 
 impl PortalConfig {
@@ -53,7 +58,7 @@ impl PortalConfig {
     }
 
     pub fn send_defs(name: &str, ports: Vec<PortalPortDef>) -> Self {
-        Self { name: Some(name.to_string()), bound_name: None, ports: Some(ports) }
+        Self { name: Some(name.to_string()), bound_name: None, ports: Some(ports), lanes: None }
     }
 
     pub fn receive(bound_name: &str, ports: &[PortDef]) -> Self {
@@ -61,12 +66,17 @@ impl PortalConfig {
     }
 
     pub fn receive_defs(bound_name: &str, ports: Vec<PortalPortDef>) -> Self {
-        Self { name: None, bound_name: Some(bound_name.to_string()), ports: Some(ports) }
+        Self { name: None, bound_name: Some(bound_name.to_string()), ports: Some(ports), lanes: None }
     }
 
     /// Malformed data loads as an empty update, which changes nothing.
     pub fn from_value(v: &serde_json::Value) -> Self {
         serde_json::from_value(v.clone()).unwrap_or_default()
+    }
+
+    pub fn with_lanes(mut self, lanes: Vec<usize>) -> Self {
+        self.lanes = Some(lanes);
+        self
     }
 
     pub fn to_value(&self) -> serde_json::Value {
@@ -208,8 +218,13 @@ impl ProcessNode for PortalSendProcessNode {
         if let Some(n) = cfg.name {
             self.name = n;
         }
-        if let Some(ports) = cfg.ports {
+        if let Some(ports) = &cfg.ports {
             self.ports = ports.iter().map(PortalPortDef::to_port_def).collect();
+        }
+        if let Some(lanes) = &cfg.lanes {
+            crate::engine::nodes::meta::subgraph::apply_lanes(&mut self.ports, lanes);
+        }
+        if cfg.ports.is_some() || cfg.lanes.is_some() {
             self.values = vec![0.0; total_channels(&self.ports)];
         }
     }
@@ -260,6 +275,7 @@ impl PortalReceiveProcessNode {
 
 impl ProcessNode for PortalReceiveProcessNode {
     fn max_lanes(&self) -> usize { 1 }
+    fn reshapes_itself(&self) -> bool { true }
 
     fn node_id(&self) -> NodeId { self.id }
     fn type_name(&self) -> &'static str { "Portal Receive" }
@@ -377,6 +393,58 @@ mod tests {
         tx.process();
         rx.process();
         assert_eq!(rx.read_output(1), 0.9, "values keep flowing without a layout change");
+    }
+
+    #[test]
+    fn a_bus_into_a_send_comes_out_of_every_receive_as_wide() {
+        let reg: SharedPortalRegistry = Default::default();
+        let mut tx = send(1, &reg, "bus");
+        tx.load_data(&serde_json::json!({"lanes": [8]}));
+        assert_eq!(tx.inputs()[0].lanes, 8);
+        assert_eq!(total_channels(tx.inputs()), 8);
+        let mut receives: Vec<_> = (2..4)
+            .map(|id| {
+                let mut rx = PortalReceiveProcessNode::new(NodeId(id), reg.clone());
+                rx.load_data(&serde_json::json!({"bound_name": "bus"}));
+                rx
+            })
+            .collect();
+        for lane in 0..8 {
+            tx.write_input(lane, lane as f32 * 0.1);
+        }
+        tx.process();
+        for rx in &mut receives {
+            rx.process();
+            assert_eq!(rx.outputs()[0].lanes, 8, "the Receive takes the Send's width");
+            assert_eq!((rx.read_output(0), rx.read_output(7)), (0.0, 0.7));
+        }
+    }
+
+    #[test]
+    fn the_widths_are_not_part_of_what_is_saved() {
+        let reg: SharedPortalRegistry = Default::default();
+        let mut tx = send(1, &reg, "bus");
+        let saved = tx.save_data();
+        tx.load_data(&serde_json::json!({"lanes": [8]}));
+        assert_eq!(tx.save_data(), saved);
+    }
+
+    #[test]
+    fn a_receive_that_takes_a_wider_port_makes_the_routing_plan_look_again() {
+        use crate::engine::routing::RoutePlan;
+        let reg: SharedPortalRegistry = Default::default();
+        let mut tx = send(1, &reg, "bus");
+        let mut rx = PortalReceiveProcessNode::new(NodeId(2), reg.clone());
+        rx.load_data(&serde_json::json!({"bound_name": "bus"}));
+        tx.process();
+        rx.process();
+        let mut nodes: Vec<Box<dyn ProcessNode>> = vec![Box::new(rx)];
+        let plan = RoutePlan::build(&nodes, &[Vec::new()], &HashMap::from([(NodeId(2), 0)]), &[], &[Default::default()], &[], &[], None, None);
+        assert!(plan.is_current(&nodes, &[], &[]));
+        tx.load_data(&serde_json::json!({"lanes": [8]}));
+        tx.process();
+        nodes[0].process();
+        assert!(!plan.is_current(&nodes, &[], &[]), "same port count, more channels");
     }
 
     #[test]

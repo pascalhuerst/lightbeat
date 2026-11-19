@@ -8,9 +8,9 @@ use crate::engine::nodes::meta::subgraph::{
 use crate::engine::types::*;
 use crate::widgets::setup_ui;
 use crate::theme;
-use crate::widgets::nodes::node::{LinkJump, LinkedNode, NodeWidget};
+use crate::widgets::nodes::node::{BusEnd, LinkJump, LinkedNode, NodeWidget};
 use crate::widgets::nodes::panel::{self, PanelRequest, PanelRow};
-use crate::widgets::nodes::types::UiPortDef;
+use crate::widgets::nodes::types::{UiPortDef, fit_lanes};
 
 pub struct SubgraphWidget {
     id: NodeId,
@@ -18,8 +18,16 @@ pub struct SubgraphWidget {
     name: String,
     pub input_defs: Vec<SubgraphPortDef>,
     pub output_defs: Vec<SubgraphPortDef>,
+    /// How wide each port is, derived by the graph from the wires and never
+    /// saved: an input is as wide as the wire into it, an output as the wire
+    /// into the Graph Output inside.
+    input_lanes: Vec<usize>,
+    output_lanes: Vec<usize>,
     /// Set to true to signal the app to open this subgraph for editing.
     pub wants_open: bool,
+    /// Drawn as a cell of a front panel or the Desk: the cell's level is not
+    /// the open one, so nothing would ever take an open request made there.
+    in_cell: bool,
     /// When true, the subgraph is treated as an opaque "macro instance":
     /// users can't navigate into it, the Open button is hidden, and the
     /// title bar shows a lock glyph. Set when instantiating from the macro
@@ -89,7 +97,10 @@ impl SubgraphWidget {
             name: String::new(),
             input_defs: Vec::new(),
             output_defs: Vec::new(),
+            input_lanes: Vec::new(),
+            output_lanes: Vec::new(),
             wants_open: false,
+            in_cell: false,
             locked: false,
             macro_description: String::new(),
             macro_path: String::new(),
@@ -124,6 +135,10 @@ impl SubgraphWidget {
 
     pub fn has_panel(&self) -> bool {
         !self.panel_cells.is_empty()
+    }
+
+    pub fn set_in_cell(&mut self, on: bool) {
+        self.in_cell = on;
     }
 
     pub fn set_panel_screen(&mut self, rect: Option<Rect>) {
@@ -196,24 +211,18 @@ impl SubgraphWidget {
     }
 
     pub fn push_config(&self) {
-        let mut shared = self.shared.lock();
-        shared.pending_config = Some(SubgraphConfig {
-            name: Some(self.name.clone()),
-            inputs: Some(self.input_defs.clone()),
-            outputs: Some(self.output_defs.clone()),
-            locked: Some(self.locked),
-            macro_description: Some(self.macro_description.clone()),
-            macro_path: Some(self.macro_path.clone()),
-            macro_hash: self.macro_hash.clone(),
-            definition: self.definition,
-        }.to_value());
+        let mut cfg = self.config();
+        cfg.input_lanes = Some(fit_lanes(&self.input_lanes, self.input_defs.len()));
+        cfg.output_lanes = Some(fit_lanes(&self.output_lanes, self.output_defs.len()));
+        self.shared.lock().pending_config = Some(cfg.to_value());
     }
 
     pub fn instances(&self) -> usize {
         self.instances
     }
 
-    /// The name, ports and macro origin as the widget holds them.
+    /// The name, ports and macro origin as the widget holds them. The widths
+    /// are not part of what is saved, so they are left out.
     fn config(&self) -> SubgraphConfig {
         SubgraphConfig {
             name: Some(self.name.clone()),
@@ -224,6 +233,8 @@ impl SubgraphWidget {
             macro_path: Some(self.macro_path.clone()),
             macro_hash: self.macro_hash.clone(),
             definition: self.definition,
+            input_lanes: None,
+            output_lanes: None,
         }
     }
 
@@ -316,14 +327,28 @@ impl NodeWidget for SubgraphWidget {
     fn ui_inputs(&self) -> Vec<UiPortDef> {
         self.input_defs
             .iter()
-            .map(|p| UiPortDef::from_def(&p.to_port_def()))
+            .enumerate()
+            .map(|(i, p)| UiPortDef::wide(&p.to_port_def(), &self.input_lanes, i))
             .collect()
     }
     fn ui_outputs(&self) -> Vec<UiPortDef> {
         self.output_defs
             .iter()
-            .map(|p| UiPortDef::from_def(&p.to_port_def()))
+            .enumerate()
+            .map(|(i, p)| UiPortDef::wide(&p.to_port_def(), &self.output_lanes, i))
             .collect()
+    }
+
+    fn bus_end(&self) -> BusEnd { BusEnd::Subgraph }
+
+    fn set_bus_lanes(&mut self, inputs: &[usize], outputs: &[usize]) {
+        let inputs = fit_lanes(inputs, self.input_defs.len());
+        let outputs = fit_lanes(outputs, self.output_defs.len());
+        if inputs != fit_lanes(&self.input_lanes, inputs.len()) || outputs != fit_lanes(&self.output_lanes, outputs.len()) {
+            self.input_lanes = inputs;
+            self.output_lanes = outputs;
+            self.push_config();
+        }
     }
 
     fn take_removed_port(&mut self) -> Option<(PortDir, usize)> {
@@ -402,6 +427,7 @@ impl NodeWidget for SubgraphWidget {
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 // Open button is hidden when locked — match navigation gating.
                 if !self.locked
+                    && !self.in_cell
                     && ui
                         .small_button(egui_phosphor::regular::ARROW_SQUARE_OUT)
                         .on_hover_text("Open subgraph")
@@ -559,6 +585,8 @@ impl NodeWidget for SubgraphWidget {
 pub struct GraphInputWidget {
     shared: SharedState,
     port_defs: Vec<SubgraphPortDef>,
+    /// As wide as the Subgraph's inputs, which are the wires outside.
+    lanes: Vec<usize>,
 }
 
 impl GraphInputWidget {
@@ -570,6 +598,7 @@ impl GraphInputWidget {
         Self {
             shared: new_shared_state(0, out_channels),
             port_defs,
+            lanes: Vec::new(),
         }
     }
 
@@ -600,8 +629,15 @@ impl NodeWidget for GraphInputWidget {
     fn ui_outputs(&self) -> Vec<UiPortDef> {
         self.port_defs
             .iter()
-            .map(|p| UiPortDef::from_def(&p.to_port_def()))
+            .enumerate()
+            .map(|(i, p)| UiPortDef::wide(&p.to_port_def(), &self.lanes, i))
             .collect()
+    }
+
+    fn bus_end(&self) -> BusEnd { BusEnd::GraphInput }
+
+    fn set_bus_lanes(&mut self, _inputs: &[usize], outputs: &[usize]) {
+        self.lanes = fit_lanes(outputs, self.port_defs.len());
     }
 
     fn min_width(&self) -> f32 {
@@ -663,6 +699,8 @@ fn draw_inner_display_row(ui: &mut Ui, d: &InnerValueDisplay) {
 pub struct GraphOutputWidget {
     shared: SharedState,
     port_defs: Vec<SubgraphPortDef>,
+    /// As wide as the wires into it, which are the Subgraph's outputs outside.
+    lanes: Vec<usize>,
 }
 
 impl GraphOutputWidget {
@@ -674,6 +712,7 @@ impl GraphOutputWidget {
         Self {
             shared: new_shared_state(in_channels, 0),
             port_defs,
+            lanes: Vec::new(),
         }
     }
 
@@ -701,11 +740,18 @@ impl NodeWidget for GraphOutputWidget {
     fn ui_inputs(&self) -> Vec<UiPortDef> {
         self.port_defs
             .iter()
-            .map(|p| UiPortDef::from_def(&p.to_port_def()))
+            .enumerate()
+            .map(|(i, p)| UiPortDef::wide(&p.to_port_def(), &self.lanes, i))
             .collect()
     }
     fn ui_outputs(&self) -> Vec<UiPortDef> {
         vec![]
+    }
+
+    fn bus_end(&self) -> BusEnd { BusEnd::GraphOutput }
+
+    fn set_bus_lanes(&mut self, inputs: &[usize], _outputs: &[usize]) {
+        self.lanes = fit_lanes(inputs, self.port_defs.len());
     }
 
     fn min_width(&self) -> f32 {

@@ -8,8 +8,8 @@ use crate::engine::nodes::meta::subgraph::PORT_TYPE_NAMES;
 use crate::engine::types::*;
 use crate::widgets::setup_ui;
 use crate::theme;
-use crate::widgets::nodes::node::{LinkJump, LinkedNode, NodeWidget, node_identity};
-use crate::widgets::nodes::types::UiPortDef;
+use crate::widgets::nodes::node::{BusEnd, LinkJump, LinkedNode, NodeWidget, node_identity};
+use crate::widgets::nodes::types::{UiPortDef, fit_lanes};
 
 /// Index into `PORT_TYPE_NAMES` of the plain number type, which a new port starts as.
 const DEFAULT_PORT_TYPE: usize = 2;
@@ -23,6 +23,8 @@ pub struct PortalSendWidget {
     shared: SharedState,
     name: String,
     pub port_defs: Vec<PortalPortDef>,
+    /// How wide each port is: the wire into it, derived by the graph and never saved.
+    lanes: Vec<usize>,
     conflict: bool,
     /// Set when a port is removed from the middle of the list, for the graph to
     /// move the wires after it.
@@ -38,6 +40,7 @@ impl PortalSendWidget {
             shared,
             name: String::new(),
             port_defs: vec![PortalPortDef { name: "in 1".into(), port_type_idx: DEFAULT_PORT_TYPE }],
+            lanes: Vec::new(),
             conflict: false,
             removed: None,
             links: LinkJump::default(),
@@ -48,7 +51,9 @@ impl PortalSendWidget {
 
     fn push_config(&self) {
         let mut shared = self.shared.lock();
-        shared.pending_config = Some(PortalConfig::send_defs(&self.name, self.port_defs.clone()).to_value());
+        let cfg = PortalConfig::send_defs(&self.name, self.port_defs.clone())
+            .with_lanes(fit_lanes(&self.lanes, self.port_defs.len()));
+        shared.pending_config = Some(cfg.to_value());
     }
 
     pub fn remove_port(&mut self, i: usize) {
@@ -85,9 +90,17 @@ impl NodeWidget for PortalSendWidget {
     }
 
     fn ui_inputs(&self) -> Vec<UiPortDef> {
-        self.port_defs.iter().map(|p| UiPortDef::from_def(&p.to_port_def())).collect()
+        self.port_defs.iter().enumerate().map(|(i, p)| UiPortDef::wide(&p.to_port_def(), &self.lanes, i)).collect()
     }
     fn ui_outputs(&self) -> Vec<UiPortDef> { vec![] }
+    fn bus_end(&self) -> BusEnd { BusEnd::PortalSend }
+    fn set_bus_lanes(&mut self, inputs: &[usize], _outputs: &[usize]) {
+        let inputs = fit_lanes(inputs, self.port_defs.len());
+        if inputs != fit_lanes(&self.lanes, inputs.len()) {
+            self.lanes = inputs;
+            self.push_config();
+        }
+    }
     fn take_removed_port(&mut self) -> Option<(PortDir, usize)> {
         self.removed.take().map(|i| (PortDir::Input, i))
     }
@@ -177,13 +190,16 @@ pub struct PortalReceiveWidget {
     registry: SharedPortalRegistry,
     bound_name: String,
     port_defs: Vec<PortalPortDef>,
+    /// As wide as the Send's ports of the same number, derived by the graph.
+    /// The engine half takes the same widths from the Send it follows.
+    lanes: Vec<usize>,
     connected: bool,
     links: LinkJump,
 }
 
 impl PortalReceiveWidget {
     pub fn new(id: NodeId, shared: SharedState, registry: SharedPortalRegistry) -> Self {
-        Self { id, shared, registry, bound_name: String::new(), port_defs: Vec::new(), connected: false, links: LinkJump::default() }
+        Self { id, shared, registry, bound_name: String::new(), port_defs: Vec::new(), lanes: Vec::new(), connected: false, links: LinkJump::default() }
     }
 
     pub fn bound_name(&self) -> &str { &self.bound_name }
@@ -232,7 +248,11 @@ impl NodeWidget for PortalReceiveWidget {
 
     fn ui_inputs(&self) -> Vec<UiPortDef> { vec![] }
     fn ui_outputs(&self) -> Vec<UiPortDef> {
-        self.port_defs.iter().map(|p| UiPortDef::from_def(&p.to_port_def())).collect()
+        self.port_defs.iter().enumerate().map(|(i, p)| UiPortDef::wide(&p.to_port_def(), &self.lanes, i)).collect()
+    }
+    fn bus_end(&self) -> BusEnd { BusEnd::PortalReceive }
+    fn set_bus_lanes(&mut self, _inputs: &[usize], outputs: &[usize]) {
+        self.lanes = fit_lanes(outputs, self.port_defs.len());
     }
 
     fn min_width(&self) -> f32 { 160.0 }

@@ -683,6 +683,17 @@ mod tests {
     }
 
     #[test]
+    fn showing_the_desk_switches_the_hover_scope_off() {
+        use crate::engine::probe::{self, ProbeTarget};
+        let mut g = loaded();
+        probe::set_target(Some(ProbeTarget { node: NodeId(1), output: true, channel: 0 }));
+        g.hover_port = Some(PortId { node: NodeId(1), index: 0, dir: PortDir::Output });
+        frame(&mut g);
+        assert!(probe::target().is_none());
+        assert!(g.hover_port.is_none());
+    }
+
+    #[test]
     fn pages_are_named_by_id() {
         let doc: DeskDoc = serde_json::from_str(r#"{"pages": [{"id": 3, "name": "A"}]}"#).unwrap();
         assert_eq!(doc.pages, vec![DeskPage { id: 3, name: "A".into() }]);

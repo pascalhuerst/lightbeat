@@ -181,7 +181,7 @@ impl NodeGraph {
 
         // 5. Create SubgraphWidget.
         let sub_id = self.alloc_id();
-        let shared = crate::engine::types::new_shared_state(12, 12);
+        let shared = crate::engine::types::new_shared_state(crate::engine::types::MAX_LANES * 40, crate::engine::types::MAX_LANES * 40);
         let mut sub_widget = SubgraphWidget::new(sub_id, shared);
         sub_widget.input_defs = input_defs.clone();
         sub_widget.output_defs = output_defs.clone();

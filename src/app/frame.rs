@@ -367,7 +367,7 @@ impl LightBeatApp {
                         self.pending_undo_action = redo_action;
                     }
                     ui.separator();
-                    if ui.add(egui::Button::new("Find...").shortcut_text(ctx.format_shortcut(&shortcuts::FIND))).clicked() {
+                    if ui.add_enabled(self.view == View::Patch, egui::Button::new("Find...").shortcut_text(ctx.format_shortcut(&shortcuts::FIND))).clicked() {
                         ui.close_menu();
                         self.graph.open_find();
                     }
@@ -887,21 +887,11 @@ impl LightBeatApp {
         if ctx.input(|i| i.modifiers.command && i.key_pressed(egui::Key::S)) {
             self.save_command(ctx, None);
         }
-        if self.view == View::Patch && ctx.input(|i| i.modifiers.command && !i.modifiers.shift && i.key_pressed(egui::Key::F)) {
+        if super::view::find_allowed(self.view, typing) && ctx.input(|i| i.modifiers.command && !i.modifiers.shift && i.key_pressed(egui::Key::F)) {
             self.graph.open_find();
         }
         if ctx.input(|i| i.key_pressed(egui::Key::F11)) {
             widgets::nodes::desk::toggle_fullscreen(ctx);
-        }
-        if !typing && ctx.input(|i| i.modifiers.is_none() && i.key_pressed(egui::Key::Tab)) {
-            self.toggle_view();
-            // Tab also moves the keyboard focus to the next widget, which is
-            // not wanted here.
-            ctx.memory_mut(|m| {
-                if let Some(id) = m.focused() {
-                    m.surrender_focus(id);
-                }
-            });
         }
         if !typing && ctx.input(|i| i.modifiers.command && i.key_pressed(egui::Key::O)) {
             self.request_action(ctx, PendingAction::Open);

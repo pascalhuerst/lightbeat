@@ -58,6 +58,7 @@ impl LightBeatApp {
             }
         }
         if sources.is_empty() {
+            self.graph.forget_port_removals();
             return current;
         }
         if self.graph.assign_def_nodes() {
@@ -71,7 +72,7 @@ impl LightBeatApp {
         let mut reported = false;
         for _ in 0..MAX_ROUNDS {
             let graph = &mut self.graph;
-            let steps = linked::plan_sync(&current, sources, &known, &mut || graph.alloc_id().0);
+            let mut steps = linked::plan_sync(&current, sources, &known, &mut || graph.alloc_id().0);
             if steps.is_empty() {
                 break;
             }
@@ -79,6 +80,7 @@ impl LightBeatApp {
                 reported = true;
                 eprintln!("Linked subgraphs differ after loading; the first instance of each definition wins.");
             }
+            self.graph.attach_port_removals(&mut steps);
             self.apply_link_steps(&steps);
             linked::apply_steps(&mut current, &steps);
         }

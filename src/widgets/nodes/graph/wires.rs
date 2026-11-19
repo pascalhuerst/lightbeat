@@ -66,11 +66,15 @@ pub(super) struct Cable {
 }
 
 /// The sets of two or more wires with the same source node and destination
-/// node, in the order their first wire appears.
-pub(super) fn cable_groups(conns: &[Connection]) -> Vec<Cable> {
+/// node, in the order their first wire appears. A wire for which `wide` says
+/// yes (a bus) is never part of one: its width is drawn on the wire itself.
+pub(super) fn cable_groups(conns: &[Connection], wide: impl Fn(&Connection) -> bool) -> Vec<Cable> {
     let mut slot: HashMap<(NodeId, NodeId), usize> = HashMap::new();
     let mut all: Vec<Cable> = Vec::new();
     for (i, c) in conns.iter().enumerate() {
+        if wide(c) {
+            continue;
+        }
         let key = (c.from.node, c.to.node);
         let at = *slot.entry(key).or_insert_with(|| {
             all.push(Cable { from: key.0, to: key.1, wires: Vec::new() });
@@ -160,7 +164,7 @@ mod tests {
     #[test]
     fn parallel_wires_form_a_cable() {
         let conns = [conn(1, 2), conn(3, 4), conn(1, 2), conn(2, 1), conn(1, 2), conn(3, 4)];
-        let cables = cable_groups(&conns);
+        let cables = cable_groups(&conns, |_| false);
         assert_eq!(cables, vec![
             Cable { from: NodeId(1), to: NodeId(2), wires: vec![0, 2, 4] },
             Cable { from: NodeId(3), to: NodeId(4), wires: vec![1, 5] },
@@ -168,8 +172,17 @@ mod tests {
     }
 
     #[test]
+    fn a_wide_wire_is_never_put_in_a_cable() {
+        let conns = [conn(1, 2), conn(1, 2), conn(1, 2)];
+        // The middle one is a bus: the other two still bundle, the bus does not.
+        let cables = cable_groups(&conns, |c| std::ptr::eq(c, &conns[1]));
+        assert_eq!(cables, vec![Cable { from: NodeId(1), to: NodeId(2), wires: vec![0, 2] }]);
+        assert!(cable_groups(&conns[..2], |c| std::ptr::eq(c, &conns[1])).is_empty());
+    }
+
+    #[test]
     fn a_single_wire_is_not_a_cable() {
-        assert!(cable_groups(&[conn(1, 2), conn(2, 3), conn(2, 1)]).is_empty());
-        assert!(cable_groups(&[]).is_empty());
+        assert!(cable_groups(&[conn(1, 2), conn(2, 3), conn(2, 1)], |_| false).is_empty());
+        assert!(cable_groups(&[], |_| false).is_empty());
     }
 }

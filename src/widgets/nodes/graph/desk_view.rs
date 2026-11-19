@@ -60,6 +60,11 @@ impl NodeGraph {
     /// (`NodeGraph::maintain`), so the graph and the engine stay in step.
     pub fn show_desk(&mut self, ui: &mut Ui) -> DeskOutcome {
         self.maintain();
+        // The canvas is not drawn, so nothing there would ever switch the
+        // hover scope off; the engine would keep recording the port.
+        self.hover_port = None;
+        self.hover_samples.clear();
+        crate::engine::probe::set_target(None);
         let mut outcome = DeskOutcome { to_patch: self.handle_jumps() };
 
         let reachable = self.reachable_levels();
