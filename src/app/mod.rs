@@ -8,3 +8,4 @@ pub(crate) mod linked;
 pub(crate) mod undo;
 pub(crate) mod shortcuts;
 pub(crate) mod preferences;
+pub(crate) mod view;

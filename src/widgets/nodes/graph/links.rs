@@ -78,15 +78,17 @@ impl NodeGraph {
     }
 
     /// Carry out jumps asked for by a double-click or by a node's own buttons.
-    pub(super) fn handle_jumps(&mut self) {
+    /// True when it went somewhere.
+    pub(super) fn handle_jumps(&mut self) -> bool {
         let mut target = self.pending_jump.take();
         for node in self.active_mut().nodes.iter_mut() {
             if let Some(id) = node.take_jump() {
                 target = Some(id);
             }
         }
-        if let Some(id) = target {
-            self.go_to_node(id);
+        match target {
+            Some(id) => self.go_to_node(id),
+            None => false,
         }
     }
 

@@ -1,6 +1,148 @@
+//! What the Desk keeps of the graph: which nodes are on it (from every level),
+//! putting a node on it and taking it off, and giving a node that was just
+//! put there a page, a place and a size. The drawing is in `desk_view.rs`.
+
+use super::*;
+use crate::engine::types::{DeskItem, DeskRect};
+use crate::widgets::nodes::desk::{self as geometry, DeskDoc};
+
+/// One node on the Desk, as the Desk sees it this frame.
+pub(super) struct DeskEntry {
+    pub level: usize,
+    pub index: usize,
+    pub id: NodeId,
+    /// The page it is drawn on: the one it names, or the first when that is gone.
+    pub page: u64,
+    pub rect: Rect,
+}
+
+/// The nodes on the Desk across `levels` (only the `reachable` ones: the
+/// level of a deleted subgraph stays in the list). Nodes that were just put
+/// there and wait for a place are not in it.
+pub(super) fn collect_desk(levels: &[GraphLevel], reachable: &[usize], doc: &DeskDoc) -> Vec<DeskEntry> {
+    let mut out = Vec::new();
+    for &level in reachable {
+        for (index, node) in levels[level].nodes.iter().enumerate() {
+            let id = node.node_id();
+            if [BRIDGE_IN_NODE_ID, BRIDGE_OUT_NODE_ID].contains(&id) {
+                continue;
+            }
+            let shared = node.shared_state().lock();
+            let Some(r) = shared.desk.as_ref().and_then(|d| d.node.as_ref()) else { continue };
+            if r.is_unplaced() {
+                continue;
+            }
+            out.push(DeskEntry {
+                level,
+                index,
+                id,
+                page: doc.resolve(r.page).unwrap_or(0),
+                rect: geometry::rect_of(r),
+            });
+        }
+    }
+    out
+}
+
+impl NodeGraph {
+    /// The page the Desk shows: the one chosen, or the first.
+    pub fn current_desk_page(&self) -> Option<u64> {
+        self.desk_ui.page.and_then(|p| self.desk.resolve(p)).or_else(|| self.desk.pages.first().map(|p| p.id))
+    }
+
+    fn desk_entries(&self) -> Vec<DeskEntry> {
+        collect_desk(&self.levels, &self.reachable_levels(), &self.desk)
+    }
+
+    /// How many nodes are on `page`.
+    pub fn desk_items_on(&self, page: u64) -> usize {
+        self.desk_entries().iter().filter(|e| e.page == page).count()
+    }
+
+    /// Every selected node (on the open level) is on the Desk.
+    pub(super) fn selection_all_on_desk(&self) -> bool {
+        let level = self.active();
+        let mut any = false;
+        for n in self.selected_nodes.iter().filter_map(|&i| level.nodes.get(i)) {
+            any = true;
+            if !n.shared_state().lock().desk.as_ref().is_some_and(|d| d.node.is_some()) {
+                return false;
+            }
+        }
+        any
+    }
+
+    /// Put the selected nodes of the open level on the Desk, or take them off.
+    pub(super) fn set_selection_on_desk(&mut self, on: bool) {
+        let level = self.active();
+        for &i in &self.selected_nodes {
+            let Some(node) = level.nodes.get(i) else { continue };
+            if [BRIDGE_IN_NODE_ID, BRIDGE_OUT_NODE_ID].contains(&node.node_id()) {
+                continue;
+            }
+            set_node_on_desk(node.as_ref(), on);
+        }
+    }
+
+    /// Remove one node from the Desk, wherever it is.
+    pub(super) fn remove_from_desk(&mut self, id: NodeId) {
+        for level in &self.levels {
+            if let Some(node) = level.nodes.iter().find(|n| n.node_id() == id) {
+                set_node_on_desk(node.as_ref(), false);
+            }
+        }
+    }
+
+    /// Give every node that was just put on the Desk (by a menu or an
+    /// inspector checkbox, which know no geometry) its page, its place and
+    /// its size: the current page, the first free spot, what the node asks for.
+    pub(super) fn place_new_desk_items(&mut self) {
+        let reachable = self.reachable_levels();
+        let mut waiting: Vec<(usize, usize)> = Vec::new();
+        for &li in &reachable {
+            for (i, n) in self.levels[li].nodes.iter().enumerate() {
+                let new = n.shared_state().lock().desk.as_ref().and_then(|d| d.node.as_ref()).is_some_and(DeskRect::is_unplaced);
+                if new {
+                    waiting.push((li, i));
+                }
+            }
+        }
+        if waiting.is_empty() {
+            return;
+        }
+        let first = self.desk.ensure_page();
+        let page = self.current_desk_page().unwrap_or(first);
+        let mut taken: Vec<Rect> = collect_desk(&self.levels, &reachable, &self.desk)
+            .into_iter()
+            .filter(|e| e.page == page)
+            .map(|e| e.rect)
+            .collect();
+        for (li, i) in waiting {
+            let level = &self.levels[li];
+            let node = level.nodes[i].as_ref();
+            let title_h = node.layout().title_h;
+            let cell = crate::widgets::nodes::panel::cell_size(&node.layout(), node_size(node, level.states[i].size_override));
+            let size = geometry::default_size(cell, title_h);
+            let rect = Rect::from_min_size(geometry::free_spot(&taken, size), size);
+            taken.push(rect);
+            DeskItem::edit(&mut node.shared_state().lock().desk, |d| d.node = Some(geometry::desk_rect(page, rect)));
+        }
+    }
+}
+
+fn set_node_on_desk(node: &dyn NodeWidget, on: bool) {
+    let mut shared = node.shared_state().lock();
+    let placed = shared.desk.as_ref().is_some_and(|d| d.node.is_some());
+    if on == placed {
+        return;
+    }
+    DeskItem::edit(&mut shared.desk, |d| d.node = on.then_some(DeskRect::UNPLACED));
+}
+
 #[cfg(test)]
 mod tests {
     use super::super::*;
+    use super::collect_desk;
     use crate::engine::types::{DeskItem, DeskRect, new_shared_state};
     use crate::widgets::nodes::desk::{DeskDoc, DeskPage};
     use crate::widgets::nodes::math::constant::ConstantWidget;
@@ -94,7 +236,7 @@ mod tests {
         assert!(before != crate::project::save_graph(&g), "a move is a project edit");
         let mut g2 = loaded();
         let mut renamed = g2.desk().clone();
-        renamed.pages[0].name = "Other".into();
+        renamed.rename(7, "Other".into());
         g2.set_desk(renamed);
         assert!(before != crate::project::save_graph(&g2), "so is a page rename");
         let mut g3 = loaded();
@@ -159,6 +301,150 @@ mod tests {
         assert!(inner.nodes.iter().any(|n| n.desk.is_some()));
         crate::project::strip_desk(&mut inner);
         assert!(inner.nodes.iter().all(|n| n.desk.is_none()));
+    }
+
+    fn entries(g: &NodeGraph) -> Vec<(u64, u64)> {
+        let mut v: Vec<(u64, u64)> = collect_desk(&g.levels, &g.reachable_levels(), g.desk()).iter().map(|e| (e.id.0, e.page)).collect();
+        v.sort_unstable();
+        v
+    }
+
+    #[test]
+    fn the_desk_collects_nodes_from_every_level() {
+        let g = loaded();
+        assert_eq!(entries(&g), vec![(1, 7), (3, 8)]);
+    }
+
+    #[test]
+    fn the_level_of_a_deleted_subgraph_is_not_collected() {
+        let mut g = loaded();
+        g.levels[0].nodes.remove(1);
+        g.levels[0].states.remove(1);
+        assert_eq!(entries(&g), vec![(1, 7)]);
+    }
+
+    #[test]
+    fn an_item_on_a_page_that_is_gone_is_drawn_on_the_first() {
+        let g = loaded();
+        let node = &g.levels[0].nodes[0];
+        node.shared_state().lock().desk.as_mut().unwrap().node.as_mut().unwrap().page = 99;
+        assert_eq!(entries(&g), vec![(1, 7), (3, 8)]);
+        let first = g.desk().pages[0].id;
+        assert_eq!(first, 7);
+        node.shared_state().lock().desk.as_mut().unwrap().node.as_mut().unwrap().page = 8;
+        assert_eq!(entries(&g), vec![(1, 8), (3, 8)]);
+    }
+
+    fn fresh() -> NodeGraph {
+        let mut g = registry();
+        let old = r#"{"nodes": [
+            {"type_name": "Const Value", "id": 1, "pos": [0.0, 0.0], "params": []},
+            {"type_name": "Const Value", "id": 2, "pos": [0.0, 50.0], "params": []}
+        ], "connections": []}"#;
+        crate::project::load_graph(&mut g, &serde_json::from_str(old).unwrap());
+        g
+    }
+
+    #[test]
+    fn a_node_put_on_the_desk_lands_on_the_current_page_at_a_free_spot() {
+        let mut g = fresh();
+        g.selected_nodes = vec![0, 1];
+        assert!(!g.selection_all_on_desk());
+        g.set_selection_on_desk(true);
+        assert!(g.selection_all_on_desk());
+        // Nothing is placed until the graph has had its frame.
+        assert!(entries(&g).is_empty());
+        g.place_new_desk_items();
+        let page = g.desk().pages[0].id;
+        assert_eq!(entries(&g).len(), 2);
+        let rects: Vec<Rect> = collect_desk(&g.levels, &g.reachable_levels(), g.desk()).iter().map(|e| e.rect).collect();
+        assert!(!crate::widgets::nodes::desk::overlaps(&rects[0], &rects[1]), "{rects:?}");
+        assert!(rects.iter().all(|r| r.width() >= 60.0 && r.height() >= 40.0 && r.min.x >= 0.0));
+        assert!(entries(&g).iter().all(|e| e.1 == page));
+
+        // A second time changes nothing.
+        let before = entries(&g);
+        g.place_new_desk_items();
+        assert_eq!(entries(&g), before);
+    }
+
+    #[test]
+    fn the_page_shown_is_where_new_items_go() {
+        let mut g = loaded();
+        g.desk_ui.page = Some(8);
+        let inner = inner_level(&g);
+        g.active_level = inner;
+        g.selected_nodes = vec![g.levels[inner].nodes.iter().position(|n| n.node_id() == NodeId(4)).unwrap()];
+        g.set_selection_on_desk(true);
+        g.active_level = 0;
+        g.place_new_desk_items();
+        assert_eq!(entries(&g), vec![(1, 7), (3, 8), (4, 8)]);
+    }
+
+    #[test]
+    fn removing_from_the_desk_keeps_the_node_and_its_snapshot_row() {
+        let mut g = loaded();
+        let inner = inner_level(&g);
+        g.remove_from_desk(NodeId(3));
+        let left = desk_of(&g, inner, 3).expect("the snapshot row is still on the Desk");
+        assert!(left.node.is_none() && left.snapshots.is_some());
+        g.remove_from_desk(NodeId(1));
+        assert!(desk_of(&g, 0, 1).is_none(), "an item with nothing left is dropped");
+        assert_eq!(entries(&g), vec![]);
+    }
+
+    #[test]
+    fn deleting_a_page_moves_its_items_to_the_first_page_without_overlap() {
+        let mut g = loaded();
+        let inner = inner_level(&g);
+        // Both on page 7 and 8 at the same size, so a naive move would stack them.
+        g.levels[0].nodes[0].shared_state().lock().desk.as_mut().unwrap().node.as_mut().unwrap().pos = [0.0, 0.0];
+        let item = |g: &NodeGraph| {
+            let n = &g.levels[inner].nodes.iter().find(|n| n.node_id() == NodeId(3)).unwrap();
+            n.shared_state().lock().desk.as_mut().unwrap().node.as_mut().unwrap().pos = [0.0, 0.0];
+        };
+        item(&g);
+        g.desk_ui.page = Some(8);
+        g.delete_desk_page(8);
+        assert_eq!(g.desk().pages.len(), 1);
+        assert_eq!(entries(&g), vec![(1, 7), (3, 7)]);
+        assert_eq!(g.desk_ui.page, Some(7), "the page shown is the neighbour");
+        let rects: Vec<Rect> = collect_desk(&g.levels, &g.reachable_levels(), g.desk()).iter().map(|e| e.rect).collect();
+        assert!(!crate::widgets::nodes::desk::overlaps(&rects[0], &rects[1]));
+        assert_eq!(g.desk_items_on(7), 2);
+    }
+
+    /// One frame of the Desk with a real egui context, as the app runs it.
+    fn frame(g: &mut NodeGraph) -> super::super::desk_view::DeskOutcome {
+        let ctx = egui::Context::default();
+        let mut outcome = None;
+        let _ = ctx.run(egui::RawInput::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| outcome = Some(g.show_desk(ui)));
+        });
+        outcome.unwrap()
+    }
+
+    #[test]
+    fn a_frame_of_the_desk_draws_every_level_and_puts_all_widgets_back() {
+        let mut g = loaded();
+        let counts: Vec<usize> = g.levels.iter().map(|l| l.nodes.len()).collect();
+        let outcome = frame(&mut g);
+        assert!(!outcome.to_patch);
+        assert_eq!(g.levels.iter().map(|l| l.nodes.len()).collect::<Vec<_>>(), counts);
+        // Items on a page that is not shown are not drawn, but nothing is lost.
+        g.desk_ui.page = Some(8);
+        frame(&mut g);
+        assert_eq!(g.levels.iter().map(|l| l.nodes.len()).collect::<Vec<_>>(), counts);
+    }
+
+    #[test]
+    fn a_frame_of_the_desk_places_a_new_item_and_keeps_the_graph_maintained() {
+        let mut g = fresh();
+        g.selected_nodes = vec![0];
+        g.set_selection_on_desk(true);
+        frame(&mut g);
+        assert_eq!(entries(&g).len(), 1, "maintain ran in the Desk view");
+        assert_eq!(g.desk().pages.len(), 1);
     }
 
     #[test]

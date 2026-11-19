@@ -27,6 +27,7 @@ mod app;
 use app::macros::SaveMacroDialog;
 use app::files::{PendingAction, FileDialogResult};
 use app::panels::SetupTab;
+use app::view::View;
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -176,6 +177,9 @@ struct LightBeatApp {
     /// instance that its file changed (`app/macros.rs`).
     library_hashes: std::collections::HashMap<String, (std::time::Instant, Option<String>)>,
     show_add_nodes: bool,
+    /// Which view the window shows (not saved): the canvas for patching or
+    /// the Desk for playing.
+    view: View,
     library_search: String,
     save_macro_dialog: Option<SaveMacroDialog>,
     project_undoer: egui::util::undoer::Undoer<project::ProjectFile>,
@@ -295,6 +299,7 @@ impl LightBeatApp {
             library: LibraryManager::new(macros::default_library_root()),
             library_hashes: std::collections::HashMap::new(),
             show_add_nodes: open_add_nodes,
+            view: View::Patch,
             library_search: String::new(),
             save_macro_dialog: None,
             project_undoer: egui::util::undoer::Undoer::default(),

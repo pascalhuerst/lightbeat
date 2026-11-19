@@ -12,6 +12,7 @@ use crate::app::macros::MacroDragPayload;
 use crate::app::files::PendingAction;
 use crate::app::undo::UndoDoc;
 use crate::app::shortcuts;
+use crate::app::view::View;
 use crate::app::panels::{NodeDragPayload, FrameDragPayload, show_frame_inspector, show_frames_colour_inspector};
 use std::path::PathBuf;
 use eframe::egui;
@@ -39,7 +40,7 @@ impl LightBeatApp {
         self.input_controllers.reap_lost_sessions();
 
         // "Add Nodes" side panel (left) — unified node-registry + macro library.
-        if self.show_add_nodes {
+        if self.show_add_nodes && self.view == View::Patch {
             egui::SidePanel::left("add_nodes_panel")
                 .default_width(220.0)
                 .show(ctx, |ui| {
@@ -383,6 +384,12 @@ impl LightBeatApp {
                     }
                 });
                 ui.menu_button("View", |ui| {
+                    let mut desk = self.view == View::Desk;
+                    if ui.checkbox(&mut desk, "Desk").on_hover_text("Tab switches between the Patch and the Desk").changed() {
+                        self.view = if desk { View::Desk } else { View::Patch };
+                        ui.close_menu();
+                    }
+                    ui.separator();
                     if ui.checkbox(&mut self.show_add_nodes, "Add nodes").changed() {
                         ui.close_menu();
                     }
@@ -565,7 +572,8 @@ impl LightBeatApp {
         let frame_selected_count = self.graph.selected_frame_ids().count();
         let has_selection = !self.graph.selected_nodes_mut().is_empty()
             || frame_selected_count > 0;
-        let show_inspector = match self.config.inspector_mode {
+        let show_inspector = self.view == View::Patch || !self.graph.desk().locked;
+        let show_inspector = show_inspector && match self.config.inspector_mode {
             InspectorMode::Show => true,
             InspectorMode::Hide => false,
             InspectorMode::Auto => has_selection,
@@ -799,10 +807,17 @@ impl LightBeatApp {
     fn show_canvas(&mut self, ctx: &egui::Context) {
         // Node graph.
         let graph_started = std::time::Instant::now();
+        let mut to_patch = false;
         egui::CentralPanel::default().show(ctx, |ui| {
             self.graph.collapse_wires = self.config.collapse_parallel_wires;
-            self.graph.show(ui, self.config.snap_to_grid);
+            match self.view {
+                View::Patch => self.graph.show(ui, self.config.snap_to_grid),
+                View::Desk => to_patch = self.graph.show_desk(ui).to_patch,
+            }
         });
+        if to_patch {
+            self.view = View::Patch;
+        }
         self.ui_timers
             .record_graph(&self.perf, graph_started.elapsed().as_micros() as u64);
 
@@ -812,7 +827,8 @@ impl LightBeatApp {
         // continue aiming. `take_payload` always removes the payload even
         // when the type doesn't match, so dispatch via the non-consuming
         // `has_payload_of_type` first and only `take_payload` the right one.
-        if ctx.input(|i| i.pointer.any_released())
+        if self.view == View::Patch
+            && ctx.input(|i| i.pointer.any_released())
             && let Some(pos) = ctx.pointer_interact_pos()
             && self.graph.canvas_rect().contains(pos) {
                 let world = self.graph.screen_to_world(pos);
@@ -871,8 +887,18 @@ impl LightBeatApp {
         if ctx.input(|i| i.modifiers.command && i.key_pressed(egui::Key::S)) {
             self.save_command(ctx, None);
         }
-        if ctx.input(|i| i.modifiers.command && !i.modifiers.shift && i.key_pressed(egui::Key::F)) {
+        if self.view == View::Patch && ctx.input(|i| i.modifiers.command && !i.modifiers.shift && i.key_pressed(egui::Key::F)) {
             self.graph.open_find();
+        }
+        if !typing && ctx.input(|i| i.modifiers.is_none() && i.key_pressed(egui::Key::Tab)) {
+            self.toggle_view();
+            // Tab also moves the keyboard focus to the next widget, which is
+            // not wanted here.
+            ctx.memory_mut(|m| {
+                if let Some(id) = m.focused() {
+                    m.surrender_focus(id);
+                }
+            });
         }
         if !typing && ctx.input(|i| i.modifiers.command && i.key_pressed(egui::Key::O)) {
             self.request_action(ctx, PendingAction::Open);

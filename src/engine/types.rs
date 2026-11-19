@@ -399,6 +399,17 @@ pub struct DeskRect {
     pub size: [f32; 2],
 }
 
+impl DeskRect {
+    /// "Put this on the Desk": the page, place and size are chosen by the
+    /// graph on its next frame (the current page, the first free spot, the
+    /// node's own size), so the inspector and the menus need no geometry.
+    pub const UNPLACED: DeskRect = DeskRect { page: 0, pos: [0.0, 0.0], size: [0.0, 0.0] };
+
+    pub fn is_unplaced(&self) -> bool {
+        self.size == [0.0, 0.0]
+    }
+}
+
 /// What a node puts on the Desk: itself, its snapshot list, or both. Lives on
 /// the node, so it follows the node between levels.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -407,6 +418,19 @@ pub struct DeskItem {
     pub node: Option<DeskRect>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub snapshots: Option<DeskRect>,
+}
+
+impl DeskItem {
+    pub fn is_empty(&self) -> bool {
+        self.node.is_none() && self.snapshots.is_none()
+    }
+
+    /// `slot` with `f` applied, and an item that holds nothing dropped.
+    pub fn edit(slot: &mut Option<DeskItem>, f: impl FnOnce(&mut DeskItem)) {
+        let mut item = slot.take().unwrap_or_default();
+        f(&mut item);
+        *slot = (!item.is_empty()).then_some(item);
+    }
 }
 
 impl PanelItem {

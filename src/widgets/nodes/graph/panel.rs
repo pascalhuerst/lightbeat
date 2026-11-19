@@ -230,63 +230,80 @@ pub(super) fn draw_panel(
         .collect();
     let flow = geometry::flow(&sizes, region.width() / z);
     for (n, (i, param)) in list.iter().enumerate() {
-        let i = *i;
         let cell = Rect::from_min_size(region.min + flow.origins[n].to_vec2() * z, sizes[n] * z);
         if !cell.intersects(paint.clip) {
             continue;
         }
-        let layout = if param.is_some() { geometry::param_layout() } else { nodes[i].layout() };
-        let disabled = nodes[i].shared_state().lock().disabled;
-        let painter = paint.ui.painter().with_clip_rect(paint.clip);
-        painter.rect_filled(cell, NODE_CORNER_RADIUS, theme::BG);
-        if layout.show_title && layout.title_h > 0.0 {
-            painter.text(
-                cell.min + Vec2::new(6.0, layout.title_h * 0.5) * z,
-                egui::Align2::LEFT_CENTER,
-                nodes[i].display_title(),
-                egui::FontId::proportional(if layout.bare { 10.0 } else { 12.0 } * z),
-                theme::TEXT_DIM,
-            );
-        }
-        painter.rect_stroke(cell, NODE_CORNER_RADIUS, Stroke::new(1.0_f32, theme::STROKE), StrokeKind::Inside);
+        draw_cell(levels, nodes, *i, param.as_deref(), cell, "front_panel", paint, depth);
+    }
+}
 
-        let content = geometry::cell_content_rect(cell, &layout, z);
-        let clip = content.intersect(paint.clip);
-        if content.width() > 0.0 && content.height() > 0.0 && clip.width() > 0.0 && clip.height() > 0.0 {
-            let node_id = nodes[i].node_id();
-            let mut child = paint.ui.new_child(
-                egui::UiBuilder::new()
-                    .id_salt(("front_panel", node_id.0, param.clone()))
-                    .max_rect(content)
-                    .layout(egui::Layout::top_down(egui::Align::LEFT)),
-            );
-            child.set_clip_rect(clip);
-            if let Some(style) = paint.style {
-                child.set_style(style.clone());
+/// One cell: node `i` of `nodes` (or one setting of it) drawn into `cell`, the
+/// way a front panel does it. The Desk draws its items through here too.
+/// `salt` keeps the egui ids of the same node apart between the places it is
+/// drawn.
+pub(super) fn draw_cell(
+    levels: &mut [GraphLevel],
+    nodes: &mut [Box<dyn NodeWidget>],
+    i: usize,
+    param: Option<&str>,
+    cell: Rect,
+    salt: &'static str,
+    paint: &mut PanelPaint,
+    depth: usize,
+) {
+    let z = paint.zoom;
+    let layout = if param.is_some() { geometry::param_layout() } else { nodes[i].layout() };
+    let disabled = nodes[i].shared_state().lock().disabled;
+    let painter = paint.ui.painter().with_clip_rect(paint.clip);
+    painter.rect_filled(cell, NODE_CORNER_RADIUS, theme::BG);
+    if layout.show_title && layout.title_h > 0.0 {
+        painter.text(
+            cell.min + Vec2::new(6.0, layout.title_h * 0.5) * z,
+            egui::Align2::LEFT_CENTER,
+            nodes[i].display_title(),
+            egui::FontId::proportional(if layout.bare { 10.0 } else { 12.0 } * z),
+            theme::TEXT_DIM,
+        );
+    }
+    painter.rect_stroke(cell, NODE_CORNER_RADIUS, Stroke::new(1.0_f32, theme::STROKE), StrokeKind::Inside);
+
+    let content = geometry::cell_content_rect(cell, &layout, z);
+    let clip = content.intersect(paint.clip);
+    if content.width() > 0.0 && content.height() > 0.0 && clip.width() > 0.0 && clip.height() > 0.0 {
+        let node_id = nodes[i].node_id();
+        let mut child = paint.ui.new_child(
+            egui::UiBuilder::new()
+                .id_salt((salt, node_id.0, param))
+                .max_rect(content)
+                .layout(egui::Layout::top_down(egui::Align::LEFT)),
+        );
+        child.set_clip_rect(clip);
+        if let Some(style) = paint.style {
+            child.set_style(style.clone());
+        }
+        if let Some(name) = param {
+            crate::widgets::inspector::param_control(&mut child, nodes[i].as_ref(), name);
+        } else {
+            // A Subgraph in a panel shows its own panel in its cell.
+            let nested = if depth < MAX_PANEL_DEPTH { panel_level(levels, nodes[i].as_mut()) } else { None };
+            let mut taken = nested.map(|k| std::mem::take(&mut levels[k].nodes));
+            nodes[i].show_content(&mut child, z);
+            if let (Some(k), Some(inner_nodes)) = (nested, taken.as_mut()) {
+                let sub_region = panel_region(content, z);
+                if let Some(w) = nodes[i].as_any_mut().downcast_mut::<SubgraphWidget>() {
+                    w.set_panel_screen(Some(sub_region.intersect(clip)));
+                }
+                draw_panel(levels, k, inner_nodes, sub_region, paint, depth + 1);
             }
-            if let Some(name) = param {
-                crate::widgets::inspector::param_control(&mut child, nodes[i].as_ref(), name);
-            } else {
-                // A Subgraph in a panel shows its own panel in its cell.
-                let nested = if depth < MAX_PANEL_DEPTH { panel_level(levels, nodes[i].as_mut()) } else { None };
-                let mut taken = nested.map(|k| std::mem::take(&mut levels[k].nodes));
-                nodes[i].show_content(&mut child, z);
-                if let (Some(k), Some(inner_nodes)) = (nested, taken.as_mut()) {
-                    let sub_region = panel_region(content, z);
-                    if let Some(w) = nodes[i].as_any_mut().downcast_mut::<SubgraphWidget>() {
-                        w.set_panel_screen(Some(sub_region.intersect(clip)));
-                    }
-                    draw_panel(levels, k, inner_nodes, sub_region, paint, depth + 1);
-                }
-                if let (Some(k), Some(restored)) = (nested, taken) {
-                    levels[k].nodes = restored;
-                }
+            if let (Some(k), Some(restored)) = (nested, taken) {
+                levels[k].nodes = restored;
             }
         }
-        if disabled {
-            let body = Rect::from_min_max(cell.min + Vec2::new(0.0, layout.title_h * z), cell.max);
-            painter.rect_filled(body, NODE_CORNER_RADIUS, theme::DISABLED_WASH);
-        }
+    }
+    if disabled {
+        let body = Rect::from_min_max(cell.min + Vec2::new(0.0, layout.title_h * z), cell.max);
+        painter.rect_filled(body, NODE_CORNER_RADIUS, theme::DISABLED_WASH);
     }
 }
 

@@ -34,6 +34,16 @@ fn sections() -> Vec<(&'static str, Vec<(Keys, &'static str)>)> {
                 (Shortcut(REDO), "Redo"),
                 (Shortcut(REDO_Y), "Redo"),
                 (Shortcut(FIND), "Find a node, frame, portal or stack on any level and jump to it"),
+                (Text("Tab"), "Switch between the Patch and the Desk (not while typing)"),
+            ],
+        ),
+        (
+            "Desk",
+            vec![
+                (Text("Drag an item's title"), "Move it (snaps to the grid)"),
+                (Text("Drag an item's corner"), "Resize it"),
+                (Text("Double-click a page tab"), "Rename the page"),
+                (Text("Right-click an item"), "Show it in the patch, or remove it from the Desk"),
             ],
         ),
         (

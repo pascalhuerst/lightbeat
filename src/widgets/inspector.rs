@@ -408,6 +408,18 @@ pub fn show_inspector(ui: &mut Ui, node: &mut dyn NodeWidget, in_subgraph: bool)
     lane_stepper(ui, node);
 
     let is_bridge = [BRIDGE_IN_NODE_ID, BRIDGE_OUT_NODE_ID].contains(&node.node_id());
+    if !is_bridge {
+        let mut shared = node.shared_state().lock();
+        let mut on = shared.desk.as_ref().is_some_and(|d| d.node.is_some());
+        if ui.checkbox(&mut on, "Show on Desk")
+            .on_hover_text("Put this node on the Desk, the view for playing")
+            .changed()
+        {
+            crate::engine::types::DeskItem::edit(&mut shared.desk, |d| {
+                d.node = on.then_some(crate::engine::types::DeskRect::UNPLACED);
+            });
+        }
+    }
     if in_subgraph && !is_bridge {
         let mut shared = node.shared_state().lock();
         let mut on = shared.panel.as_ref().is_some_and(|p| p.whole);

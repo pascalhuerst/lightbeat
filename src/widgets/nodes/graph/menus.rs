@@ -211,6 +211,8 @@ impl NodeGraph {
             if all_on { "Remove from parent panel" } else { "Show on parent" }
         });
         let mut toggle_panel = false;
+        let desk_label = if self.selection_all_on_desk() { "Remove from Desk" } else { "Show on Desk" };
+        let mut toggle_desk = false;
         // Compact nodes have no enable switch in their header, so the menu is
         // the one place every node can be frozen from.
         let all_disabled = {
@@ -256,6 +258,9 @@ impl NodeGraph {
                         && ui.button(label).on_hover_text("Draw this on the subgraph's node, so it can be used without opening it").clicked()
                     {
                         toggle_panel = true;
+                    }
+                    if ui.button(desk_label).on_hover_text("Put this on the Desk, the view for playing, on the current page").clicked() {
+                        toggle_desk = true;
                     }
                     if ui.button(if all_disabled { "Enable" } else { "Disable" })
                         .on_hover_text("A disabled node keeps its last output")
@@ -329,6 +334,11 @@ impl NodeGraph {
             for i in self.selected_nodes.clone() {
                 self.set_panel_whole(i, on);
             }
+            self.context_menu_pos = None;
+            return;
+        }
+        if toggle_desk {
+            self.set_selection_on_desk(desk_label == "Show on Desk");
             self.context_menu_pos = None;
             return;
         }

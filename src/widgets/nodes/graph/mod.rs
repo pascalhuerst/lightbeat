@@ -12,6 +12,7 @@ mod wires;
 mod find;
 mod panel;
 mod desk;
+mod desk_view;
 mod instances;
 #[cfg(test)]
 mod instances_tests;
@@ -318,6 +319,8 @@ pub struct NodeGraph {
     engine_factory: Option<bus::EngineFactory>,
     /// The Desk's pages and lock flag (saved once, at the root).
     desk: super::desk::DeskDoc,
+    /// Which page is shown and the Desk's other session state (not saved).
+    desk_ui: desk_view::DeskUi,
 }
 
 #[derive(Clone)]
@@ -393,6 +396,7 @@ impl NodeGraph {
             lane_limits: HashMap::new(),
             engine_factory: None,
             desk: Default::default(),
+            desk_ui: Default::default(),
         }
     }
 
@@ -675,6 +679,29 @@ impl NodeGraph {
             .map(|e| (e.factory)(id))
     }
 
+    /// What keeps the engine and the widgets in step with each other, with
+    /// nothing drawn: both views run it every frame, so a Desk that is open
+    /// for a whole set does not let the graph go stale. It works on the open
+    /// level (the one the inspector and the canvas are on), apart from the
+    /// parts that look at every level.
+    pub(super) fn maintain(&mut self) {
+        self.reconcile_effect_stacks();
+        self.refresh_link_peers();
+        self.refresh_instance_counts();
+        self.remap_promoted_connections();
+        self.remap_removed_ports();
+        for level in &mut self.levels {
+            for node in &mut level.nodes {
+                node.follow_params();
+            }
+        }
+        // Hidden ports, then stale connections (ports removed by dynamic nodes).
+        self.tidy_ports();
+        self.apply_panel_requests();
+        self.handle_subgraph_requests();
+        self.place_new_desk_items();
+    }
+
     pub fn show(&mut self, ui: &mut Ui, snap_to_grid: bool) {
         // -- Breadcrumb bar when inside a subgraph --
         // Walk from the active level up via `parent_level_idx` to get the
@@ -714,19 +741,7 @@ impl NodeGraph {
             ui.separator();
         }
 
-        self.reconcile_effect_stacks();
-        self.refresh_link_peers();
-        self.refresh_instance_counts();
-        self.remap_promoted_connections();
-        self.remap_removed_ports();
-        for level in &mut self.levels {
-            for node in &mut level.nodes {
-                node.follow_params();
-            }
-        }
-        // Hidden ports, then stale connections (ports removed by dynamic nodes).
-        self.tidy_ports();
-        self.apply_panel_requests();
+        self.maintain();
         self.refresh_panels(self.active_level);
 
         let (response, painter) =
@@ -1272,7 +1287,6 @@ impl NodeGraph {
         }
 
         self.handle_jumps();
-        self.handle_subgraph_requests();
 
         // -- Check for subgraph open requests --
         let mut open_subgraph_idx = None;
