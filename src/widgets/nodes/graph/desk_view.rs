@@ -6,6 +6,7 @@
 //! keep the engine and the widgets in step is `NodeGraph::maintain`; this file
 //! only draws and edits the placements.
 
+use crate::widgets::nodes::panel::PARAM_CELL;
 use super::desk::{DeskEntry, DeskKind, collect_desk};
 use super::panel::{PanelPaint, draw_cell};
 use super::*;
@@ -38,7 +39,7 @@ struct Renaming {
 
 /// A move or resize in progress, from where it started, so that the snapping
 /// is applied to the whole drag and not summed up frame by frame.
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 struct ItemDrag {
     id: NodeId,
     part: DeskKind,
@@ -108,7 +109,7 @@ impl NodeGraph {
                 && ui.rect_contains_pointer(canvas)
                 && let Some((id, kind, _, _)) = self.desk_ui.shown.iter().rev().find(|(_, _, _, item)| item.contains(p))
             {
-                self.desk_ui.menu = Some((*id, *kind, p));
+                self.desk_ui.menu = Some((*id, kind.clone(), p));
                 opened_menu = true;
             }
         });
@@ -132,7 +133,7 @@ impl NodeGraph {
         // drawing (panels nested in the node borrow other levels), and put
         // back below whatever happens in between.
         let mut nodes = std::mem::take(&mut self.levels[e.level].nodes);
-        let (min, strip) = match e.kind {
+        let (min, strip) = match &e.kind {
             DeskKind::Node => {
                 let layout = nodes[e.index].layout();
                 let min = geometry::item_min(
@@ -148,6 +149,12 @@ impl NodeGraph {
                 draw_cell(&mut self.levels, &mut nodes, e.index, None, cell, "desk", &mut paint, 0);
                 (min, strip)
             }
+            DeskKind::Param(name) => {
+                let (strip, body) = geometry::strip_and_cell(item, 0.0);
+                let title = format!("{}: {}", nodes[e.index].display_title(), nodes[e.index].param_display(name).1);
+                draw_param_item(ui, nodes[e.index].as_ref(), name, item, strip, body, &title, view);
+                (geometry::item_min(PARAM_CELL, 0.0), strip)
+            }
             DeskKind::Snapshots => {
                 let (strip, body) = geometry::strip_and_cell(item, 0.0);
                 let title = format!("{}: snapshots", nodes[e.index].display_title());
@@ -155,10 +162,10 @@ impl NodeGraph {
                 (geometry::snapshot_row_min(), strip)
             }
         };
-        self.desk_ui.shown.push((e.id, e.kind, strip, item));
+        self.desk_ui.shown.push((e.id, e.kind.clone(), strip, item));
 
         if !locked {
-            let id = ui.id().with(("desk_item", e.id.0, e.kind == DeskKind::Snapshots));
+            let id = ui.id().with(("desk_item", e.id.0, &e.kind));
             let handle = Rect::from_min_size(item.max - Vec2::splat(geometry::HANDLE), Vec2::splat(geometry::HANDLE));
             let strip_resp = ui.interact(strip, id.with("move"), Sense::drag()).on_hover_cursor(CursorIcon::Grab);
             let handle_resp = ui.interact(handle, id.with("size"), Sense::drag()).on_hover_cursor(CursorIcon::ResizeNwSe);
@@ -171,10 +178,10 @@ impl NodeGraph {
             for (resp, what) in [(&strip_resp, Drag::Move), (&handle_resp, Drag::Resize)] {
                 if resp.drag_started() {
                     let press = ui.input(|i| i.pointer.press_origin()).unwrap_or(item.center());
-                    self.desk_ui.drag = Some(ItemDrag { id: e.id, part: e.kind, what, start: e.rect, press });
+                    self.desk_ui.drag = Some(ItemDrag { id: e.id, part: e.kind.clone(), what, start: e.rect, press });
                 }
                 if resp.dragged()
-                    && let Some(d) = self.desk_ui.drag.filter(|d| d.id == e.id && d.part == e.kind && d.what == what)
+                    && let Some(d) = self.desk_ui.drag.clone().filter(|d| d.id == e.id && d.part == e.kind && d.what == what)
                     && let Some(p) = ui.input(|i| i.pointer.interact_pos())
                 {
                     new_rect = Some(geometry::dragged(d.start, p - d.press, what, min));
@@ -183,13 +190,13 @@ impl NodeGraph {
                     self.desk_ui.drag = None;
                 }
             }
-            let dragging = self.desk_ui.drag.is_some_and(|d| d.id == e.id && d.part == e.kind);
+            let dragging = self.desk_ui.drag.as_ref().is_some_and(|d| d.id == e.id && d.part == e.kind);
             if dragging || strip_resp.hovered() || handle_resp.hovered() {
                 painter.rect_stroke(item, NODE_CORNER_RADIUS, Stroke::new(1.5_f32, theme::SEM_PRIMARY), StrokeKind::Inside);
             }
             if let Some(r) = new_rect {
                 DeskItem::edit(&mut nodes[e.index].shared_state().lock().desk, |d| {
-                    *e.kind.slot_mut(d) = Some(geometry::desk_rect(e.page, r));
+                    e.kind.put(d, Some(geometry::desk_rect(e.page, r)));
                 });
             }
         }
@@ -351,7 +358,7 @@ impl NodeGraph {
                 let rect = Rect::from_min_size(geometry::free_spot(&taken, e.rect.size()), e.rect.size());
                 taken.push(rect);
                 let node = &self.levels[e.level].nodes[e.index];
-                DeskItem::edit(&mut node.shared_state().lock().desk, |d| *e.kind.slot_mut(d) = Some(geometry::desk_rect(target, rect)));
+                DeskItem::edit(&mut node.shared_state().lock().desk, |d| e.kind.put(d, Some(geometry::desk_rect(target, rect))));
             }
         }
         self.desk.remove_page(id);
@@ -361,7 +368,7 @@ impl NodeGraph {
     }
 
     fn show_desk_menu(&mut self, ui: &mut Ui, just_opened: bool, outcome: &mut DeskOutcome) {
-        let Some((id, kind, pos)) = self.desk_ui.menu else { return };
+        let Some((id, kind, pos)) = self.desk_ui.menu.clone() else { return };
         let mut show_in_patch = false;
         let mut remove = false;
         let area = egui::Area::new(egui::Id::new("desk_item_menu"))
@@ -421,6 +428,28 @@ fn draw_strip(painter: &Painter, strip: Rect, title: &str) {
         egui::FontId::proportional(10.0),
         theme::TEXT_DIM,
     );
+}
+
+/// One setting of a node in its own box: the strip with "<node>: <setting>"
+/// and the inspector's own control for it below.
+fn draw_param_item(ui: &mut Ui, node: &dyn NodeWidget, name: &str, item: Rect, strip: Rect, body: Rect, title: &str, view: Rect) {
+    let painter = ui.painter().with_clip_rect(view);
+    painter.rect_filled(item, NODE_CORNER_RADIUS, theme::BG);
+    painter.rect_stroke(item, NODE_CORNER_RADIUS, Stroke::new(1.0_f32, theme::STROKE), StrokeKind::Inside);
+    draw_strip(&painter, strip, title);
+    let content = body.shrink2(Vec2::new(4.0, 0.0));
+    let clip = content.intersect(view);
+    if content.width() <= 0.0 || content.height() <= 0.0 || clip.width() <= 0.0 || clip.height() <= 0.0 {
+        return;
+    }
+    let mut child = ui.new_child(
+        egui::UiBuilder::new()
+            .id_salt(("desk_param", node.node_id().0, name))
+            .max_rect(content)
+            .layout(egui::Layout::top_down(egui::Align::LEFT)),
+    );
+    child.set_clip_rect(clip);
+    crate::widgets::inspector::param_control(&mut child, node, name);
 }
 
 /// A node's snapshots as a row of buttons, the one in effect lit. A click

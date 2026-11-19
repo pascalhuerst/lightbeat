@@ -726,6 +726,10 @@ declarations named below.
   Placement is never copied (duplicate, paste, macros) and is per instance.
   The whole node is offered only when `shows_on_surfaces()` (see Front
   panels); the snapshot row is offered for every node.
+  A single setting of any node can be an item too: the second pin next to
+  `in` in the inspector (`DeskItem::params`, drawn with
+  `inspector::param_control` under a strip "<node>: <setting>"); like the
+  others it is per instance, its value too (`linked.rs`, `keep_pinned`).
   Everything the graph does each frame besides drawing and interaction is in
   `NodeGraph::maintain()`, which both views run: put per-frame upkeep there,
   not in `show`.

@@ -146,6 +146,10 @@ Through subgraphs and portals
       and in the inspector; a project from before this (an Add on the Desk)
       shows nothing for it, with no gap. The snapshot list is offered for every
       node.
+- [ ] The second pin next to `in` in the inspector (any node, any level) puts
+      that setting on the Desk as its own box "<node>: <setting>": it plays,
+      moves, resizes, "Show in patch" jumps to the node, "Remove from Desk"
+      clears it. Two instances of a linked subgraph keep separate values.
 - [ ] Controls on the Desk work (fader, button, XY pad, colour mixer).
 - [ ] Move by the title strip, resize by the corner; both snap. Cursor and
       hover outline feel right.
