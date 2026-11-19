@@ -672,7 +672,7 @@ declarations named below.
   definition-local id (`SavedNode.def_node`). Only the instance the user is
   editing can be the source of a sync, which runs in the undo snapshot step so
   an edit and its sync are one undo step. Per instance: the Subgraph node's
-  own place and wires, the values of what is on its front panel, its Desk
+  own place and wires, the values of what is on its front panel or on the Desk (a node on the Desk is played from there and belongs to its instance like a panel node), its Desk
   placements, and **running state**: a node whose `save_data` holds what it is
   doing right now declares those keys in `ProcessNode::running_state_keys()`.
   A registry test fails for a saved `data` key that is neither declared there

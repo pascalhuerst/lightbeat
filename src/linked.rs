@@ -6,8 +6,8 @@
 //! of them is edited. Everything works on saved forms (`ProjectFile`) so it
 //! needs no window and no engine; the app applies the result to the live graph.
 //!
-//! The rule for the user: what is on a front panel belongs to the instance,
-//! everything else to the definition.
+//! The rule for the user: what is on a front panel or on the Desk belongs to
+//! the instance, everything else to the definition.
 
 use std::collections::{HashMap, HashSet};
 
@@ -237,6 +237,15 @@ fn merge_node(s: &SavedNode, d: &SavedNode, known: &Known, alloc: &mut dyn FnMut
     // Where a node sits on the Desk is the instance's: two instances of a
     // voice put their faders on different pages.
     n.desk = d.desk.clone();
+    let placed = |x: &SavedNode| x.desk.as_ref().is_some_and(|i| !i.is_empty());
+    if placed(s) || placed(d) {
+        // A node on the Desk is played from there, not from inside the
+        // definition: like a whole panel node, its values are the instance's.
+        n.params = d.params.clone();
+        if n.type_name != "Subgraph" {
+            n.data = d.data.clone();
+        }
+    }
     if let Some(panel) = &s.panel {
         if panel.whole {
             n.params = d.params.clone();
@@ -425,7 +434,12 @@ impl std::fmt::Debug for SavedNode {
 /// two instances must agree on.
 fn mask_node(n: &mut SavedNode, known: &Known) {
     n.snapshots.active = None;
-    n.desk = None;
+    if n.desk.take().is_some_and(|i| !i.is_empty()) {
+        n.params.clear();
+        if n.type_name != "Subgraph" {
+            n.data = None;
+        }
+    }
     if n.type_name == "Subgraph" {
         if let Some(inner) = n.inner_graph.as_mut() {
             for c in &mut inner.nodes {
@@ -993,6 +1007,40 @@ mod tests {
         let mut cur = base.clone();
         set_param(&mut cur.nodes[0].inner_graph.as_mut().unwrap().nodes[0], 0, 0.99);
         assert!(plan(Some(&base), &cur).is_empty());
+    }
+
+    fn on_desk() -> Option<crate::engine::types::DeskItem> {
+        use crate::engine::types::{DeskItem, DeskRect};
+        Some(DeskItem { node: Some(DeskRect { page: 0, pos: [0.0, 0.0], size: [1.0, 1.0] }), snapshots: None })
+    }
+
+    #[test]
+    fn a_node_on_the_desk_keeps_its_values_per_instance() {
+        let mut base = pair();
+        // Instance 1 has its Const on the Desk, instance 2 does not.
+        base.nodes[0].inner_graph.as_mut().unwrap().nodes[1].desk = on_desk();
+        // Played on the Desk: instance 1's value changes, which is no edit of the definition.
+        let mut cur = base.clone();
+        set_param(&mut cur.nodes[0].inner_graph.as_mut().unwrap().nodes[1], 0, 0.99);
+        assert!(plan(Some(&base), &cur).is_empty());
+        // An edit in instance 2 leaves instance 1's played value alone.
+        set_param(&mut cur.nodes[1].inner_graph.as_mut().unwrap().nodes[1], 0, 0.3);
+        set_param(&mut cur.nodes[1].inner_graph.as_mut().unwrap().nodes[0], 0, 0.8);
+        let steps = plan_sync(&cur, &[vec![2]], &Known::new(), &mut counter(1000));
+        assert_eq!(steps.len(), 1);
+        let r = steps[0].result.inner_graph.as_ref().unwrap();
+        assert_eq!(param(&r.nodes[1], 0), 0.99, "the Desk node keeps its own value");
+        assert_eq!(param(&r.nodes[0], 0), 0.8, "the rest follows the definition");
+    }
+
+    #[test]
+    fn the_comparison_ignores_values_of_nodes_on_the_desk() {
+        let canon = |v: f64| {
+            let mut s = plain(1, 2, v);
+            s.inner_graph.as_mut().unwrap().nodes[0].desk = on_desk();
+            canonical_level(s.inner_graph.as_ref().unwrap(), &Known::new())
+        };
+        assert_eq!(canon(0.1), canon(0.9));
     }
 
     #[test]
