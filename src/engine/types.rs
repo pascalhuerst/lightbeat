@@ -297,6 +297,10 @@ pub struct NodeSharedState {
     /// Shown on the front panel of the subgraph this node sits in. UI-owned
     /// and saved with the project; the engine never reads it.
     pub panel: Option<PanelItem>,
+    /// The node's identity inside a linked subgraph definition: equal in every
+    /// instance for "the same" node (`linked.rs`). UI-owned and saved with
+    /// the project; the engine never reads it.
+    pub def_node: Option<u64>,
     /// Which ports are hidden right now, by port index; empty when none are.
     /// Kept up to date by the graph each frame.
     pub hidden_inputs: Vec<bool>,
@@ -328,6 +332,7 @@ impl NodeSharedState {
             non_promotable: &[],
             hide_unused_ports: false,
             panel: None,
+            def_node: None,
             hidden_inputs: Vec::new(),
             hidden_outputs: Vec::new(),
         }

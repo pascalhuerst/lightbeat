@@ -13,6 +13,7 @@ mod migrate;
 mod setup;
 mod interfaces;
 mod latency;
+mod linked;
 mod link_controller;
 mod objects;
 mod paths;
@@ -78,6 +79,14 @@ struct LightBeatApp {
     /// The project as last seen by the change detector, to tell which of the two
     /// documents an edit belongs to.
     project_baseline: Option<project::ProjectFile>,
+    /// While set and in the future, edits are not synced between linked
+    /// subgraphs (a project was just applied; see `app/linked.rs`).
+    link_quiet_until: Option<std::time::Instant>,
+    /// When to compare the instances of a project that was just loaded.
+    link_check_at: Option<std::time::Instant>,
+    /// The level that was open at the last undo snapshot; leaving a level
+    /// syncs without waiting for the next tick of the snapshot rhythm.
+    link_last_level: usize,
     beat_clock: BeatClock,
     _subs: Vec<SubscriptionHandle>,
     config: AppConfig,
@@ -157,6 +166,9 @@ struct LightBeatApp {
     /// Portal Sends publish here by name; Portal Receives read.
     portals: engine::nodes::meta::portal::SharedPortalRegistry,
     library: LibraryManager,
+    /// Hash of each library file's graph as last read, to tell a macro
+    /// instance that its file changed (`app/macros.rs`).
+    library_hashes: std::collections::HashMap<String, (std::time::Instant, Option<String>)>,
     show_add_nodes: bool,
     library_search: String,
     save_macro_dialog: Option<SaveMacroDialog>,
@@ -214,6 +226,9 @@ impl LightBeatApp {
             pending_undo_action: None,
             last_changed_doc: None,
             project_baseline: None,
+            link_quiet_until: None,
+            link_check_at: None,
+            link_last_level: 0,
             beat_clock,
             _subs: Vec::new(),
             config,
@@ -269,6 +284,7 @@ impl LightBeatApp {
                 engine::nodes::meta::portal::PortalRegistry::default(),
             )),
             library: LibraryManager::new(macros::default_library_root()),
+            library_hashes: std::collections::HashMap::new(),
             show_add_nodes: open_add_nodes,
             library_search: String::new(),
             save_macro_dialog: None,

@@ -47,6 +47,10 @@ impl LightBeatApp {
                 });
         }
 
+        self.drain_graph_notices();
+        self.refresh_library_state();
+        self.run_link_check();
+
         // Pump pending macro requests from the graph (right-click actions).
         if let Some(req) = self.graph.take_macro_request() {
             self.handle_macro_request(req);
@@ -183,11 +187,22 @@ impl LightBeatApp {
         const SNAPSHOT_MIN_INTERVAL: f64 = 0.1;
         let in_window = now - self.last_interaction_time < UNDO_SETTLE_WINDOW;
         engine::sync_hint::set_interacting(in_window);
-        let due = now - self.last_snapshot_time >= SNAPSHOT_MIN_INTERVAL;
+        // Leaving a level settles the edits made in it at once.
+        let level_now = self.graph.active_level_index();
+        let navigated = level_now != self.link_last_level;
+        self.link_last_level = level_now;
+        let due = navigated || now - self.last_snapshot_time >= SNAPSHOT_MIN_INTERVAL;
         if in_window && due {
             self.last_snapshot_time = now;
             let started = std::time::Instant::now();
-            let current_project = project::save_graph(&self.graph);
+            let mut current_project = project::save_graph(&self.graph);
+            // An edit inside a linked subgraph is copied to its instances
+            // before the undoer sees the state, so edit and sync are one step.
+            if self.project_baseline.as_ref().is_some_and(|b| *b != current_project) {
+                let baseline = self.project_baseline.take();
+                current_project = self.sync_links(baseline.as_ref(), current_project);
+                self.project_baseline = baseline;
+            }
             let current_setup = self.current_setup();
             self.ui_timers
                 .record_snapshot(&self.perf, started.elapsed().as_micros() as u64);
@@ -347,6 +362,13 @@ impl LightBeatApp {
                     if ui.add(egui::Button::new("Find...").shortcut_text(ctx.format_shortcut(&shortcuts::FIND))).clicked() {
                         ui.close_menu();
                         self.graph.open_find();
+                    }
+                    if ui.button("Link identical subgraphs")
+                        .on_hover_text("Subgraphs whose insides are the same become instances of one definition")
+                        .clicked()
+                    {
+                        ui.close_menu();
+                        self.link_identical_subgraphs();
                     }
                     if ui.button("Preferences...").clicked() {
                         ui.close_menu();
@@ -1007,6 +1029,7 @@ impl LightBeatApp {
                     match project::read_file(&autosave) {
                         Ok(proj) => {
                             self.apply_project(&proj);
+                            self.check_links_after_load();
                             self.graph.fit_to_content();
                             // Keep project_path pointing at the real project:
                             // recovering from autosave should NOT silently save

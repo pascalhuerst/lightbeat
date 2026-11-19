@@ -80,6 +80,15 @@ pub struct SubgraphConfig {
     pub macro_description: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub macro_path: Option<String>,
+    /// Hash of the library file's graph when this instance was placed or last
+    /// updated (`linked::graph_hash`). Like `definition`, a config always
+    /// states it: absent means none, so it can be cleared again.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub macro_hash: Option<String>,
+    /// Subgraphs with the same value are instances of one definition
+    /// (`linked.rs`); absent means a plain subgraph.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub definition: Option<u64>,
 }
 
 impl SubgraphConfig {
@@ -515,6 +524,8 @@ pub struct SubgraphProcessNode {
     /// instance. Empty strings for regular (non-macro) subgraphs.
     pub macro_description: String,
     pub macro_path: String,
+    pub macro_hash: Option<String>,
+    pub definition: Option<u64>,
 }
 
 impl SubgraphProcessNode {
@@ -529,6 +540,8 @@ impl SubgraphProcessNode {
             locked: false,
             macro_description: String::new(),
             macro_path: String::new(),
+            macro_hash: None,
+            definition: None,
         }
     }
 
@@ -598,6 +611,8 @@ impl ProcessNode for SubgraphProcessNode {
         if let Some(s) = cfg.macro_path {
             self.macro_path = s;
         }
+        self.macro_hash = cfg.macro_hash;
+        self.definition = cfg.definition;
         self.rebuild_from_port_defs();
     }
 
@@ -625,6 +640,8 @@ impl ProcessNode for SubgraphProcessNode {
             locked: Some(self.locked),
             macro_description: Some(self.macro_description.clone()),
             macro_path: Some(self.macro_path.clone()),
+            macro_hash: self.macro_hash.clone(),
+            definition: self.definition,
         }.to_value())
     }
 

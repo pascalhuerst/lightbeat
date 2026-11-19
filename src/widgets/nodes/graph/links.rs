@@ -27,6 +27,9 @@ impl NodeGraph {
     /// this is where the levels are searched.
     pub(super) fn link_peers_of(&self, level: usize, index: usize) -> Vec<LinkedNode> {
         let node = &self.levels[level].nodes[index];
+        if node.type_name() == "Subgraph" {
+            return self.instance_peers_of(level, index);
+        }
         let own = node.node_id();
         let name = node.title().to_string();
         let wanted: Box<dyn Fn(&dyn NodeWidget) -> bool> = match node.type_name() {

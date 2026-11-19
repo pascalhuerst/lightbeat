@@ -4,6 +4,8 @@ use crate::macros;
 use crate::project;
 use eframe::egui;
 use crate::macros::Macro;
+use crate::linked;
+use crate::widgets::nodes::meta::subgraph::LibraryState;
 use crate::engine::types::NodeId;
 use crate::widgets::nodes::graph::MacroRequest;
 
@@ -51,6 +53,64 @@ impl LightBeatApp {
                     overwrite_path: None,
                 });
             }
+            MacroRequest::UpdateFromLibrary { node_id } => self.update_from_library(node_id),
+        }
+    }
+
+    /// Replace the definition of the macro instance `node_id` with the
+    /// library file's graph in every instance. What is on a front panel keeps
+    /// the instance's values (matched by the identities the nodes have).
+    pub(crate) fn update_from_library(&mut self, node_id: NodeId) {
+        let Some((_, path, _)) = self.graph.selected_macro().filter(|(id, _, _)| *id == node_id) else { return };
+        let m = match Macro::load_from_file(std::path::Path::new(&path)) {
+            Ok(m) => m,
+            Err(e) => {
+                self.report_error(format!("Could not load the macro {path}: {e}"));
+                return;
+            }
+        };
+        let Some(own_path) = self.graph.path_to_subgraph(node_id) else { return };
+        let project_now = project::save_graph(&self.graph);
+        let Some(own) = linked::node_at(&project_now, &own_path) else { return };
+        let Some(definition) = linked::definition_of(own) else { return };
+
+        let mut inner = m.graph.clone();
+        linked::assign_def_nodes(&mut inner);
+        let mut source = own.clone();
+        source.data = Some(macro_data(&m, &path, Some(linked::graph_hash(&m.graph)), Some(definition)));
+        source.inner_graph = Some(inner);
+
+        self.graph.assign_def_nodes();
+        let names = self.graph.param_names();
+        let graph = &mut self.graph;
+        let steps = linked::plan_update(&project_now, definition, &source, &names, &mut || graph.alloc_id().0);
+        self.apply_link_steps(&steps);
+        self.library_hashes.remove(&path);
+    }
+
+    /// Whether the library file a macro instance came from still has the
+    /// graph it was placed with. The file is read at most every few seconds.
+    pub(crate) fn library_state_for(&mut self, path: &str, hash: Option<&str>) -> LibraryState {
+        const REFRESH: std::time::Duration = std::time::Duration::from_secs(3);
+        let stale = self.library_hashes.get(path).is_none_or(|(at, _)| at.elapsed() > REFRESH);
+        if stale {
+            let now = Macro::load_from_file(std::path::Path::new(path)).ok().map(|m| linked::graph_hash(&m.graph));
+            self.library_hashes.insert(path.to_string(), (std::time::Instant::now(), now));
+        }
+        match (&self.library_hashes[path].1, hash) {
+            (None, _) => LibraryState::Missing,
+            // Placed before hashes were kept: nothing to compare with.
+            (Some(_), None) => LibraryState::Unknown,
+            (Some(h), Some(placed)) if h == placed => LibraryState::Current,
+            (Some(_), Some(_)) => LibraryState::Changed,
+        }
+    }
+
+    /// Tell the selected macro instance whether its library file changed.
+    pub(crate) fn refresh_library_state(&mut self) {
+        if let Some((id, path, hash)) = self.graph.selected_macro() {
+            let state = self.library_state_for(&path, hash.as_deref());
+            self.graph.set_library_state(id, state);
         }
     }
 
@@ -73,7 +133,11 @@ impl LightBeatApp {
         // Find the inner graph for the target subgraph.
         let level = self.graph.find_level_for_subgraph(target_id)
             .ok_or_else(|| "subgraph has no inner level (yet)".to_string())?;
-        let inner = project::save_level(level, &self.graph);
+        let mut inner = project::save_level(level, &self.graph);
+        // Which nodes are "the same" across instances is worth keeping (an
+        // update from the library finds them again); the project's own
+        // definition ids mean nothing in a file.
+        linked::strip_definitions(&mut inner);
 
         // Capture the subgraph's external port defs so the macro can
         // re-instantiate with the same I/O shape.
@@ -179,20 +243,31 @@ impl LightBeatApp {
             self.report_error(format!("Macro '{}' has an unsupported format version {}.", m.name, m.format_version));
         }
 
+        // The same file with the same graph is the same definition: placing it
+        // again makes another instance of it instead of a second copy.
+        let path_text = path.display().to_string();
+        let hash = linked::graph_hash(&m.graph);
+        let existing = self.graph.macro_definition(&path_text, &hash);
+        let definition = existing.unwrap_or_else(linked::new_definition_id);
+
+        // The nodes' identities in the definition are the macro's own node
+        // ids, so they agree between placements.
+        let mut inner = m.graph.clone();
+        linked::assign_def_nodes(&mut inner);
+        let mut inside = std::collections::HashSet::new();
+        inside.insert(definition);
+        linked::definitions_in(None, Some(&inner), &mut inside);
+        if self.graph.paste_would_nest(&inside) {
+            self.report_error(format!("'{}' was not placed: it would put a linked subgraph inside itself.", m.name));
+            return;
+        }
+
         // Remap all inner-graph NodeIds (recursively into nested subgraphs)
         // to fresh ones from the graph's allocator.
-        let mut inner = m.graph;
         remap_project_ids(&mut inner, || self.graph.alloc_id());
 
         let new_id = self.graph.alloc_id();
-        let data = serde_json::json!({
-            "name": m.name,
-            "inputs": m.inputs,
-            "outputs": m.outputs,
-            "locked": true,
-            "macro_description": m.description,
-            "macro_path": path.display().to_string(),
-        });
+        let data = macro_data(&m, &path_text, Some(hash), Some(definition));
         let saved = project::SavedNode {
             type_name: "Subgraph".to_string(),
             id: new_id.0,
@@ -205,6 +280,7 @@ impl LightBeatApp {
             promoted: Vec::new(),
             hide_unused_ports: false,
             panel: None,
+            def_node: None,
             snapshots: Default::default(),
         };
 
@@ -231,6 +307,25 @@ impl LightBeatApp {
         // subgraphs have data fields, etc.).
         self.send_load_data_recursive(&pf.nodes, &_indices, vec![]);
     }
+}
+
+/// The config of the Subgraph a macro is placed as.
+fn macro_data(m: &Macro, path: &str, hash: Option<String>, definition: Option<u64>) -> serde_json::Value {
+    let mut data = serde_json::json!({
+        "name": m.name,
+        "inputs": m.inputs,
+        "outputs": m.outputs,
+        "locked": true,
+        "macro_description": m.description,
+        "macro_path": path,
+    });
+    if let Some(h) = hash {
+        data["macro_hash"] = h.into();
+    }
+    if let Some(d) = definition {
+        data["definition"] = d.into();
+    }
+    data
 }
 
 /// Walk a `ProjectFile` (recursively into nested subgraphs) and rewrite

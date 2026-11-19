@@ -10,6 +10,9 @@ mod draw;
 mod wires;
 mod find;
 mod panel;
+mod instances;
+#[cfg(test)]
+mod instances_tests;
 
 use draw::*;
 
@@ -200,6 +203,8 @@ pub struct ViewState {
 pub enum MacroRequest {
     /// Open "Save as macro" dialog for this Subgraph.
     SaveAs { node_id: NodeId, subgraph_path: Vec<NodeId> },
+    /// Replace the definition of this macro instance with the library file's.
+    UpdateFromLibrary { node_id: NodeId },
 }
 
 /// A copied node snapshot for clipboard operations.
@@ -293,6 +298,8 @@ pub struct NodeGraph {
     pub show_minimap: bool,
     /// Draw parallel wires as one cable (View menu).
     pub collapse_wires: bool,
+    /// Messages for the user that came up inside the graph; the app shows them.
+    notices: Vec<String>,
 }
 
 #[derive(Clone)]
@@ -362,6 +369,7 @@ impl NodeGraph {
             fit_pending: false,
             show_minimap: true,
             collapse_wires: true,
+            notices: Vec::new(),
         }
     }
 
@@ -676,6 +684,7 @@ impl NodeGraph {
 
         self.reconcile_effect_stacks();
         self.refresh_link_peers();
+        self.refresh_instance_counts();
         self.remap_promoted_connections();
         self.remap_removed_ports();
         for level in &mut self.levels {
@@ -1134,6 +1143,7 @@ impl NodeGraph {
         // -- Handle interactions --
         self.handle_interactions(ui, &response, &node_rects, snap_to_grid);
         self.show_minimap(ui, canvas_rect);
+        self.show_link_banner(ui, canvas_rect);
 
         // -- Port-hover scope tooltip --
         // Skipped while a drag is in progress (wire draw / node move / frame)
@@ -1195,9 +1205,13 @@ impl NodeGraph {
             self.toggle_hide_unused_ports();
         }
 
-        // -- Duplicate (Ctrl+D) --
+        // -- Duplicate (Ctrl+D; with Shift, subgraphs are copied unlinked) --
         if !text_has_focus && ctrl && ui.input(|i| i.key_pressed(egui::Key::D)) && !self.selected_nodes.is_empty() {
-            self.duplicate_selected();
+            if ui.input(|i| i.modifiers.shift) {
+                self.duplicate_selected_unique();
+            } else {
+                self.duplicate_selected();
+            }
         }
 
         // -- Copy (Ctrl+C) --
@@ -1215,6 +1229,7 @@ impl NodeGraph {
         }
 
         self.handle_jumps();
+        self.handle_subgraph_requests();
 
         // -- Check for subgraph open requests --
         let mut open_subgraph_idx = None;

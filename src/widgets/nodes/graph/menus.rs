@@ -176,16 +176,16 @@ impl NodeGraph {
         // Macro-context info: when exactly one Subgraph is selected,
         // show "Save as macro..." + "Embed". Embed is a no-op if the
         // subgraph isn't actually locked (cheap and harmless).
-        let single_subgraph: Option<(NodeId, bool)> = if self.selected_nodes.len() == 1 {
+        let single_subgraph: Option<(NodeId, bool, Option<usize>)> = if self.selected_nodes.len() == 1 {
             let i = self.selected_nodes[0];
             let level = self.active_mut();
             if i < level.nodes.len() && level.nodes[i].type_name() == "Subgraph" {
                 let id = level.states[i].id;
-                let locked = level.nodes[i].as_any_mut()
+                let (locked, instances) = level.nodes[i].as_any_mut()
                     .downcast_mut::<SubgraphWidget>()
-                    .map(|w| w.locked)
-                    .unwrap_or(false);
-                Some((id, locked))
+                    .map(|w| (w.locked, w.definition.map(|_| w.instances())))
+                    .unwrap_or((false, None));
+                Some((id, locked, instances))
             } else { None }
         } else { None };
 
@@ -225,6 +225,7 @@ impl NodeGraph {
         let mut do_auto_connect = false;
         let mut do_save_macro: Option<NodeId> = None;
         let mut do_embed: Option<NodeId> = None;
+        let mut do_unique: Option<NodeId> = None;
         let mut do_unpack: Option<usize> = None;
         let mut do_jump: Option<NodeId> = None;
         let peers = match self.selected_nodes[..] {
@@ -276,8 +277,14 @@ impl NodeGraph {
                     if peers.len() > MENU_JUMPS {
                         ui.colored_label(theme::TEXT_DIM, format!("{} more in the inspector", peers.len() - MENU_JUMPS));
                     }
-                    if let Some((id, locked)) = single_subgraph {
+                    if let Some((id, locked, instances)) = single_subgraph {
                         ui.separator();
+                        if let Some(n) = instances {
+                            ui.colored_label(theme::LINK_BADGE, format!("Instance, used {n} times"));
+                            if ui.button("Make unique").on_hover_text("This instance leaves the definition and keeps its own copy").clicked() {
+                                do_unique = Some(id);
+                            }
+                        }
                         if !locked && ui.button("Save as macro...").clicked() {
                             do_save_macro = Some(id);
                         }
@@ -344,12 +351,22 @@ impl NodeGraph {
             self.context_menu_pos = None;
             return;
         }
+        if let Some(id) = do_unique {
+            self.make_unique(id);
+            self.context_menu_pos = None;
+            return;
+        }
         if let Some(id) = do_embed {
             // Find the subgraph widget and clear its locked flag.
             let level = self.active_mut();
             if let Some(idx) = level.states.iter().position(|s| s.id == id)
                 && let Some(w) = level.nodes[idx].as_any_mut().downcast_mut::<SubgraphWidget>() {
+                    // Unlocking a macro instance unlocks the whole definition
+                    // (the sync carries it to the other instances) and drops
+                    // the library origin, which would no longer describe it.
                     w.locked = false;
+                    w.macro_path.clear();
+                    w.macro_hash = None;
                     w.push_config();
                 }
             self.context_menu_pos = None;

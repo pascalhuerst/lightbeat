@@ -161,6 +161,9 @@ pub const ACCENT_SUBGRAPH: Color32 = Color32::from_rgb(190, 90, 150);
 /// (macros instantiated from the library) use this so they read as distinct
 /// from editable Subgraphs at a glance.
 pub const ACCENT_MACRO: Color32 = Color32::from_rgb(140, 110, 220);
+/// The "xN" badge of a linked subgraph and the banner inside its definition.
+pub const LINK_BADGE: Color32 = Color32::from_rgb(120, 200, 220);
+pub const LINK_BANNER_FILL: Color32 = Color32::from_rgba_premultiplied(20, 44, 52, 220);
 
 /// Linear blend from `a` toward `b` by `t` (0..=1). Used to tint accent
 /// colours with the neutral title-bar dark so white text stays readable.

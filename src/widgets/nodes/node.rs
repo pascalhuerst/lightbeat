@@ -235,6 +235,15 @@ pub trait NodeWidget: Any {
     /// The node the user asked to jump to from the inspector or the node, once.
     fn take_jump(&mut self) -> Option<NodeId> { None }
 
+    /// The node's save data as the widget holds it, for a widget that owns
+    /// its configuration. The engine's copy (`save_data`) trails by a few
+    /// ticks, which would show a link made a moment ago as missing.
+    fn live_data(&self) -> Option<serde_json::Value> { None }
+
+    /// Told every frame how many subgraphs share this one's definition
+    /// (1 for a plain subgraph).
+    fn set_instance_count(&mut self, _count: usize) {}
+
     /// How the node uses its rectangle. Most nodes keep the standard layout
     /// (title bar with an enable switch, ports below, a padded body); a
     /// control that is the whole point of its node, like a button or a fader,

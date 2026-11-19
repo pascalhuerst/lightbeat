@@ -8,7 +8,7 @@ use crate::engine::nodes::meta::subgraph::{
 use crate::engine::types::*;
 use crate::widgets::setup_ui;
 use crate::theme;
-use crate::widgets::nodes::node::NodeWidget;
+use crate::widgets::nodes::node::{LinkJump, LinkedNode, NodeWidget};
 use crate::widgets::nodes::panel::{self, PanelRequest, PanelRow};
 use crate::widgets::nodes::types::UiPortDef;
 
@@ -29,6 +29,19 @@ pub struct SubgraphWidget {
     /// Round-tripped through save_data so the info survives project save/load.
     pub macro_description: String,
     pub macro_path: String,
+    pub macro_hash: Option<String>,
+    /// Subgraphs with the same value are instances of one definition
+    /// (`linked.rs`); `None` is a plain subgraph.
+    pub definition: Option<u64>,
+    /// How many subgraphs share the definition (set by the graph each frame).
+    instances: usize,
+    /// The other instances, for the inspector's jump list.
+    peers: LinkJump,
+    /// Whether the library file this was placed from changed or is gone,
+    /// worked out by the app and shown in the inspector.
+    pub library_state: LibraryState,
+    /// Set by the inspector buttons for the app/graph to carry out.
+    pub request: Option<SubgraphRequest>,
     /// Cached count of inner value/LED displays — used by `min_content_height`
     /// so the node grows tall enough to show every row by default. Updated
     /// each frame from the shared display.
@@ -49,6 +62,22 @@ pub struct SubgraphWidget {
     jump: Option<NodeId>,
 }
 
+/// Whether a macro instance still matches its library file.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum LibraryState {
+    Unknown,
+    Current,
+    Changed,
+    Missing,
+}
+
+/// What the inspector of a subgraph asks the graph or the app to do.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum SubgraphRequest {
+    MakeUnique,
+    UpdateFromLibrary,
+}
+
 /// Height of the header row (node count, open button) above the panel.
 pub const PANEL_TOP: f32 = 24.0;
 
@@ -64,6 +93,12 @@ impl SubgraphWidget {
             locked: false,
             macro_description: String::new(),
             macro_path: String::new(),
+            macro_hash: None,
+            definition: None,
+            instances: 1,
+            peers: LinkJump::default(),
+            library_state: LibraryState::Unknown,
+            request: None,
             inner_display_count: 0,
             removed: None,
             panel_cells: Vec::new(),
@@ -169,7 +204,65 @@ impl SubgraphWidget {
             locked: Some(self.locked),
             macro_description: Some(self.macro_description.clone()),
             macro_path: Some(self.macro_path.clone()),
+            macro_hash: self.macro_hash.clone(),
+            definition: self.definition,
         }.to_value());
+    }
+
+    pub fn instances(&self) -> usize {
+        self.instances
+    }
+
+    /// The name, ports and macro origin as the widget holds them.
+    fn config(&self) -> SubgraphConfig {
+        SubgraphConfig {
+            name: Some(self.name.clone()),
+            inputs: Some(self.input_defs.clone()),
+            outputs: Some(self.output_defs.clone()),
+            locked: Some(self.locked),
+            macro_description: Some(self.macro_description.clone()),
+            macro_path: Some(self.macro_path.clone()),
+            macro_hash: self.macro_hash.clone(),
+            definition: self.definition,
+        }
+    }
+
+    /// Link information shared by the locked and the editable inspector.
+    fn show_link_info(&mut self, ui: &mut Ui) {
+        if self.definition.is_none() || self.instances < 2 {
+            return;
+        }
+        ui.separator();
+        setup_ui::section(ui, "Linked");
+        ui.label(format!(
+            "Instance of {}, used {} times. Editing inside one changes all of them; front-panel values stay per instance.",
+            self.display_title(),
+            self.instances
+        ));
+        if ui.button("Make unique").on_hover_text("This instance leaves the definition and keeps its own copy").clicked() {
+            self.request = Some(SubgraphRequest::MakeUnique);
+        }
+        self.peers.show(ui, "Other instances");
+    }
+
+    fn show_library_info(&mut self, ui: &mut Ui) {
+        if self.macro_path.is_empty() {
+            return;
+        }
+        match self.library_state {
+            LibraryState::Unknown | LibraryState::Current => {}
+            LibraryState::Changed => {
+                ui.colored_label(theme::SEM_WARNING, "The library file changed since this was placed.");
+            }
+            LibraryState::Missing => {
+                ui.colored_label(theme::SEM_WARNING, "The library file is missing.");
+            }
+        }
+        if self.library_state == LibraryState::Changed
+            && ui.button("Update from library").on_hover_text("Replace the definition in every instance with the library version").clicked()
+        {
+            self.request = Some(SubgraphRequest::UpdateFromLibrary);
+        }
     }
 }
 
@@ -202,6 +295,8 @@ impl NodeWidget for SubgraphWidget {
         if let Some(s) = cfg.macro_path {
             self.macro_path = s;
         }
+        self.macro_hash = cfg.macro_hash;
+        self.definition = cfg.definition;
         self.push_config();
     }
 
@@ -241,7 +336,16 @@ impl NodeWidget for SubgraphWidget {
         120.0_f32.max(widest + 2.0 * (l.side_inset + l.gutter_left.max(l.gutter_right)))
     }
     fn take_jump(&mut self) -> Option<NodeId> {
-        self.jump.take()
+        self.jump.take().or_else(|| self.peers.take())
+    }
+    fn set_link_peers(&mut self, peers: Vec<LinkedNode>) {
+        self.peers.set_peers(peers);
+    }
+    fn set_instance_count(&mut self, count: usize) {
+        self.instances = count;
+    }
+    fn live_data(&self) -> Option<serde_json::Value> {
+        Some(self.config().to_value())
     }
     fn min_content_height(&self) -> f32 {
         if self.has_panel() {
@@ -291,6 +395,10 @@ impl NodeWidget for SubgraphWidget {
                 .on_hover_text("Macro (locked). Right-click → Embed to edit.");
             }
             ui.colored_label(theme::TEXT_DIM, format!("{} nodes", inner_count));
+            if self.definition.is_some() && self.instances > 1 {
+                ui.colored_label(theme::LINK_BADGE, format!("x{}", self.instances))
+                    .on_hover_text(format!("Instance of {}, used {} times. Changes inside apply to all.", self.display_title(), self.instances));
+            }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 // Open button is hidden when locked — match navigation gating.
                 if !self.locked
@@ -332,6 +440,8 @@ impl NodeWidget for SubgraphWidget {
             } else {
                 ui.colored_label(theme::TEXT, &self.macro_path);
             }
+            self.show_library_info(ui);
+            self.show_link_info(ui);
             self.show_panel_list(ui);
             return;
         }
@@ -430,6 +540,8 @@ impl NodeWidget for SubgraphWidget {
             self.push_config();
         }
 
+        self.show_library_info(ui);
+        self.show_link_info(ui);
         self.show_panel_list(ui);
     }
 
